@@ -10,16 +10,18 @@ struct TrendsView: View {
     @State private var choosingDate = false
     @State private var selectedAngle: Double?
     @State private var selectedSlice: TimeSlice?
+    @State private var focusedSegment: InsightSegment?
 
     private var interval: DateInterval { window.interval(containing: anchorDate) }
     private var previousInterval: DateInterval {
         DateInterval(start: interval.start.addingTimeInterval(-interval.duration), end: interval.start)
     }
     private var periodVisits: [Visit] { visits.filter { $0.overlaps(interval) } }
+    private var segments: [InsightSegment] { makeSegments(for: interval) }
     private var slices: [TimeSlice] { makeSlices(for: interval) }
     private var placeTotals: [PlaceTotal] { makePlaceTotals(for: interval) }
     private var comparisons: [TrendComparison] { makeComparisons() }
-    private var loggedHours: Double { slices.filter { !$0.isUnlogged }.reduce(0) { $0 + $1.hours } }
+    private var loggedHours: Double { segments.filter { !$0.isUnlogged }.reduce(0) { $0 + $1.hours } }
     private var totalHours: Double { interval.duration / 3600 }
 
     var body: some View {
@@ -59,6 +61,10 @@ struct TrendsView: View {
                         .presentationDetents([.medium, .large])
                 }
             }
+            .fullScreenCover(item: $focusedSegment, onDismiss: { selectedAngle = nil }) { segment in
+                InsightSegmentFocus(segment: segment, segments: segments)
+                    .presentationBackground(.clear)
+            }
         }
     }
 
@@ -97,19 +103,19 @@ struct TrendsView: View {
             }
 
             ZStack {
-                Chart(slices) { slice in
+                Chart(segments) { segment in
                     SectorMark(
-                        angle: .value("Hours", slice.hours),
+                        angle: .value("Hours", segment.hours),
                         innerRadius: .ratio(0.48),
                         angularInset: 2
                     )
                     .cornerRadius(6)
-                    .foregroundStyle(slice.color)
+                    .foregroundStyle(segment.color)
                     .annotation(position: .overlay) {
-                        if slice.hours / max(totalHours, 1) > 0.08 {
+                        if segment.hours / max(totalHours, 1) > 0.08 {
                             VStack(spacing: 2) {
-                                Image(systemName: slice.symbol)
-                                Text(formatHours(slice.hours)).font(.caption.bold())
+                                Image(systemName: segment.symbol)
+                                Text(formatHours(segment.hours)).font(.caption.bold())
                             }.foregroundStyle(.white)
                         }
                     }
@@ -117,10 +123,10 @@ struct TrendsView: View {
                 .chartLegend(.hidden)
                 .chartAngleSelection(value: $selectedAngle)
                 .onChange(of: selectedAngle) { _, angle in
-                    guard let angle, let slice = slice(at: angle) else { return }
-                    selectedSlice = slice
+                    guard let angle, let segment = segment(at: angle) else { return }
+                    focusedSegment = segment
                 }
-                .accessibilityHint("Select a segment to review and edit its visits")
+                .accessibilityHint("Select a segment to focus its check-in, check-out, and duration")
                 VStack(spacing: 2) {
                     Text(formatHours(loggedHours)).font(.title.bold()).monospacedDigit()
                     Text("logged").font(.subheadline).foregroundStyle(.secondary)
@@ -255,20 +261,48 @@ struct TrendsView: View {
     }
 
     private func makeSlices(for range: DateInterval) -> [TimeSlice] {
-        let grouped = Dictionary(grouping: visits.filter { $0.overlaps(range) }) { visit in
-            visit.placeCategory == "Other" ? visit.activity : visit.placeCategory
-        }
+        let rangeSegments = makeSegments(for: range)
+        let grouped = Dictionary(grouping: rangeSegments.filter { !$0.isUnlogged }, by: \.category)
         var values = grouped.map { name, items in
-            TimeSlice(name: name, hours: items.reduce(0) { $0 + $1.duration(in: range) } / 3600,
+            TimeSlice(name: name, hours: items.reduce(0) { $0 + $1.hours },
                       color: insightColor(for: name), symbol: insightSymbol(for: name), isUnlogged: false)
-        }.filter { $0.hours > 0.01 }.sorted { $0.hours > $1.hours }
-        let recorded = values.reduce(0) { $0 + $1.hours }
-        let unlogged = max(0, range.duration / 3600 - recorded)
+        }
+        .filter { $0.hours > 0.01 }.sorted { $0.hours > $1.hours }
+        let unlogged = rangeSegments.filter(\.isUnlogged).reduce(0) { $0 + $1.hours }
         if unlogged > 0.01 {
             values.append(TimeSlice(name: "Unlogged", hours: unlogged, color: .gray.opacity(0.35),
                                     symbol: "moon.zzz.fill", isUnlogged: true))
         }
         return values
+    }
+
+    private func makeSegments(for range: DateInterval) -> [InsightSegment] {
+        let orderedVisits = visits.filter { $0.overlaps(range) }.sorted { $0.arrival < $1.arrival }
+        var result: [InsightSegment] = []
+        var cursor = range.start
+        var gapIndex = 0
+
+        for visit in orderedVisits {
+            let clippedStart = max(visit.arrival, range.start)
+            let clippedEnd = min(visit.departure ?? .now, range.end)
+            guard clippedEnd > clippedStart else { continue }
+
+            if clippedStart > cursor {
+                result.append(.unlogged(index: gapIndex, from: cursor, to: clippedStart))
+                gapIndex += 1
+            }
+
+            let visibleStart = max(clippedStart, cursor)
+            if clippedEnd > visibleStart {
+                result.append(.visit(visit, visibleFrom: visibleStart, visibleTo: clippedEnd))
+            }
+            cursor = max(cursor, clippedEnd)
+        }
+
+        if cursor < range.end {
+            result.append(.unlogged(index: gapIndex, from: cursor, to: range.end))
+        }
+        return result
     }
 
     private func makePlaceTotals(for range: DateInterval) -> [PlaceTotal] {
@@ -288,14 +322,14 @@ struct TrendsView: View {
         }.filter { abs($0.delta) >= 0.25 }.sorted { abs($0.delta) > abs($1.delta) }
     }
 
-    private func slice(at angle: Double) -> TimeSlice? {
+    private func segment(at angle: Double) -> InsightSegment? {
         guard angle.isFinite, angle >= 0 else { return nil }
         var upperBound = 0.0
-        for slice in slices {
-            upperBound += slice.hours
-            if angle <= upperBound { return slice }
+        for segment in segments {
+            upperBound += segment.hours
+            if angle <= upperBound { return segment }
         }
-        return slices.last
+        return segments.last
     }
 
     private func visits(for slice: TimeSlice) -> [Visit] {
@@ -367,6 +401,133 @@ private struct TimeSlice: Identifiable {
     let color: Color
     let symbol: String
     let isUnlogged: Bool
+}
+
+private enum InsightSegmentID: Hashable {
+    case visit(ObjectIdentifier)
+    case unlogged(Int)
+}
+
+private struct InsightSegment: Identifiable {
+    let id: InsightSegmentID
+    let visit: Visit?
+    let category: String
+    let activity: String
+    let placeName: String?
+    let start: Date
+    let end: Date
+    let hours: Double
+    let color: Color
+    let symbol: String
+    let isUnlogged: Bool
+    let isLive: Bool
+
+    static func visit(_ visit: Visit, visibleFrom: Date, visibleTo: Date) -> InsightSegment {
+        let category = visit.placeCategory == "Other" ? visit.activity : visit.placeCategory
+        let end = visit.departure ?? .now
+        return InsightSegment(
+            id: .visit(ObjectIdentifier(visit)), visit: visit, category: category,
+            activity: visit.activity, placeName: visit.placeName,
+            start: visit.arrival, end: end,
+            hours: visibleTo.timeIntervalSince(visibleFrom) / 3600,
+            color: insightColor(for: category), symbol: insightSymbol(for: category),
+            isUnlogged: false, isLive: visit.departure == nil
+        )
+    }
+
+    static func unlogged(index: Int, from start: Date, to end: Date) -> InsightSegment {
+        InsightSegment(
+            id: .unlogged(index), visit: nil, category: "Unlogged",
+            activity: "Unlogged", placeName: nil, start: start, end: end,
+            hours: end.timeIntervalSince(start) / 3600,
+            color: .gray.opacity(0.35), symbol: "moon.zzz.fill",
+            isUnlogged: true, isLive: false
+        )
+    }
+}
+
+private struct InsightSegmentFocus: View {
+    @Environment(\.dismiss) private var dismiss
+    let segment: InsightSegment
+    let segments: [InsightSegment]
+    @State private var editingVisit: Visit?
+    @State private var addingVisit = false
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.72).ignoresSafeArea()
+                .onTapGesture { dismiss() }
+
+            VStack(spacing: 14) {
+                HStack {
+                    Text("Focused entry").font(.headline).foregroundStyle(.white.opacity(0.8))
+                    Spacer()
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark").font(.headline).foregroundStyle(.white)
+                            .frame(width: 42, height: 42).background(.white.opacity(0.14), in: Circle())
+                    }
+                    .accessibilityLabel("Close focused entry")
+                }
+                .frame(maxWidth: 400)
+
+                ZStack {
+                    Chart(segments) { item in
+                        let selected = item.id == segment.id
+                        SectorMark(
+                            angle: .value("Hours", item.hours),
+                            innerRadius: .ratio(0.58),
+                            outerRadius: .ratio(selected ? 1 : 0.93),
+                            angularInset: 2
+                        )
+                        .cornerRadius(6)
+                        .foregroundStyle(item.color.opacity(selected ? 1 : 0.13))
+                    }
+                    .chartLegend(.hidden)
+                    .shadow(color: segment.color.opacity(0.4), radius: 18)
+
+                    VStack(spacing: 4) {
+                        Image(systemName: segment.symbol)
+                            .font(.title3.bold()).foregroundStyle(segment.color)
+                        Text(segment.activity).font(.headline).foregroundStyle(.white)
+                            .multilineTextAlignment(.center).lineLimit(2)
+                        if let placeName = segment.placeName, placeName != segment.activity {
+                            Text(placeName).font(.caption).foregroundStyle(.white.opacity(0.72))
+                                .lineLimit(1)
+                        }
+                        Divider().overlay(.white.opacity(0.18)).padding(.vertical, 2)
+                        Text("Check in  \(timeLabel(segment.start))")
+                        Text("Check out  \(segment.isLive ? "Now" : timeLabel(segment.end))")
+                        Text(formatHours(segment.end.timeIntervalSince(segment.start) / 3600))
+                            .font(.subheadline.bold()).foregroundStyle(.white).padding(.top, 2)
+                    }
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.82))
+                    .frame(width: 180)
+                }
+                .frame(maxWidth: 400, minHeight: 340, maxHeight: 380)
+
+                Button {
+                    if let visit = segment.visit { editingVisit = visit } else { addingVisit = true }
+                } label: {
+                    Label(segment.isUnlogged ? "Add Visit" : "Edit Entry",
+                          systemImage: segment.isUnlogged ? "plus" : "pencil")
+                        .font(.headline).frame(maxWidth: 260).padding(.vertical, 12)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(segment.color)
+            }
+            .padding(22)
+        }
+        .sheet(item: $editingVisit) { visit in
+            NavigationStack { VisitEditor(visit: visit) }
+                .presentationDetents([.large])
+        }
+        .sheet(isPresented: $addingVisit) { ManualVisitView() }
+    }
+
+    private func timeLabel(_ date: Date) -> String {
+        date.formatted(date: .omitted, time: .shortened)
+    }
 }
 
 private struct InsightSliceEditor: View {

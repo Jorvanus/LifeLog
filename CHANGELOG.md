@@ -2,9 +2,15 @@
 
 ## 2026-08-02
 
+### Focused insight entries
+
+- Insights is now the second tab and Map is the third.
+- The Insights donut now represents individual timeline entries while retaining category totals below it.
+- Tapping a donut segment dims the screen and focuses that entry’s check-in, check-out, duration, and edit action in the centre.
+
 ### Editable insight slices
 
-- Tapping an Insights pie segment now opens its contributing visit for editing, or a list when several visits make up the segment.
+- Tapping an Insights category total opens its contributing visit for editing, or a list when several visits make up the total.
 - Unlogged pie segments now offer a direct way to add the missing visit.
 
 ### Personal-device signing
