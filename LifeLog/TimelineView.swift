@@ -6,9 +6,17 @@ struct TimelineView: View {
     @Query(sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
     @State private var adding = false
 
-    private var today: [Visit] { visits.filter { Calendar.current.isDateInToday($0.arrival) } }
-    private var reviewQueue: [Visit] { visits.filter(\.needsCategorisation) }
-    private var current: Visit? { visits.first { $0.departure == nil } }
+    private var today: [Visit] {
+        visits.filter { Calendar.current.isDateInToday($0.arrival) }
+            .filter { ActivityLocationPolicy.shouldShow($0, alongside: visits) }
+    }
+    private var reviewQueue: [Visit] {
+        // The live unknown location has its own prominent card; the queue is for past stays.
+        visits.filter { $0.needsCategorisation && $0.departure != nil }
+    }
+    private var current: Visit? {
+        visits.first { ActivityLocationPolicy.isLocationVisit($0) && $0.departure == nil }
+    }
 
     var body: some View {
         NavigationStack {
@@ -27,6 +35,11 @@ struct TimelineView: View {
             }
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $adding) { ManualVisitView() }
+            .task {
+                try? ActivityLocationPolicy.reconcileAll(context: context)
+                try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
+                try? context.save()
+            }
         }
     }
 
@@ -60,8 +73,12 @@ struct TimelineView: View {
                 HStack(spacing: 14) {
                     ActivityIcon(activity: visit.activity, category: visit.placeCategory, color: .orange)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(visit.placeName).font(.headline).foregroundStyle(.primary)
-                    Text("Suggested: \(visit.inferredActivity)").font(.subheadline).foregroundStyle(.secondary)
+                        Text("Uncategorised location").font(.headline).foregroundStyle(.primary)
+                        if visit.placeName != "Identifying…" && visit.placeName != "Unknown place" {
+                            Text("Likely: \(visit.placeName)").font(.subheadline).foregroundStyle(.secondary)
+                        }
+                        Text("Suspected activity: \(visit.inferredActivity)")
+                            .font(.subheadline).foregroundStyle(.secondary)
                     }
                     Spacer()
                     Text("Categorise").font(.subheadline.weight(.semibold)).foregroundStyle(.white)
@@ -82,18 +99,36 @@ struct TimelineView: View {
                 HStack(spacing: 10) {
                     Circle().fill(.green).frame(width: 10, height: 10)
                     Text("Current Activity").font(.headline).foregroundStyle(.green)
+                    Spacer()
+                    if visit.needsCategorisation {
+                        Label("Label", systemImage: "flag.fill")
+                            .font(.caption.bold()).foregroundStyle(.orange)
+                    }
                 }
                 HStack(spacing: 14) {
-                    ActivityIcon(activity: visit.activity, category: visit.placeCategory, color: .green)
+                    ActivityIcon(
+                        activity: visit.suspectedActivity,
+                        category: visit.insightCategory,
+                        color: visit.needsCategorisation ? .orange : .green
+                    )
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(visit.placeName).font(.title3.bold()).foregroundStyle(.primary)
-                        Text(visit.activity).foregroundStyle(.secondary)
+                        Text(visit.displayPlaceName).font(.title3.bold()).foregroundStyle(.primary)
+                        if visit.needsCategorisation {
+                            Text("Suspected activity: \(visit.inferredActivity)").foregroundStyle(.secondary)
+                            if visit.placeName != "Identifying…" && visit.placeName != "Unknown place" {
+                                Text("Likely place: \(visit.placeName)")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        } else {
+                            Text(visit.activity).foregroundStyle(.secondary)
+                        }
                         Text("Since \(visit.arrival.formatted(date: .omitted, time: .shortened))")
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Image(systemName: "house.and.flag.fill").font(.system(size: 48))
-                        .foregroundStyle(.green.opacity(0.25))
+                    Image(systemName: visit.needsCategorisation ? "flag.fill" : "location.circle.fill")
+                        .font(.system(size: 48))
+                        .foregroundStyle((visit.needsCategorisation ? Color.orange : Color.green).opacity(0.25))
                 }
             }
             .padding(19)
@@ -135,7 +170,7 @@ private struct JourneyRow: View {
     let visit: Visit
     let isFirst: Bool
     let isLast: Bool
-    private var color: Color { activityColor(visit.activity) }
+    private var color: Color { visit.needsCategorisation ? .orange : activityColor(visit.activity) }
 
     var body: some View {
         NavigationLink { VisitEditor(visit: visit) } label: {
@@ -147,10 +182,16 @@ private struct JourneyRow: View {
                         .overlay(Circle().stroke(Color.lifeBackground, lineWidth: 3))
                 }.frame(width: 28, height: 94)
                 HStack(spacing: 14) {
-                    ActivityIcon(activity: visit.activity, category: visit.placeCategory, color: color)
+                    ActivityIcon(activity: visit.suspectedActivity, category: visit.insightCategory, color: color)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(visit.activity).font(.headline).foregroundStyle(.primary)
-                        Text(visit.placeName).font(.subheadline).foregroundStyle(.secondary)
+                        if visit.needsCategorisation {
+                            Text("Uncategorised location").font(.headline).foregroundStyle(.primary)
+                            Text("Suspected: \(visit.inferredActivity)")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                        } else {
+                            Text(visit.activity).font(.headline).foregroundStyle(.primary)
+                            Text(visit.placeName).font(.subheadline).foregroundStyle(.secondary)
+                        }
                         Text(timeDescription).font(.subheadline).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 8)
@@ -169,12 +210,13 @@ private struct JourneyRow: View {
     }
 
     @ViewBuilder private var status: some View {
-        if visit.departure == nil {
+        if visit.needsCategorisation {
+            Label(visit.departure == nil ? "Live · Categorise" : "Categorise", systemImage: "flag.fill")
+                .font(.caption.weight(.semibold)).foregroundStyle(.orange)
+                .padding(.horizontal, 10).padding(.vertical, 6).background(.orange.opacity(0.1), in: Capsule())
+        } else if visit.departure == nil {
             Label("Live", systemImage: "circle.fill").font(.caption.weight(.semibold)).foregroundStyle(.green)
                 .labelStyle(.titleAndIcon)
-        } else if visit.needsCategorisation {
-            Text("Categorise").font(.caption.weight(.semibold)).foregroundStyle(.orange)
-                .padding(.horizontal, 10).padding(.vertical, 6).background(.orange.opacity(0.1), in: Capsule())
         } else {
             Text("High").font(.caption.weight(.semibold)).foregroundStyle(.green)
                 .padding(.horizontal, 10).padding(.vertical, 6).background(.green.opacity(0.1), in: Capsule())
@@ -207,6 +249,7 @@ struct ActivityIcon: View {
     }
     private var symbol: String {
         let text = "\(activity) \(category)".lowercased()
+        if text.contains("travel") || text.contains("transit") { return "car.fill" }
         if text.contains("home") { return "house.fill" }
         if text.contains("work") || text.contains("office") { return "building.2.fill" }
         if text.contains("eat") || text.contains("lunch") || text.contains("restaurant") { return "fork.knife" }
@@ -217,19 +260,19 @@ struct ActivityIcon: View {
         if text.contains("cycl") { return "bicycle" }
         if text.contains("sleep") { return "bed.double.fill" }
         if text.contains("shop") { return "bag.fill" }
-        if text.contains("travel") { return "car.fill" }
         return "mappin"
     }
 }
 
 func activityColor(_ activity: String) -> Color {
     let text = activity.lowercased()
+    if text.contains("travel") || text.contains("transit") { return .blue }
     if text.contains("home") { return .green }
     if text.contains("work") { return .purple }
     if text.contains("eat") || text.contains("lunch") { return .orange }
     if text.contains("exercise") { return .pink }
     if text.contains("walk") || text.contains("run") { return .teal }
-    if text.contains("cycl") || text.contains("travel") { return .blue }
+    if text.contains("cycl") { return .blue }
     if text.contains("sleep") { return Color(red: 0.22, green: 0.40, blue: 0.52) }
     return .blue
 }
@@ -263,6 +306,20 @@ struct VisitEditor: View {
                         .foregroundStyle(.orange)
                     Text("Categorise it once and LifeLog will recognise this location next time.")
                         .font(.footnote).foregroundStyle(.secondary)
+                }
+                if canLearnPlace {
+                    Section("Quick labels") {
+                        Button {
+                            applyQuickLabel(name: "Home", category: "Home", activity: "At home")
+                        } label: {
+                            Label("Set as Home", systemImage: "house.fill")
+                        }
+                        Button {
+                            applyQuickLabel(name: "Work", category: "Work", activity: "Working")
+                        } label: {
+                            Label("Set as Work", systemImage: "building.2.fill")
+                        }
+                    }
                 }
             }
             if visit.needsCategorisation && !visit.placeSuggestions.isEmpty {
@@ -364,6 +421,14 @@ struct VisitEditor: View {
         visit.placeCategory = suggestion.category
         visit.userActivity = suggestion.suggestedActivity
         visit.recognitionConfidence = "confirmed"
+    }
+
+    private func applyQuickLabel(name: String, category: String, activity: String) {
+        visit.placeName = name
+        visit.placeCategory = category
+        visit.userActivity = activity
+        visit.recognitionConfidence = "confirmed"
+        learnPlace()
     }
 
     private func saveAndDismiss() {

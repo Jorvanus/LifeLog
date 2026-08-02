@@ -1,7 +1,10 @@
 import SwiftUI
 import CoreLocation
+import SwiftData
 
 struct SettingsView: View {
+    @Query(sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
+    @Query(sort: \SavedPlace.name) private var savedPlaces: [SavedPlace]
     let recorder: LocationRecorder
     let activityData: ActivityDataService
     var body: some View {
@@ -13,6 +16,36 @@ struct SettingsView: View {
                     if recorder.authorization == .notDetermined {
                         Button("Allow while using") { recorder.requestPermission() }
                     }
+                    if recorder.authorization == .authorizedAlways || recorder.authorization == .authorizedWhenInUse {
+                        Button("Refresh Current Location") { recorder.refreshCurrentLocation() }
+                    }
+                }
+                Section {
+                    if let currentLocation {
+                        NavigationLink { VisitEditor(visit: currentLocation) } label: {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(currentLocation.needsCategorisation ? "Label Current Location" : "Edit Current Location")
+                                    Text(currentLocation.displayPlaceName)
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            } icon: {
+                                Image(systemName: currentLocation.needsCategorisation ? "flag.badge.ellipsis" : "location.fill")
+                                    .foregroundStyle(currentLocation.needsCategorisation ? .orange : .blue)
+                            }
+                        }
+                    }
+                    NavigationLink { PlacesView() } label: {
+                        LabeledContent {
+                            Text("\(savedPlaces.count)")
+                        } label: {
+                            Label("Saved Places", systemImage: "house.and.flag.fill")
+                        }
+                    }
+                } header: {
+                    Text("Places")
+                } footer: {
+                    Text("Set locations as Home, Work, or another place. LifeLog will reuse the label, category, and activity whenever you return.")
                 }
                 Section {
                     LabeledContent("Apple Health", value: activityData.healthStatus)
@@ -26,7 +59,7 @@ struct SettingsView: View {
                 } header: {
                     Text("iPhone & Apple Watch")
                 } footer: {
-                    Text("Sleep, Apple Watch workouts, and Watch walking come from Apple Health. Walking, running, cycling, and vehicle travel also use the iPhone’s motion history.")
+                    Text("Sleep, Apple Watch workouts, and Watch walking come from Apple Health. Walking, running, cycling, and vehicle travel also use the iPhone’s motion history. iOS has no dedicated airplane signal; flight-labelled records are still grouped under Travel.")
                 }
                 Section {
                     LabeledContent("On-device model", value: SmartActivityClassifier.availabilityDescription)
@@ -53,6 +86,10 @@ struct SettingsView: View {
                 else { recorder.disableBackgroundLogging() }
             }
         )
+    }
+
+    private var currentLocation: Visit? {
+        visits.first { ActivityLocationPolicy.isLocationVisit($0) && $0.departure == nil }
     }
 
     private var permissionName: String {

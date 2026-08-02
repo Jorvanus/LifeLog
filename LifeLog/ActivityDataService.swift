@@ -19,6 +19,7 @@ final class ActivityDataService {
         self.context = context
         do {
             try ActivityLocationPolicy.reconcileAll(context: context)
+            try ActivityLocationPolicy.updateTravelDescriptions(context: context)
             try context.save()
         } catch {
             lastError = "Existing activity couldn’t be reconciled with location visits."
@@ -154,6 +155,7 @@ final class ActivityDataService {
                     return
                 }
                 self.importMotionActivities(activities ?? [], context: context)
+                try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
                 try? context.save()
                 self.refreshMotionStatus()
                 self.lastImport = .now
@@ -176,8 +178,11 @@ final class ActivityDataService {
             }
         }
         for segment in segments {
-            insertActivity(name: segment.activity == "Travelling" ? "In transit" : segment.activity,
-                           activity: segment.activity, category: segment.activity, source: "motion",
+            // Motion reports automotive movement, while LifeLog presents every transport
+            // mode consistently under the broader Travel category.
+            let isTravel = segment.activity == "Travelling"
+            insertActivity(name: isTravel ? "In transit" : segment.activity,
+                           activity: segment.activity, category: isTravel ? "Travel" : segment.activity, source: "motion",
                            start: segment.start, end: segment.end, context: context)
         }
     }

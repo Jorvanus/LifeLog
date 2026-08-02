@@ -7,6 +7,24 @@ import Testing
 struct ActivityLocationPolicyTests {
     private let base = Date(timeIntervalSince1970: 1_800_000_000)
 
+    @Test("An active unknown visit is logged as an uncategorised location")
+    func presentsUnknownCurrentLocation() {
+        let visit = Visit(
+            arrival: base,
+            latitude: -27.47,
+            longitude: 153.03,
+            placeName: "Identifying…",
+            placeCategory: "Other",
+            inferredActivity: "Visiting",
+            source: "automatic"
+        )
+
+        #expect(visit.needsCategorisation)
+        #expect(visit.displayPlaceName == "Uncategorised location")
+        #expect(visit.insightCategory == "Uncategorised")
+        #expect(visit.suspectedActivity == "Visiting")
+    }
+
     @Test("Activity imported after a location visit excludes the occupied time")
     func subtractsLocationTimeFromImportedActivity() {
         let location = Visit(
@@ -69,6 +87,140 @@ struct ActivityLocationPolicyTests {
             .filter(ActivityLocationPolicy.isDeviceActivity)
 
         #expect(activities.isEmpty)
+    }
+
+    @Test("Walking is only shown between two destinations")
+    func walkingRequiresTwoDestinations() {
+        let previous = Visit(
+            arrival: base,
+            departure: base.addingTimeInterval(60 * 60),
+            latitude: -27.47,
+            longitude: 153.03,
+            placeName: "Work",
+            placeCategory: "Work",
+            inferredActivity: "Working",
+            source: "automatic"
+        )
+        let walking = Visit(
+            arrival: base.addingTimeInterval(75 * 60),
+            departure: base.addingTimeInterval(90 * 60),
+            latitude: 0,
+            longitude: 0,
+            placeName: "Walking",
+            placeCategory: "Walking",
+            inferredActivity: "Walking",
+            userActivity: "Walking",
+            source: "health-walking"
+        )
+        let next = Visit(
+            arrival: base.addingTimeInterval(2 * 60 * 60),
+            departure: base.addingTimeInterval(3 * 60 * 60),
+            latitude: -27.46,
+            longitude: 153.04,
+            placeName: "Cafe",
+            placeCategory: "Food & Drink",
+            inferredActivity: "Eating",
+            source: "automatic"
+        )
+
+        #expect(ActivityLocationPolicy.shouldShow(walking, alongside: [previous, walking]) == false)
+        #expect(ActivityLocationPolicy.shouldShow(walking, alongside: [previous, walking, next]) == true)
+
+        let walkingAtHome = Visit(
+            arrival: base.addingTimeInterval(15 * 60),
+            departure: base.addingTimeInterval(30 * 60),
+            latitude: 0,
+            longitude: 0,
+            placeName: "Walking",
+            placeCategory: "Walking",
+            inferredActivity: "Walking",
+            userActivity: "Walking",
+            source: "health-walking"
+        )
+        #expect(ActivityLocationPolicy.shouldShow(walkingAtHome, alongside: [previous, walkingAtHome, next]) == false)
+
+        let driving = Visit(
+            arrival: base.addingTimeInterval(75 * 60),
+            departure: base.addingTimeInterval(105 * 60),
+            latitude: 0,
+            longitude: 0,
+            placeName: "In transit",
+            placeCategory: "Travel",
+            inferredActivity: "Travelling",
+            userActivity: "Travelling",
+            source: "motion"
+        )
+        #expect(ActivityLocationPolicy.shouldShow(driving, alongside: [previous, driving]) == false)
+        #expect(ActivityLocationPolicy.shouldShow(driving, alongside: [previous, driving, next]) == true)
+    }
+
+    @Test("Vehicle travel is classified toward a recurring work destination")
+    func classifiesTravelToWork() throws {
+        let context = try makeContext()
+        let work = Visit(
+            arrival: base.addingTimeInterval(2 * 60 * 60),
+            departure: base.addingTimeInterval(3 * 60 * 60),
+            latitude: -27.46,
+            longitude: 153.04,
+            placeName: "Office",
+            placeCategory: "Work",
+            inferredActivity: "Working",
+            source: "automatic"
+        )
+        let travel = Visit(
+            arrival: base.addingTimeInterval(75 * 60),
+            departure: base.addingTimeInterval(105 * 60),
+            latitude: 0,
+            longitude: 0,
+            placeName: "In transit",
+            placeCategory: "Travelling",
+            inferredActivity: "Travelling",
+            userActivity: "Travelling",
+            source: "motion"
+        )
+        context.insert(work)
+        context.insert(travel)
+        try context.save()
+
+        try ActivityLocationPolicy.updateTravelDescriptions(context: context)
+
+        #expect(travel.placeCategory == "Travel")
+        #expect(travel.activity == "Travelling to Work")
+    }
+
+    @Test("A manually named travel activity is preserved")
+    func preservesManualTravelActivity() throws {
+        let context = try makeContext()
+        let work = Visit(
+            arrival: base.addingTimeInterval(2 * 60 * 60),
+            departure: base.addingTimeInterval(3 * 60 * 60),
+            latitude: -27.46,
+            longitude: 153.04,
+            placeName: "Office",
+            placeCategory: "Work",
+            inferredActivity: "Working",
+            source: "automatic"
+        )
+        let travel = Visit(
+            arrival: base.addingTimeInterval(75 * 60),
+            departure: base.addingTimeInterval(105 * 60),
+            latitude: 0,
+            longitude: 0,
+            placeName: "In transit",
+            placeCategory: "Travelling",
+            inferredActivity: "Travelling",
+            userActivity: "Commuting",
+            source: "motion"
+        )
+        context.insert(work)
+        context.insert(travel)
+        try context.save()
+
+        try ActivityLocationPolicy.updateTravelDescriptions(context: context)
+
+        #expect(travel.placeCategory == "Travel")
+        #expect(travel.activity == "Commuting")
+        #expect(travel.inferredActivity == "Travelling to Work")
     }
 
     private func makeContext() throws -> ModelContext {

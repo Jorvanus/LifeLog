@@ -2,6 +2,20 @@
 
 ## 2026-08-02
 
+### Current and saved places
+
+- A stationary current location is recorded immediately when LifeLog opens or location is refreshed, so it appears as an uncategorised location instead of unlogged time.
+- Timeline cards show the suspected activity, live status, and a clear prompt to label an unknown current location.
+- Settings now includes current-location editing and Saved Places management for Home, Work, custom activities, and geofence radius.
+- Editing a saved place updates matching timeline history and Insights, while one-tap Home and Work labels make first-time setup faster.
+- Current Insights windows stop at the present time so future hours are not counted as unlogged.
+
+### Location-first movement timeline
+
+- Walking activity is now shown only between a previous and next destination, so walking around a current location no longer appears as a separate timeline entry.
+- Vehicle and other travel movement follows the same destination-only rule and is grouped under the Travel category.
+- Repeated work-bound trips are labelled “Travelling to Work” when the destination is recognised.
+
 ### Focused insight entries
 
 - Insights is now the second tab and Map is the third.

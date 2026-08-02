@@ -73,6 +73,50 @@ struct SavedPlaceLearningTests {
         #expect(places.first?.defaultActivity == "Collaborating")
     }
 
+    @Test("Editing a saved place updates matching location history")
+    func appliesSavedPlaceToHistory() throws {
+        let context = try makeContext()
+        let saved = SavedPlace(
+            name: "Home",
+            latitude: -27.4698,
+            longitude: 153.0251,
+            radius: 125,
+            category: "Home",
+            defaultActivity: "At home"
+        )
+        let current = Visit(
+            arrival: .now,
+            latitude: -27.4697,
+            longitude: 153.0252,
+            placeName: "Unknown place",
+            placeCategory: "Other",
+            inferredActivity: "Visiting",
+            source: "automatic"
+        )
+        let distant = Visit(
+            arrival: .now.addingTimeInterval(-3_600),
+            departure: .now.addingTimeInterval(-1_800),
+            latitude: -27.5,
+            longitude: 153.1,
+            placeName: "Another place",
+            placeCategory: "Other",
+            inferredActivity: "Visiting",
+            source: "automatic"
+        )
+        context.insert(saved)
+        context.insert(current)
+        context.insert(distant)
+
+        try SavedPlaceLearning.apply(saved, context: context)
+        try context.save()
+
+        #expect(current.placeName == "Home")
+        #expect(current.placeCategory == "Home")
+        #expect(current.activity == "At home")
+        #expect(current.needsCategorisation == false)
+        #expect(distant.placeName == "Another place")
+    }
+
     private func makeContext() throws -> ModelContext {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(

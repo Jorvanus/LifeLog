@@ -68,13 +68,34 @@ enum SavedPlaceLearning {
             change = .created
         }
 
-        visit.placeName = name
-        visit.placeCategory = category
-        visit.inferredActivity = activity
-        visit.recognitionConfidence = "learned"
-        visit.placeSuggestions = []
+        try apply(place, context: context)
         try context.save()
         return Result(place: place, change: change)
+    }
+
+    /// Applies a saved geofence to matching location visits so edits are reflected
+    /// immediately in both the timeline and historical insights.
+    static func apply(_ place: SavedPlace, context: ModelContext) throws {
+        place.name = TextSafety.clean(place.name, maximumLength: 100)
+        place.category = TextSafety.clean(place.category, maximumLength: 40)
+        place.defaultActivity = TextSafety.clean(place.defaultActivity, maximumLength: 80)
+        place.radius = min(max(place.radius, 25), 500)
+
+        let savedLocation = CLLocation(latitude: place.latitude, longitude: place.longitude)
+        let activity = place.defaultActivity.isEmpty
+            ? InferenceEngine.activity(placeName: place.name, category: place.category)
+            : place.defaultActivity
+        let visits = try context.fetch(FetchDescriptor<Visit>())
+        for visit in visits where ActivityLocationPolicy.isLocationVisit(visit) && isLocated(visit) {
+            let visitLocation = CLLocation(latitude: visit.latitude, longitude: visit.longitude)
+            guard savedLocation.distance(from: visitLocation) <= place.radius else { continue }
+            visit.placeName = place.name
+            visit.placeCategory = place.category
+            visit.inferredActivity = activity
+            visit.recognitionConfidence = "learned"
+            visit.placeSuggestions = []
+        }
+        try ActivityLocationPolicy.updateTravelDescriptions(context: context)
     }
 
     private static func isLocated(_ visit: Visit) -> Bool {

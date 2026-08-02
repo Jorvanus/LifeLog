@@ -63,6 +63,18 @@ final class Visit {
     var needsCategorisation: Bool {
         source == "automatic" && placeCategory == "Other" && userActivity?.isEmpty != false
     }
+    /// Presentation values keep a recorded-but-unknown place visibly logged without
+    /// exposing placeholder names such as “Identifying…” in Timeline and Insights.
+    var displayPlaceName: String {
+        needsCategorisation ? "Uncategorised location" : placeName
+    }
+    var suspectedActivity: String {
+        needsCategorisation ? inferredActivity : activity
+    }
+    var insightCategory: String {
+        if needsCategorisation { return "Uncategorised" }
+        return placeCategory == "Other" ? activity : placeCategory
+    }
     var placeSuggestions: [PlaceSuggestion] {
         get {
             guard let candidateData else { return [] }

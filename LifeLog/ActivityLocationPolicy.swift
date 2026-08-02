@@ -12,6 +12,105 @@ enum ActivityLocationPolicy {
         visit.source == "motion" || visit.source.hasPrefix("health-")
     }
 
+    static func isWalkingActivity(_ visit: Visit) -> Bool {
+        guard isDeviceActivity(visit) else { return false }
+        let text = "\(visit.activity) \(visit.placeCategory)".lowercased()
+        return text.contains("walk")
+    }
+
+    static func isTravelActivity(_ visit: Visit) -> Bool {
+        guard isDeviceActivity(visit) else { return false }
+        let text = "\(visit.activity) \(visit.placeCategory) \(visit.placeName)".lowercased()
+        return ["travel", "transit", "automotive", "vehicle", "driv", "car", "plane", "flight"]
+            .contains { text.contains($0) }
+    }
+
+    static func isMovementActivity(_ visit: Visit) -> Bool {
+        isWalkingActivity(visit) || isTravelActivity(visit)
+    }
+
+    /// Movement is useful as a travel segment only when it sits between two destinations.
+    /// This also hides stale records that were imported before Core Location delivered
+    /// the surrounding visits.
+    static func isBetweenDestinations(_ activity: Visit, locationVisits: [Visit], now: Date = .now) -> Bool {
+        guard isMovementActivity(activity) else { return true }
+        let activityEnd = activity.departure ?? now
+        guard activityEnd > activity.arrival else { return false }
+        let overlapsDestination = locationVisits.contains { location in
+            let locationEnd = location.departure ?? now
+            return location.arrival < activityEnd && locationEnd > activity.arrival
+        }
+        guard !overlapsDestination else { return false }
+        let hasPreviousDestination = locationVisits.contains { location in
+            let locationEnd = location.departure ?? now
+            return locationEnd <= activity.arrival
+        }
+        let hasNextDestination = locationVisits.contains { $0.arrival >= activityEnd }
+        return hasPreviousDestination && hasNextDestination
+    }
+
+    static func shouldShow(_ visit: Visit, alongside allVisits: [Visit], now: Date = .now) -> Bool {
+        guard isMovementActivity(visit) else { return true }
+        return isBetweenDestinations(
+            visit,
+            locationVisits: allVisits.filter(isLocationVisit),
+            now: now
+        )
+    }
+
+    /// Gives movement records a useful destination label once the next place is known.
+    /// Work and home are stable labels; other places need to recur across multiple days
+    /// before they are used as a learned destination name.
+    static func updateTravelDescriptions(context: ModelContext) throws {
+        let visits = try context.fetch(FetchDescriptor<Visit>())
+        let locations = visits.filter(isLocationVisit)
+        for activity in visits where isTravelActivity(activity) {
+            let end = activity.departure ?? .now
+            guard let destination = locations
+                .filter({ $0.arrival >= end })
+                .min(by: { $0.arrival < $1.arrival }),
+                  let label = destinationLabel(for: destination, locations: locations) else {
+                continue
+            }
+
+            let description = "Travelling to \(label)"
+            // Generated labels may evolve as the destination becomes known, but a custom
+            // activity entered by the user remains authoritative.
+            let isGeneratedActivity = activity.userActivity == nil ||
+                activity.userActivity == activity.inferredActivity ||
+                activity.userActivity == "Travelling" ||
+                activity.userActivity == "In transit"
+            activity.placeCategory = "Travel"
+            activity.inferredActivity = description
+            if isGeneratedActivity {
+                activity.userActivity = description
+            }
+        }
+    }
+
+    private static func destinationLabel(for destination: Visit, locations: [Visit]) -> String? {
+        let destinationText = "\(destination.placeName) \(destination.placeCategory)".lowercased()
+        if destination.placeCategory.localizedCaseInsensitiveContains("work") ||
+            InferenceEngine.activity(placeName: destination.placeName, category: destination.placeCategory) == "Working" {
+            return "Work"
+        }
+        if destination.placeCategory.localizedCaseInsensitiveContains("home") || destinationText.contains("home") {
+            return "Home"
+        }
+
+        let key = normalized(destination.placeName)
+        guard !key.isEmpty, key != "identifying…", key != "unknown place" else { return nil }
+        let matches = locations.filter { normalized($0.placeName) == key }
+        let distinctDays = Set(matches.map { Calendar.current.startOfDay(for: $0.arrival) }).count
+        // Avoid learning a destination name from a one-off or same-day GPS duplicate.
+        guard matches.count >= 3, distinctDays >= 2 else { return nil }
+        return TextSafety.clean(destination.placeName, maximumLength: 80)
+    }
+
+    private static func normalized(_ value: String) -> String {
+        value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current).lowercased()
+    }
+
     static func minimumRetainedDuration(for source: String) -> TimeInterval {
         switch source {
         case "health-sleep": 20 * 60

@@ -13,16 +13,23 @@ struct TrendsView: View {
     @State private var focusedSegment: InsightSegment?
 
     private var interval: DateInterval { window.interval(containing: anchorDate) }
-    private var previousInterval: DateInterval {
-        DateInterval(start: interval.start.addingTimeInterval(-interval.duration), end: interval.start)
+    /// Current periods end “now”; otherwise the rest of today, week, month, or year would
+    /// incorrectly dominate the donut as future unlogged time.
+    private var analysisInterval: DateInterval {
+        guard interval.contains(.now) else { return interval }
+        return DateInterval(start: interval.start, end: min(interval.end, .now))
     }
-    private var periodVisits: [Visit] { visits.filter { $0.overlaps(interval) } }
-    private var segments: [InsightSegment] { makeSegments(for: interval) }
-    private var slices: [TimeSlice] { makeSlices(for: interval) }
-    private var placeTotals: [PlaceTotal] { makePlaceTotals(for: interval) }
+    private var previousInterval: DateInterval {
+        let start = interval.start.addingTimeInterval(-interval.duration)
+        return DateInterval(start: start, end: min(interval.start, start.addingTimeInterval(analysisInterval.duration)))
+    }
+    private var periodVisits: [Visit] { visits.filter { $0.overlaps(analysisInterval) } }
+    private var segments: [InsightSegment] { makeSegments(for: analysisInterval) }
+    private var slices: [TimeSlice] { makeSlices(for: analysisInterval) }
+    private var placeTotals: [PlaceTotal] { makePlaceTotals(for: analysisInterval) }
     private var comparisons: [TrendComparison] { makeComparisons() }
     private var loggedHours: Double { segments.filter { !$0.isUnlogged }.reduce(0) { $0 + $1.hours } }
-    private var totalHours: Double { interval.duration / 3600 }
+    private var totalHours: Double { analysisInterval.duration / 3600 }
 
     var body: some View {
         NavigationStack {
@@ -92,7 +99,9 @@ struct TrendsView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("How you spent your time").font(.title2.bold())
-                    Text("All \(formatHours(totalHours)) in this \(window.title.lowercased())")
+                    Text(isCurrentWindow
+                         ? "\(formatHours(totalHours)) elapsed in this \(window.title.lowercased())"
+                         : "All \(formatHours(totalHours)) in this \(window.title.lowercased())")
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -280,7 +289,10 @@ struct TrendsView: View {
     }
 
     private func makeSegments(for range: DateInterval) -> [InsightSegment] {
-        let orderedVisits = visits.filter { $0.overlaps(range) }.sorted { $0.arrival < $1.arrival }
+        let orderedVisits = visits
+            .filter { $0.overlaps(range) }
+            .filter { ActivityLocationPolicy.shouldShow($0, alongside: visits) }
+            .sorted { $0.arrival < $1.arrival }
         var result: [InsightSegment] = []
         var cursor = range.start
         var gapIndex = 0
@@ -309,16 +321,21 @@ struct TrendsView: View {
     }
 
     private func makePlaceTotals(for range: DateInterval) -> [PlaceTotal] {
-        Dictionary(grouping: visits.filter { $0.overlaps(range) && !$0.source.hasPrefix("health") && $0.source != "motion" }, by: \.placeName).compactMap { name, items in
+        Dictionary(
+            grouping: visits.filter {
+                $0.overlaps(range) && ActivityLocationPolicy.isLocationVisit($0)
+            },
+            by: \.displayPlaceName
+        ).compactMap { name, items in
             guard let first = items.first else { return nil }
-            return PlaceTotal(name: name, category: first.placeCategory, activity: first.activity,
+            return PlaceTotal(name: name, category: first.insightCategory, activity: first.suspectedActivity,
                               latitude: first.latitude, longitude: first.longitude,
                               hours: items.reduce(0) { $0 + $1.duration(in: range) } / 3600)
         }.sorted { $0.hours > $1.hours }
     }
 
     private func makeComparisons() -> [TrendComparison] {
-        let current = Dictionary(uniqueKeysWithValues: makeSlices(for: interval).filter { !$0.isUnlogged }.map { ($0.name, $0.hours) })
+        let current = Dictionary(uniqueKeysWithValues: makeSlices(for: analysisInterval).filter { !$0.isUnlogged }.map { ($0.name, $0.hours) })
         let previous = Dictionary(uniqueKeysWithValues: makeSlices(for: previousInterval).filter { !$0.isUnlogged }.map { ($0.name, $0.hours) })
         return Set(current.keys).union(previous.keys).map { name in
             TrendComparison(name: name, hours: current[name, default: 0], delta: current[name, default: 0] - previous[name, default: 0])
@@ -365,7 +382,7 @@ struct TrendsView: View {
     }
 
     private func sliceName(for visit: Visit) -> String {
-        visit.placeCategory == "Other" ? visit.activity : visit.placeCategory
+        visit.insightCategory
     }
 
     private func move(_ amount: Int) {
@@ -450,11 +467,11 @@ private struct InsightSegment: Identifiable {
     let isLive: Bool
 
     static func visit(_ visit: Visit, visibleFrom: Date, visibleTo: Date) -> InsightSegment {
-        let category = visit.placeCategory == "Other" ? visit.activity : visit.placeCategory
+        let category = visit.insightCategory
         let end = visit.departure ?? .now
         return InsightSegment(
             id: .visit(ObjectIdentifier(visit)), visit: visit, category: category,
-            activity: visit.activity, placeName: visit.placeName,
+            activity: visit.suspectedActivity, placeName: visit.displayPlaceName,
             start: visit.arrival, end: end,
             hours: visibleTo.timeIntervalSince(visibleFrom) / 3600,
             color: insightColor(for: category), symbol: insightSymbol(for: category),
@@ -610,6 +627,7 @@ private func formatHours(_ hours: Double) -> String {
 
 private func insightColor(for value: String) -> Color {
     let text = value.lowercased()
+    if text.contains("uncategor") { return .orange }
     if text.contains("home") { return .cyan }
     if text.contains("work") { return Color(red: 0.22, green: 0.40, blue: 0.52) }
     if text.contains("food") || text.contains("eat") || text.contains("beer") { return .orange }
@@ -626,6 +644,7 @@ private func insightColor(for value: String) -> Color {
 
 private func insightSymbol(for value: String) -> String {
     let text = value.lowercased()
+    if text.contains("uncategor") { return "flag.fill" }
     if text.contains("home") { return "house.fill" }
     if text.contains("work") { return "building.2.fill" }
     if text.contains("food") || text.contains("eat") { return "fork.knife" }

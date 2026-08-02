@@ -15,6 +15,9 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     private var serviceSessionRequirement: CLServiceSession.AuthorizationRequirement?
     private var diagnosticTask: Task<Void, Never>?
     private var identifyingVisits: Set<ObjectIdentifier> = []
+    /// Limits immediate-place creation to samples explicitly requested by LifeLog.
+    /// Significant-change callbacks can arrive while travelling and must not become visits.
+    private var shouldSeedCurrentLocation = false
     var authorization: CLAuthorizationStatus = .notDetermined
     var isBackgroundLoggingEnabled = false
     var lastError: String?
@@ -35,6 +38,9 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         if isBackgroundLoggingEnabled, authorization != .notDetermined {
             startBackgroundWorkflow()
         }
+        if authorization == .authorizedAlways || authorization == .authorizedWhenInUse {
+            refreshCurrentLocation()
+        }
     }
 
     func requestPermission() {
@@ -45,6 +51,16 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         isBackgroundLoggingEnabled = true
         UserDefaults.standard.set(true, forKey: PreferenceKey.backgroundLoggingEnabled)
         startBackgroundWorkflow()
+    }
+
+    func refreshCurrentLocation() {
+        guard authorization == .authorizedAlways || authorization == .authorizedWhenInUse else {
+            if authorization == .notDetermined { requestPermission() }
+            return
+        }
+        guard !shouldSeedCurrentLocation else { return }
+        shouldSeedCurrentLocation = true
+        manager.requestLocation()
     }
 
     func disableBackgroundLogging() {
@@ -66,6 +82,9 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         manager.showsBackgroundLocationIndicator = true
         manager.startMonitoringVisits()
         manager.startMonitoringSignificantLocationChanges()
+        if authorization == .authorizedAlways || authorization == .authorizedWhenInUse {
+            refreshCurrentLocation()
+        }
     }
 
     private func holdServiceSession(requiring requirement: CLServiceSession.AuthorizationRequirement) {
@@ -107,6 +126,9 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         if authorization == .authorizedAlways, isBackgroundLoggingEnabled {
             startBackgroundWorkflow()
         }
+        if authorization == .authorizedAlways || authorization == .authorizedWhenInUse {
+            refreshCurrentLocation()
+        }
     }
 
     func locationManager(_ manager: CLLocationManager, didVisit visit: CLVisit) {
@@ -123,22 +145,33 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
               location.horizontalAccuracy >= 0,
               location.horizontalAccuracy <= 1_000,
               abs(location.timestamp.timeIntervalSinceNow) <= 5 * 60 else { return }
+        if shouldSeedCurrentLocation {
+            shouldSeedCurrentLocation = false
+            seedCurrentVisit(from: location)
+        }
         identifyRecentUnknown(near: location)
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        shouldSeedCurrentLocation = false
         lastError = error.localizedDescription
     }
 
     private func createVisit(at coordinate: CLLocationCoordinate2D, arrival: Date) {
         guard let context, CLLocationCoordinate2DIsValid(coordinate) else { return }
         let safeArrival = min(arrival, .now)
-        var recentDescriptor = FetchDescriptor<Visit>(sortBy: [SortDescriptor(\.arrival, order: .reverse)])
-        recentDescriptor.fetchLimit = 1
-        if let latest = try? context.fetch(recentDescriptor).first, latest.departure == nil {
+        if let latest = latestLocationVisit(in: context), latest.departure == nil {
             let existingLocation = CLLocation(latitude: latest.latitude, longitude: latest.longitude)
             let incomingLocation = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
-            if existingLocation.distance(from: incomingLocation) <= 150 { return }
+            if existingLocation.distance(from: incomingLocation) <= 150 {
+                // A later CLVisit callback often has a more accurate, earlier arrival than
+                // the one-shot sample used to make the current location visible immediately.
+                latest.arrival = min(latest.arrival, safeArrival)
+                reconcileActivity(with: latest, context: context)
+                try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
+                save(context)
+                return
+            }
             latest.departure = max(latest.arrival, safeArrival)
         }
 
@@ -152,19 +185,42 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                          recognitionConfidence: saved == nil ? nil : "learned")
         context.insert(item)
         reconcileActivity(with: item, context: context)
+        try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
         save(context)
         if saved == nil { identifyPlace(item) }
     }
 
     private func closeLatestVisit(at departure: Date) {
         guard let context else { return }
-        var descriptor = FetchDescriptor<Visit>(sortBy: [SortDescriptor(\.arrival, order: .reverse)])
-        descriptor.fetchLimit = 1
-        if let latest = try? context.fetch(descriptor).first, latest.departure == nil {
+        if let latest = latestLocationVisit(in: context), latest.departure == nil {
             latest.departure = max(latest.arrival, min(departure, .now))
             reconcileActivity(with: latest, context: context)
+            try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
             save(context)
         }
+    }
+
+    private func seedCurrentVisit(from location: CLLocation) {
+        // A fast sample represents movement, not a destination. Unknown speed (-1) is
+        // accepted because stationary one-shot fixes commonly omit speed on launch.
+        guard location.speed < 0 || location.speed <= 2.5 else { return }
+        guard let context else { return }
+        if let current = latestLocationVisit(in: context), current.departure == nil {
+            let recorded = CLLocation(latitude: current.latitude, longitude: current.longitude)
+            // Scale the duplicate threshold with GPS uncertainty so indoor drift does not
+            // split one stay into several uncategorised locations.
+            let tolerance = max(150, location.horizontalAccuracy * 2)
+            if recorded.distance(from: location) <= tolerance {
+                if current.needsCategorisation { identifyPlace(current) }
+                return
+            }
+        }
+        createVisit(at: location.coordinate, arrival: location.timestamp)
+    }
+
+    private func latestLocationVisit(in context: ModelContext) -> Visit? {
+        let descriptor = FetchDescriptor<Visit>(sortBy: [SortDescriptor(\.arrival, order: .reverse)])
+        return try? context.fetch(descriptor).first(where: ActivityLocationPolicy.isLocationVisit)
     }
 
     private func nearestSavedPlace(to coordinate: CLLocationCoordinate2D, context: ModelContext) -> SavedPlace? {
@@ -186,6 +242,9 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             defer { self.identifyingVisits.remove(identity) }
             do {
                 let result = try await PlaceLookupService.nearbyPlaces(at: coordinate, arrival: visit.arrival)
+                // The user may label Home or Work while Maps is still searching. Never let
+                // a late public-place result overwrite that explicit correction.
+                guard visit.needsCategorisation else { return }
                 visit.placeSuggestions = result.suggestions
                 visit.recognitionConfidence = result.confidence.rawValue
 
@@ -201,6 +260,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                     reverseGeocode(visit)
                     return
                 }
+                try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
                 save(context)
             } catch {
                 reverseGeocode(visit)
@@ -226,6 +286,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                   let request = MKReverseGeocodingRequest(location: location) else { return }
             do {
                 let mapItems = try await request.mapItems
+                guard visit.needsCategorisation else { return }
                 guard let item = mapItems.first else {
                     markUnknown(visit, context: context)
                     return
@@ -236,6 +297,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 visit.recognitionConfidence = "low"
                 visit.inferredActivity = InferenceEngine.activity(placeName: visit.placeName, category: visit.placeCategory,
                                                                    arrival: visit.arrival)
+                try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
                 save(context)
             } catch {
                 markUnknown(visit, context: context)
@@ -244,10 +306,12 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     }
 
     private func markUnknown(_ visit: Visit, context: ModelContext) {
+        guard visit.needsCategorisation else { return }
         visit.placeName = "Unknown place"
         visit.placeCategory = "Other"
         visit.recognitionConfidence = "low"
         visit.inferredActivity = "Visiting"
+        try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
         save(context)
     }
 
