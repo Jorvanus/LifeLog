@@ -2,6 +2,10 @@
 
 ## 2026-08-02
 
+### Personal-device signing
+
+- Data protection now matches the Personal Team provisioning profile so LifeLog can install on the registered iPhone.
+
 ### Corrected-visit geofence learning
 
 - Correcting a located visit now creates or updates a reusable `SavedPlace` geofence.

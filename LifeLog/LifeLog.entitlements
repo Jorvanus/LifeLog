@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>com.apple.developer.default-data-protection</key>
-	<string>NSFileProtectionCompleteUntilFirstUserAuthentication</string>
+	<string>NSFileProtectionComplete</string>
 	<key>com.apple.developer.healthkit</key>
 	<true/>
 </dict>
