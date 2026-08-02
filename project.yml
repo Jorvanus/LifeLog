@@ -1,0 +1,30 @@
+name: LifeLog
+options:
+  bundleIdPrefix: com.aaronbaxter
+  deploymentTarget:
+    iOS: "27.0"
+settings:
+  base:
+    SWIFT_VERSION: 6.0
+    SWIFT_STRICT_CONCURRENCY: complete
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    DEAD_CODE_STRIPPING: YES
+targets:
+  LifeLog:
+    type: application
+    platform: iOS
+    sources: [LifeLog]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aaronbaxter.LifeLog
+        INFOPLIST_FILE: LifeLog/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
+        IPHONEOS_DEPLOYMENT_TARGET: "27.0"
+        SWIFT_EMIT_LOC_STRINGS: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
+    entitlements:
+      path: LifeLog/LifeLog.entitlements
+      properties:
+        com.apple.developer.default-data-protection: NSFileProtectionCompleteUntilFirstUserAuthentication
+        com.apple.developer.healthkit: true

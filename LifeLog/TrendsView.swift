@@ -1,0 +1,417 @@
+import SwiftUI
+import SwiftData
+import Charts
+import MapKit
+
+struct TrendsView: View {
+    @Query(sort: \Visit.arrival) private var visits: [Visit]
+    @State private var window: InsightWindow = .day
+    @State private var anchorDate = Date.now
+    @State private var choosingDate = false
+
+    private var interval: DateInterval { window.interval(containing: anchorDate) }
+    private var previousInterval: DateInterval {
+        DateInterval(start: interval.start.addingTimeInterval(-interval.duration), end: interval.start)
+    }
+    private var periodVisits: [Visit] { visits.filter { $0.overlaps(interval) } }
+    private var slices: [TimeSlice] { makeSlices(for: interval) }
+    private var placeTotals: [PlaceTotal] { makePlaceTotals(for: interval) }
+    private var comparisons: [TrendComparison] { makeComparisons() }
+    private var loggedHours: Double { slices.filter { $0.name != "Unlogged" }.reduce(0) { $0 + $1.hours } }
+    private var totalHours: Double { interval.duration / 3600 }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.lifeBackground.ignoresSafeArea()
+                ScrollView {
+                    LazyVStack(spacing: 22) {
+                        controls
+                        donutSection
+                        trendsSection
+                        placesSection
+                        topPlacesSection
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 28)
+                }
+            }
+            .navigationTitle("Insights")
+            .navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $choosingDate) {
+                NavigationStack {
+                    DatePicker("Choose date", selection: $anchorDate, displayedComponents: .date)
+                        .datePickerStyle(.graphical).padding()
+                        .navigationTitle("Choose Date")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { choosingDate = false } } }
+                }.presentationDetents([.medium])
+            }
+        }
+    }
+
+    private var controls: some View {
+        VStack(spacing: 16) {
+            HStack {
+                Button { move(-1) } label: { Image(systemName: "chevron.left").font(.title3.bold()) }
+                Spacer()
+                Button { choosingDate = true } label: {
+                    VStack(spacing: 2) {
+                        Text(periodTitle).font(.title3.bold()).foregroundStyle(.primary)
+                        Text(periodSubtitle).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                Button { move(1) } label: { Image(systemName: "chevron.right").font(.title3.bold()) }
+                    .disabled(isCurrentWindow)
+            }
+            Picker("Time window", selection: $window) {
+                ForEach(InsightWindow.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+        }
+        .padding(.top, 8)
+    }
+
+    private var donutSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("How you spent your time").font(.title2.bold())
+                    Text("All \(formatHours(totalHours)) in this \(window.title.lowercased())")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+
+            ZStack {
+                Chart(slices) { slice in
+                    SectorMark(
+                        angle: .value("Hours", slice.hours),
+                        innerRadius: .ratio(0.48),
+                        angularInset: 2
+                    )
+                    .cornerRadius(6)
+                    .foregroundStyle(slice.color)
+                    .annotation(position: .overlay) {
+                        if slice.hours / max(totalHours, 1) > 0.08 {
+                            VStack(spacing: 2) {
+                                Image(systemName: slice.symbol)
+                                Text(formatHours(slice.hours)).font(.caption.bold())
+                            }.foregroundStyle(.white)
+                        }
+                    }
+                }
+                .chartLegend(.hidden)
+                VStack(spacing: 2) {
+                    Text(formatHours(loggedHours)).font(.title.bold()).monospacedDigit()
+                    Text("logged").font(.subheadline).foregroundStyle(.secondary)
+                    Text("of \(formatHours(totalHours))").font(.caption).foregroundStyle(.tertiary)
+                }
+            }
+            .frame(height: 330)
+
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 12) {
+                ForEach(slices.filter { $0.hours > 0 }) { slice in
+                    HStack(spacing: 9) {
+                        Circle().fill(slice.color).frame(width: 10, height: 10)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(slice.name).font(.subheadline).lineLimit(1)
+                            Text(formatHours(slice.hours)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(18)
+        .insightCard()
+    }
+
+    private var trendsSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Trends").font(.title2.bold())
+            if comparisons.isEmpty {
+                InsightEmptyRow(icon: "chart.line.uptrend.xyaxis", title: "Not enough history yet",
+                                detail: "Trends appear after LifeLog has visits in two comparable periods.")
+            } else {
+                ForEach(comparisons.prefix(4)) { comparison in
+                    HStack(spacing: 14) {
+                        Image(systemName: comparison.delta >= 0 ? "arrow.up.right" : "arrow.down.right")
+                            .font(.headline).foregroundStyle(comparison.delta >= 0 ? .orange : .blue)
+                            .frame(width: 42, height: 42)
+                            .background((comparison.delta >= 0 ? Color.orange : Color.blue).opacity(0.1), in: Circle())
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(comparison.message(window: window)).font(.headline)
+                            Text("Compared with the previous \(window.title.lowercased())")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                }
+            }
+        }
+        .padding(18)
+        .insightCard()
+    }
+
+    private var placesSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Places").font(.title2.bold())
+            Text(placeSummary).font(.headline)
+            if mappablePlaces.isEmpty {
+                InsightEmptyRow(icon: "map", title: "No mapped visits", detail: "Places recorded with a location will appear here.")
+            } else {
+                Map(position: .constant(.region(mapRegion))) {
+                    ForEach(mappablePlaces) { place in
+                        Annotation(place.name, coordinate: place.coordinate) {
+                            VStack(spacing: 2) {
+                                Image(systemName: "mappin.circle.fill").font(.title).foregroundStyle(.blue)
+                                Text(place.name).font(.caption2.bold()).padding(.horizontal, 5).padding(.vertical, 2)
+                                    .background(.regularMaterial, in: Capsule()).lineLimit(1)
+                            }
+                        }
+                    }
+                }
+                .mapStyle(.standard(pointsOfInterest: .excludingAll))
+                .frame(height: 230)
+                .clipShape(RoundedRectangle(cornerRadius: 18))
+            }
+        }
+        .padding(18)
+        .insightCard()
+    }
+
+    private var topPlacesSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Top places by time").font(.title2.bold())
+            if placeTotals.isEmpty {
+                InsightEmptyRow(icon: "mappin.slash", title: "No places in this period", detail: "Choose another date or time window.")
+            } else {
+                ForEach(Array(placeTotals.prefix(8).enumerated()), id: \.element.id) { index, place in
+                    HStack(spacing: 13) {
+                        Text("\(index + 1)").font(.headline.monospacedDigit()).foregroundStyle(.secondary).frame(width: 22)
+                        ActivityIcon(activity: place.activity, category: place.category,
+                                     color: activityColor(place.activity)).scaleEffect(0.72).frame(width: 42, height: 42)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(place.name).font(.headline).lineLimit(1)
+                            Text(place.category).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text(formatHours(place.hours)).font(.subheadline.bold().monospacedDigit())
+                    }
+                    if index < min(placeTotals.count, 8) - 1 { Divider().padding(.leading, 76) }
+                }
+            }
+        }
+        .padding(18)
+        .insightCard()
+    }
+
+    private var mappablePlaces: [PlaceTotal] { placeTotals.filter { $0.latitude != 0 || $0.longitude != 0 } }
+    private var mapRegion: MKCoordinateRegion {
+        let places = mappablePlaces
+        let latitudes = places.map(\.latitude), longitudes = places.map(\.longitude)
+        guard let minLat = latitudes.min(), let maxLat = latitudes.max(),
+              let minLon = longitudes.min(), let maxLon = longitudes.max() else {
+            return MKCoordinateRegion(center: .init(latitude: -27.47, longitude: 153.03), span: .init(latitudeDelta: 0.2, longitudeDelta: 0.2))
+        }
+        return MKCoordinateRegion(
+            center: .init(latitude: (minLat + maxLat) / 2, longitude: (minLon + maxLon) / 2),
+            span: .init(latitudeDelta: max(0.01, (maxLat - minLat) * 1.5),
+                        longitudeDelta: max(0.01, (maxLon - minLon) * 1.5))
+        )
+    }
+
+    private var placeSummary: String {
+        let count = placeTotals.count
+        if count == 0 { return "No places recorded for this \(window.title.lowercased())." }
+        return "This \(window.title.lowercased()), you visited \(count) \(count == 1 ? "place" : "places") and logged \(formatHours(loggedHours))."
+    }
+
+    private func makeSlices(for range: DateInterval) -> [TimeSlice] {
+        let grouped = Dictionary(grouping: visits.filter { $0.overlaps(range) }) { visit in
+            visit.placeCategory == "Other" ? visit.activity : visit.placeCategory
+        }
+        var values = grouped.map { name, items in
+            TimeSlice(name: name, hours: items.reduce(0) { $0 + $1.duration(in: range) } / 3600,
+                      color: insightColor(for: name), symbol: insightSymbol(for: name))
+        }.filter { $0.hours > 0.01 }.sorted { $0.hours > $1.hours }
+        let recorded = values.reduce(0) { $0 + $1.hours }
+        let unlogged = max(0, range.duration / 3600 - recorded)
+        if unlogged > 0.01 {
+            values.append(TimeSlice(name: "Unlogged", hours: unlogged, color: .gray.opacity(0.35), symbol: "moon.zzz.fill"))
+        }
+        return values
+    }
+
+    private func makePlaceTotals(for range: DateInterval) -> [PlaceTotal] {
+        Dictionary(grouping: visits.filter { $0.overlaps(range) && !$0.source.hasPrefix("health") && $0.source != "motion" }, by: \.placeName).compactMap { name, items in
+            guard let first = items.first else { return nil }
+            return PlaceTotal(name: name, category: first.placeCategory, activity: first.activity,
+                              latitude: first.latitude, longitude: first.longitude,
+                              hours: items.reduce(0) { $0 + $1.duration(in: range) } / 3600)
+        }.sorted { $0.hours > $1.hours }
+    }
+
+    private func makeComparisons() -> [TrendComparison] {
+        let current = Dictionary(uniqueKeysWithValues: makeSlices(for: interval).filter { $0.name != "Unlogged" }.map { ($0.name, $0.hours) })
+        let previous = Dictionary(uniqueKeysWithValues: makeSlices(for: previousInterval).filter { $0.name != "Unlogged" }.map { ($0.name, $0.hours) })
+        return Set(current.keys).union(previous.keys).map { name in
+            TrendComparison(name: name, hours: current[name, default: 0], delta: current[name, default: 0] - previous[name, default: 0])
+        }.filter { abs($0.delta) >= 0.25 }.sorted { abs($0.delta) > abs($1.delta) }
+    }
+
+    private func move(_ amount: Int) {
+        anchorDate = window.move(anchorDate, by: amount)
+    }
+
+    private var isCurrentWindow: Bool { window.interval(containing: .now).contains(anchorDate) }
+    private var periodTitle: String {
+        if window.interval(containing: .now).contains(anchorDate) { return window == .day ? "Today" : "This \(window.title)" }
+        return window.title(for: interval)
+    }
+    private var periodSubtitle: String { window.subtitle(for: interval) }
+}
+
+enum InsightWindow: String, CaseIterable, Identifiable {
+    case day, week, month, year
+    var id: Self { self }
+    var title: String { rawValue.capitalized }
+
+    func interval(containing date: Date) -> DateInterval {
+        let calendar = Calendar.current
+        switch self {
+        case .day:
+            let start = calendar.startOfDay(for: date)
+            return DateInterval(start: start, end: calendar.date(byAdding: .day, value: 1, to: start)!)
+        case .week: return calendar.dateInterval(of: .weekOfYear, for: date)!
+        case .month: return calendar.dateInterval(of: .month, for: date)!
+        case .year: return calendar.dateInterval(of: .year, for: date)!
+        }
+    }
+
+    func move(_ date: Date, by value: Int) -> Date {
+        let component: Calendar.Component = switch self { case .day: .day; case .week: .weekOfYear; case .month: .month; case .year: .year }
+        return Calendar.current.date(byAdding: component, value: value, to: date) ?? date
+    }
+
+    func title(for interval: DateInterval) -> String {
+        switch self {
+        case .day: interval.start.formatted(.dateTime.day().month(.abbreviated))
+        case .week: "Week of \(interval.start.formatted(.dateTime.day().month(.abbreviated)))"
+        case .month: interval.start.formatted(.dateTime.month(.wide).year())
+        case .year: interval.start.formatted(.dateTime.year())
+        }
+    }
+
+    func subtitle(for interval: DateInterval) -> String {
+        switch self {
+        case .day: interval.start.formatted(.dateTime.weekday(.wide).year())
+        case .week: "\(interval.start.formatted(.dateTime.day().month(.abbreviated))) – \(interval.end.addingTimeInterval(-1).formatted(.dateTime.day().month(.abbreviated).year()))"
+        case .month: "\(Int(interval.duration / 86400)) days"
+        case .year: "January – December"
+        }
+    }
+}
+
+private struct TimeSlice: Identifiable {
+    var id: String { name }
+    let name: String
+    let hours: Double
+    let color: Color
+    let symbol: String
+}
+
+private struct PlaceTotal: Identifiable {
+    var id: String { name }
+    let name: String
+    let category: String
+    let activity: String
+    let latitude: Double
+    let longitude: Double
+    let hours: Double
+    var coordinate: CLLocationCoordinate2D { .init(latitude: latitude, longitude: longitude) }
+}
+
+private struct TrendComparison: Identifiable {
+    var id: String { name }
+    let name: String
+    let hours: Double
+    let delta: Double
+    func message(window: InsightWindow) -> String {
+        let direction = delta >= 0 ? "more" : "less"
+        return "You spent \(formatHours(abs(delta))) \(direction) on \(name.lowercased()) this \(window.title.lowercased())."
+    }
+}
+
+private struct InsightEmptyRow: View {
+    let icon: String
+    let title: String
+    let detail: String
+    var body: some View {
+        HStack(spacing: 13) {
+            Image(systemName: icon).font(.title2).foregroundStyle(.secondary).frame(width: 42, height: 42)
+                .background(Color.secondary.opacity(0.08), in: Circle())
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.headline)
+                Text(detail).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+private extension Visit {
+    func overlaps(_ range: DateInterval) -> Bool {
+        arrival < range.end && (departure ?? .now) > range.start
+    }
+    func duration(in range: DateInterval) -> TimeInterval {
+        max(0, min(departure ?? .now, range.end).timeIntervalSince(max(arrival, range.start)))
+    }
+}
+
+private extension View {
+    func insightCard() -> some View {
+        background(Color.lifeCard, in: RoundedRectangle(cornerRadius: 22))
+            .shadow(color: .black.opacity(0.04), radius: 12, y: 5)
+    }
+}
+
+private func formatHours(_ hours: Double) -> String {
+    let minutes = max(0, Int((hours * 60).rounded()))
+    if minutes < 60 { return "\(minutes)m" }
+    if minutes % 60 == 0 { return "\(minutes / 60)h" }
+    return "\(minutes / 60)h \(minutes % 60)m"
+}
+
+private func insightColor(for value: String) -> Color {
+    let text = value.lowercased()
+    if text.contains("home") { return .cyan }
+    if text.contains("work") { return Color(red: 0.22, green: 0.40, blue: 0.52) }
+    if text.contains("food") || text.contains("eat") || text.contains("beer") { return .orange }
+    if text.contains("fitness") || text.contains("exercise") { return .pink }
+    if text.contains("walk") || text.contains("run") { return .teal }
+    if text.contains("cycl") { return .blue }
+    if text.contains("sleep") { return Color(red: 0.22, green: 0.40, blue: 0.52) }
+    if text.contains("shopping") { return .purple }
+    if text.contains("travel") { return .blue }
+    if text.contains("health") { return .red }
+    if text.contains("social") { return .indigo }
+    return .teal
+}
+
+private func insightSymbol(for value: String) -> String {
+    let text = value.lowercased()
+    if text.contains("home") { return "house.fill" }
+    if text.contains("work") { return "building.2.fill" }
+    if text.contains("food") || text.contains("eat") { return "fork.knife" }
+    if text.contains("beer") { return "mug.fill" }
+    if text.contains("fitness") || text.contains("exercise") { return "figure.run" }
+    if text.contains("walk") { return "figure.walk" }
+    if text.contains("run") { return "figure.run" }
+    if text.contains("cycl") { return "bicycle" }
+    if text.contains("sleep") { return "bed.double.fill" }
+    if text.contains("shopping") { return "bag.fill" }
+    if text.contains("travel") { return "car.fill" }
+    if text.contains("health") { return "cross.case.fill" }
+    return "mappin.circle.fill"
+}
