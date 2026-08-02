@@ -132,8 +132,9 @@ final class ActivityDataService {
                                     startedAt: startedAt, itemCount: samples.count)
             return total
         } catch {
-            Diagnostics.record(context, subsystem: "HealthKit",
-                               message: "A step-count query failed; the Insights center value was unavailable.")
+            healthStatus = "Connect Apple Health to show steps"
+            Diagnostics.record(error, context: context, subsystem: "HealthKit",
+                               operation: "step-count query", severity: "info")
             return nil
         }
     }

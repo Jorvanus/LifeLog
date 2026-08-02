@@ -39,4 +39,14 @@ enum Diagnostics {
                message: "Slow \(operation): \(Int((elapsed * 1000).rounded())) ms\(countText)",
                severity: "info")
     }
+
+    /// Error diagnostics retain only an NSError domain/code pair. This distinguishes
+    /// protected-store and permission failures without persisting user data.
+    static func record(_ error: Error, context: ModelContext?, subsystem: String,
+                       operation: String, severity: String = "warning") {
+        let nsError = error as NSError
+        record(context, subsystem: subsystem,
+               message: "(operation) failed (\(nsError.domain) code \(nsError.code)).",
+               severity: severity)
+    }
 }

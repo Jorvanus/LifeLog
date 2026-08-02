@@ -6,6 +6,12 @@
 
 - Made the uncategorised-location map section use explicit SwiftUI header/content builders so it compiles cleanly under Swift 6.
 
+### Insights and HealthKit error recovery
+
+- Insights now falls back to an in-memory period filter if the date-scoped SwiftData predicate cannot be translated, instead of blanking the screen.
+- Step-query diagnostics include privacy-safe error domain/code context and the Settings Health status now explains when Apple Health access is needed.
+- Renamed the Health permission action to make clear that it covers steps as well as sleep and workouts.
+
 ### Uncategorised location map editing
 
 - Added a recorded-location map to the uncategorised visit editor.

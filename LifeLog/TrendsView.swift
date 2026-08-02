@@ -288,19 +288,38 @@ struct TrendsView: View {
             var fetched = try context.fetch(descriptor)
             // Preserve a current multi-day location whose arrival predates the comparison
             // range without widening the main archive query.
-            let activeDescriptor = FetchDescriptor<Visit>(
-                predicate: #Predicate { $0.departure == nil },
-                sortBy: [SortDescriptor(\.arrival)]
-            )
-            let existingIDs = Set(fetched.map { ObjectIdentifier($0) })
-            fetched.append(contentsOf: try context.fetch(activeDescriptor).filter {
-                !existingIDs.contains(ObjectIdentifier($0))
-            })
+            do {
+                let activeDescriptor = FetchDescriptor<Visit>(
+                    predicate: #Predicate { $0.departure == nil },
+                    sortBy: [SortDescriptor(\.arrival)]
+                )
+                let existingIDs = Set(fetched.map { ObjectIdentifier($0) })
+                fetched.append(contentsOf: try context.fetch(activeDescriptor).filter {
+                    !existingIDs.contains(ObjectIdentifier($0))
+                })
+            } catch {
+                // The period data is still valid if the optional-date supplement is
+                // unavailable on a particular protected-store/runtime combination.
+                Diagnostics.record(error, context: context, subsystem: "Insights",
+                                   operation: "active visit supplement", severity: "info")
+            }
             visits = fetched.sorted { $0.arrival < $1.arrival }
         } catch {
-            visits = []
-            Diagnostics.record(context, subsystem: "Insights",
-                               message: "A date-scoped Insights fetch failed; no location or activity data was displayed.")
+            // Keep Insights usable if a protected-store/runtime predicate cannot be
+            // translated on a particular iOS build. This slower fallback is only used
+            // after the narrow fetch fails and is itself filtered in memory.
+            do {
+                let fallback = try context.fetch(FetchDescriptor<Visit>(sortBy: [SortDescriptor(\.arrival)]))
+                visits = fallback.filter {
+                    ($0.arrival >= fetchStart && $0.arrival < fetchEnd) || $0.departure == nil
+                }
+                Diagnostics.record(error, context: context, subsystem: "Insights",
+                                   operation: "date-scoped fetch", severity: "warning")
+            } catch {
+                visits = []
+                Diagnostics.record(error, context: context, subsystem: "Insights",
+                                   operation: "Insights fallback fetch")
+            }
         }
         Diagnostics.performance(context, subsystem: "Insights", operation: "period fetch",
                                 startedAt: fetchStartedAt, itemCount: visits.count)

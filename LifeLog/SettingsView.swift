@@ -60,7 +60,7 @@ struct SettingsView: View {
                 }
                 Section {
                     LabeledContent("Apple Health", value: activityData.healthStatus)
-                    Button("Connect Sleep & Workouts") { activityData.requestHealthAccess() }
+                    Button("Connect Apple Health") { activityData.requestHealthAccess() }
                     LabeledContent("Motion Activity", value: activityData.motionStatus)
                     Button("Connect Walking & Travel") { activityData.requestMotionAccess() }
                     Button("Import Recent Activity") { activityData.importAll() }
