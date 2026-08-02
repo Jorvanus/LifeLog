@@ -16,6 +16,9 @@ struct TrendsView: View {
     @State private var exportFile: TrendExportFile?
 
     private var interval: DateInterval { window.interval(containing: anchorDate) }
+    private var sleepRefreshKey: String {
+        "\(window.rawValue)-\(interval.start.timeIntervalSinceReferenceDate)-\(interval.end.timeIntervalSinceReferenceDate)"
+    }
     var body: some View {
         NavigationStack {
             ZStack {
@@ -76,6 +79,13 @@ struct TrendsView: View {
                     now = .now
                     reloadInsights()
                 }
+            }
+            .task(id: sleepRefreshKey) {
+                let queryEnd = interval.contains(now) ? now : interval.end
+                let queryInterval = DateInterval(start: interval.start, end: queryEnd)
+                _ = await activityData.refreshSleep(for: queryInterval, context: context)
+                guard !Task.isCancelled else { return }
+                reloadInsights()
             }
             .onChange(of: window) { _, _ in reloadInsights() }
             .onChange(of: anchorDate) { _, _ in reloadInsights() }

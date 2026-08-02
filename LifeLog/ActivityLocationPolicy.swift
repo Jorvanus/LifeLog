@@ -159,7 +159,7 @@ enum ActivityLocationPolicy {
         guard isLocationVisit(locationVisit) else { return }
         let visits = try fetchPolicyVisits(context: context)
         try reconcile(
-            activities: visits.filter(isDeviceActivity),
+            activities: visits.filter(isMovementActivity),
             against: [locationVisit],
             context: context,
             now: now
@@ -170,7 +170,7 @@ enum ActivityLocationPolicy {
     static func reconcileAll(context: ModelContext, now: Date = .now) throws {
         let visits = try fetchPolicyVisits(context: context)
         try reconcile(
-            activities: visits.filter(isDeviceActivity),
+            activities: visits.filter(isMovementActivity),
             against: visits.filter(isLocationVisit),
             context: context,
             now: now

@@ -102,6 +102,44 @@ struct ActivityLocationPolicyTests {
         #expect(activities.isEmpty)
     }
 
+    @Test("Sleep remains visible while the user is at Home")
+    func preservesSleepAtLocation() throws {
+        let context = try makeContext()
+        let sleep = Visit(
+            arrival: base,
+            departure: base.addingTimeInterval(8 * 60 * 60),
+            latitude: 0,
+            longitude: 0,
+            placeName: "Sleep",
+            placeCategory: "Sleep",
+            inferredActivity: "Sleeping",
+            userActivity: "Sleeping",
+            source: "health-sleep"
+        )
+        let home = Visit(
+            arrival: base,
+            departure: base.addingTimeInterval(9 * 60 * 60),
+            latitude: -27.47,
+            longitude: 153.03,
+            placeName: "Home",
+            placeCategory: "Home",
+            inferredActivity: "At home",
+            source: "automatic"
+        )
+        context.insert(sleep)
+        context.insert(home)
+        try context.save()
+
+        try ActivityLocationPolicy.reconcileAll(context: context)
+        try context.save()
+
+        let sleepVisits = try context.fetch(FetchDescriptor<Visit>())
+            .filter { $0.source == "health-sleep" }
+        #expect(sleepVisits.count == 1)
+        #expect(sleepVisits[0].arrival == base)
+        #expect(sleepVisits[0].departure == base.addingTimeInterval(8 * 60 * 60))
+    }
+
     @Test("Repeated automatic callbacks collapse into one location visit")
     func deduplicatesRepeatedAutomaticLocations() throws {
         let context = try makeContext()

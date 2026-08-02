@@ -107,6 +107,63 @@ final class ActivityDataService {
         }
     }
 
+    /// Refreshes only the displayed Insights period. Sleep remains meaningful while
+    /// the user is at Home, so these records deliberately bypass the movement policy
+    /// that removes walking and travel while a destination visit is active.
+    @discardableResult
+    func refreshSleep(for interval: DateInterval, context: ModelContext) async -> Bool {
+        guard interval.duration > 0,
+              HKHealthStore.isHealthDataAvailable(),
+              let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return false }
+        let predicate = HKQuery.predicateForSamples(
+            withStart: interval.start,
+            end: interval.end,
+            options: .strictEndDate
+        )
+        do {
+            let descriptor = HKSampleQueryDescriptor<HKCategorySample>(
+                predicates: [.categorySample(type: sleepType, predicate: predicate)],
+                sortDescriptors: [SortDescriptor(\.startDate)]
+            )
+            let samples = try await descriptor.result(for: healthStore)
+            let asleep = samples.filter { sample in
+                guard let value = HKCategoryValueSleepAnalysis(rawValue: sample.value) else { return false }
+                return value == .asleepCore || value == .asleepDeep || value == .asleepREM || value == .asleepUnspecified
+            }
+            let intervals = mergeIntervals(
+                asleep.map { DateInterval(start: $0.startDate, end: $0.endDate) },
+                maximumGap: 15 * 60
+            ).filter { $0.duration >= minimumSleepDuration }
+            guard !intervals.isEmpty else { return false }
+
+            let existing = try context.fetch(FetchDescriptor<Visit>(
+                predicate: #Predicate { $0.source == "health-sleep" }
+            ))
+            var inserted = false
+            for sleep in intervals {
+                let duplicate = existing.contains {
+                    abs($0.arrival.timeIntervalSince(sleep.start)) < 120 &&
+                    abs(($0.departure ?? $0.arrival).timeIntervalSince(sleep.end)) < 120
+                }
+                guard !duplicate else { continue }
+                context.insert(Visit(
+                    arrival: sleep.start, departure: sleep.end,
+                    latitude: 0, longitude: 0,
+                    placeName: "Sleep", placeCategory: "Sleep",
+                    inferredActivity: "Sleeping", userActivity: "Sleeping",
+                    source: "health-sleep", recognitionConfidence: "device"
+                ))
+                inserted = true
+            }
+            if inserted { try context.save() }
+            return inserted
+        } catch {
+            Diagnostics.record(error, context: context, subsystem: "HealthKit",
+                               operation: "Insights sleep refresh", severity: "info")
+            return false
+        }
+    }
+
     /// Reads total step count for the selected Insights interval without storing
     /// a second copy of Health data in the timeline.
     func stepCount(for interval: DateInterval) async -> Double? {
@@ -215,11 +272,13 @@ final class ActivityDataService {
             return value == .asleepCore || value == .asleepDeep || value == .asleepREM || value == .asleepUnspecified
         }
         let merged = mergeIntervals(asleep.map { DateInterval(start: $0.startDate, end: $0.endDate) }, maximumGap: 15 * 60)
-        for interval in merged where interval.duration >= 20 * 60 {
+        for interval in merged where interval.duration >= minimumSleepDuration {
             insertActivity(name: "Sleep", activity: "Sleeping", category: "Sleep", source: "health-sleep",
                            start: interval.start, end: interval.end, context: context)
         }
     }
+
+    private var minimumSleepDuration: TimeInterval { 20 * 60 }
 
     private func importWorkouts(_ workouts: [HKWorkout], context: ModelContext) {
         for workout in workouts {
@@ -308,10 +367,12 @@ final class ActivityDataService {
             : importLocationVisits
         let original = DateInterval(start: start, end: end)
         let minimumDuration = ActivityLocationPolicy.minimumRetainedDuration(for: source)
-        let segments = ActivityLocationPolicy.remainingSegments(
-            for: original,
-            locationVisits: locationVisits
-        ).filter { $0.duration >= minimumDuration }
+        let segments = source == "health-sleep"
+            ? [original]
+            : ActivityLocationPolicy.remainingSegments(
+                for: original,
+                locationVisits: locationVisits
+            ).filter { $0.duration >= minimumDuration }
 
         for segment in segments {
             let duplicate = sourceVisits.contains {

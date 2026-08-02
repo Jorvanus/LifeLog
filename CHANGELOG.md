@@ -2,6 +2,11 @@
 
 ## 2026-08-03
 
+### Sleep in Insights
+
+- Added a lightweight, date-scoped Apple Health sleep refresh when Insights opens so sleep appears in the donut without running the full Health history import.
+- Sleep is now preserved when it overlaps Home or another location; location overlap suppression remains limited to walking and travel.
+
 ### Grouped Insights donut slices
 
 - The donut now renders the same aggregated category slices as the Insights summary, grouping repeated visits and locations instead of drawing one sector per individual event.
