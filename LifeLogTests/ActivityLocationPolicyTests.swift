@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import CoreLocation
 import Testing
 @testable import LifeLog
 
@@ -23,6 +24,18 @@ struct ActivityLocationPolicyTests {
         #expect(visit.displayPlaceName == "Uncategorised location")
         #expect(visit.insightCategory == "Uncategorised")
         #expect(visit.suspectedActivity == "Visiting")
+    }
+
+    @Test("Manual map selection distinguishes a pin fallback from a business match")
+    func manualMapResolutionConfidence() {
+        let coordinate = CLLocationCoordinate2D(latitude: -27.47, longitude: 153.03)
+        let pin = ManualPlaceResolution.pinned(coordinate)
+        let match = ManualPlaceResolution.matched(name: "Coffee", coordinate: coordinate)
+
+        #expect(pin.confidence == "low")
+        #expect(pin.coordinate?.latitude == coordinate.latitude)
+        #expect(match.confidence == "confirmed")
+        #expect(ManualPlaceResolution.none.coordinate == nil)
     }
 
     @Test("Activity imported after a location visit excludes the occupied time")

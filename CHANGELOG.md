@@ -1,5 +1,13 @@
 # Change log
 
+## 2026-08-03
+
+### Map-based manual entries
+
+- Manual visits now include Apple Maps local search, selectable business results, and an interactive map picker.
+- When no business match is available, a tapped coordinate can be saved as a clearly marked low-confidence pinned location instead of being discarded.
+- Manual entries retain the entered name/activity and use the selected coordinate for future place learning.
+
 ## 2026-08-02
 
 ### Backlog refinement

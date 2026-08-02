@@ -13,7 +13,7 @@ Priorities below reflect the current implementation and the risks that matter mo
 
 ## P1 — finish the daily workflow
 
-- [ ] Add a map picker and MapKit local search to manual entries, with a clear confidence/fallback path when no business match is found.
+- [x] Add a map picker and MapKit local search to manual entries, with a clear confidence/fallback path when no business match is found.
 - [ ] Add an Uncategorised Locations queue in Settings. Applying a label should update the selected visit and backfill all matching historical visits and the learned Saved Place.
 - [ ] Make the current location the first, visually distinct card in Today’s Journey, with live status and elapsed duration even before Core Location delivers a visit.
 - [ ] Add UI/accessibility coverage for Timeline, Insights, Map, Settings, current-location labeling, and Saved Places.
