@@ -2,6 +2,10 @@
 
 ## 2026-08-03
 
+### Grouped Insights donut slices
+
+- The donut now renders the same aggregated category slices as the Insights summary, grouping repeated visits and locations instead of drawing one sector per individual event.
+
 ### Insights donut hit testing
 
 - Converted donut tap angles through `ChartProxy`’s data scale so a tap selects the slice under the finger instead of comparing screen degrees with duration values.

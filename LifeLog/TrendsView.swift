@@ -612,33 +612,56 @@ private struct InsightsDonutChart: View {
     let totalHours: Double
     let analysisInterval: DateInterval
     @State private var selectedAngle: Double?
-    @State private var focusedSegmentID: InsightSegmentID?
+    @State private var focusedSliceID: String?
     @State private var sleepSummary: SleepSummary?
     @State private var stepCount: Double?
 
+    private var slices: [TimeSlice] {
+        let grouped = Dictionary(grouping: segments) { segment in
+            "\(segment.isUnlogged ? "gap" : "logged"):\(segment.category)"
+        }
+        return grouped.values.compactMap { items in
+            guard let first = items.first else { return nil }
+            return TimeSlice(
+                name: first.category,
+                hours: items.reduce(0) { $0 + $1.hours },
+                color: first.color,
+                symbol: first.symbol,
+                isUnlogged: first.isUnlogged
+            )
+        }
+        .filter { $0.hours > 0.01 }
+        .sorted { $0.hours > $1.hours }
+    }
+
+    private var focusedSlice: TimeSlice? {
+        guard let focusedSliceID else { return nil }
+        return slices.first { $0.id == focusedSliceID }
+    }
+
     private var focusedSegment: InsightSegment? {
-        guard let focusedSegmentID else { return nil }
-        return segments.first { $0.id == focusedSegmentID }
+        guard let focusedSlice else { return nil }
+        return segments.first { $0.category == focusedSlice.name && $0.isUnlogged == focusedSlice.isUnlogged }
     }
 
     var body: some View {
         ZStack {
-            Chart(segments) { segment in
-                let selected = focusedSegmentID == segment.id
-                let hasSelection = focusedSegment != nil
+            Chart(slices) { slice in
+                let selected = focusedSliceID == slice.id
+                let hasSelection = focusedSlice != nil
                 SectorMark(
-                    angle: .value("Hours", segment.hours),
+                    angle: .value("Hours", slice.hours),
                     innerRadius: .ratio(0.56),
                     outerRadius: .ratio(selected ? 1 : 0.95),
                     angularInset: 2
                 )
                 .cornerRadius(6)
-                .foregroundStyle(segment.color.opacity(hasSelection && !selected ? 0.2 : 1))
+                .foregroundStyle(slice.color.opacity(hasSelection && !selected ? 0.2 : 1))
                 .annotation(position: .overlay) {
-                    if !hasSelection && segment.hours / max(totalHours, 1) > 0.08 {
+                    if !hasSelection && slice.hours / max(totalHours, 1) > 0.08 {
                         VStack(spacing: 2) {
-                            Image(systemName: segment.symbol)
-                            Text(formatHours(segment.hours)).font(.caption.bold())
+                            Image(systemName: slice.symbol)
+                            Text(formatHours(slice.hours)).font(.caption.bold())
                         }
                         .foregroundStyle(.white)
                     }
@@ -665,14 +688,14 @@ private struct InsightsDonutChart: View {
                                     guard let angleValue: Double = proxy.value(atAngle: angle, as: Double.self) else {
                                         return
                                     }
-                                    guard let segment = segment(at: angleValue) else { return }
-                                    if focusedSegmentID == segment.id {
+                                    guard let slice = slice(at: angleValue) else { return }
+                                    if focusedSliceID == slice.id {
                                         // A second tap on the focused slice restores the
                                         // neutral donut and brings every slice back to full opacity.
-                                        focusedSegmentID = nil
+                                        focusedSliceID = nil
                                         selectedAngle = nil
                                     } else {
-                                        focusedSegmentID = segment.id
+                                        focusedSliceID = slice.id
                                         selectedAngle = angleValue
                                     }
                                 }
@@ -680,13 +703,13 @@ private struct InsightsDonutChart: View {
                 }
             }
             .onChange(of: selectedAngle) { _, angle in
-                guard let angle, let segment = segment(at: angle) else { return }
+                guard let angle, let slice = slice(at: angle) else { return }
                 // Apply immediately so the previous focus cannot flash during a new tap.
-                focusedSegmentID = segment.id
+                focusedSliceID = slice.id
             }
-            .onChange(of: segments.map(\.id)) { _, ids in
-                if let focusedSegmentID, !ids.contains(focusedSegmentID) {
-                    self.focusedSegmentID = nil
+            .onChange(of: segments.map(\.id)) { _, _ in
+                if let focusedSliceID, !slices.contains(where: { $0.id == focusedSliceID }) {
+                    self.focusedSliceID = nil
                     selectedAngle = nil
                 }
             }
@@ -739,14 +762,14 @@ private struct InsightsDonutChart: View {
         "\(analysisInterval.start.timeIntervalSinceReferenceDate)-\(analysisInterval.end.timeIntervalSinceReferenceDate)"
     }
 
-    private func segment(at angle: Double) -> InsightSegment? {
+    private func slice(at angle: Double) -> TimeSlice? {
         guard angle.isFinite, angle >= 0 else { return nil }
         var upperBound = 0.0
-        for segment in segments {
-            upperBound += segment.hours
-            if angle <= upperBound { return segment }
+        for slice in slices {
+            upperBound += slice.hours
+            if angle <= upperBound { return slice }
         }
-        return segments.last
+        return slices.last
     }
 
     private var sleepSummaryKey: String? {
