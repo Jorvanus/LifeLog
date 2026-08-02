@@ -2,6 +2,10 @@
 
 ## 2026-08-03
 
+### Timeline fixture and fuzz coverage
+
+- Added deterministic tests for overlapping location/activity intervals, malformed coordinates and text, year-long histories, and extreme time zones.
+
 ### MapKit iOS 27 API cleanup
 
 - Replaced deprecated `MKMapItem.placemark` usage in manual entries with iOS 27 `location`, `address`, and `addressRepresentations` APIs.
