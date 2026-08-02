@@ -151,6 +151,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                          placeName: name, placeCategory: category, inferredActivity: activity,
                          recognitionConfidence: saved == nil ? nil : "learned")
         context.insert(item)
+        reconcileActivity(with: item, context: context)
         save(context)
         if saved == nil { identifyPlace(item) }
     }
@@ -161,6 +162,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         descriptor.fetchLimit = 1
         if let latest = try? context.fetch(descriptor).first, latest.departure == nil {
             latest.departure = max(latest.arrival, min(departure, .now))
+            reconcileActivity(with: latest, context: context)
             save(context)
         }
     }
@@ -268,6 +270,14 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             try context.save()
         } catch {
             lastError = "LifeLog couldn’t securely save this update. Your existing timeline is unchanged."
+        }
+    }
+
+    private func reconcileActivity(with locationVisit: Visit, context: ModelContext) {
+        do {
+            try ActivityLocationPolicy.reconcile(locationVisit: locationVisit, context: context)
+        } catch {
+            lastError = "LifeLog couldn’t reconcile activity with this location visit."
         }
     }
 }

@@ -17,6 +17,12 @@ final class ActivityDataService {
 
     func connect(_ context: ModelContext) {
         self.context = context
+        do {
+            try ActivityLocationPolicy.reconcileAll(context: context)
+            try context.save()
+        } catch {
+            lastError = "Existing activity couldn’t be reconciled with location visits."
+        }
         refreshMotionStatus()
         if UserDefaults.standard.bool(forKey: "LifeLogHealthAccessRequested") {
             Task { await importHealthHistory() }
@@ -180,28 +186,39 @@ final class ActivityDataService {
                                 start: Date, end: Date, context: ModelContext) {
         guard end > start else { return }
         let existing = (try? context.fetch(FetchDescriptor<Visit>())) ?? []
-        let duplicate = existing.contains {
-            $0.source == source && abs($0.arrival.timeIntervalSince(start)) < 120 &&
-            abs(($0.departure ?? $0.arrival).timeIntervalSince(end)) < 120
-        }
-        guard !duplicate else { return }
+        let original = DateInterval(start: start, end: end)
+        let minimumDuration = ActivityLocationPolicy.minimumRetainedDuration(for: source)
+        let segments = ActivityLocationPolicy.remainingSegments(
+            for: original,
+            locationVisits: existing
+        ).filter { $0.duration >= minimumDuration }
 
-        if source == "motion" {
-            let overlapsWorkout = existing.contains {
-                $0.source.hasPrefix("health") && $0.arrival < end && ($0.departure ?? .now) > start
+        for segment in segments {
+            let duplicate = existing.contains {
+                $0.source == source && abs($0.arrival.timeIntervalSince(segment.start)) < 120 &&
+                abs(($0.departure ?? $0.arrival).timeIntervalSince(segment.end)) < 120
             }
-            guard !overlapsWorkout else { return }
-        }
-        if source == "health-walking" {
-            let overlapsWorkout = existing.contains {
-                $0.source == "health-workout" && $0.arrival < end && ($0.departure ?? .now) > start
-            }
-            guard !overlapsWorkout else { return }
-        }
+            guard !duplicate else { continue }
 
-        context.insert(Visit(arrival: start, departure: end, latitude: 0, longitude: 0,
-                             placeName: name, placeCategory: category, inferredActivity: activity,
-                             userActivity: activity, source: source, recognitionConfidence: "device"))
+            if source == "motion" {
+                let overlapsWorkout = existing.contains {
+                    $0.source.hasPrefix("health") && $0.arrival < segment.end &&
+                    ($0.departure ?? .now) > segment.start
+                }
+                guard !overlapsWorkout else { continue }
+            }
+            if source == "health-walking" {
+                let overlapsWorkout = existing.contains {
+                    $0.source == "health-workout" && $0.arrival < segment.end &&
+                    ($0.departure ?? .now) > segment.start
+                }
+                guard !overlapsWorkout else { continue }
+            }
+
+            context.insert(Visit(arrival: segment.start, departure: segment.end, latitude: 0, longitude: 0,
+                                 placeName: name, placeCategory: category, inferredActivity: activity,
+                                 userActivity: activity, source: source, recognitionConfidence: "device"))
+        }
     }
 
     private func mergeIntervals(_ intervals: [DateInterval], maximumGap: TimeInterval) -> [DateInterval] {

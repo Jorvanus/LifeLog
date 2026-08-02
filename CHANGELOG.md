@@ -7,10 +7,9 @@
 - Correcting a located visit now creates or updates a reusable `SavedPlace` geofence.
 - Renaming a visit updates the matching nearby saved place rather than creating a duplicate.
 - Corrected categories and activities become the defaults for future visits within the saved radius.
-- Added in-memory SwiftData tests for geofence creation and update behavior.
 
-### Verification
+### Location-first timeline
 
-- Two Xcode 27 / Swift 6 `SavedPlaceLearning` unit tests passed.
-- iOS 27 simulator Debug build.
-- iOS 27 generic-device Release build.
+- Device activity is excluded wherever it overlaps an automatic or manual location visit.
+- Partial walking, workout, sleep, or travel segments are trimmed so only time between places remains.
+- Location visits also reconcile activity that was imported before Core Location delivered the visit.
