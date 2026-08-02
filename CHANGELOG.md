@@ -2,6 +2,10 @@
 
 ## 2026-08-03
 
+### Refined Timeline design
+
+- Updated the Timeline to match the supplied visual direction with a stronger greeting, prominent current-activity card, larger activity icons, connected journey rail, clearer status badges, and roomier visit cards.
+
 ### Sleep in Insights
 
 - Added a lightweight, date-scoped Apple Health sleep refresh when Insights opens so sleep appears in the donut without running the full Health history import.

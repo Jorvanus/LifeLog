@@ -31,14 +31,14 @@ struct TimelineView: View {
             ZStack {
                 Color.lifeBackground.ignoresSafeArea()
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 24) {
+                    LazyVStack(alignment: .leading, spacing: 28) {
                         header
-                        if let review = reviewQueue.first { reviewCard(review) }
                         if let current { currentCard(current) }
+                        if let review = reviewQueue.first { reviewCard(review) }
                         journey
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 28)
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 36)
                 }
             }
             .accessibilityIdentifier("timeline-screen")
@@ -82,10 +82,12 @@ struct TimelineView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .top) {
+            HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(greeting).font(.system(size: 34, weight: .bold, design: .rounded))
-                    Text(Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day()))
+                    Text(greeting)
+                        .font(.system(size: 38, weight: .bold, design: .rounded))
+                        .lineLimit(1).minimumScaleFactor(0.78)
+                    Text(headerDate)
                         .font(.title3).foregroundStyle(.secondary)
                     if !reviewQueue.isEmpty {
                         Text("\(reviewQueue.count) \(reviewQueue.count == 1 ? "place" : "places") to categorise")
@@ -95,11 +97,14 @@ struct TimelineView: View {
                 }
                 Spacer()
                 Button { adding = true } label: {
-                    Image(systemName: "plus").font(.title2.weight(.medium)).frame(width: 50, height: 50)
-                        .background(.thinMaterial, in: Circle())
+                    Image(systemName: "plus")
+                        .font(.system(size: 25, weight: .regular))
+                        .frame(width: 56, height: 56)
+                        .background(.regularMaterial, in: Circle())
+                        .shadow(color: .black.opacity(0.04), radius: 12, y: 5)
                 }.accessibilityLabel("Add visit")
             }
-        }.padding(.top, 18)
+        }.padding(.top, 20)
     }
 
     private func reviewCard(_ visit: Visit) -> some View {
@@ -132,10 +137,10 @@ struct TimelineView: View {
 
     private func currentCard(_ visit: Visit) -> some View {
         NavigationLink { VisitEditor(visit: visit) } label: {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 20) {
                 HStack(spacing: 10) {
                     Circle().fill(.green).frame(width: 10, height: 10)
-                    Text("Current Activity").font(.headline).foregroundStyle(.green)
+                    Text("Current Activity").font(.headline.weight(.semibold)).foregroundStyle(.green)
                     Spacer()
                     if visit.needsCategorisation {
                         Label("Label", systemImage: "flag.fill")
@@ -146,10 +151,11 @@ struct TimelineView: View {
                     ActivityIcon(
                         activity: visit.suspectedActivity,
                         category: visit.insightCategory,
-                        color: visit.needsCategorisation ? .orange : .green
+                        color: visit.needsCategorisation ? .orange : .green,
+                        size: 60
                     )
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(visit.displayPlaceName).font(.title3.bold()).foregroundStyle(.primary)
+                        Text(visit.displayPlaceName).font(.title2.bold()).foregroundStyle(.primary)
                         if visit.needsCategorisation {
                             Text("Suspected activity: \(visit.inferredActivity)").foregroundStyle(.secondary)
                             if visit.placeName != "Identifying…" && visit.placeName != "Unknown place" {
@@ -161,26 +167,27 @@ struct TimelineView: View {
                         }
                         Text("Since \(visit.arrival.formatted(date: .omitted, time: .shortened))")
                             .foregroundStyle(.secondary)
-                        Text("Started at \(visit.arrival.formatted(date: .omitted, time: .shortened))")
-                            .font(.caption).foregroundStyle(.tertiary)
                     }
                     Spacer()
-                    Image(systemName: visit.needsCategorisation ? "flag.fill" : "location.circle.fill")
-                        .font(.system(size: 48))
-                        .foregroundStyle((visit.needsCategorisation ? Color.orange : Color.green).opacity(0.25))
+                    Image(systemName: visit.needsCategorisation ? "flag.fill" : "location.fill")
+                        .font(.system(size: 29, weight: .semibold))
+                        .foregroundStyle(visit.needsCategorisation ? Color.orange : Color.green)
+                        .frame(width: 56, height: 56)
+                        .background((visit.needsCategorisation ? Color.orange : Color.green).opacity(0.1), in: Circle())
                 }
             }
-            .padding(19)
-            .background(Color.green.opacity(0.055), in: RoundedRectangle(cornerRadius: 22))
-            .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color.green.opacity(0.25)))
+            .padding(20)
+            .background(Color.green.opacity(0.045), in: RoundedRectangle(cornerRadius: 22))
+            .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color.green.opacity(0.3), lineWidth: 1))
+            .shadow(color: .black.opacity(0.025), radius: 14, y: 7)
         }.buttonStyle(.plain).accessibilityIdentifier("current-location-card")
     }
 
     private var journey: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            Text("Today’s Journey").font(.title2.bold())
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Today’s Journey").font(.system(size: 28, weight: .bold, design: .rounded))
             if today.isEmpty {
-                VStack(spacing: 12) {
+                VStack(spacing: 14) {
                     Image(systemName: "location.slash").font(.largeTitle).foregroundStyle(.secondary)
                     Text("Your visits will appear here").font(.headline)
                     Text("Enable background logging in Settings or add a visit manually.")
@@ -204,6 +211,11 @@ struct TimelineView: View {
         default: "Good Evening"
         }
     }
+
+    private var headerDate: String {
+        let date = Date.now
+        return "\(date.formatted(.dateTime.weekday(.wide))) \(date.formatted(.dateTime.day())) \(date.formatted(.dateTime.month(.wide)))"
+    }
 }
 
 private struct JourneyRow: View {
@@ -217,20 +229,26 @@ private struct JourneyRow: View {
         NavigationLink { VisitEditor(visit: visit) } label: {
             HStack(spacing: 0) {
                 ZStack {
-                    if !isFirst { Rectangle().fill(Color.secondary.opacity(0.2)).frame(width: 2).offset(y: -34) }
-                    if !isLast { Rectangle().fill(Color.secondary.opacity(0.2)).frame(width: 2).offset(y: 34) }
-                    Circle().fill(color).frame(width: 14, height: 14)
-                        .overlay(Circle().stroke(Color.lifeBackground, lineWidth: 3))
-                }.frame(width: 28, height: 94)
+                    if !isFirst {
+                        Rectangle().fill(Color.secondary.opacity(0.28)).frame(width: 2, height: 62).offset(y: -31)
+                    }
+                    if !isLast {
+                        Rectangle().fill(Color.secondary.opacity(0.28)).frame(width: 2, height: 62).offset(y: 31)
+                    }
+                    Circle().fill(Color.lifeBackground).frame(width: 18, height: 18)
+                        .overlay(Circle().stroke(color, lineWidth: 2))
+                        .overlay(Circle().fill(color).frame(width: 8, height: 8))
+                }.frame(width: 38, height: 108)
                 HStack(spacing: 14) {
-                    ActivityIcon(activity: visit.suspectedActivity, category: visit.insightCategory, color: color)
-                    VStack(alignment: .leading, spacing: 3) {
+                    ActivityIcon(activity: visit.suspectedActivity, category: visit.insightCategory,
+                                 color: color, size: 58)
+                    VStack(alignment: .leading, spacing: 4) {
                         if visit.needsCategorisation {
-                            Text("Uncategorised location").font(.headline).foregroundStyle(.primary)
+                            Text("Uncategorised location").font(.headline.weight(.semibold)).foregroundStyle(.primary)
                             Text("Suspected: \(visit.inferredActivity)")
                                 .font(.subheadline).foregroundStyle(.secondary)
                         } else {
-                            Text(visit.activity).font(.headline).foregroundStyle(.primary)
+                            Text(visit.activity).font(.headline.weight(.semibold)).foregroundStyle(.primary)
                             Text(visit.placeName).font(.subheadline).foregroundStyle(.secondary)
                         }
                         Text(timeDescription).font(.subheadline).foregroundStyle(.secondary)
@@ -238,13 +256,14 @@ private struct JourneyRow: View {
                     Spacer(minLength: 8)
                     VStack(alignment: .trailing, spacing: 8) {
                         Text(durationDescription)
-                            .font(.caption.monospacedDigit().weight(.semibold))
+                            .font(.subheadline.monospacedDigit())
                             .foregroundStyle(.secondary)
                         status
                     }
-                    Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+                    Image(systemName: "chevron.right")
+                        .font(.subheadline.weight(.semibold)).foregroundStyle(.tertiary)
                 }
-                .padding(.horizontal, 14).frame(height: 94)
+                .padding(.horizontal, 14).frame(height: 108)
                 .lifeCard()
             }
         }.buttonStyle(.plain)
@@ -285,9 +304,14 @@ struct ActivityIcon: View {
     let activity: String
     let category: String
     let color: Color
+    var size: CGFloat = 54
     var body: some View {
-        Image(systemName: symbol).font(.title2.weight(.semibold)).foregroundStyle(.white)
-            .frame(width: 54, height: 54).background(color.gradient, in: Circle())
+        Image(systemName: symbol)
+            .font(.system(size: size * 0.4, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(color.gradient, in: Circle())
+            .shadow(color: color.opacity(0.16), radius: 7, y: 4)
     }
     private var symbol: String {
         let text = "\(activity) \(category)".lowercased()
