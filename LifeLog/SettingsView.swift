@@ -3,6 +3,7 @@ import CoreLocation
 import SwiftData
 
 struct SettingsView: View {
+    @Environment(\.modelContext) private var context
     @Query(sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
     @Query(sort: \SavedPlace.name) private var savedPlaces: [SavedPlace]
     @Query(sort: \DiagnosticEvent.createdAt, order: .reverse) private var diagnostics: [DiagnosticEvent]

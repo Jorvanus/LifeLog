@@ -2,6 +2,14 @@
 
 ## 2026-08-03
 
+### Settings diagnostics context fix
+
+- Connected `SettingsView` to its SwiftData model context so the Clear Diagnostics action can delete and save diagnostic events correctly.
+
+### App icon asset dimensions
+
+- Resized the dark app icon asset to the required 1024×1024 pixels for the AppIcon catalog.
+
 ### Timeline fixture and fuzz coverage
 
 - Added deterministic tests for overlapping location/activity intervals, malformed coordinates and text, year-long histories, and extreme time zones.
