@@ -14,7 +14,7 @@ This plan prioritises a dependable private diary on a physical iPhone before exp
 
 ## Week 2 — make Health and movement reliable
 
-- [ ] Move HealthKit and Motion ingestion off the main interaction path using an isolated background model context/actor, small save batches, cancellation, and progress state in Settings.
+- [x] Move HealthKit and Motion ingestion off the main interaction path using an isolated background model context/actor, small save batches, cancellation, and progress state in Settings.
 - [ ] Replace repeated history reads with incremental HealthKit anchors. Import only new or changed sleep/workout samples, persist the anchor safely, and remain idempotent after relaunch.
 - [ ] Add HealthKit observer/background delivery only after the incremental importer is proven not to freeze Timeline or Insights.
 - [ ] Make sleep-session queries tolerant of date boundaries by padding the selected interval, grouping stage samples into one night, and clearly labelling the score as a LifeLog estimate rather than an Apple score.

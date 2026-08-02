@@ -2,6 +2,13 @@
 
 ## 2026-08-03
 
+### Responsive background activity imports
+
+- Moved HealthKit and Core Motion history reading and SwiftData writes onto isolated actors, with database saves limited to small batches so app navigation and touch handling remain responsive.
+- Added cancellable import progress, completion, and failure states to Settings.
+- Kept sleep, movement-at-location filtering, duplicate prevention, and recurring travel descriptions inside the background import pipeline.
+- Corrected background-writer cleanup so cancelled and failed imports reliably release their active batch session.
+
 ### Refined Timeline design
 
 - Updated the Timeline to match the supplied visual direction with a stronger greeting, prominent current-activity card, larger activity icons, connected journey rail, clearer status badges, and roomier visit cards.

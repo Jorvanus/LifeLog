@@ -3,6 +3,7 @@ import SwiftData
 
 struct RootView: View {
     @Environment(\.modelContext) private var context
+    let modelContainer: ModelContainer
     @State private var recorder = LocationRecorder()
     @State private var activityData = ActivityDataService()
     @State private var selectedTab = ProcessInfo.processInfo.arguments.contains("-showInsights") ? 1 : 0
@@ -19,7 +20,7 @@ struct RootView: View {
         .task {
             let startedAt = Date.now
             recorder.connect(context)
-            activityData.connect(context)
+            activityData.connect(context, container: modelContainer)
             Diagnostics.performance(context, subsystem: "Launch", operation: "service setup",
                                     startedAt: startedAt, threshold: 0.1)
         }

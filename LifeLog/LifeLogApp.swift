@@ -24,7 +24,7 @@ struct LifeLogApp: App {
     var body: some Scene {
         WindowGroup {
             if let modelContainer {
-                RootView().modelContainer(modelContainer)
+                RootView(modelContainer: modelContainer).modelContainer(modelContainer)
             } else {
                 ContentUnavailableView(
                     "Timeline unavailable",

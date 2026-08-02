@@ -61,16 +61,53 @@ struct SettingsView: View {
                 Section {
                     LabeledContent("Apple Health", value: activityData.healthStatus)
                     Button("Connect Apple Health") { activityData.requestHealthAccess() }
+                        .disabled(activityData.isImporting)
                     LabeledContent("Motion Activity", value: activityData.motionStatus)
                     Button("Connect Walking & Travel") { activityData.requestMotionAccess() }
+                        .disabled(activityData.isImporting)
                     Button("Import Recent Activity") { activityData.importAll() }
+                        .disabled(activityData.isImporting)
+                        .accessibilityIdentifier("import-recent-activity")
+                    if let progress = activityData.importProgress {
+                        VStack(alignment: .leading, spacing: 9) {
+                            HStack {
+                                Text(progress.title).font(.subheadline.weight(.medium))
+                                Spacer()
+                                if progress.total > 0 {
+                                    Text("\(Int((progress.fraction * 100).rounded()))%")
+                                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                                }
+                            }
+                            if progress.isActive {
+                                if progress.total > 0 {
+                                    ProgressView(value: progress.fraction)
+                                } else {
+                                    ProgressView()
+                                }
+                                if progress.total > 0 {
+                                    Text("\(progress.completed) of \(progress.total) activity records processed")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                                if progress.state != .cancelling {
+                                    Button("Cancel Import", role: .destructive) { activityData.cancelImport() }
+                                        .accessibilityIdentifier("cancel-activity-import")
+                                }
+                            } else {
+                                Label(progress.title, systemImage: progress.state == .complete
+                                      ? "checkmark.circle.fill" : "info.circle.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(progress.state == .complete ? Color.green : Color.gray)
+                            }
+                        }
+                        .accessibilityIdentifier("activity-import-progress")
+                    }
                     if let imported = activityData.lastImport {
                         LabeledContent("Last import", value: imported.formatted(date: .abbreviated, time: .shortened))
                     }
                 } header: {
                     Text("iPhone & Apple Watch")
                 } footer: {
-                    Text("Sleep, Apple Watch workouts, and Watch walking come from Apple Health. Walking, running, cycling, and vehicle travel also use the iPhone’s motion history. iOS has no dedicated airplane signal; flight-labelled records are still grouped under Travel.")
+                    Text("Imports run in the background in small, cancellable batches. Sleep, Apple Watch workouts, and Watch walking come from Apple Health. Walking, running, cycling, and vehicle travel also use the iPhone’s motion history.")
                 }
                 Section {
                     LabeledContent("On-device model", value: SmartActivityClassifier.availabilityDescription)
