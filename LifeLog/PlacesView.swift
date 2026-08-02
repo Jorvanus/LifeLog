@@ -4,27 +4,27 @@ import SwiftData
 struct PlacesView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \SavedPlace.name) private var places: [SavedPlace]
+    @Query(sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
+
+    private var uncategorised: [Visit] {
+        visits.filter { $0.needsCategorisation && !$0.isIgnored }
+    }
+    private var ignored: [Visit] {
+        visits.filter { $0.isIgnored && ActivityLocationPolicy.isLocationVisit($0) }
+    }
 
     var body: some View {
         List {
-            if places.isEmpty {
-                ContentUnavailableView {
-                    Label("No saved places", systemImage: "house.and.flag")
-                } description: {
-                    Text("Open your current location from Timeline or Settings, label it, then tap Save & Learn Place.")
-                }
-            } else {
-                Section {
+            Section {
+                if places.isEmpty {
+                    Text("No saved places yet.").foregroundStyle(.secondary)
+                } else {
                     ForEach(places) { place in
                         NavigationLink { SavedPlaceEditor(place: place) } label: {
                             HStack(spacing: 12) {
-                                ActivityIcon(
-                                    activity: place.defaultActivity,
-                                    category: place.category,
-                                    color: activityColor(place.defaultActivity)
-                                )
-                                .scaleEffect(0.72)
-                                .frame(width: 42, height: 42)
+                                ActivityIcon(activity: place.defaultActivity, category: place.category,
+                                             color: activityColor(place.defaultActivity))
+                                    .scaleEffect(0.72).frame(width: 42, height: 42)
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(place.name).font(.headline)
                                     Text("\(place.category) · \(place.defaultActivity)")
@@ -34,12 +34,34 @@ struct PlacesView: View {
                         }
                     }
                     .onDelete(perform: delete)
+                }
+            } header: {
+                Text("Saved Places")
+            } footer: {
+                Text("Saved places recognise future visits automatically. Editing one also updates matching timeline history inside its geofence.")
+            }
+            Section {
+                if uncategorised.isEmpty {
+                    Text("No uncategorised locations.").foregroundStyle(.secondary)
+                } else {
+                    ForEach(uncategorised) { visit in
+                        locationRow(visit)
+                    }
+                }
+            } header: {
+                Text("Uncategorised Locations")
+            }
+            if !ignored.isEmpty {
+                Section {
+                    ForEach(ignored) { visit in locationRow(visit) }
+                } header: {
+                    Text("Ignored Locations")
                 } footer: {
-                    Text("Saved places recognise future visits automatically. Editing one also updates matching timeline history inside its geofence.")
+                    Text("Ignored visits stay in your local data but are hidden from Timeline, Insights, and Map. Restore one to include it again.")
                 }
             }
         }
-        .navigationTitle("Saved Places")
+        .navigationTitle("Locations")
         .accessibilityIdentifier("saved-places-screen")
     }
 
@@ -47,12 +69,35 @@ struct PlacesView: View {
         for index in offsets { context.delete(places[index]) }
         try? context.save()
     }
+
+    @ViewBuilder
+    private func locationRow(_ visit: Visit) -> some View {
+        HStack {
+            NavigationLink { VisitEditor(visit: visit) } label: {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(visit.displayPlaceName).font(.headline)
+                    Text(visit.arrival.formatted(date: .abbreviated, time: .shortened))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            Button(visit.isIgnored ? "Restore" : "Ignore") {
+                visit.isIgnored.toggle()
+                try? context.save()
+            }
+            .font(.caption.bold())
+            .buttonStyle(.bordered)
+            .tint(visit.isIgnored ? .green : .orange)
+            .accessibilityLabel(visit.isIgnored ? "Restore location" : "Ignore location")
+        }
+    }
 }
 
 private struct SavedPlaceEditor: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Bindable var place: SavedPlace
+    @Query(sort: \ActivityDefinition.name) private var activityDefinitions: [ActivityDefinition]
     @State private var saveFailed = false
 
     private let categories = [
@@ -63,6 +108,11 @@ private struct SavedPlaceEditor: View {
         "At home", "Working", "Eating", "Shopping", "Exercising", "Healthcare",
         "Studying", "Travelling", "Socialising", "Visiting"
     ]
+
+    private var availableActivities: [String] {
+        let names = activityDefinitions.map(\.name)
+        return names.isEmpty ? activities : names
+    }
 
     var body: some View {
         Form {
@@ -75,7 +125,7 @@ private struct SavedPlaceEditor: View {
             Section("Default activity") {
                 Picker("Activity", selection: $place.defaultActivity) {
                     Text("Choose an activity").tag("")
-                    ForEach(activities, id: \.self) { Text($0).tag($0) }
+                    ForEach(availableActivities, id: \.self) { Text($0).tag($0) }
                 }
                 TextField("Or enter your own", text: $place.defaultActivity)
             }

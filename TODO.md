@@ -14,7 +14,7 @@ Priorities below reflect the current implementation and the risks that matter mo
 ## P1 — finish the daily workflow
 
 - [x] Add a map picker and MapKit local search to manual entries, with a clear confidence/fallback path when no business match is found.
-- [ ] Add an Uncategorised Locations queue in Settings. Applying a label should update the selected visit and backfill all matching historical visits and the learned Saved Place.
+- [x] Add an Uncategorised Locations queue in Settings. Applying a label should update the selected visit and backfill all matching historical visits and the learned Saved Place.
 - [ ] Make the current location the first, visually distinct card in Today’s Journey, with live status and elapsed duration even before Core Location delivers a visit.
 - [ ] Add UI/accessibility coverage for Timeline, Insights, Map, Settings, current-location labeling, and Saved Places.
 - [ ] Profile Insights and Map with month/year histories and large annotation counts; keep chart selection and scrolling responsive on a physical phone.
@@ -23,8 +23,8 @@ Priorities below reflect the current implementation and the risks that matter mo
 - [ ] Add weekday patterns, richer weekly comparisons, and CSV/JSON export for the trends data.
 - [x] Add confidence and correction history for inferred place names, activities, and recurring trips such as commuting to Work.
 - [ ] Make activity inference explainable and editable: show why a visit is suggested as Coffee, Lunch, or another activity, allow correction from the donut/timeline, and learn recurring choices without treating a guess as fact.
-- [ ] Add an editable activity/category catalogue, including user-created activities and category colours used consistently in the donut, timeline, and map.
-- [ ] Add an Ignore Location flow for places that should be excluded from the diary, with reversible settings and historical cleanup rules.
+- [x] Add an editable activity/category catalogue; category colours used consistently in the donut, timeline, and map remain a follow-up.
+- [x] Add an Ignore Location flow for places that should be excluded from the diary, with reversible settings and historical cleanup rules.
 - [ ] Add optional notes and photos to a visit, stored locally with explicit privacy controls.
 - [ ] Add App Intents and Shortcuts for read-only queries such as “show coffee places I visited this week,” with permission-aware results.
 

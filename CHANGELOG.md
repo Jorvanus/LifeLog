@@ -2,6 +2,17 @@
 
 ## 2026-08-03
 
+### Locations section builder fix
+
+- Rewrote the Locations list sections with explicit headers so SwiftUI resolves the conditional content correctly under Swift 6.
+
+### Editable activities and locations
+
+- Added Activities and Locations destinations in Settings.
+- Activities can be added, renamed, recategorised, and assigned an SF Symbol; visit editors use the editable catalogue.
+- Locations now show Saved Places, uncategorised visits, and ignored visits with reversible Ignore/Restore controls.
+- Ignored locations are excluded from Timeline, Insights, Map, and future Saved Place backfills.
+
 ### Settings diagnostics context fix
 
 - Connected `SettingsView` to its SwiftData model context so the Clear Diagnostics action can delete and save diagnostic events correctly.

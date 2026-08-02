@@ -8,14 +8,15 @@ struct TimelineView: View {
 
     private var today: [Visit] {
         visits.filter { Calendar.current.isDateInToday($0.arrival) }
+            .filter { !$0.isIgnored }
             .filter { ActivityLocationPolicy.shouldShow($0, alongside: visits) }
     }
     private var reviewQueue: [Visit] {
         // The live unknown location has its own prominent card; the queue is for past stays.
-        visits.filter { $0.needsCategorisation && $0.departure != nil }
+        visits.filter { $0.needsCategorisation && !$0.isIgnored && $0.departure != nil }
     }
     private var current: Visit? {
-        visits.first { ActivityLocationPolicy.isLocationVisit($0) && $0.departure == nil }
+        visits.first { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored && $0.departure == nil }
     }
 
     var body: some View {
@@ -295,10 +296,16 @@ struct VisitEditor: View {
     @Environment(\.modelContext) private var context
     @Bindable var visit: Visit
     @Query(sort: \VisitCorrection.changedAt, order: .reverse) private var corrections: [VisitCorrection]
+    @Query(sort: \ActivityDefinition.name) private var activityDefinitions: [ActivityDefinition]
     @State private var saveFailed = false
     @State private var correctionBaseline: VisitCorrectionSnapshot?
     private let categories = ["Home", "Work", "Food & Drink", "Shopping", "Fitness", "Healthcare", "Education", "Travel", "Social", "Other"]
     private let activities = ["At home", "Working", "Eating", "Shopping", "Exercising", "Healthcare", "Studying", "Travelling", "Socialising", "Visiting"]
+
+    private var availableActivities: [String] {
+        let names = activityDefinitions.map(\.name)
+        return names.isEmpty ? activities : names
+    }
 
     var body: some View {
         Form {
@@ -359,7 +366,7 @@ struct VisitEditor: View {
             Section("What were you doing?") {
                 Picker("Activity", selection: activityBinding) {
                     Text("Choose an activity").tag("")
-                    ForEach(activities, id: \.self) { Text($0).tag($0) }
+                    ForEach(availableActivities, id: \.self) { Text($0).tag($0) }
                 }
                 TextField("Or enter your own", text: activityBinding)
                 TextField("Notes", text: $visit.note, axis: .vertical)

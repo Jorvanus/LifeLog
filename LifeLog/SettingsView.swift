@@ -41,9 +41,12 @@ struct SettingsView: View {
                         LabeledContent {
                             Text("\(savedPlaces.count)")
                         } label: {
-                            Label("Saved Places", systemImage: "house.and.flag.fill")
+                            Label("Locations", systemImage: "house.and.flag.fill")
                         }
                     }.accessibilityIdentifier("saved-places-link")
+                    NavigationLink { ActivitiesView() } label: {
+                        Label("Activities", systemImage: "list.bullet.clipboard")
+                    }.accessibilityIdentifier("activities-link")
                 } header: {
                     Text("Places")
                 } footer: {
@@ -99,6 +102,7 @@ struct SettingsView: View {
                     Text("Diagnostics contain generic service timing and failure messages only. Precise locations and Health data are never recorded here.")
                 }
             }.navigationTitle("Settings").accessibilityIdentifier("settings-screen")
+                .task { ActivityCatalog.seed(context) }
         }
     }
 
@@ -113,7 +117,7 @@ struct SettingsView: View {
     }
 
     private var currentLocation: Visit? {
-        visits.first { ActivityLocationPolicy.isLocationVisit($0) && $0.departure == nil }
+        visits.first { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored && $0.departure == nil }
     }
 
     private var permissionName: String {

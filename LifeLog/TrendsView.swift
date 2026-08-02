@@ -366,7 +366,7 @@ private struct InsightsSnapshot {
 
         // Location visits are prepared once and reused by both periods. This avoids an
         // all-history scan for each individual walking or travel record.
-        let locationVisits = visits.filter(ActivityLocationPolicy.isLocationVisit)
+        let locationVisits = visits.filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
         let segments = makeSegments(
             visits: visits,
             locationVisits: locationVisits,
@@ -403,7 +403,7 @@ private struct InsightsSnapshot {
     private static func makeSegments(visits: [Visit], locationVisits: [Visit],
                                      range: DateInterval, now: Date) -> [InsightSegment] {
         let orderedVisits = visits
-            .filter { $0.overlaps(range, now: now) }
+            .filter { $0.overlaps(range, now: now) && !$0.isIgnored }
             .filter { ActivityLocationPolicy.shouldShow($0, locationVisits: locationVisits, now: now) }
             .sorted { $0.arrival < $1.arrival }
         var result: [InsightSegment] = []
@@ -449,7 +449,7 @@ private struct InsightsSnapshot {
     private static func makePlaceTotals(visits: [Visit], range: DateInterval, now: Date) -> [PlaceTotal] {
         Dictionary(
             grouping: visits.filter {
-                $0.overlaps(range, now: now) && ActivityLocationPolicy.isLocationVisit($0)
+                $0.overlaps(range, now: now) && ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored
             },
             by: \.displayPlaceName
         ).compactMap { name, items in

@@ -35,6 +35,7 @@ final class Visit {
     var userActivity: String?
     var note: String
     var source: String
+    var isIgnored: Bool
     var recognitionConfidence: String?
     var candidateData: Data?
 
@@ -42,6 +43,7 @@ final class Visit {
          placeName: String = "Identifying…", placeCategory: String = "Other",
          inferredActivity: String = "Visiting", userActivity: String? = nil,
          note: String = "", source: String = "automatic",
+         isIgnored: Bool = false,
          recognitionConfidence: String? = nil, candidateData: Data? = nil) {
         self.arrival = arrival; self.departure = departure
         self.latitude = latitude; self.longitude = longitude
@@ -51,6 +53,7 @@ final class Visit {
         self.userActivity = userActivity.map { TextSafety.clean($0, maximumLength: 80) }
         self.note = TextSafety.clean(note, maximumLength: 2_000)
         self.source = TextSafety.clean(source, maximumLength: 40)
+        self.isIgnored = isIgnored
         self.recognitionConfidence = recognitionConfidence.map { TextSafety.clean($0, maximumLength: 20) }
         self.candidateData = candidateData
     }
@@ -93,6 +96,19 @@ final class Visit {
         case "device": "Device"
         default: "Pending"
         }
+    }
+}
+
+@Model
+final class ActivityDefinition {
+    var name: String
+    var category: String
+    var symbol: String
+
+    init(name: String, category: String = "Other", symbol: String = "circle.fill") {
+        self.name = TextSafety.clean(name, maximumLength: 80)
+        self.category = TextSafety.clean(category, maximumLength: 40)
+        self.symbol = TextSafety.clean(symbol, maximumLength: 60)
     }
 }
 

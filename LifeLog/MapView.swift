@@ -5,7 +5,7 @@ import MapKit
 struct MapView: View {
     @Query(sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
     @Query(sort: \SavedPlace.name) private var places: [SavedPlace]
-    private var locatedVisits: [Visit] { visits.filter { $0.latitude != 0 || $0.longitude != 0 } }
+    private var locatedVisits: [Visit] { visits.filter { !$0.isIgnored && ($0.latitude != 0 || $0.longitude != 0) } }
 
     var body: some View {
         NavigationStack {

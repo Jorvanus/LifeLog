@@ -73,8 +73,8 @@ enum ActivityLocationPolicy {
     /// before they are used as a learned destination name.
     static func updateTravelDescriptions(context: ModelContext) throws {
         let visits = try context.fetch(FetchDescriptor<Visit>())
-        let locations = visits.filter(isLocationVisit)
-        for activity in visits where isTravelActivity(activity) {
+        let locations = visits.filter { isLocationVisit($0) && !$0.isIgnored }
+        for activity in visits where isTravelActivity(activity) && !activity.isIgnored {
             let end = activity.departure ?? .now
             guard let destination = locations
                 .filter({ $0.arrival >= end })
@@ -232,6 +232,7 @@ enum ActivityLocationPolicy {
             userActivity: activity.userActivity,
             note: activity.note,
             source: activity.source,
+            isIgnored: activity.isIgnored,
             recognitionConfidence: activity.recognitionConfidence,
             candidateData: activity.candidateData
         )
