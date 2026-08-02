@@ -4,7 +4,10 @@ import SwiftData
 struct PlacesView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \SavedPlace.name) private var places: [SavedPlace]
-    @Query(sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
+    // Only automatic/manual location visits can be uncategorised or ignored here;
+    // journal and HealthKit rows do not belong in the Settings list.
+    @Query(filter: #Predicate<Visit> { $0.source == "automatic" || $0.source == "manual" },
+           sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
 
     private var uncategorised: [Visit] {
         visits.filter { $0.needsCategorisation && !$0.isIgnored }

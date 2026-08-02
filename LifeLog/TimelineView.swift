@@ -3,8 +3,12 @@ import SwiftData
 
 struct TimelineView: View {
     @Environment(\.modelContext) private var context
-    @Query(sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
+    // Imported journal rows are used by Insights, but are not automatic locations
+    // or review items. Excluding them keeps the launch timeline query lightweight.
+    @Query(filter: #Predicate<Visit> { $0.source != "imported-journal" },
+           sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
     @State private var adding = false
+    @AppStorage("location-policy-reconciled-v2") private var locationPolicyReconciled = false
 
     private var today: [Visit] {
         visits.filter { Calendar.current.isDateInToday($0.arrival) }
@@ -38,9 +42,28 @@ struct TimelineView: View {
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $adding) { ManualVisitView() }
             .task {
-                try? ActivityLocationPolicy.reconcileAll(context: context)
-                try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
-                try? context.save()
+                // This migration-style cleanup used to scan the complete timeline on
+                // every appearance. Large journal imports made that noticeable, so run
+                // it once per installation/version; new visits are reconciled as they
+                // arrive by LocationRecorder.
+                guard !locationPolicyReconciled else { return }
+                do {
+                    // Journal-only imports do not contain device activity, so there is
+                    // nothing to reconcile. This cheap check avoids a second full-history
+                    // pass immediately after importing a large archive.
+                    if visits.contains(where: ActivityLocationPolicy.isDeviceActivity) {
+                        let startedAt = Date.now
+                        try ActivityLocationPolicy.reconcileAll(context: context)
+                        try ActivityLocationPolicy.updateTravelDescriptions(context: context)
+                        try context.save()
+                        Diagnostics.performance(context, subsystem: "Timeline", operation: "activity reconciliation",
+                                                startedAt: startedAt, itemCount: visits.count)
+                    }
+                    locationPolicyReconciled = true
+                } catch {
+                    // Leave the flag unset so a transient protected-store failure can
+                    // be retried on the next appearance.
+                }
             }
         }
     }

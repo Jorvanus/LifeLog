@@ -2,10 +2,59 @@
 
 ## 2026-08-03
 
+### Insights angle type fix
+
+- Converted Charts’ polar `Angle` selection to degrees before matching donut segments, fixing the Swift 6 type error in repeated selection handling.
+
+### Health steps in Insights
+
+- Replaced the neutral donut center’s logged-hours summary with Apple Health step count for the selected period.
+- When Health access or step data is unavailable, the center clearly prompts the user to connect Apple Health.
+
+### Donut selection toggle
+
+- Tapping the currently focused Insights donut segment again now deselects it and restores the neutral chart.
+
 ### Life Cycle journal import
 
 - Added a local CSV importer in Settings for Life Cycle exports, mapping timestamps, activities, locations, and notes into imported visits.
 - Repeat imports skip matching imported rows; malformed rows are counted and reported instead of stopping the import.
+
+### Large-import performance
+
+- Made repeat-import duplicate detection constant-time per row, so large Life Cycle files no longer scan the full timeline for every entry.
+- Limited Insights change tracking to visits overlapping the selected period instead of hashing the entire imported archive on every view update.
+- Moved one-time timeline reconciliation behind a versioned local flag, avoiding a full-history cleanup scan each time Timeline appears.
+
+### Deferred HealthKit catch-up
+
+- Removed HealthKit and Motion history imports from the critical launch path.
+- The app becomes interactive first; the Settings action performs an explicit 30-day refresh.
+- Delayed and cached Insights step queries so opening the chart does not compete with first-screen rendering or repeat the same HealthKit request.
+
+### Performance diagnostics
+
+- Added privacy-safe timing events for large journal imports, Insights snapshot rebuilds, timeline reconciliation, HealthKit catch-up, and step queries.
+- Slow events record only subsystem, duration, and aggregate item counts; precise locations, notes, and Health values are never stored.
+- Existing diagnostics in Settings now provide a lightweight way to identify the slowest operation on the testing phone.
+
+### HealthKit import batching
+
+- HealthKit catch-up now fetches the existing timeline once per batch and reuses it while importing samples, avoiding a full SwiftData fetch for every Health record.
+- Existing visits are indexed by source and location type during the batch so duplicate and overlap checks do not repeatedly scan imported journal rows.
+- Explicit HealthKit catch-up remains bounded to the most recent two days after first connection, while Settings can request a 30-day refresh.
+- Added separate timings for HealthKit queries and SwiftData saving to identify the next bottleneck without recording Health values.
+- The explicit first connection skips no workout data; Settings and manual refreshes import workouts as well.
+
+### Launch responsiveness diagnostics
+
+- Excluded zero-coordinate and journal-only records from Timeline and Map startup queries while retaining the full archive for Insights.
+- Removed delayed automatic HealthKit writes after confirming they caused a second freeze several seconds after launch; launch service setup remains timed.
+- Applied the same location-only query to Settings and Saved Places so imported journal rows cannot block controls or text input there.
+
+### Weekly activity rhythm
+
+- Replaced the weekday total-time chart with a weekday-by-weekday view of the activity taking the most time, including its duration.
 
 ### Trends analysis and export
 

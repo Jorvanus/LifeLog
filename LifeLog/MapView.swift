@@ -3,9 +3,12 @@ import SwiftData
 import MapKit
 
 struct MapView: View {
-    @Query(sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
+    // Map annotations require coordinates, so avoid loading journal imports and
+    // other zero-coordinate records into MapKit at startup.
+    @Query(filter: #Predicate<Visit> { $0.latitude != 0 || $0.longitude != 0 },
+           sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
     @Query(sort: \SavedPlace.name) private var places: [SavedPlace]
-    private var locatedVisits: [Visit] { visits.filter { !$0.isIgnored && ($0.latitude != 0 || $0.longitude != 0) } }
+    private var locatedVisits: [Visit] { visits.filter { !$0.isIgnored } }
 
     var body: some View {
         NavigationStack {

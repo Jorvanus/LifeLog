@@ -30,6 +30,13 @@ final class ActivityDataService {
     private let healthStore = HKHealthStore()
     private let motionManager = CMMotionActivityManager()
     private var context: ModelContext?
+    private var stepCache: [String: Double] = [:]
+    // HealthKit imports can contain thousands of samples. Reusing this batch cache
+    // prevents insertActivity from fetching the entire SwiftData store per sample.
+    private var importExistingVisits: [Visit]?
+    private var importVisitsBySource: [String: [Visit]] = [:]
+    private var importLocationVisits: [Visit] = []
+    private var importHealthVisits: [Visit] = []
 
     var healthStatus = "Not connected"
     var motionStatus = "Not connected"
@@ -38,18 +45,11 @@ final class ActivityDataService {
 
     func connect(_ context: ModelContext) {
         self.context = context
-        do {
-            try ActivityLocationPolicy.reconcileAll(context: context)
-            try ActivityLocationPolicy.updateTravelDescriptions(context: context)
-            try context.save()
-        } catch {
-            lastError = "Existing activity couldn’t be reconciled with location visits."
-        }
         refreshMotionStatus()
-        if UserDefaults.standard.bool(forKey: "LifeLogHealthAccessRequested") {
-            Task { await importHealthHistory() }
-        }
-        if CMMotionActivityManager.authorizationStatus() == .authorized { importMotionHistory() }
+        // HealthKit history writes are intentionally opt-in now. Even a delayed task
+        // still runs SwiftData inserts on the main actor and can freeze an otherwise
+        // responsive Timeline several seconds after launch. Insights reads its own
+        // step/sleep data on demand; Settings provides the explicit import action.
     }
 
     func requestHealthAccess() {
@@ -62,7 +62,7 @@ final class ActivityDataService {
                 try await healthStore.requestAuthorization(toShare: [], read: healthTypes)
                 UserDefaults.standard.set(true, forKey: "LifeLogHealthAccessRequested")
                 healthStatus = "Connected"
-                await importHealthHistory()
+                await importHealthHistory(daysBack: 2, includeWorkouts: true)
             } catch {
                 lastError = "Health access couldn’t be completed. Check Health permissions in Settings."
                 healthStatus = "Couldn’t connect"
@@ -79,7 +79,7 @@ final class ActivityDataService {
     }
 
     func importAll() {
-        Task { await importHealthHistory() }
+        Task { await importHealthHistory(daysBack: 30, includeWorkouts: true) }
         if CMMotionActivityManager.authorizationStatus() == .authorized { importMotionHistory() }
     }
 
@@ -107,6 +107,37 @@ final class ActivityDataService {
         }
     }
 
+    /// Reads total step count for the selected Insights interval without storing
+    /// a second copy of Health data in the timeline.
+    func stepCount(for interval: DateInterval) async -> Double? {
+        let startedAt = Date.now
+        guard HKHealthStore.isHealthDataAvailable(),
+              let stepType = HKObjectType.quantityType(forIdentifier: .stepCount) else { return nil }
+        let cacheKey = "\(interval.start.timeIntervalSinceReferenceDate)-\(interval.end.timeIntervalSinceReferenceDate)"
+        if let cached = stepCache[cacheKey] { return cached }
+        let predicate = HKQuery.predicateForSamples(
+            withStart: interval.start,
+            end: interval.end,
+            options: [.strictStartDate, .strictEndDate]
+        )
+        do {
+            let descriptor = HKSampleQueryDescriptor<HKQuantitySample>(
+                predicates: [.quantitySample(type: stepType, predicate: predicate)],
+                sortDescriptors: [SortDescriptor(\.startDate)]
+            )
+            let samples = try await descriptor.result(for: healthStore)
+            let total = samples.reduce(0) { $0 + $1.quantity.doubleValue(for: .count()) }
+            stepCache[cacheKey] = total
+            Diagnostics.performance(context, subsystem: "HealthKit", operation: "step query",
+                                    startedAt: startedAt, itemCount: samples.count)
+            return total
+        } catch {
+            Diagnostics.record(context, subsystem: "HealthKit",
+                               message: "A step-count query failed; the Insights center value was unavailable.")
+            return nil
+        }
+    }
+
     private var healthTypes: Set<HKSampleType> {
         var types: Set<HKSampleType> = [HKWorkoutType.workoutType()]
         if let sleep = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) { types.insert(sleep) }
@@ -114,36 +145,72 @@ final class ActivityDataService {
         return types
     }
 
-    private func importHealthHistory() async {
+    private func importHealthHistory(daysBack: Int, includeWorkouts: Bool) async {
+        let startedAt = Date.now
         guard HKHealthStore.isHealthDataAvailable(), let context else { return }
-        let start = Calendar.current.date(byAdding: .day, value: -30, to: .now) ?? .now
+        importExistingVisits = try? context.fetch(FetchDescriptor<Visit>())
+        if let importExistingVisits {
+            importVisitsBySource = Dictionary(grouping: importExistingVisits, by: \.source)
+            importLocationVisits = importExistingVisits.filter(ActivityLocationPolicy.isLocationVisit)
+            importHealthVisits = importExistingVisits.filter { $0.source.hasPrefix("health") }
+        }
+        defer {
+            importExistingVisits = nil
+            importVisitsBySource.removeAll(keepingCapacity: false)
+            importLocationVisits.removeAll(keepingCapacity: false)
+            importHealthVisits.removeAll(keepingCapacity: false)
+        }
+        let start = Calendar.current.date(byAdding: .day, value: -daysBack, to: .now) ?? .now
         let datePredicate = HKQuery.predicateForSamples(withStart: start, end: .now, options: .strictEndDate)
         do {
+            var healthItemCount = 0
             if let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) {
+                let queryStartedAt = Date.now
                 let descriptor = HKSampleQueryDescriptor<HKCategorySample>(
                     predicates: [.categorySample(type: sleepType, predicate: datePredicate)],
                     sortDescriptors: [SortDescriptor(\.startDate)]
                 )
                 let samples = try await descriptor.result(for: healthStore)
+                Diagnostics.performance(context, subsystem: "HealthKit", operation: "sleep query",
+                                        startedAt: queryStartedAt, itemCount: samples.count)
+                healthItemCount += samples.count
                 importSleep(samples, context: context)
+                await Task.yield()
             }
-            let workoutDescriptor = HKSampleQueryDescriptor<HKWorkout>(
-                predicates: [.workout(datePredicate)],
-                sortDescriptors: [SortDescriptor(\.startDate)]
-            )
-            let workouts = try await workoutDescriptor.result(for: healthStore)
-            importWorkouts(workouts, context: context)
+            if includeWorkouts {
+                let workoutQueryStartedAt = Date.now
+                let workoutDescriptor = HKSampleQueryDescriptor<HKWorkout>(
+                    predicates: [.workout(datePredicate)],
+                    sortDescriptors: [SortDescriptor(\.startDate)]
+                )
+                let workouts = try await workoutDescriptor.result(for: healthStore)
+                Diagnostics.performance(context, subsystem: "HealthKit", operation: "workout query",
+                                        startedAt: workoutQueryStartedAt, itemCount: workouts.count)
+                healthItemCount += workouts.count
+                importWorkouts(workouts, context: context)
+                await Task.yield()
+            }
             if let stepType = HKObjectType.quantityType(forIdentifier: .stepCount) {
+                let stepQueryStartedAt = Date.now
                 let descriptor = HKSampleQueryDescriptor<HKQuantitySample>(
                     predicates: [.quantitySample(type: stepType, predicate: datePredicate)],
                     sortDescriptors: [SortDescriptor(\.startDate)]
                 )
                 let steps = try await descriptor.result(for: healthStore)
+                Diagnostics.performance(context, subsystem: "HealthKit", operation: "step history query",
+                                        startedAt: stepQueryStartedAt, itemCount: steps.count)
+                healthItemCount += steps.count
                 importWalkingSamples(steps, context: context)
+                await Task.yield()
             }
+            let saveStartedAt = Date.now
             try context.save()
+            Diagnostics.performance(context, subsystem: "HealthKit", operation: "history save",
+                                    startedAt: saveStartedAt, itemCount: healthItemCount)
             healthStatus = "Connected"
             lastImport = .now
+            Diagnostics.performance(context, subsystem: "HealthKit", operation: "history catch-up",
+                                    startedAt: startedAt, itemCount: healthItemCount)
         } catch {
             lastError = "Recent Health data couldn’t be imported. Your existing timeline is unchanged."
             Diagnostics.record(context, subsystem: "HealthKit",
@@ -239,39 +306,50 @@ final class ActivityDataService {
     private func insertActivity(name: String, activity: String, category: String, source: String,
                                 start: Date, end: Date, context: ModelContext) {
         guard end > start else { return }
-        let existing = (try? context.fetch(FetchDescriptor<Visit>())) ?? []
+        let existing = importExistingVisits ?? ((try? context.fetch(FetchDescriptor<Visit>())) ?? [])
+        let sourceVisits = importVisitsBySource[source] ?? existing.filter { $0.source == source }
+        let locationVisits = importExistingVisits == nil
+            ? existing.filter(ActivityLocationPolicy.isLocationVisit)
+            : importLocationVisits
         let original = DateInterval(start: start, end: end)
         let minimumDuration = ActivityLocationPolicy.minimumRetainedDuration(for: source)
         let segments = ActivityLocationPolicy.remainingSegments(
             for: original,
-            locationVisits: existing
+            locationVisits: locationVisits
         ).filter { $0.duration >= minimumDuration }
 
         for segment in segments {
-            let duplicate = existing.contains {
-                $0.source == source && abs($0.arrival.timeIntervalSince(segment.start)) < 120 &&
+            let duplicate = sourceVisits.contains {
+                abs($0.arrival.timeIntervalSince(segment.start)) < 120 &&
                 abs(($0.departure ?? $0.arrival).timeIntervalSince(segment.end)) < 120
             }
             guard !duplicate else { continue }
 
             if source == "motion" {
-                let overlapsWorkout = existing.contains {
-                    $0.source.hasPrefix("health") && $0.arrival < segment.end &&
+                let healthVisits = importExistingVisits == nil
+                    ? existing.filter { $0.source.hasPrefix("health") }
+                    : importHealthVisits
+                let overlapsWorkout = healthVisits.contains {
+                    $0.arrival < segment.end &&
                     ($0.departure ?? .now) > segment.start
                 }
                 guard !overlapsWorkout else { continue }
             }
             if source == "health-walking" {
-                let overlapsWorkout = existing.contains {
-                    $0.source == "health-workout" && $0.arrival < segment.end &&
+                let workouts = importVisitsBySource["health-workout"] ?? existing.filter { $0.source == "health-workout" }
+                let overlapsWorkout = workouts.contains {
+                    $0.arrival < segment.end &&
                     ($0.departure ?? .now) > segment.start
                 }
                 guard !overlapsWorkout else { continue }
             }
 
-            context.insert(Visit(arrival: segment.start, departure: segment.end, latitude: 0, longitude: 0,
-                                 placeName: name, placeCategory: category, inferredActivity: activity,
-                                 userActivity: activity, source: source, recognitionConfidence: "device"))
+            let visit = Visit(arrival: segment.start, departure: segment.end, latitude: 0, longitude: 0,
+                              placeName: name, placeCategory: category, inferredActivity: activity,
+                              userActivity: activity, source: source, recognitionConfidence: "device")
+            context.insert(visit)
+            importExistingVisits?.append(visit)
+            importVisitsBySource[source, default: []].append(visit)
         }
     }
 

@@ -42,19 +42,20 @@ struct JournalCSVImporter {
 
     @MainActor
     static func importData(_ data: Data, into context: ModelContext) throws -> JournalImportResult {
+        let startedAt = Date.now
         let parsed = parse(data)
         let existing = try context.fetch(FetchDescriptor<Visit>())
+        // Life Cycle exports can contain tens of thousands of rows. Keep duplicate
+        // detection O(1) per row instead of scanning every existing Visit for each
+        // imported entry, which otherwise makes a large import feel like a hang.
+        var importedKeys = Set(existing.compactMap(importKey(for:)))
         var inserted = 0
         var skipped = 0
         for row in parsed.rows {
             let activity = normalizedActivity(row.name)
             let place = row.location.isEmpty ? "Imported journal" : row.location
-            let duplicate = existing.contains {
-                $0.source == "imported-journal" &&
-                abs($0.arrival.timeIntervalSince(row.start)) < 1 &&
-                $0.placeName == place && $0.activity == activity
-            }
-            if duplicate { skipped += 1; continue }
+            let key = importKey(start: row.start, place: place, activity: activity)
+            if !importedKeys.insert(key).inserted { skipped += 1; continue }
             context.insert(Visit(
                 arrival: row.start, departure: row.end, latitude: 0, longitude: 0,
                 placeName: place, placeCategory: category(for: activity),
@@ -64,8 +65,19 @@ struct JournalCSVImporter {
             inserted += 1
         }
         try context.save()
+        Diagnostics.performance(context, subsystem: "Import", operation: "journal import",
+                                startedAt: startedAt, itemCount: parsed.rows.count)
         return JournalImportResult(rows: parsed.rows.count, inserted: inserted,
                                    skipped: skipped, malformed: parsed.malformed)
+    }
+
+    private static func importKey(for visit: Visit) -> String? {
+        guard visit.source == "imported-journal" else { return nil }
+        return importKey(start: visit.arrival, place: visit.placeName, activity: visit.activity)
+    }
+
+    private static func importKey(start: Date, place: String, activity: String) -> String {
+        "\(start.timeIntervalSince1970.rounded())|\(place)|\(activity)"
     }
 
     private static func parseDate(_ value: String) -> Date? {

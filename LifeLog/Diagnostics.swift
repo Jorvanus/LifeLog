@@ -26,4 +26,17 @@ enum Diagnostics {
         context.insert(DiagnosticEvent(subsystem: subsystem, severity: severity, message: message))
         try? context.save()
     }
+
+    /// Records only slow operations. The message intentionally contains timing and
+    /// aggregate counts, never coordinates, place names, notes, or Health values.
+    static func performance(_ context: ModelContext?, subsystem: String,
+                            operation: String, startedAt: Date, itemCount: Int? = nil,
+                            threshold: TimeInterval = 0.25) {
+        let elapsed = Date.now.timeIntervalSince(startedAt)
+        guard elapsed >= threshold else { return }
+        let countText = itemCount.map { " (\($0) items)" } ?? ""
+        record(context, subsystem: subsystem,
+               message: "Slow \(operation): \(Int((elapsed * 1000).rounded())) ms\(countText)",
+               severity: "info")
+    }
 }

@@ -5,7 +5,10 @@ import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @Environment(\.modelContext) private var context
-    @Query(sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
+    // Settings only needs the current recorded location; imported journal history
+    // is intentionally kept out of this screen's query so controls stay responsive.
+    @Query(filter: #Predicate<Visit> { $0.source == "automatic" || $0.source == "manual" },
+           sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
     @Query(sort: \SavedPlace.name) private var savedPlaces: [SavedPlace]
     @Query(sort: \DiagnosticEvent.createdAt, order: .reverse) private var diagnostics: [DiagnosticEvent]
     @State private var importingJournal = false

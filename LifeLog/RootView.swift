@@ -17,8 +17,11 @@ struct RootView: View {
         .tint(.blue)
         .accessibilityIdentifier("root-tab-view")
         .task {
+            let startedAt = Date.now
             recorder.connect(context)
             activityData.connect(context)
+            Diagnostics.performance(context, subsystem: "Launch", operation: "service setup",
+                                    startedAt: startedAt, threshold: 0.1)
         }
     }
 }

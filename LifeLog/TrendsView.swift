@@ -4,6 +4,7 @@ import Charts
 import MapKit
 
 struct TrendsView: View {
+    @Environment(\.modelContext) private var context
     let activityData: ActivityDataService
     @Query(sort: \Visit.arrival) private var visits: [Visit]
     @State private var window: InsightWindow = .day
@@ -132,7 +133,8 @@ struct TrendsView: View {
                 activityData: activityData,
                 segments: snapshot.segments,
                 loggedHours: snapshot.loggedHours,
-                totalHours: snapshot.totalHours
+                totalHours: snapshot.totalHours,
+                analysisInterval: snapshot.analysisInterval
             )
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 12) {
@@ -205,21 +207,34 @@ struct TrendsView: View {
 
     private var weekdayPatternsSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Weekday patterns").font(.title2.bold())
-            if snapshot.weekdayPatterns.allSatisfy({ $0.hours == 0 }) {
-                InsightEmptyRow(icon: "calendar", title: "Not enough logged time", detail: "Weekday patterns appear as visits accumulate.")
+            Text("Your weekly rhythm").font(.title2.bold())
+            Text("The activity that takes up the most time on each day")
+                .font(.subheadline).foregroundStyle(.secondary)
+            if snapshot.weekdayPatterns.allSatisfy({ $0.topHours == 0 }) {
+                InsightEmptyRow(icon: "calendar", title: "Not enough activity history", detail: "Your usual weekday activities will appear here as visits accumulate.")
             } else {
-                Chart(snapshot.weekdayPatterns) { pattern in
-                    BarMark(x: .value("Day", pattern.shortName), y: .value("Hours", pattern.hours))
-                        .foregroundStyle(activityColor(pattern.topActivity))
-                        .annotation(position: .top) {
-                            if pattern.hours > 0 { Text(formatHours(pattern.hours)).font(.caption2) }
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                    ForEach(snapshot.weekdayPatterns) { pattern in
+                        HStack(spacing: 9) {
+                            ActivityIcon(activity: pattern.topActivity,
+                                         category: pattern.topActivity,
+                                         color: activityColor(pattern.topActivity))
+                                .scaleEffect(0.68).frame(width: 30, height: 30)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(pattern.shortName).font(.caption.bold()).foregroundStyle(.secondary)
+                                if pattern.topHours > 0 {
+                                    Text(pattern.topActivity).font(.subheadline.weight(.medium)).lineLimit(1)
+                                    Text(formatHours(pattern.topHours)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                                } else {
+                                    Text("No activity yet").font(.caption).foregroundStyle(.tertiary)
+                                }
+                            }
+                            Spacer(minLength: 0)
                         }
+                        .padding(10)
+                        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 13))
+                    }
                 }
-                .chartYAxis { AxisMarks(position: .leading) }
-                .frame(height: 170)
-                Text("Average logged time: \(formatHours(snapshot.weekdayAverage)) per weekday")
-                    .font(.caption).foregroundStyle(.secondary)
             }
         }
         .padding(18)
@@ -261,7 +276,10 @@ struct TrendsView: View {
     private func rebuildSnapshot() {
         // This is the only expensive Insights boundary. Donut taps remain local to the
         // chart and therefore never rebuild history, trends, place totals, or Map content.
+        let startedAt = Date.now
         snapshot = InsightsSnapshot.make(visits: visits, window: window, anchorDate: anchorDate, now: now)
+        Diagnostics.performance(context, subsystem: "Insights", operation: "snapshot rebuild",
+                                startedAt: startedAt, itemCount: visits.count)
     }
 
     private func visits(for slice: TimeSlice) -> [Visit] {
@@ -341,7 +359,13 @@ private struct InsightsSnapshotKey: Hashable {
         self.window = window
         intervalStart = interval.start
         cutoff = interval.contains(now) ? now : interval.end
-        self.visits = visits.map(InsightVisitRevision.init)
+        // Imported journals can contain tens of thousands of historical rows. Only
+        // visits that overlap the selected period can change this snapshot, so avoid
+        // hashing the entire archive every time SwiftUI reevaluates the view.
+        let analysisInterval = DateInterval(start: interval.start, end: cutoff)
+        self.visits = visits.lazy
+            .filter { $0.overlaps(analysisInterval, now: now) }
+            .map(InsightVisitRevision.init)
     }
 }
 
@@ -385,11 +409,6 @@ private struct InsightsSnapshot {
     let mapRegion: MKCoordinateRegion
     let mapID: Int
     let weekdayPatterns: [WeekdayPattern]
-
-    var weekdayAverage: Double {
-        let values = weekdayPatterns.filter { $0.hours > 0 }.map(\.hours)
-        return values.isEmpty ? 0 : values.reduce(0, +) / Double(values.count)
-    }
 
     static let empty = InsightsSnapshot(
         generatedAt: .distantPast,
@@ -539,8 +558,9 @@ private struct InsightsSnapshot {
             activities[weekday][segment.activity, default: 0] += segment.hours
         }
         return (0..<7).map { index in
-            let top = activities[index].max { $0.value < $1.value }?.key ?? "Visiting"
-            return WeekdayPattern(weekday: index + 1, hours: totals[index], topActivity: top)
+            let top = activities[index].max { $0.value < $1.value }
+            return WeekdayPattern(weekday: index + 1, hours: totals[index],
+                                  topActivity: top?.key ?? "Visiting", topHours: top?.value ?? 0)
         }
     }
 
@@ -574,9 +594,11 @@ private struct InsightsDonutChart: View {
     let segments: [InsightSegment]
     let loggedHours: Double
     let totalHours: Double
+    let analysisInterval: DateInterval
     @State private var selectedAngle: Double?
     @State private var focusedSegmentID: InsightSegmentID?
     @State private var sleepSummary: SleepSummary?
+    @State private var stepCount: Double?
 
     private var focusedSegment: InsightSegment? {
         guard let focusedSegmentID else { return nil }
@@ -619,7 +641,18 @@ private struct InsightsDonutChart: View {
                         .gesture(
                             DragGesture(minimumDistance: 0)
                                 .onEnded { value in
-                                    proxy.selectAngleValue(at: proxy.angle(at: value.location))
+                                    let angle = proxy.angle(at: value.location)
+                                    let angleValue = angle.degrees
+                                    guard let segment = segment(at: angleValue) else { return }
+                                    if focusedSegmentID == segment.id {
+                                        // A second tap on the focused slice restores the
+                                        // neutral donut and brings every slice back to full opacity.
+                                        focusedSegmentID = nil
+                                        selectedAngle = nil
+                                    } else {
+                                        focusedSegmentID = segment.id
+                                        selectedAngle = angleValue
+                                    }
                                 }
                         )
                 }
@@ -656,15 +689,32 @@ private struct InsightsDonutChart: View {
                     .allowsHitTesting(false)
             } else {
                 VStack(spacing: 2) {
-                    Text(formatHours(loggedHours)).font(.title.bold()).monospacedDigit()
-                    Text("logged").font(.subheadline).foregroundStyle(.secondary)
-                    Text("of \(formatHours(totalHours))").font(.caption).foregroundStyle(.tertiary)
+                    if let stepCount {
+                        Text(formatSteps(stepCount)).font(.title.bold()).monospacedDigit()
+                        Text("steps").font(.subheadline).foregroundStyle(.secondary)
+                        Text("Apple Health").font(.caption).foregroundStyle(.tertiary)
+                    } else {
+                        Text("—").font(.title.bold()).monospacedDigit()
+                        Text("steps").font(.subheadline).foregroundStyle(.secondary)
+                        Text("Connect Apple Health").font(.caption).foregroundStyle(.tertiary)
+                    }
                 }
                 .allowsHitTesting(false)
             }
         }
         .frame(height: 330)
         .accessibilityIdentifier("insights-donut-chart")
+        .task(id: stepCountKey) {
+            // Let the chart render before asking HealthKit for samples. This keeps
+            // navigation responsive on devices with a large Health history.
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            stepCount = await activityData.stepCount(for: analysisInterval)
+        }
+    }
+
+    private var stepCountKey: String {
+        "\(analysisInterval.start.timeIntervalSinceReferenceDate)-\(analysisInterval.end.timeIntervalSinceReferenceDate)"
     }
 
     private func segment(at angle: Double) -> InsightSegment? {
@@ -911,11 +961,12 @@ private struct WeekdayPattern: Identifiable {
     let weekday: Int
     let hours: Double
     let topActivity: String
+    let topHours: Double
     var id: Int { weekday }
     var shortName: String {
         Calendar.current.shortWeekdaySymbols[(weekday - 1) % 7]
     }
-    static let empty = (1...7).map { WeekdayPattern(weekday: $0, hours: 0, topActivity: "Visiting") }
+    static let empty = (1...7).map { WeekdayPattern(weekday: $0, hours: 0, topActivity: "Visiting", topHours: 0) }
 }
 
 private struct InsightEmptyRow: View {
@@ -955,6 +1006,10 @@ private func formatHours(_ hours: Double) -> String {
     if minutes < 60 { return "\(minutes)m" }
     if minutes % 60 == 0 { return "\(minutes / 60)h" }
     return "\(minutes / 60)h \(minutes % 60)m"
+}
+
+private func formatSteps(_ count: Double) -> String {
+    Int(max(0, count).rounded()).formatted(.number)
 }
 
 private func insightColor(for value: String) -> Color {
