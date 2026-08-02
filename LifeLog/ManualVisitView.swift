@@ -62,7 +62,8 @@ struct ManualVisitView: View {
                             Button { choose(item) } label: {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(item.name ?? "Unnamed place").foregroundStyle(.primary)
-                                    if let address = item.placemark.title {
+                                    if let address = item.address?.shortAddress ??
+                                        item.addressRepresentations?.fullAddress(includingRegion: true, singleLine: true) {
                                         Text(address).font(.caption).foregroundStyle(.secondary)
                                     }
                                 }
@@ -78,7 +79,7 @@ struct ManualVisitView: View {
                             }
                             ForEach(searchResults.indices, id: \.self) { index in
                                 let item = searchResults[index]
-                                let coordinate = item.placemark.coordinate
+                                let coordinate = item.location.coordinate
                                 Annotation(item.name ?? "Place", coordinate: coordinate) {
                                     Image(systemName: "mappin.circle.fill")
                                         .font(.title2).foregroundStyle(.blue)
@@ -160,7 +161,7 @@ struct ManualVisitView: View {
     }
 
     private func choose(_ item: MKMapItem) {
-        let coordinate = item.placemark.coordinate
+        let coordinate = item.location.coordinate
         guard CLLocationCoordinate2DIsValid(coordinate) else { return }
         let name = TextSafety.clean(item.name ?? "Selected place", maximumLength: 120)
         place = name

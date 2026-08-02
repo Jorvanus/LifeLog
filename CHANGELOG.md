@@ -2,6 +2,10 @@
 
 ## 2026-08-03
 
+### MapKit iOS 27 API cleanup
+
+- Replaced deprecated `MKMapItem.placemark` usage in manual entries with iOS 27 `location`, `address`, and `addressRepresentations` APIs.
+
 ### Privacy-safe diagnostics
 
 - Added local diagnostics for delayed Core Location callbacks, MapKit lookup/reverse-geocoding failures, HealthKit imports and sleep queries, and motion imports.
