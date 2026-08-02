@@ -4,6 +4,27 @@ import HealthKit
 import SwiftData
 import Observation
 
+/// Sleep details read from HealthKit for one selected overnight session.
+/// The score is LifeLog's transparent estimate; Apple does not expose its private
+/// Sleep Score as a public HealthKit value.
+struct SleepSummary: Equatable, Sendable {
+    let totalSleep: TimeInterval
+    let timeInBed: TimeInterval
+    let awake: TimeInterval
+    let rem: TimeInterval
+    let core: TimeInterval
+    let deep: TimeInterval
+    let interruptions: Int
+
+    var estimatedScore: Int {
+        let durationPoints = min(50, totalSleep / (8 * 60 * 60) * 50)
+        let restorativeRatio = totalSleep > 0 ? (rem + deep) / totalSleep : 0
+        let stagePoints = min(30, max(0, restorativeRatio / 0.35 * 30))
+        let interruptionPoints = max(0, 20 - Double(interruptions) * 3)
+        return Int((durationPoints + stagePoints + interruptionPoints).rounded())
+    }
+}
+
 @MainActor @Observable
 final class ActivityDataService {
     private let healthStore = HKHealthStore()
@@ -60,6 +81,28 @@ final class ActivityDataService {
     func importAll() {
         Task { await importHealthHistory() }
         if CMMotionActivityManager.authorizationStatus() == .authorized { importMotionHistory() }
+    }
+
+    /// Reads the selected sleep session on demand so opening Insights does not add a
+    /// HealthKit query to every chart render.
+    func sleepSummary(for interval: DateInterval) async -> SleepSummary? {
+        guard HKHealthStore.isHealthDataAvailable(),
+              let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return nil }
+        let predicate = HKQuery.predicateForSamples(
+            withStart: interval.start,
+            end: interval.end,
+            options: [.strictStartDate, .strictEndDate]
+        )
+        do {
+            let descriptor = HKSampleQueryDescriptor<HKCategorySample>(
+                predicates: [.categorySample(type: sleepType, predicate: predicate)],
+                sortDescriptors: [SortDescriptor(\.startDate)]
+            )
+            let samples = try await descriptor.result(for: healthStore)
+            return SleepSummary(samples: samples, interval: interval)
+        } catch {
+            return nil
+        }
     }
 
     private var healthTypes: Set<HKSampleType> {
@@ -267,6 +310,49 @@ final class ActivityDataService {
         case .notDetermined: "Not connected"
         @unknown default: "Unknown"
         }
+    }
+}
+
+private extension SleepSummary {
+    init(samples: [HKCategorySample], interval: DateInterval) {
+        var totalSleep = 0.0
+        var timeInBed = 0.0
+        var awake = 0.0
+        var rem = 0.0
+        var core = 0.0
+        var deep = 0.0
+        var interruptions = 0
+
+        for sample in samples {
+            let start = max(sample.startDate, interval.start)
+            let end = min(sample.endDate, interval.end)
+            guard end > start,
+                  let value = HKCategoryValueSleepAnalysis(rawValue: sample.value) else { continue }
+            let duration = end.timeIntervalSince(start)
+            switch value {
+            case .inBed:
+                timeInBed += duration
+            case .asleepREM:
+                rem += duration
+                totalSleep += duration
+            case .asleepCore:
+                core += duration
+                totalSleep += duration
+            case .asleepDeep:
+                deep += duration
+                totalSleep += duration
+            case .asleepUnspecified:
+                totalSleep += duration
+            case .awake:
+                awake += duration
+                interruptions += 1
+            default:
+                break
+            }
+        }
+
+        self.init(totalSleep: totalSleep, timeInBed: max(timeInBed, totalSleep + awake), awake: awake,
+                  rem: rem, core: core, deep: deep, interruptions: interruptions)
     }
 }
 

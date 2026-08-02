@@ -156,6 +156,21 @@ struct ActivityLocationPolicyTests {
         #expect(ActivityLocationPolicy.shouldShow(driving, alongside: [previous, driving, next]) == true)
     }
 
+    @Test("LifeLog sleep estimate reflects duration, stages, and interruptions")
+    func estimatesSleepQuality() {
+        let summary = SleepSummary(
+            totalSleep: 8 * 60 * 60,
+            timeInBed: 8.5 * 60 * 60,
+            awake: 30 * 60,
+            rem: 90 * 60,
+            core: 4 * 60 * 60,
+            deep: 2.5 * 60 * 60,
+            interruptions: 2
+        )
+
+        #expect(summary.estimatedScore == 94)
+    }
+
     @Test("Vehicle travel is classified toward a recurring work destination")
     func classifiesTravelToWork() throws {
         let context = try makeContext()

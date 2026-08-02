@@ -4,6 +4,7 @@ import Charts
 import MapKit
 
 struct TrendsView: View {
+    let activityData: ActivityDataService
     @Query(sort: \Visit.arrival) private var visits: [Visit]
     @State private var window: InsightWindow = .day
     @State private var anchorDate = Date.now
@@ -105,6 +106,7 @@ struct TrendsView: View {
             // Selection state lives inside this child so highlighting one sector does not
             // invalidate trends, place aggregation, or the Map below it.
             InsightsDonutChart(
+                activityData: activityData,
                 segments: snapshot.segments,
                 loggedHours: snapshot.loggedHours,
                 totalHours: snapshot.totalHours
@@ -499,11 +501,13 @@ private struct InsightsSnapshot {
 }
 
 private struct InsightsDonutChart: View {
+    let activityData: ActivityDataService
     let segments: [InsightSegment]
     let loggedHours: Double
     let totalHours: Double
     @State private var selectedAngle: Double?
     @State private var focusedSegmentID: InsightSegmentID?
+    @State private var sleepSummary: SleepSummary?
 
     private var focusedSegment: InsightSegment? {
         guard let focusedSegmentID else { return nil }
@@ -563,9 +567,22 @@ private struct InsightsDonutChart: View {
                 }
             }
             .accessibilityHint("Highlight this entry and show its check-in, check-out, and duration")
+            .task(id: sleepSummaryKey) {
+                sleepSummary = nil
+                guard let segment = focusedSegment, segment.isSleep else { return }
+                sleepSummary = await activityData.sleepSummary(
+                    for: DateInterval(start: segment.start, end: segment.end)
+                )
+            }
 
             if let focusedSegment {
-                focusedCenter(for: focusedSegment)
+                Group {
+                    if focusedSegment.isSleep {
+                        sleepCenter(for: focusedSegment)
+                    } else {
+                        focusedCenter(for: focusedSegment)
+                    }
+                }
                     // The centre label is visual output; it must never intercept chart taps.
                     .allowsHitTesting(false)
             } else {
@@ -588,6 +605,37 @@ private struct InsightsDonutChart: View {
             if angle <= upperBound { return segment }
         }
         return segments.last
+    }
+
+    private var sleepSummaryKey: String? {
+        guard let focusedSegment, focusedSegment.isSleep else { return nil }
+        return "\(focusedSegment.start.timeIntervalSinceReferenceDate)-\(focusedSegment.end.timeIntervalSinceReferenceDate)"
+    }
+
+    private func sleepCenter(for segment: InsightSegment) -> some View {
+        VStack(spacing: 3) {
+            if let sleepSummary {
+                Text("\(sleepSummary.estimatedScore)")
+                    .font(.title.bold()).monospacedDigit().foregroundStyle(.blue)
+                Text("LifeLog sleep estimate").font(.caption.bold())
+                Text("Asleep  \(formatHours(sleepSummary.totalSleep / 3600))")
+                Text("In bed  \(formatHours(sleepSummary.timeInBed / 3600))")
+                Text("Deep \(formatHours(sleepSummary.deep / 3600))  •  REM \(formatHours(sleepSummary.rem / 3600))")
+                    .font(.caption2)
+                Text("Awake \(formatHours(sleepSummary.awake / 3600))  •  \(sleepSummary.interruptions) interruptions")
+                    .font(.caption2)
+            } else {
+                ProgressView()
+                Text("Loading sleep data…").font(.caption)
+            }
+            Text("Apple Health sleep stages").font(.caption2).foregroundStyle(.secondary)
+        }
+        .font(.caption2.monospacedDigit())
+        .foregroundStyle(.primary)
+        .multilineTextAlignment(.center)
+        .frame(width: 190)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Sleep details")
     }
 
     private func focusedCenter(for segment: InsightSegment) -> some View {
@@ -662,6 +710,10 @@ private struct InsightSegment: Identifiable {
     let symbol: String
     let isUnlogged: Bool
     let isLive: Bool
+
+    var isSleep: Bool {
+        category.localizedCaseInsensitiveContains("sleep") || activity.localizedCaseInsensitiveContains("sleep")
+    }
 
     static func visit(_ visit: Visit, visibleFrom: Date, visibleTo: Date, now: Date) -> InsightSegment {
         let category = visit.insightCategory

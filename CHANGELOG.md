@@ -2,11 +2,21 @@
 
 ## 2026-08-02
 
+### Sleep details and dark-mode icon
+
+- Added a dark luminosity AppIcon appearance that switches with the iOS interface style.
+- Added a prioritized project backlog in `TODO.md` covering device validation, HealthKit edge cases, performance, privacy, and planned exports/sync.
+
 ### Responsive Insights interactions
 
 - Insights now prepares timeline segments, trends, and place totals once per data or date change instead of rebuilding them for every donut selection.
 - Donut taps use Charts’ native angle selection and local state, keeping repeated taps responsive without rebuilding the rest of Insights or its map.
 - Donut highlighting now uses one immediate state transition, preventing the previously selected slice from flashing during a new tap.
+
+### Sleep details
+
+- Selecting a Sleep segment now loads its Apple Health sleep stages on demand and shows asleep time, time in bed, deep sleep, REM, awake time, interruptions, and a clearly labelled LifeLog sleep estimate.
+- LifeLog does not claim to reproduce Apple’s private Sleep Score; the estimate is derived from HealthKit duration, restorative stages, and interruptions.
 
 ### Current and saved places
 
