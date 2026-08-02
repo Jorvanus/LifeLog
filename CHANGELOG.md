@@ -6,7 +6,7 @@
 
 - Insights is now the second tab and Map is the third.
 - The Insights donut now represents individual timeline entries while retaining category totals below it.
-- Tapping a donut segment dims the screen and focuses that entry’s check-in, check-out, duration, and edit action in the centre.
+- Tapping a donut segment now highlights it in place and shows that entry’s check-in, check-out, and duration in the centre without opening a popup.
 
 ### Editable insight slices
 

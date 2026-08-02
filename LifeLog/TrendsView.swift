@@ -61,10 +61,6 @@ struct TrendsView: View {
                         .presentationDetents([.medium, .large])
                 }
             }
-            .fullScreenCover(item: $focusedSegment, onDismiss: { selectedAngle = nil }) { segment in
-                InsightSegmentFocus(segment: segment, segments: segments)
-                    .presentationBackground(.clear)
-            }
         }
     }
 
@@ -104,15 +100,18 @@ struct TrendsView: View {
 
             ZStack {
                 Chart(segments) { segment in
+                    let selected = focusedSegment?.id == segment.id
+                    let hasSelection = focusedSegment != nil
                     SectorMark(
                         angle: .value("Hours", segment.hours),
-                        innerRadius: .ratio(0.48),
+                        innerRadius: .ratio(0.56),
+                        outerRadius: .ratio(selected ? 1 : 0.95),
                         angularInset: 2
                     )
                     .cornerRadius(6)
-                    .foregroundStyle(segment.color)
+                    .foregroundStyle(segment.color.opacity(hasSelection && !selected ? 0.2 : 1))
                     .annotation(position: .overlay) {
-                        if segment.hours / max(totalHours, 1) > 0.08 {
+                        if !hasSelection && segment.hours / max(totalHours, 1) > 0.08 {
                             VStack(spacing: 2) {
                                 Image(systemName: segment.symbol)
                                 Text(formatHours(segment.hours)).font(.caption.bold())
@@ -124,13 +123,17 @@ struct TrendsView: View {
                 .chartAngleSelection(value: $selectedAngle)
                 .onChange(of: selectedAngle) { _, angle in
                     guard let angle, let segment = segment(at: angle) else { return }
-                    focusedSegment = segment
+                    withAnimation(.snappy) { focusedSegment = segment }
                 }
-                .accessibilityHint("Select a segment to focus its check-in, check-out, and duration")
-                VStack(spacing: 2) {
-                    Text(formatHours(loggedHours)).font(.title.bold()).monospacedDigit()
-                    Text("logged").font(.subheadline).foregroundStyle(.secondary)
-                    Text("of \(formatHours(totalHours))").font(.caption).foregroundStyle(.tertiary)
+                .accessibilityHint("Highlight this entry and show its check-in, check-out, and duration")
+                if let focusedSegment {
+                    focusedCenter(for: focusedSegment)
+                } else {
+                    VStack(spacing: 2) {
+                        Text(formatHours(loggedHours)).font(.title.bold()).monospacedDigit()
+                        Text("logged").font(.subheadline).foregroundStyle(.secondary)
+                        Text("of \(formatHours(totalHours))").font(.caption).foregroundStyle(.tertiary)
+                    }
                 }
             }
             .frame(height: 330)
@@ -332,6 +335,30 @@ struct TrendsView: View {
         return segments.last
     }
 
+    private func focusedCenter(for segment: InsightSegment) -> some View {
+        VStack(spacing: 3) {
+            Image(systemName: segment.symbol).font(.title3.bold()).foregroundStyle(segment.color)
+            Text(segment.activity).font(.headline).multilineTextAlignment(.center).lineLimit(2)
+            if let placeName = segment.placeName, placeName != segment.activity {
+                Text(placeName).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Divider().padding(.vertical, 2)
+            Text("In  \(timeLabel(segment.start))")
+            Text("Out  \(segment.isLive ? "Now" : timeLabel(segment.end))")
+            Text(formatHours(segment.end.timeIntervalSince(segment.start) / 3600))
+                .font(.subheadline.bold().monospacedDigit()).padding(.top, 2)
+        }
+        .font(.caption2.monospacedDigit())
+        .foregroundStyle(.primary)
+        .frame(width: 176)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(segment.activity), \(segment.placeName ?? ""), in \(timeLabel(segment.start)), out \(segment.isLive ? "now" : timeLabel(segment.end)), duration \(formatHours(segment.end.timeIntervalSince(segment.start) / 3600))")
+    }
+
+    private func timeLabel(_ date: Date) -> String {
+        date.formatted(date: .omitted, time: .shortened)
+    }
+
     private func visits(for slice: TimeSlice) -> [Visit] {
         guard !slice.isUnlogged else { return [] }
         return periodVisits.filter { sliceName(for: $0) == slice.name }.sorted { $0.arrival > $1.arrival }
@@ -443,90 +470,6 @@ private struct InsightSegment: Identifiable {
             color: .gray.opacity(0.35), symbol: "moon.zzz.fill",
             isUnlogged: true, isLive: false
         )
-    }
-}
-
-private struct InsightSegmentFocus: View {
-    @Environment(\.dismiss) private var dismiss
-    let segment: InsightSegment
-    let segments: [InsightSegment]
-    @State private var editingVisit: Visit?
-    @State private var addingVisit = false
-
-    var body: some View {
-        ZStack {
-            Color.black.opacity(0.72).ignoresSafeArea()
-                .onTapGesture { dismiss() }
-
-            VStack(spacing: 14) {
-                HStack {
-                    Text("Focused entry").font(.headline).foregroundStyle(.white.opacity(0.8))
-                    Spacer()
-                    Button { dismiss() } label: {
-                        Image(systemName: "xmark").font(.headline).foregroundStyle(.white)
-                            .frame(width: 42, height: 42).background(.white.opacity(0.14), in: Circle())
-                    }
-                    .accessibilityLabel("Close focused entry")
-                }
-                .frame(maxWidth: 400)
-
-                ZStack {
-                    Chart(segments) { item in
-                        let selected = item.id == segment.id
-                        SectorMark(
-                            angle: .value("Hours", item.hours),
-                            innerRadius: .ratio(0.58),
-                            outerRadius: .ratio(selected ? 1 : 0.93),
-                            angularInset: 2
-                        )
-                        .cornerRadius(6)
-                        .foregroundStyle(item.color.opacity(selected ? 1 : 0.13))
-                    }
-                    .chartLegend(.hidden)
-                    .shadow(color: segment.color.opacity(0.4), radius: 18)
-
-                    VStack(spacing: 4) {
-                        Image(systemName: segment.symbol)
-                            .font(.title3.bold()).foregroundStyle(segment.color)
-                        Text(segment.activity).font(.headline).foregroundStyle(.white)
-                            .multilineTextAlignment(.center).lineLimit(2)
-                        if let placeName = segment.placeName, placeName != segment.activity {
-                            Text(placeName).font(.caption).foregroundStyle(.white.opacity(0.72))
-                                .lineLimit(1)
-                        }
-                        Divider().overlay(.white.opacity(0.18)).padding(.vertical, 2)
-                        Text("Check in  \(timeLabel(segment.start))")
-                        Text("Check out  \(segment.isLive ? "Now" : timeLabel(segment.end))")
-                        Text(formatHours(segment.end.timeIntervalSince(segment.start) / 3600))
-                            .font(.subheadline.bold()).foregroundStyle(.white).padding(.top, 2)
-                    }
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.82))
-                    .frame(width: 180)
-                }
-                .frame(maxWidth: 400, minHeight: 340, maxHeight: 380)
-
-                Button {
-                    if let visit = segment.visit { editingVisit = visit } else { addingVisit = true }
-                } label: {
-                    Label(segment.isUnlogged ? "Add Visit" : "Edit Entry",
-                          systemImage: segment.isUnlogged ? "plus" : "pencil")
-                        .font(.headline).frame(maxWidth: 260).padding(.vertical, 12)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(segment.color)
-            }
-            .padding(22)
-        }
-        .sheet(item: $editingVisit) { visit in
-            NavigationStack { VisitEditor(visit: visit) }
-                .presentationDetents([.large])
-        }
-        .sheet(isPresented: $addingVisit) { ManualVisitView() }
-    }
-
-    private func timeLabel(_ date: Date) -> String {
-        date.formatted(date: .omitted, time: .shortened)
     }
 }
 
