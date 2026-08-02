@@ -533,17 +533,25 @@ private struct InsightsDonutChart: View {
                 }
             }
             .chartLegend(.hidden)
-            // Keep one selection path: converting the tap directly to a segment avoids the
-            // built-in angle binding racing this gesture and briefly restoring old focus.
-            .chartGesture { proxy in
-                SpatialTapGesture()
-                    .onEnded { value in
-                        let angle = proxy.angle(at: value.location)
-                        guard let segment = segment(at: angle.radians) else { return }
-                        // The highlight is intentionally immediate. Animating the old and new
-                        // sectors together made a physical-device tap look like a stale flash.
-                        focusedSegmentID = segment.id
-                    }
+            // Keep one stable hit target above the marks. A chart-level gesture can become
+            // non-interactable after its marks redraw; the overlay recognises every tap while
+            // still letting the surrounding ScrollView handle gestures outside this frame.
+            .chartOverlay { proxy in
+                GeometryReader { _ in
+                    Rectangle()
+                        .fill(.clear)
+                        .contentShape(Rectangle())
+                        .gesture(
+                            SpatialTapGesture()
+                                .onEnded { value in
+                                    let angle = proxy.angle(at: value.location)
+                                    guard let segment = segment(at: angle.radians) else { return }
+                                    // The highlight is immediate so a new tap cannot expose
+                                    // a stale animated focus from the previous selection.
+                                    focusedSegmentID = segment.id
+                                }
+                        )
+                }
             }
             .onChange(of: segments.map(\.id)) { _, ids in
                 if let focusedSegmentID, !ids.contains(focusedSegmentID) {
