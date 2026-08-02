@@ -2,6 +2,12 @@
 
 ## 2026-08-03
 
+### Trends analysis and export
+
+- Added weekday pattern bars with top activity and average logged-time context.
+- Weekly and other period comparisons now include percentage context and identify new categories.
+- Added local CSV and JSON export from Insights with visit times, places, categories, activities, durations, source, and confidence.
+
 ### Activity editor polish
 
 - Replaced the raw SF Symbol name field with a friendly icon picker, removing technical values such as `.fill` from the activity editor.

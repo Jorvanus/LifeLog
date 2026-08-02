@@ -92,4 +92,26 @@ struct TimelineFixtureCoverageTests {
             #expect(calendar.startOfDay(for: start) <= start)
         }
     }
+
+    @Test("Trend exports include safe visit fields in both formats")
+    func trendExportFormats() throws {
+        let visit = Visit(arrival: base, departure: base.addingTimeInterval(90 * 60),
+                          latitude: -27.47, longitude: 153.03, placeName: "Corner, Cafe",
+                          placeCategory: "Food & Drink", inferredActivity: "Eating",
+                          source: "automatic", recognitionConfidence: "confirmed")
+        let interval = DateInterval(start: base.addingTimeInterval(-60), end: base.addingTimeInterval(2 * 3_600))
+        let csv = try #require(TrendExport.makeFile(format: "csv", visits: [visit], interval: interval, now: base.addingTimeInterval(2 * 3_600)))
+        let json = try #require(TrendExport.makeFile(format: "json", visits: [visit], interval: interval, now: base.addingTimeInterval(2 * 3_600)))
+        defer {
+            try? FileManager.default.removeItem(at: csv.url)
+            try? FileManager.default.removeItem(at: json.url)
+        }
+
+        let csvText = try String(contentsOf: csv.url, encoding: .utf8)
+        let jsonText = try String(contentsOf: json.url, encoding: .utf8)
+        #expect(csvText.contains("place,category,activity"))
+        #expect(csvText.contains("Corner, Cafe"))
+        #expect(jsonText.contains("Corner, Cafe"))
+        #expect(jsonText.contains("confirmed"))
+    }
 }

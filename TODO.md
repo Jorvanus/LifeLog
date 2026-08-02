@@ -20,7 +20,7 @@ Priorities below reflect the current implementation and the risks that matter mo
 - [ ] Profile Insights and Map with month/year histories and large annotation counts; keep chart selection and scrolling responsive on a physical phone.
 - [ ] Add HealthKit observer/background delivery so new sleep and workout data can be imported without opening Settings.
 - [ ] Expand movement classification coverage for cycling, running, and car/plane travel, while preserving the location-first rule that excludes movement inside a place.
-- [ ] Add weekday patterns, richer weekly comparisons, and CSV/JSON export for the trends data.
+- [x] Add weekday patterns, richer weekly comparisons, and CSV/JSON export for the trends data.
 - [x] Add confidence and correction history for inferred place names, activities, and recurring trips such as commuting to Work.
 - [ ] Make activity inference explainable and editable: show why a visit is suggested as Coffee, Lunch, or another activity, allow correction from the donut/timeline, and learn recurring choices without treating a guess as fact.
 - [x] Add an editable activity/category catalogue; category colours used consistently in the donut, timeline, and map remain a follow-up.

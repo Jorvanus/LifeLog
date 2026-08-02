@@ -12,6 +12,7 @@ struct TrendsView: View {
     @State private var selectedSlice: TimeSlice?
     @State private var now = Date.now
     @State private var snapshot = InsightsSnapshot.empty
+    @State private var exportFile: TrendExportFile?
 
     private var interval: DateInterval { window.interval(containing: anchorDate) }
     private var snapshotKey: InsightsSnapshotKey {
@@ -27,6 +28,7 @@ struct TrendsView: View {
                         controls
                         donutSection
                         trendsSection
+                        weekdayPatternsSection
                         placesSection
                         topPlacesSection
                     }
@@ -55,6 +57,19 @@ struct TrendsView: View {
                     InsightSliceEditor(slice: slice, visits: entries, interval: snapshot.analysisInterval)
                         .presentationDetents([.medium, .large])
                 }
+            }
+            .sheet(item: $exportFile) { file in
+                NavigationStack {
+                    VStack(spacing: 18) {
+                        Image(systemName: "doc.badge.arrow.up").font(.largeTitle).foregroundStyle(.blue)
+                        Text("Your \(file.format) export is ready").font(.headline)
+                        ShareLink(item: file.url) { Label("Share \(file.format) file", systemImage: "square.and.arrow.up") }
+                    }
+                    .padding()
+                    .navigationTitle("Export Trends")
+                    .navigationBarTitleDisplayMode(.inline)
+                }
+                .presentationDetents([.medium])
             }
             .task {
                 rebuildSnapshot()
@@ -102,6 +117,13 @@ struct TrendsView: View {
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
                 Spacer()
+                Menu {
+                    Button("Export CSV") { exportFile = TrendExport.makeFile(format: "csv", visits: visits, interval: snapshot.analysisInterval, now: snapshot.generatedAt) }
+                    Button("Export JSON") { exportFile = TrendExport.makeFile(format: "json", visits: visits, interval: snapshot.analysisInterval, now: snapshot.generatedAt) }
+                } label: {
+                    Image(systemName: "square.and.arrow.up").font(.title3.bold())
+                }
+                .accessibilityLabel("Export trends")
             }
 
             // Selection state lives inside this child so highlighting one sector does not
@@ -175,6 +197,29 @@ struct TrendsView: View {
                     .id(snapshot.mapID)
                 .frame(height: 230)
                 .clipShape(RoundedRectangle(cornerRadius: 18))
+            }
+        }
+        .padding(18)
+        .insightCard()
+    }
+
+    private var weekdayPatternsSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Weekday patterns").font(.title2.bold())
+            if snapshot.weekdayPatterns.allSatisfy({ $0.hours == 0 }) {
+                InsightEmptyRow(icon: "calendar", title: "Not enough logged time", detail: "Weekday patterns appear as visits accumulate.")
+            } else {
+                Chart(snapshot.weekdayPatterns) { pattern in
+                    BarMark(x: .value("Day", pattern.shortName), y: .value("Hours", pattern.hours))
+                        .foregroundStyle(activityColor(pattern.topActivity))
+                        .annotation(position: .top) {
+                            if pattern.hours > 0 { Text(formatHours(pattern.hours)).font(.caption2) }
+                        }
+                }
+                .chartYAxis { AxisMarks(position: .leading) }
+                .frame(height: 170)
+                Text("Average logged time: \(formatHours(snapshot.weekdayAverage)) per weekday")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
         .padding(18)
@@ -339,6 +384,12 @@ private struct InsightsSnapshot {
     let mappablePlaces: [PlaceTotal]
     let mapRegion: MKCoordinateRegion
     let mapID: Int
+    let weekdayPatterns: [WeekdayPattern]
+
+    var weekdayAverage: Double {
+        let values = weekdayPatterns.filter { $0.hours > 0 }.map(\.hours)
+        return values.isEmpty ? 0 : values.reduce(0, +) / Double(values.count)
+    }
 
     static let empty = InsightsSnapshot(
         generatedAt: .distantPast,
@@ -349,7 +400,7 @@ private struct InsightsSnapshot {
             center: .init(latitude: -27.47, longitude: 153.03),
             span: .init(latitudeDelta: 0.2, longitudeDelta: 0.2)
         ),
-        mapID: 0
+        mapID: 0, weekdayPatterns: WeekdayPattern.empty
     )
 
     static func make(visits: [Visit], window: InsightWindow, anchorDate: Date, now: Date) -> InsightsSnapshot {
@@ -396,7 +447,8 @@ private struct InsightsSnapshot {
             totalHours: analysisInterval.duration / 3600,
             mappablePlaces: mappablePlaces,
             mapRegion: makeMapRegion(for: mappablePlaces),
-            mapID: makeMapID(for: mappablePlaces)
+            mapID: makeMapID(for: mappablePlaces),
+            weekdayPatterns: makeWeekdayPatterns(from: segments)
         )
     }
 
@@ -469,11 +521,27 @@ private struct InsightsSnapshot {
             TrendComparison(
                 name: name,
                 hours: currentValues[name, default: 0],
+                previousHours: previousValues[name, default: 0],
                 delta: currentValues[name, default: 0] - previousValues[name, default: 0]
             )
         }
         .filter { abs($0.delta) >= 0.25 }
         .sorted { abs($0.delta) > abs($1.delta) }
+    }
+
+    private static func makeWeekdayPatterns(from segments: [InsightSegment]) -> [WeekdayPattern] {
+        let calendar = Calendar.current
+        var totals = Array(repeating: 0.0, count: 7)
+        var activities = Array(repeating: [String: Double](), count: 7)
+        for segment in segments where !segment.isUnlogged {
+            let weekday = max(1, min(7, calendar.component(.weekday, from: segment.start))) - 1
+            totals[weekday] += segment.hours
+            activities[weekday][segment.activity, default: 0] += segment.hours
+        }
+        return (0..<7).map { index in
+            let top = activities[index].max { $0.value < $1.value }?.key ?? "Visiting"
+            return WeekdayPattern(weekday: index + 1, hours: totals[index], topActivity: top)
+        }
     }
 
     private static func makeMapRegion(for places: [PlaceTotal]) -> MKCoordinateRegion {
@@ -830,11 +898,24 @@ private struct TrendComparison: Identifiable {
     var id: String { name }
     let name: String
     let hours: Double
+    let previousHours: Double
     let delta: Double
     func message(window: InsightWindow) -> String {
         let direction = delta >= 0 ? "more" : "less"
-        return "You spent \(formatHours(abs(delta))) \(direction) on \(name.lowercased()) this \(window.title.lowercased())."
+        let percentage = previousHours > 0 ? " (\(Int((abs(delta) / previousHours * 100).rounded()))%)" : " (new)"
+        return "You spent \(formatHours(abs(delta)))\(percentage) \(direction) on \(name.lowercased()) this \(window.title.lowercased())."
     }
+}
+
+private struct WeekdayPattern: Identifiable {
+    let weekday: Int
+    let hours: Double
+    let topActivity: String
+    var id: Int { weekday }
+    var shortName: String {
+        Calendar.current.shortWeekdaySymbols[(weekday - 1) % 7]
+    }
+    static let empty = (1...7).map { WeekdayPattern(weekday: $0, hours: 0, topActivity: "Visiting") }
 }
 
 private struct InsightEmptyRow: View {
