@@ -2,6 +2,11 @@
 
 ## 2026-08-02
 
+### Backlog refinement
+
+- Added the latest product ideas to `TODO.md`, including map-based manual entries, an uncategorised-location backfill queue, editable activities and category colours, ignored places, notes/photos, App Intents, Shortcuts, and an incremental iCloud backup plan.
+- Recorded that Apple’s public HealthKit APIs provide sleep stages rather than a general-purpose official Sleep Score value; LifeLog should keep its calculated score clearly labelled.
+
 ### Sleep details and dark-mode icon
 
 - Added a dark luminosity AppIcon appearance that switches with the iOS interface style.
