@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import MapKit
 
 struct TimelineView: View {
     @Environment(\.modelContext) private var context
@@ -322,6 +323,8 @@ struct VisitEditor: View {
     @Query(sort: \VisitCorrection.changedAt, order: .reverse) private var corrections: [VisitCorrection]
     @State private var saveFailed = false
     @State private var correctionBaseline: VisitCorrectionSnapshot?
+    @State private var mapPosition: MapCameraPosition = .automatic
+    @State private var adjustingLocation = false
     private let categories = ["Home", "Work", "Food & Drink", "Shopping", "Fitness", "Healthcare", "Education", "Travel", "Social", "Other"]
     private let activities = ["At home", "Working", "Eating", "Shopping", "Exercising", "Healthcare", "Studying", "Travelling", "Socialising", "Visiting"]
 
@@ -378,6 +381,47 @@ struct VisitEditor: View {
                     Text("Nearby places")
                 } footer: {
                     Text("Suggestions are nearby public places from Apple Maps.")
+                }
+            }
+            if visit.needsCategorisation {
+                Section {
+                    if let coordinate = recordedCoordinate {
+                        MapReader { proxy in
+                            Map(position: $mapPosition) {
+                                Marker("Recorded location", coordinate: coordinate)
+                                    .tint(adjustingLocation ? .orange : .blue)
+                            }
+                            .frame(height: 240)
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                            .mapControls { MapCompass(); MapUserLocationButton() }
+                            .onTapGesture(coordinateSpace: .local) { point in
+                                guard adjustingLocation,
+                                      let updated = proxy.convert(point, from: .local),
+                                      CLLocationCoordinate2DIsValid(updated) else { return }
+                                visit.latitude = updated.latitude
+                                visit.longitude = updated.longitude
+                                mapPosition = .region(region(centeredOn: updated))
+                            }
+                        }
+                        .accessibilityIdentifier("uncategorised-location-map")
+                        Text(adjustingLocation
+                             ? "Tap the map to move the pin, then tap Done to save it."
+                             : "Recorded at the location shown above.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                        Button {
+                            adjustingLocation.toggle()
+                        } label: {
+                            Label(adjustingLocation ? "Finish adjusting pin" : "Adjust pin location",
+                                  systemImage: adjustingLocation ? "checkmark.circle" : "mappin.and.ellipse")
+                        }
+                    } else {
+                        Label("No map coordinate was recorded for this visit.", systemImage: "mappin.slash")
+                            .foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("Recorded location")
+                } footer: {
+                    Text("Adjusting the pin changes this visit’s stored coordinate. It does not contact Apple Maps until you choose a place suggestion or save a place.")
                 }
             }
             Section("Place") {
@@ -442,6 +486,9 @@ struct VisitEditor: View {
         }
         .onAppear {
             if correctionBaseline == nil { correctionBaseline = currentSnapshot }
+            if let coordinate = recordedCoordinate {
+                mapPosition = .region(region(centeredOn: coordinate))
+            }
         }
         .onDisappear {
             guard !saveFailed else { return }
@@ -503,6 +550,18 @@ struct VisitEditor: View {
         (visit.latitude != 0 || visit.longitude != 0) &&
         !TextSafety.clean(visit.placeName, maximumLength: 100).isEmpty &&
         !TextSafety.clean(visit.activity, maximumLength: 80).isEmpty
+    }
+
+    private var recordedCoordinate: CLLocationCoordinate2D? {
+        let coordinate = CLLocationCoordinate2D(latitude: visit.latitude, longitude: visit.longitude)
+        guard CLLocationCoordinate2DIsValid(coordinate),
+              coordinate.latitude != 0 || coordinate.longitude != 0 else { return nil }
+        return coordinate
+    }
+
+    private func region(centeredOn coordinate: CLLocationCoordinate2D) -> MKCoordinateRegion {
+        MKCoordinateRegion(center: coordinate,
+                           span: MKCoordinateSpan(latitudeDelta: 0.004, longitudeDelta: 0.004))
     }
 
     private var currentSnapshot: VisitCorrectionSnapshot {

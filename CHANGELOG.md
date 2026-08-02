@@ -2,6 +2,15 @@
 
 ## 2026-08-03
 
+### Recorded map section builder fix
+
+- Made the uncategorised-location map section use explicit SwiftUI header/content builders so it compiles cleanly under Swift 6.
+
+### Uncategorised location map editing
+
+- Added a recorded-location map to the uncategorised visit editor.
+- Users can enter pin-adjustment mode, tap the map to correct the stored coordinate, and save the visit with the updated location.
+
 ### Four-week development roadmap
 
 - Reorganised the project roadmap around physical-device validation, non-blocking incremental Health ingestion, correction/learning quality, data ownership, privacy, and release readiness.
