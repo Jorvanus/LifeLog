@@ -2,6 +2,15 @@
 
 ## 2026-08-03
 
+### Four-week development roadmap
+
+- Reorganised the project roadmap around physical-device validation, non-blocking incremental Health ingestion, correction/learning quality, data ownership, privacy, and release readiness.
+- Moved completed foundations out of the active queue and added concrete completion criteria for large-history performance, schema migration, backup/restore, retention, and deterministic UI coverage.
+
+### Settings version information
+
+- Added the app version and build number to an About section in Settings.
+
 ### Insights angle type fix
 
 - Converted Charts’ polar `Angle` selection to degrees before matching donut segments, fixing the Swift 6 type error in repeated selection handling.

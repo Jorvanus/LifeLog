@@ -118,6 +118,9 @@ struct SettingsView: View {
                 } header: {
                     Text("Data import")
                 }
+                Section("About") {
+                    LabeledContent("Version", value: appVersion)
+                }
             }.navigationTitle("Settings").accessibilityIdentifier("settings-screen")
                 .task { ActivityCatalog.seed() }
                 .fileImporter(isPresented: $importingJournal,
@@ -155,6 +158,12 @@ struct SettingsView: View {
         case .restricted: "Restricted"
         default: "Not requested"
         }
+    }
+
+    private var appVersion: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        return build.map { "\(version) (\($0))" } ?? version
     }
 
     private func clearDiagnostics() {
