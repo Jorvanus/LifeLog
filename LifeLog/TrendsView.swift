@@ -534,9 +534,23 @@ private struct InsightsDonutChart: View {
                 }
             }
             .chartLegend(.hidden)
-            // Use Charts' native recognizer as the only input path. Keeping the binding but
-            // removing custom gestures prevents competing callbacks and supports repeated taps.
+            // Keep the binding for the selected data value, but explicitly forward each touch
+            // through ChartProxy. The zero-distance drag recognises both taps and short touches
+            // repeatedly, while ChartProxy handles the polar-to-data-angle conversion.
             .chartAngleSelection(value: $selectedAngle)
+            .chartOverlay { proxy in
+                GeometryReader { _ in
+                    Rectangle()
+                        .fill(.clear)
+                        .contentShape(Rectangle())
+                        .gesture(
+                            DragGesture(minimumDistance: 0)
+                                .onEnded { value in
+                                    proxy.selectAngleValue(at: proxy.angle(at: value.location))
+                                }
+                        )
+                }
+            }
             .onChange(of: selectedAngle) { _, angle in
                 guard let angle, let segment = segment(at: angle) else { return }
                 // Apply immediately so the previous focus cannot flash during a new tap.
