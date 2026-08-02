@@ -4,7 +4,7 @@ import SwiftData
 /// adding a new persisted property; introduce LifeLogSchemaV2 and a migration stage
 /// first, then update the app container to the latest schema.
 enum LifeLogSchemaV1: VersionedSchema {
-    static var versionIdentifier = Schema.Version(1, 0, 0)
+    static let versionIdentifier = Schema.Version(1, 0, 0)
 
     static var models: [any PersistentModel.Type] {
         [Visit.self, SavedPlace.self, VisitCorrection.self, DiagnosticEvent.self]

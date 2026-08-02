@@ -37,8 +37,7 @@ struct SchemaMigrationTests {
         let schema = Schema([Visit.self, SavedPlace.self, VisitCorrection.self, DiagnosticEvent.self])
         let configuration = ModelConfiguration(
             "LifeLogMigrationFixture", schema: schema, url: url,
-            isStoredInMemoryOnly: false, allowsSave: true,
-            groupContainer: .none, cloudKitDatabase: .none
+            allowsSave: true, cloudKitDatabase: .none
         )
         let container = try ModelContainer(for: schema, configurations: [configuration])
         let context = ModelContext(container)
@@ -68,8 +67,7 @@ struct SchemaMigrationTests {
         let schema = Schema(versionedSchema: LifeLogSchemaV1.self)
         let configuration = ModelConfiguration(
             "LifeLogMigrationFixture", schema: schema, url: url,
-            isStoredInMemoryOnly: false, allowsSave: true,
-            groupContainer: .none, cloudKitDatabase: .none
+            allowsSave: true, cloudKitDatabase: .none
         )
         return try ModelContainer(
             for: schema,

@@ -7,6 +7,8 @@
 - Added `LifeLogSchemaV1` and a migration plan for the current protected on-device models.
 - Added an on-disk compatibility test that writes the current schema, reopens the same store through the versioned plan, and verifies visits, saved places, corrections, diagnostics, notes, and candidate data survive.
 - Documented the required V2 workflow before adding another persisted field.
+- Updated the fixture to use the explicit URL-based `ModelConfiguration` initializer required by the current SDK.
+- Made the schema version constant immutable for Swift 6 strict-concurrency checking.
 
 ### Responsive background activity imports
 
