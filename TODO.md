@@ -32,6 +32,7 @@ Priorities below reflect the current implementation and the risks that matter mo
 
 - [ ] Design optional encrypted iCloud backup/sync with conflict resolution, an explicit opt-in, and a documented restore path; start with an exportable backup before full sync.
 - [ ] Add user-facing export, deletion, and retention controls for locations, HealthKit imports, and saved places.
+- [x] Add a local importer for Life Cycle CSV exports with duplicate protection and malformed-row reporting.
 - [ ] Complete the privacy manifest and App Store review checklist, including plain-language explanations for Location, Motion, and Health access.
 - [ ] Verify dark-mode and tinted Home Screen icon behavior across iOS 27 appearances and device sizes. Dark luminosity switching is implemented; tinted appearance still needs verification.
 - [x] Add diagnostics for delayed Core Location visits, MapKit lookup failures, and HealthKit query errors without logging precise locations or health data.

@@ -2,6 +2,11 @@
 
 ## 2026-08-03
 
+### Life Cycle journal import
+
+- Added a local CSV importer in Settings for Life Cycle exports, mapping timestamps, activities, locations, and notes into imported visits.
+- Repeat imports skip matching imported rows; malformed rows are counted and reported instead of stopping the import.
+
 ### Trends analysis and export
 
 - Added weekday pattern bars with top activity and average logged-time context.

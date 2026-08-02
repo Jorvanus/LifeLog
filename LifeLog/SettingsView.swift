@@ -1,12 +1,15 @@
 import SwiftUI
 import CoreLocation
 import SwiftData
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
     @Query(sort: \SavedPlace.name) private var savedPlaces: [SavedPlace]
     @Query(sort: \DiagnosticEvent.createdAt, order: .reverse) private var diagnostics: [DiagnosticEvent]
+    @State private var importingJournal = false
+    @State private var importMessage: String?
     let recorder: LocationRecorder
     let activityData: ActivityDataService
     var body: some View {
@@ -101,8 +104,29 @@ struct SettingsView: View {
                 } footer: {
                     Text("Diagnostics contain generic service timing and failure messages only. Precise locations and Health data are never recorded here.")
                 }
+                Section {
+                    Button {
+                        importingJournal = true
+                    } label: {
+                        Label("Import Journal CSV", systemImage: "square.and.arrow.down")
+                    }
+                    Text("Imports Life Cycle CSV exports on this iPhone. Existing imported rows are skipped when you import the same file again.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                } header: {
+                    Text("Data import")
+                }
             }.navigationTitle("Settings").accessibilityIdentifier("settings-screen")
                 .task { ActivityCatalog.seed() }
+                .fileImporter(isPresented: $importingJournal,
+                              allowedContentTypes: [.commaSeparatedText, .text],
+                              allowsMultipleSelection: false) { result in
+                    importJournal(result)
+                }
+                .alert("Journal import", isPresented: Binding(get: { importMessage != nil }, set: { if !$0 { importMessage = nil } })) {
+                    Button("OK", role: .cancel) { importMessage = nil }
+                } message: {
+                    Text(importMessage ?? "")
+                }
         }
     }
 
@@ -133,5 +157,18 @@ struct SettingsView: View {
     private func clearDiagnostics() {
         for event in diagnostics { context.delete(event) }
         try? context.save()
+    }
+
+    private func importJournal(_ result: Result<[URL], Error>) {
+        do {
+            guard let url = try result.get().first else { return }
+            let accessed = url.startAccessingSecurityScopedResource()
+            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+            let data = try Data(contentsOf: url)
+            let summary = try JournalCSVImporter.importData(data, into: context)
+            importMessage = "Imported \(summary.inserted) of \(summary.rows) journal entries. \(summary.skipped) duplicates skipped and \(summary.malformed) malformed rows ignored."
+        } catch {
+            importMessage = "LifeLog couldn’t import that file. Choose a Life Cycle CSV export and try again."
+        }
     }
 }
