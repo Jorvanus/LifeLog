@@ -478,27 +478,41 @@ private struct InsightsSnapshot {
         let orderedVisits = visits
             .filter { $0.overlaps(range, now: now) && !$0.isIgnored }
             .filter { ActivityLocationPolicy.shouldShow($0, locationVisits: locationVisits, now: now) }
-            .sorted { $0.arrival < $1.arrival }
+        // Imported journals and delayed Core Location callbacks can contain an old
+        // open stay that overlaps several completed destinations. Resolve the day in
+        // small boundary slices so a broad open stay cannot hide a real visit such as
+        // a shop stop; completed/shorter visits win each overlapping slice.
+        var boundaries = Set([range.start, range.end])
+        for visit in orderedVisits {
+            boundaries.insert(max(visit.arrival, range.start))
+            boundaries.insert(min(visit.departure ?? now, range.end))
+        }
+        let times = boundaries.sorted()
         var result: [InsightSegment] = []
-        var cursor = range.start
         var gapIndex = 0
 
-        for visit in orderedVisits {
-            let clippedStart = max(visit.arrival, range.start)
-            let clippedEnd = min(visit.departure ?? now, range.end)
-            guard clippedEnd > clippedStart else { continue }
-            if clippedStart > cursor {
-                result.append(.unlogged(index: gapIndex, from: cursor, to: clippedStart))
+        for pair in zip(times, times.dropFirst()) {
+            let start = pair.0
+            let end = pair.1
+            guard end > start else { continue }
+            let midpoint = start.addingTimeInterval(end.timeIntervalSince(start) / 2)
+            let matching = orderedVisits.filter {
+                $0.arrival <= midpoint && ($0.departure ?? now) > midpoint
+            }
+            if let visit = matching.min(by: { left, right in
+                let leftCompleted = left.departure != nil
+                let rightCompleted = right.departure != nil
+                if leftCompleted != rightCompleted { return leftCompleted }
+                let leftDuration = (left.departure ?? now).timeIntervalSince(left.arrival)
+                let rightDuration = (right.departure ?? now).timeIntervalSince(right.arrival)
+                if leftDuration != rightDuration { return leftDuration < rightDuration }
+                return left.arrival > right.arrival
+            }) {
+                result.append(.visit(visit, visibleFrom: start, visibleTo: end, now: now))
+            } else {
+                result.append(.unlogged(index: gapIndex, from: start, to: end))
                 gapIndex += 1
             }
-            let visibleStart = max(clippedStart, cursor)
-            if clippedEnd > visibleStart {
-                result.append(.visit(visit, visibleFrom: visibleStart, visibleTo: clippedEnd, now: now))
-            }
-            cursor = max(cursor, clippedEnd)
-        }
-        if cursor < range.end {
-            result.append(.unlogged(index: gapIndex, from: cursor, to: range.end))
         }
         return result
     }
@@ -644,7 +658,13 @@ private struct InsightsDonutChart: View {
                             DragGesture(minimumDistance: 0)
                                 .onEnded { value in
                                     let angle = proxy.angle(at: value.location)
-                                    let angleValue = angle.degrees
+                                    // ChartProxy returns the polar angle in screen
+                                    // coordinates. Convert it back through the chart's
+                                    // data scale before comparing it with cumulative
+                                    // segment hours; raw degrees select the wrong slice.
+                                    guard let angleValue: Double = proxy.value(atAngle: angle, as: Double.self) else {
+                                        return
+                                    }
                                     guard let segment = segment(at: angleValue) else { return }
                                     if focusedSegmentID == segment.id {
                                         // A second tap on the focused slice restores the
@@ -839,14 +859,13 @@ private struct InsightSegment: Identifiable {
 
     static func visit(_ visit: Visit, visibleFrom: Date, visibleTo: Date, now: Date) -> InsightSegment {
         let category = visit.insightCategory
-        let end = visit.departure ?? now
         return InsightSegment(
             id: .visit(ObjectIdentifier(visit)), visit: visit, category: category,
             activity: visit.suspectedActivity, placeName: visit.displayPlaceName,
-            start: visit.arrival, end: end,
+            start: visibleFrom, end: visibleTo,
             hours: visibleTo.timeIntervalSince(visibleFrom) / 3600,
             color: insightColor(for: category), symbol: insightSymbol(for: category),
-            isUnlogged: false, isLive: visit.departure == nil
+            isUnlogged: false, isLive: visit.departure == nil && visibleTo >= now
         )
     }
 

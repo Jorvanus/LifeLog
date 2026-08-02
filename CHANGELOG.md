@@ -2,6 +2,14 @@
 
 ## 2026-08-03
 
+### Insights donut hit testing
+
+- Converted donut tap angles through `ChartProxy`’s data scale so a tap selects the slice under the finger instead of comparing screen degrees with duration values.
+
+### Insights overlapping visit coverage
+
+- Reworked the day segmentation to resolve overlapping imported and automatic stays by time slice, so completed destinations remain visible in the donut even when an older open location record spans the same period.
+
 ### Recorded map section builder fix
 
 - Made the uncategorised-location map section use explicit SwiftUI header/content builders so it compiles cleanly under Swift 6.
