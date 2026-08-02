@@ -21,7 +21,7 @@ Priorities below reflect the current implementation and the risks that matter mo
 - [ ] Add HealthKit observer/background delivery so new sleep and workout data can be imported without opening Settings.
 - [ ] Expand movement classification coverage for cycling, running, and car/plane travel, while preserving the location-first rule that excludes movement inside a place.
 - [ ] Add weekday patterns, richer weekly comparisons, and CSV/JSON export for the trends data.
-- [ ] Add confidence and correction history for inferred place names, activities, and recurring trips such as commuting to Work.
+- [x] Add confidence and correction history for inferred place names, activities, and recurring trips such as commuting to Work.
 - [ ] Make activity inference explainable and editable: show why a visit is suggested as Coffee, Lunch, or another activity, allow correction from the donut/timeline, and learn recurring choices without treating a guess as fact.
 - [ ] Add an editable activity/category catalogue, including user-created activities and category colours used consistently in the donut, timeline, and map.
 - [ ] Add an Ignore Location flow for places that should be excluded from the diary, with reversible settings and historical cleanup rules.

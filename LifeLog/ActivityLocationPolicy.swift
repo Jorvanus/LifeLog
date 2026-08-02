@@ -92,6 +92,7 @@ enum ActivityLocationPolicy {
                 activity.userActivity == "In transit"
             activity.placeCategory = "Travel"
             activity.inferredActivity = description
+            activity.recognitionConfidence = destinationConfidence(for: destination, locations: locations)
             if isGeneratedActivity {
                 activity.userActivity = description
             }
@@ -115,6 +116,19 @@ enum ActivityLocationPolicy {
         // Avoid learning a destination name from a one-off or same-day GPS duplicate.
         guard matches.count >= 3, distinctDays >= 2 else { return nil }
         return TextSafety.clean(destination.placeName, maximumLength: 80)
+    }
+
+    private static func destinationConfidence(for destination: Visit, locations: [Visit]) -> String {
+        let text = "\(destination.placeName) \(destination.placeCategory)".lowercased()
+        if destination.placeCategory.localizedCaseInsensitiveContains("work") ||
+            InferenceEngine.activity(placeName: destination.placeName, category: destination.placeCategory) == "Working" ||
+            destination.placeCategory.localizedCaseInsensitiveContains("home") || text.contains("home") {
+            return "learned"
+        }
+        let key = normalized(destination.placeName)
+        let matches = locations.filter { normalized($0.placeName) == key }
+        let days = Set(matches.map { Calendar.current.startOfDay(for: $0.arrival) }).count
+        return matches.count >= 3 && days >= 2 ? "learned" : "medium"
     }
 
     private static func normalized(_ value: String) -> String {

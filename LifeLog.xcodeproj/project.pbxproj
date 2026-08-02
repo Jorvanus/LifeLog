@@ -28,6 +28,7 @@
 		E8F8E81D0736610AC61C887B /* LocationRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BB7EE63315EC7CC0A511303 /* LocationRecorder.swift */; };
 		E9B89A4B8DD841BF6BE226B6 /* LifeLogUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20F66D93CEC288FCC9E45F8C /* LifeLogUITests.swift */; };
 		EE018FBC1119FF49D463B185 /* SavedPlaceLearning.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF719128067426A354FA8F08 /* SavedPlaceLearning.swift */; };
+		F2ADEFB0210575F3459AEF29 /* CorrectionHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65FE8C413DBE943F6F12FC6A /* CorrectionHistory.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -60,6 +61,7 @@
 		3CC1523859D9C3C50CE0B0C8 /* ManualVisitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManualVisitView.swift; sourceTree = "<group>"; };
 		452978750FB4CA6A49A09C2A /* SavedPlaceLearningTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedPlaceLearningTests.swift; sourceTree = "<group>"; };
 		4D49D411624E1C10FDE393AF /* LifeLogUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = LifeLogUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		65FE8C413DBE943F6F12FC6A /* CorrectionHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorrectionHistory.swift; sourceTree = "<group>"; };
 		68BF51077D67E92A88F6FB79 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		730162A4687A39AF180FF3EA /* ActivityLocationPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityLocationPolicy.swift; sourceTree = "<group>"; };
 		831D37D3F7E2A5C6BF0F1C74 /* LifeLogApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeLogApp.swift; sourceTree = "<group>"; };
@@ -92,6 +94,7 @@
 				0A9921C3BD6F05CA5C2B6B9B /* ActivityDataService.swift */,
 				730162A4687A39AF180FF3EA /* ActivityLocationPolicy.swift */,
 				D936E236D5176123EE3DAD91 /* Assets.xcassets */,
+				65FE8C413DBE943F6F12FC6A /* CorrectionHistory.swift */,
 				DC096FDA8EA522B04B2F9890 /* InferenceEngine.swift */,
 				AB2ED3DB389DF4AB007C68A3 /* Info.plist */,
 				95189CB130173B9A604C5E26 /* LifeLog.entitlements */,
@@ -256,6 +259,7 @@
 			files = (
 				DD8E7BFCC984E9B6BBA2B2E5 /* ActivityDataService.swift in Sources */,
 				8231CB72D6C8640D07C59050 /* ActivityLocationPolicy.swift in Sources */,
+				F2ADEFB0210575F3459AEF29 /* CorrectionHistory.swift in Sources */,
 				424B5084CB08F752AD18F6E0 /* InferenceEngine.swift in Sources */,
 				3ABD058A23052EDA905A28F9 /* LifeLogApp.swift in Sources */,
 				E8F8E81D0736610AC61C887B /* LocationRecorder.swift in Sources */,

@@ -2,6 +2,12 @@
 
 ## 2026-08-03
 
+### Recognition confidence and correction history
+
+- Visits now retain a human-readable confidence state for Apple Maps matches, saved-place learning, device activity, and recurring travel destinations.
+- Manual corrections and Saved Place backfills are recorded in a local audit history and shown in the visit editor.
+- Recurring destinations such as Work now mark generated “Travelling to …” labels as learned confidence.
+
 ### Map-based manual entries
 
 - Manual visits now include Apple Maps local search, selectable business results, and an interactive map picker.

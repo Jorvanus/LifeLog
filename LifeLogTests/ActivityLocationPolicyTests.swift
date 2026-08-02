@@ -216,6 +216,7 @@ struct ActivityLocationPolicyTests {
 
         #expect(travel.placeCategory == "Travel")
         #expect(travel.activity == "Travelling to Work")
+        #expect(travel.recognitionConfidence == "learned")
     }
 
     @Test("A manually named travel activity is preserved")
@@ -258,6 +259,7 @@ struct ActivityLocationPolicyTests {
         let container = try ModelContainer(
             for: Visit.self,
             SavedPlace.self,
+            VisitCorrection.self,
             configurations: configuration
         )
         return ModelContext(container)

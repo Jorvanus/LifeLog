@@ -82,4 +82,50 @@ final class Visit {
         }
         set { candidateData = try? JSONEncoder().encode(newValue) }
     }
+
+    var confidenceLabel: String {
+        switch recognitionConfidence?.lowercased() {
+        case "confirmed": "Confirmed"
+        case "learned": "Learned"
+        case "high": "High"
+        case "medium": "Medium"
+        case "low": "Low"
+        case "device": "Device"
+        default: "Pending"
+        }
+    }
+}
+
+/// Immutable audit entry for a user correction or a learned Saved Place update.
+/// It stores labels and confidence only; precise coordinates remain in the visit.
+@Model
+final class VisitCorrection {
+    var changedAt: Date
+    var visitArrival: Date
+    var latitude: Double
+    var longitude: Double
+    var previousPlaceName: String
+    var newPlaceName: String
+    var previousActivity: String
+    var newActivity: String
+    var previousConfidence: String
+    var newConfidence: String
+    var reason: String
+
+    init(changedAt: Date = .now, visitArrival: Date, latitude: Double, longitude: Double,
+         previousPlaceName: String, newPlaceName: String, previousActivity: String,
+         newActivity: String, previousConfidence: String = "pending",
+         newConfidence: String = "confirmed", reason: String = "Manual correction") {
+        self.changedAt = changedAt
+        self.visitArrival = visitArrival
+        self.latitude = latitude
+        self.longitude = longitude
+        self.previousPlaceName = TextSafety.clean(previousPlaceName, maximumLength: 120)
+        self.newPlaceName = TextSafety.clean(newPlaceName, maximumLength: 120)
+        self.previousActivity = TextSafety.clean(previousActivity, maximumLength: 80)
+        self.newActivity = TextSafety.clean(newActivity, maximumLength: 80)
+        self.previousConfidence = TextSafety.clean(previousConfidence, maximumLength: 20)
+        self.newConfidence = TextSafety.clean(newConfidence, maximumLength: 20)
+        self.reason = TextSafety.clean(reason, maximumLength: 80)
+    }
 }

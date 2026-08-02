@@ -219,7 +219,7 @@ private struct JourneyRow: View {
             Label("Live", systemImage: "circle.fill").font(.caption.weight(.semibold)).foregroundStyle(.green)
                 .labelStyle(.titleAndIcon)
         } else {
-            Text("High").font(.caption.weight(.semibold)).foregroundStyle(.green)
+            Text(visit.confidenceLabel).font(.caption.weight(.semibold)).foregroundStyle(.green)
                 .padding(.horizontal, 10).padding(.vertical, 6).background(.green.opacity(0.1), in: Capsule())
         }
     }
@@ -294,6 +294,7 @@ struct VisitEditor: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Bindable var visit: Visit
+    @Query(sort: \VisitCorrection.changedAt, order: .reverse) private var corrections: [VisitCorrection]
     @State private var saveFailed = false
     @State private var correctionBaseline: VisitCorrectionSnapshot?
     private let categories = ["Home", "Work", "Food & Drink", "Shopping", "Fitness", "Healthcare", "Education", "Travel", "Social", "Other"]
@@ -362,6 +363,22 @@ struct VisitEditor: View {
                 }
                 TextField("Or enter your own", text: activityBinding)
                 TextField("Notes", text: $visit.note, axis: .vertical)
+            }
+            Section("Recognition") {
+                LabeledContent("Confidence", value: visit.confidenceLabel)
+                if !matchingCorrections.isEmpty {
+                    ForEach(matchingCorrections.prefix(5)) { correction in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(correction.reason).font(.caption.bold())
+                            Text("\(correction.previousPlaceName) → \(correction.newPlaceName)")
+                            Text("\(correction.previousActivity) → \(correction.newActivity)")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                } else {
+                    Text("No corrections recorded for this visit yet.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
             }
             Section("Time") {
                 DatePicker("Arrived", selection: $visit.arrival)
@@ -462,8 +479,17 @@ struct VisitEditor: View {
         VisitCorrectionSnapshot(
             placeName: visit.placeName,
             category: visit.placeCategory,
-            activity: visit.userActivity ?? visit.inferredActivity
+            activity: visit.userActivity ?? visit.inferredActivity,
+            confidence: visit.recognitionConfidence ?? "pending"
         )
+    }
+
+    private var matchingCorrections: [VisitCorrection] {
+        corrections.filter {
+            abs($0.visitArrival.timeIntervalSince(visit.arrival)) < 1 &&
+            abs($0.latitude - visit.latitude) < 0.00001 &&
+            abs($0.longitude - visit.longitude) < 0.00001
+        }
     }
 
     private func persistChanges(forceLearning: Bool) throws {
@@ -474,16 +500,14 @@ struct VisitEditor: View {
                 previousPlaceName: correctionBaseline?.placeName,
                 context: context
             )
-            if result == nil { try context.save() }
+            if result == nil {
+                CorrectionHistory.record(visit: visit, from: correctionBaseline ?? currentSnapshot,
+                                         context: context, reason: "Manual correction")
+                try context.save()
+            }
         } else {
             try context.save()
         }
         correctionBaseline = currentSnapshot
     }
-}
-
-private struct VisitCorrectionSnapshot: Equatable {
-    let placeName: String
-    let category: String
-    let activity: String
 }

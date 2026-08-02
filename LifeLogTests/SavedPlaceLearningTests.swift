@@ -32,6 +32,10 @@ struct SavedPlaceLearningTests {
         #expect(places.first?.radius == 100)
         #expect(places.first?.defaultActivity == "Eating")
         #expect(visit.recognitionConfidence == "learned")
+        let corrections = try context.fetch(FetchDescriptor<VisitCorrection>())
+        #expect(corrections.count == 1)
+        #expect(corrections.first?.newPlaceName == "Corner Café")
+        #expect(corrections.first?.newConfidence == "learned")
     }
 
     @Test("Renaming a visit updates the matching geofence without duplicating it")
@@ -115,6 +119,9 @@ struct SavedPlaceLearningTests {
         #expect(current.activity == "At home")
         #expect(current.needsCategorisation == false)
         #expect(distant.placeName == "Another place")
+        let corrections = try context.fetch(FetchDescriptor<VisitCorrection>())
+        #expect(corrections.count == 1)
+        #expect(corrections.first?.reason == "Saved Place learned")
     }
 
     private func makeContext() throws -> ModelContext {
@@ -122,6 +129,7 @@ struct SavedPlaceLearningTests {
         let container = try ModelContainer(
             for: Visit.self,
             SavedPlace.self,
+            VisitCorrection.self,
             configurations: configuration
         )
         return ModelContext(container)

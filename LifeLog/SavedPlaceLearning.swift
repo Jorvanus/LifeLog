@@ -87,6 +87,12 @@ enum SavedPlaceLearning {
             : place.defaultActivity
         let visits = try context.fetch(FetchDescriptor<Visit>())
         for visit in visits where ActivityLocationPolicy.isLocationVisit(visit) && isLocated(visit) {
+            let previous = VisitCorrectionSnapshot(
+                placeName: visit.placeName,
+                category: visit.placeCategory,
+                activity: visit.activity,
+                confidence: visit.recognitionConfidence ?? "pending"
+            )
             let visitLocation = CLLocation(latitude: visit.latitude, longitude: visit.longitude)
             guard savedLocation.distance(from: visitLocation) <= place.radius else { continue }
             visit.placeName = place.name
@@ -94,6 +100,8 @@ enum SavedPlaceLearning {
             visit.inferredActivity = activity
             visit.recognitionConfidence = "learned"
             visit.placeSuggestions = []
+            CorrectionHistory.record(visit: visit, from: previous, context: context,
+                                     reason: "Saved Place learned")
         }
         try ActivityLocationPolicy.updateTravelDescriptions(context: context)
     }
