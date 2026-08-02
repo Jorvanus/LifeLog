@@ -8,6 +8,11 @@
 - When no business match is available, a tapped coordinate can be saved as a clearly marked low-confidence pinned location instead of being discarded.
 - Manual entries retain the entered name/activity and use the selected coordinate for future place learning.
 
+### UI and accessibility coverage
+
+- Added stable accessibility identifiers for Timeline, Insights, Map, Settings, current-location labeling, Saved Places, and the manual-entry flow.
+- Added an XCUITest target covering primary-tab navigation, Saved Places navigation, and manual-entry controls.
+
 ## 2026-08-02
 
 ### Backlog refinement

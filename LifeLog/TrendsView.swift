@@ -34,6 +34,7 @@ struct TrendsView: View {
                     .padding(.bottom, 28)
                 }
             }
+            .accessibilityIdentifier("insights-screen")
             .navigationTitle("Insights")
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $choosingDate) {
@@ -595,6 +596,7 @@ private struct InsightsDonutChart: View {
             }
         }
         .frame(height: 330)
+        .accessibilityIdentifier("insights-donut-chart")
     }
 
     private func segment(at angle: Double) -> InsightSegment? {

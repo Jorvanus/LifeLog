@@ -15,6 +15,7 @@ struct RootView: View {
             SettingsView(recorder: recorder, activityData: activityData).tabItem { Label("Settings", systemImage: "gear") }.tag(3)
         }
         .tint(.blue)
+        .accessibilityIdentifier("root-tab-view")
         .task {
             recorder.connect(context)
             activityData.connect(context)

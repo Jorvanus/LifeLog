@@ -33,7 +33,7 @@ struct SettingsView: View {
                                 Image(systemName: currentLocation.needsCategorisation ? "flag.badge.ellipsis" : "location.fill")
                                     .foregroundStyle(currentLocation.needsCategorisation ? .orange : .blue)
                             }
-                        }
+                        }.accessibilityIdentifier("current-location-label")
                     }
                     NavigationLink { PlacesView() } label: {
                         LabeledContent {
@@ -41,7 +41,7 @@ struct SettingsView: View {
                         } label: {
                             Label("Saved Places", systemImage: "house.and.flag.fill")
                         }
-                    }
+                    }.accessibilityIdentifier("saved-places-link")
                 } header: {
                     Text("Places")
                 } footer: {
@@ -74,7 +74,7 @@ struct SettingsView: View {
                     Text("Health and Motion access is read-only. LifeLog never writes to Apple Health.")
                 }
                 if let error = recorder.lastError ?? activityData.lastError { Section("Last issue") { Text(error) } }
-            }.navigationTitle("Settings")
+            }.navigationTitle("Settings").accessibilityIdentifier("settings-screen")
         }
     }
 

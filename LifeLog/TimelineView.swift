@@ -33,6 +33,7 @@ struct TimelineView: View {
                     .padding(.bottom, 28)
                 }
             }
+            .accessibilityIdentifier("timeline-screen")
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $adding) { ManualVisitView() }
             .task {
@@ -90,7 +91,7 @@ struct TimelineView: View {
             .padding(18)
             .background(Color.orange.opacity(0.065), in: RoundedRectangle(cornerRadius: 22))
             .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color.orange.opacity(0.3)))
-        }.buttonStyle(.plain)
+        }.buttonStyle(.plain).accessibilityIdentifier("uncategorised-location-card")
     }
 
     private func currentCard(_ visit: Visit) -> some View {
@@ -134,7 +135,7 @@ struct TimelineView: View {
             .padding(19)
             .background(Color.green.opacity(0.055), in: RoundedRectangle(cornerRadius: 22))
             .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color.green.opacity(0.25)))
-        }.buttonStyle(.plain)
+        }.buttonStyle(.plain).accessibilityIdentifier("current-location-card")
     }
 
     private var journey: some View {
@@ -154,7 +155,7 @@ struct TimelineView: View {
                     }
                 }
             }
-        }
+        }.accessibilityIdentifier("todays-journey")
     }
 
     private var greeting: String {

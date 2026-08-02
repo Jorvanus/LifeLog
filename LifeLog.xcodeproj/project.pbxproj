@@ -26,11 +26,19 @@
 		C975A398C4FCEB89BAB6E650 /* MapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B67547668C2606629916F0B6 /* MapView.swift */; };
 		DD8E7BFCC984E9B6BBA2B2E5 /* ActivityDataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A9921C3BD6F05CA5C2B6B9B /* ActivityDataService.swift */; };
 		E8F8E81D0736610AC61C887B /* LocationRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BB7EE63315EC7CC0A511303 /* LocationRecorder.swift */; };
+		E9B89A4B8DD841BF6BE226B6 /* LifeLogUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20F66D93CEC288FCC9E45F8C /* LifeLogUITests.swift */; };
 		EE018FBC1119FF49D463B185 /* SavedPlaceLearning.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF719128067426A354FA8F08 /* SavedPlaceLearning.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
 		6351EBBBB22A1DB84F6E06D3 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F4FDE6DAB95448E95B9699EB /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 3143EE0EA4D6F0278E0D327E;
+			remoteInfo = LifeLog;
+		};
+		A57431C7778A693AADEFFED9 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = F4FDE6DAB95448E95B9699EB /* Project object */;
 			proxyType = 1;
@@ -45,11 +53,13 @@
 		0A9921C3BD6F05CA5C2B6B9B /* ActivityDataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityDataService.swift; sourceTree = "<group>"; };
 		0B61B476B89FDE373D60B43C /* TimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineView.swift; sourceTree = "<group>"; };
 		1E02A9CCD0CB966927A0A63E /* LifeLogTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = LifeLogTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		20F66D93CEC288FCC9E45F8C /* LifeLogUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeLogUITests.swift; sourceTree = "<group>"; };
 		2F6EFD93E6C35C60C97969D4 /* ActivityLocationPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityLocationPolicyTests.swift; sourceTree = "<group>"; };
 		3AA772D2482869E62414D007 /* PlaceLookupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceLookupService.swift; sourceTree = "<group>"; };
 		3BB7EE63315EC7CC0A511303 /* LocationRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationRecorder.swift; sourceTree = "<group>"; };
 		3CC1523859D9C3C50CE0B0C8 /* ManualVisitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManualVisitView.swift; sourceTree = "<group>"; };
 		452978750FB4CA6A49A09C2A /* SavedPlaceLearningTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedPlaceLearningTests.swift; sourceTree = "<group>"; };
+		4D49D411624E1C10FDE393AF /* LifeLogUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = LifeLogUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		68BF51077D67E92A88F6FB79 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		730162A4687A39AF180FF3EA /* ActivityLocationPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityLocationPolicy.swift; sourceTree = "<group>"; };
 		831D37D3F7E2A5C6BF0F1C74 /* LifeLogApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeLogApp.swift; sourceTree = "<group>"; };
@@ -108,6 +118,7 @@
 			children = (
 				2DC92AB8B695A9D39C7CFD1F /* LifeLog */,
 				2C4ABC77861A343B71B1D3DC /* LifeLogTests */,
+				B6A802DDB06FD56BCA5A530C /* LifeLogUITests */,
 				7BA6CE12EF1CBB9B90CEDCF6 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -117,8 +128,17 @@
 			children = (
 				B4B8299006F8D67881EC2275 /* LifeLog.app */,
 				1E02A9CCD0CB966927A0A63E /* LifeLogTests.xctest */,
+				4D49D411624E1C10FDE393AF /* LifeLogUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		B6A802DDB06FD56BCA5A530C /* LifeLogUITests */ = {
+			isa = PBXGroup;
+			children = (
+				20F66D93CEC288FCC9E45F8C /* LifeLogUITests.swift */,
+			);
+			path = LifeLogUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -141,6 +161,24 @@
 			productName = LifeLog;
 			productReference = B4B8299006F8D67881EC2275 /* LifeLog.app */;
 			productType = "com.apple.product-type.application";
+		};
+		76BA37F55576C5BC7E5BE4EF /* LifeLogUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EEBD8E096C545BC13E3202A3 /* Build configuration list for PBXNativeTarget "LifeLogUITests" */;
+			buildPhases = (
+				D4D058D71BDD9210220338E8 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				78C491EA1F5261A7F5A74ED2 /* PBXTargetDependency */,
+			);
+			name = LifeLogUITests;
+			packageProductDependencies = (
+			);
+			productName = LifeLogUITests;
+			productReference = 4D49D411624E1C10FDE393AF /* LifeLogUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 		F718E8936DBB1C6C99019CBC /* LifeLogTests */ = {
 			isa = PBXNativeTarget;
@@ -173,6 +211,9 @@
 						DevelopmentTeam = 337KNRL5L8;
 						ProvisioningStyle = Automatic;
 					};
+					76BA37F55576C5BC7E5BE4EF = {
+						TestTargetID = 3143EE0EA4D6F0278E0D327E;
+					};
 				};
 			};
 			buildConfigurationList = 6BE0669F3FA28EB2E5AB102A /* Build configuration list for PBXProject "LifeLog" */;
@@ -191,6 +232,7 @@
 			targets = (
 				3143EE0EA4D6F0278E0D327E /* LifeLog */,
 				F718E8936DBB1C6C99019CBC /* LifeLogTests */,
+				76BA37F55576C5BC7E5BE4EF /* LifeLogUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -240,9 +282,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D4D058D71BDD9210220338E8 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E9B89A4B8DD841BF6BE226B6 /* LifeLogUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		78C491EA1F5261A7F5A74ED2 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 3143EE0EA4D6F0278E0D327E /* LifeLog */;
+			targetProxy = A57431C7778A693AADEFFED9 /* PBXContainerItemProxy */;
+		};
 		DA0B687E56A73EC853D4561F /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 3143EE0EA4D6F0278E0D327E /* LifeLog */;
@@ -314,6 +369,42 @@
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		215B13E23B58B5DEA04CE463 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.aaronbaxter.LifeLogUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = LifeLog;
+			};
+			name = Release;
+		};
+		6FB84332DD59B2CF0FBDB314 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.aaronbaxter.LifeLogUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = LifeLog;
 			};
 			name = Debug;
 		};
@@ -480,6 +571,15 @@
 			buildConfigurations = (
 				CD4E385C1A0BB213F8F9232C /* Debug */,
 				BD3A76BF97B6CD0462E6EC67 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		EEBD8E096C545BC13E3202A3 /* Build configuration list for PBXNativeTarget "LifeLogUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6FB84332DD59B2CF0FBDB314 /* Debug */,
+				215B13E23B58B5DEA04CE463 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

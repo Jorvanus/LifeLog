@@ -35,6 +35,20 @@
                ReferencedContainer = "container:LifeLog.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "76BA37F55576C5BC7E5BE4EF"
+               BuildableName = "LifeLogUITests.xctest"
+               BlueprintName = "LifeLogUITests"
+               ReferencedContainer = "container:LifeLog.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction
@@ -61,6 +75,17 @@
                BlueprintIdentifier = "F718E8936DBB1C6C99019CBC"
                BuildableName = "LifeLogTests.xctest"
                BlueprintName = "LifeLogTests"
+               ReferencedContainer = "container:LifeLog.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "76BA37F55576C5BC7E5BE4EF"
+               BuildableName = "LifeLogUITests.xctest"
+               BlueprintName = "LifeLogUITests"
                ReferencedContainer = "container:LifeLog.xcodeproj">
             </BuildableReference>
          </TestableReference>

@@ -40,15 +40,28 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.aaronbaxter.LifeLogTests
         GENERATE_INFOPLIST_FILE: YES
         IPHONEOS_DEPLOYMENT_TARGET: "27.0"
+  LifeLogUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [LifeLogUITests]
+    dependencies:
+      - target: LifeLog
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aaronbaxter.LifeLogUITests
+        GENERATE_INFOPLIST_FILE: YES
+        IPHONEOS_DEPLOYMENT_TARGET: "27.0"
 schemes:
   LifeLog:
     build:
       targets:
         LifeLog: all
         LifeLogTests: [test]
+        LifeLogUITests: [test]
     run:
       config: Debug
     test:
       config: Debug
       targets:
         - LifeLogTests
+        - LifeLogUITests

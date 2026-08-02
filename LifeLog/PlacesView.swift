@@ -40,6 +40,7 @@ struct PlacesView: View {
             }
         }
         .navigationTitle("Saved Places")
+        .accessibilityIdentifier("saved-places-screen")
     }
 
     private func delete(at offsets: IndexSet) {

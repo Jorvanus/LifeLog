@@ -33,7 +33,7 @@ struct MapView: View {
                         Image(systemName: "location.fill").foregroundStyle(.blue)
                     }.padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20)).padding()
                 }
-            }.navigationTitle("Map")
+            }.navigationTitle("Map").accessibilityIdentifier("map-screen")
         }
     }
 }
