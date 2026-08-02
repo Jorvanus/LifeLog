@@ -6,7 +6,7 @@
 
 - Insights now prepares timeline segments, trends, and place totals once per data or date change instead of rebuilding them for every donut selection.
 - Donut taps use explicit chart hit testing and local selection state, keeping the rest of Insights and its map responsive.
-- Large month and year charts skip costly whole-chart selection animations.
+- Donut highlighting now uses one immediate state transition, preventing the previously selected slice from flashing during a new tap.
 
 ### Current and saved places
 

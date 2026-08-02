@@ -502,7 +502,6 @@ private struct InsightsDonutChart: View {
     let segments: [InsightSegment]
     let loggedHours: Double
     let totalHours: Double
-    @State private var selectedAngle: Double?
     @State private var focusedSegmentID: InsightSegmentID?
 
     private var focusedSegment: InsightSegment? {
@@ -534,31 +533,21 @@ private struct InsightsDonutChart: View {
                 }
             }
             .chartLegend(.hidden)
-            .chartAngleSelection(value: $selectedAngle)
-            // A spatial tap does not compete with the containing vertical ScrollView, while
-            // explicitly selecting the angle makes short taps reliable on a physical iPhone.
+            // Keep one selection path: converting the tap directly to a segment avoids the
+            // built-in angle binding racing this gesture and briefly restoring old focus.
             .chartGesture { proxy in
                 SpatialTapGesture()
                     .onEnded { value in
-                        proxy.selectAngleValue(at: proxy.angle(at: value.location))
+                        let angle = proxy.angle(at: value.location)
+                        guard let segment = segment(at: angle.radians) else { return }
+                        // The highlight is intentionally immediate. Animating the old and new
+                        // sectors together made a physical-device tap look like a stale flash.
+                        focusedSegmentID = segment.id
                     }
-            }
-            .onChange(of: selectedAngle) { _, angle in
-                guard let angle, let segment = segment(at: angle) else {
-                    focusedSegmentID = nil
-                    return
-                }
-                if segments.count <= 80 {
-                    withAnimation(.snappy) { focusedSegmentID = segment.id }
-                } else {
-                    // Large month/year charts avoid animating every sector at once.
-                    focusedSegmentID = segment.id
-                }
             }
             .onChange(of: segments.map(\.id)) { _, ids in
                 if let focusedSegmentID, !ids.contains(focusedSegmentID) {
                     self.focusedSegmentID = nil
-                    selectedAngle = nil
                 }
             }
             .accessibilityHint("Highlight this entry and show its check-in, check-out, and duration")
