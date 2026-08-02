@@ -2,6 +2,18 @@
 
 ## 2026-08-03
 
+### Activity editor polish
+
+- Replaced the raw SF Symbol name field with a friendly icon picker, removing technical values such as `.fill` from the activity editor.
+
+### Protected timeline startup fix
+
+- Removed the ignored-location field from the SwiftData `Visit` schema and moved ignore state to local preferences, avoiding a protected-store migration on existing iPhones.
+
+### Timeline startup migration fix
+
+- Moved editable activities out of the protected SwiftData schema and into a versioned local preferences payload, preventing existing timeline stores from failing to open after the Activities feature was added.
+
 ### Locations section builder fix
 
 - Rewrote the Locations list sections with explicit headers so SwiftUI resolves the conditional content correctly under Swift 6.

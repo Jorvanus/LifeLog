@@ -1,16 +1,18 @@
 import SwiftUI
-import SwiftData
 
 struct ActivitiesView: View {
-    @Environment(\.modelContext) private var context
-    @Query(sort: \ActivityDefinition.name) private var activities: [ActivityDefinition]
+    @State private var activities = ActivityCatalog.load()
     @State private var adding = false
 
     var body: some View {
         List {
             Section {
                 ForEach(activities) { activity in
-                    NavigationLink { ActivityEditor(activity: activity) } label: {
+                    NavigationLink {
+                        ActivityEditor(activity: activity) { updated in
+                            replace(updated)
+                        }
+                    } label: {
                         Label {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(activity.name).font(.headline)
@@ -22,8 +24,8 @@ struct ActivitiesView: View {
                     }
                 }
                 .onDelete { offsets in
-                    for index in offsets { context.delete(activities[index]) }
-                    try? context.save()
+                    activities.remove(atOffsets: offsets)
+                    ActivityCatalog.save(activities)
                 }
             } footer: {
                 Text("Activities are suggestions used when labeling visits. Changing a definition does not rewrite past visits; edit those visits when you want a historical correction.")
@@ -36,21 +38,41 @@ struct ActivitiesView: View {
                 Button { adding = true } label: { Label("Add activity", systemImage: "plus") }
             }
         }
-        .task { ActivityCatalog.seed(context) }
-        .sheet(isPresented: $adding) { ActivityEditor() }
+        .task { ActivityCatalog.seed(); activities = ActivityCatalog.load() }
+        .sheet(isPresented: $adding) {
+            ActivityEditor { newActivity in
+                activities.append(newActivity)
+                ActivityCatalog.save(activities)
+            }
+        }
+    }
+
+    private func replace(_ updated: ActivityDefinition) {
+        guard let index = activities.firstIndex(where: { $0.id == updated.id }) else { return }
+        activities[index] = updated
+        ActivityCatalog.save(activities)
     }
 }
 
 private struct ActivityEditor: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var context
     let existing: ActivityDefinition?
+    let onSave: (ActivityDefinition) -> Void
     @State private var name: String
     @State private var category: String
     @State private var symbol: String
 
-    init(activity: ActivityDefinition? = nil) {
+    private let iconOptions = [
+        ("Home", "house.fill"), ("Work", "briefcase.fill"),
+        ("Food", "fork.knife"), ("Shopping", "bag.fill"),
+        ("Fitness", "figure.run"), ("Health", "cross.case.fill"),
+        ("Study", "book.fill"), ("Travel", "car.fill"),
+        ("Social", "person.2.fill"), ("Place", "mappin.and.ellipse")
+    ]
+
+    init(activity: ActivityDefinition? = nil, onSave: @escaping (ActivityDefinition) -> Void) {
         existing = activity
+        self.onSave = onSave
         _name = State(initialValue: activity?.name ?? "")
         _category = State(initialValue: activity?.category ?? "Other")
         _symbol = State(initialValue: activity?.symbol ?? "circle.fill")
@@ -61,9 +83,11 @@ private struct ActivityEditor: View {
             Form {
                 TextField("Activity name", text: $name)
                 TextField("Category", text: $category)
-                TextField("SF Symbol", text: $symbol)
-                Text("Use any SF Symbol name, such as figure.walk or cup.and.saucer.fill.")
-                    .font(.footnote).foregroundStyle(.secondary)
+                Picker("Icon", selection: $symbol) {
+                    ForEach(iconOptions, id: \.1) { option in
+                        Label(option.0, systemImage: option.1).tag(option.1)
+                    }
+                }
             }
             .navigationTitle(existing == nil ? "Add Activity" : "Edit Activity")
             .toolbar {
@@ -80,16 +104,9 @@ private struct ActivityEditor: View {
         let cleanName = TextSafety.clean(name, maximumLength: 80)
         let cleanCategory = TextSafety.clean(category, maximumLength: 40)
         let cleanSymbol = TextSafety.clean(symbol, maximumLength: 60)
-        if let existing {
-            existing.name = cleanName
-            existing.category = cleanCategory.isEmpty ? "Other" : cleanCategory
-            existing.symbol = cleanSymbol.isEmpty ? "circle.fill" : cleanSymbol
-        } else {
-            context.insert(ActivityDefinition(name: cleanName,
-                                              category: cleanCategory.isEmpty ? "Other" : cleanCategory,
-                                              symbol: cleanSymbol.isEmpty ? "circle.fill" : cleanSymbol))
-        }
-        try? context.save()
+        onSave(ActivityDefinition(id: existing?.id ?? UUID(), name: cleanName,
+                                  category: cleanCategory.isEmpty ? "Other" : cleanCategory,
+                                  symbol: cleanSymbol.isEmpty ? "circle.fill" : cleanSymbol))
         dismiss()
     }
 }

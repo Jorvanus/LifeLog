@@ -296,14 +296,13 @@ struct VisitEditor: View {
     @Environment(\.modelContext) private var context
     @Bindable var visit: Visit
     @Query(sort: \VisitCorrection.changedAt, order: .reverse) private var corrections: [VisitCorrection]
-    @Query(sort: \ActivityDefinition.name) private var activityDefinitions: [ActivityDefinition]
     @State private var saveFailed = false
     @State private var correctionBaseline: VisitCorrectionSnapshot?
     private let categories = ["Home", "Work", "Food & Drink", "Shopping", "Fitness", "Healthcare", "Education", "Travel", "Social", "Other"]
     private let activities = ["At home", "Working", "Eating", "Shopping", "Exercising", "Healthcare", "Studying", "Travelling", "Socialising", "Visiting"]
 
     private var availableActivities: [String] {
-        let names = activityDefinitions.map(\.name)
+        let names = ActivityCatalog.load().map(\.name)
         return names.isEmpty ? activities : names
     }
 

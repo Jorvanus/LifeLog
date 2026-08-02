@@ -6,7 +6,10 @@ struct LifeLogApp: App {
     private let modelContainer: ModelContainer?
 
     init() {
-        let schema = Schema([Visit.self, SavedPlace.self, VisitCorrection.self, DiagnosticEvent.self, ActivityDefinition.self])
+        // Keep the SwiftData schema limited to the timeline models. User-editable
+        // activities live in a versioned UserDefaults payload, avoiding a risky
+        // model migration for existing protected timeline stores.
+        let schema = Schema([Visit.self, SavedPlace.self, VisitCorrection.self, DiagnosticEvent.self])
         let configuration = ModelConfiguration(
             "LifeLog",
             schema: schema,

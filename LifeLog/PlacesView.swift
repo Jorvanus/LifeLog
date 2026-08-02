@@ -97,7 +97,6 @@ private struct SavedPlaceEditor: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Bindable var place: SavedPlace
-    @Query(sort: \ActivityDefinition.name) private var activityDefinitions: [ActivityDefinition]
     @State private var saveFailed = false
 
     private let categories = [
@@ -110,7 +109,7 @@ private struct SavedPlaceEditor: View {
     ]
 
     private var availableActivities: [String] {
-        let names = activityDefinitions.map(\.name)
+        let names = ActivityCatalog.load().map(\.name)
         return names.isEmpty ? activities : names
     }
 

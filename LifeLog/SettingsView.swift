@@ -102,7 +102,7 @@ struct SettingsView: View {
                     Text("Diagnostics contain generic service timing and failure messages only. Precise locations and Health data are never recorded here.")
                 }
             }.navigationTitle("Settings").accessibilityIdentifier("settings-screen")
-                .task { ActivityCatalog.seed(context) }
+                .task { ActivityCatalog.seed() }
         }
     }
 

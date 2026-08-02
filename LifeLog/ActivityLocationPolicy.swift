@@ -232,7 +232,6 @@ enum ActivityLocationPolicy {
             userActivity: activity.userActivity,
             note: activity.note,
             source: activity.source,
-            isIgnored: activity.isIgnored,
             recognitionConfidence: activity.recognitionConfidence,
             candidateData: activity.candidateData
         )
