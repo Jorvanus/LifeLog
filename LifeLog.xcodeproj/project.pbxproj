@@ -21,6 +21,7 @@
 		603EE8045255EDB80EBAF9A9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D936E236D5176123EE3DAD91 /* Assets.xcassets */; };
 		6D90B9EA0E51B99238D9F404 /* ActivityCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFAE754CED69E401D1F84CA1 /* ActivityCatalog.swift */; };
 		7495363AE868ECAAC60FA966 /* SmartActivityClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0903FE944E9BA6818CEF632B /* SmartActivityClassifier.swift */; };
+		7A2EE83A305205C0256BCD8F /* LifeLogSchema.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDA3990118D7AF857B32CE2A /* LifeLogSchema.swift */; };
 		8231CB72D6C8640D07C59050 /* ActivityLocationPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 730162A4687A39AF180FF3EA /* ActivityLocationPolicy.swift */; };
 		87C656FE5056AB7AF361B02C /* ManualVisitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CC1523859D9C3C50CE0B0C8 /* ManualVisitView.swift */; };
 		8BDC88D2FBBE6FCC74D9F36A /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BE5AD5AA637543CED7D6187 /* SettingsView.swift */; };
@@ -32,6 +33,7 @@
 		C230D3A30B5955F581E8269F /* PlaceLookupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AA772D2482869E62414D007 /* PlaceLookupService.swift */; };
 		C975A398C4FCEB89BAB6E650 /* MapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B67547668C2606629916F0B6 /* MapView.swift */; };
 		D6704F5947B4D5A3684E5C3E /* TrendExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B966AABF4CCD0CC5F1BF97B /* TrendExport.swift */; };
+		D922EFA846AD3DED0FF17CDF /* SchemaMigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00A33A60B150AFDBD347BC6 /* SchemaMigrationTests.swift */; };
 		DD8E7BFCC984E9B6BBA2B2E5 /* ActivityDataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A9921C3BD6F05CA5C2B6B9B /* ActivityDataService.swift */; };
 		E303203502DB7032D4510DC3 /* TimelineFixtureCoverageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F988CF286B464E43CCCF80A /* TimelineFixtureCoverageTests.swift */; };
 		E8F8E81D0736610AC61C887B /* LocationRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BB7EE63315EC7CC0A511303 /* LocationRecorder.swift */; };
@@ -88,10 +90,12 @@
 		AFAE754CED69E401D1F84CA1 /* ActivityCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityCatalog.swift; sourceTree = "<group>"; };
 		B4B8299006F8D67881EC2275 /* LifeLog.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = LifeLog.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B67547668C2606629916F0B6 /* MapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapView.swift; sourceTree = "<group>"; };
+		BDA3990118D7AF857B32CE2A /* LifeLogSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeLogSchema.swift; sourceTree = "<group>"; };
 		D936E236D5176123EE3DAD91 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		DC096FDA8EA522B04B2F9890 /* InferenceEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InferenceEngine.swift; sourceTree = "<group>"; };
 		E305C81E7DB9868FD552A196 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		EFCE5913178C6E80B80E1DE3 /* Diagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Diagnostics.swift; sourceTree = "<group>"; };
+		F00A33A60B150AFDBD347BC6 /* SchemaMigrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemaMigrationTests.swift; sourceTree = "<group>"; };
 		F0F429A366891C4A81D89BCD /* TrendsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendsView.swift; sourceTree = "<group>"; };
 		FF719128067426A354FA8F08 /* SavedPlaceLearning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedPlaceLearning.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -103,6 +107,7 @@
 				346E0ECB4A8D7AA9F0DC7BE2 /* ActivityImportActorTests.swift */,
 				2F6EFD93E6C35C60C97969D4 /* ActivityLocationPolicyTests.swift */,
 				452978750FB4CA6A49A09C2A /* SavedPlaceLearningTests.swift */,
+				F00A33A60B150AFDBD347BC6 /* SchemaMigrationTests.swift */,
 				1F988CF286B464E43CCCF80A /* TimelineFixtureCoverageTests.swift */,
 			);
 			path = LifeLogTests;
@@ -125,6 +130,7 @@
 				9B4F84FC6736D6EBD795192C /* JournalCSVImporter.swift */,
 				95189CB130173B9A604C5E26 /* LifeLog.entitlements */,
 				831D37D3F7E2A5C6BF0F1C74 /* LifeLogApp.swift */,
+				BDA3990118D7AF857B32CE2A /* LifeLogSchema.swift */,
 				3BB7EE63315EC7CC0A511303 /* LocationRecorder.swift */,
 				3CC1523859D9C3C50CE0B0C8 /* ManualVisitView.swift */,
 				B67547668C2606629916F0B6 /* MapView.swift */,
@@ -295,6 +301,7 @@
 				424B5084CB08F752AD18F6E0 /* InferenceEngine.swift in Sources */,
 				A8C2618DAB163744EAD89C5F /* JournalCSVImporter.swift in Sources */,
 				3ABD058A23052EDA905A28F9 /* LifeLogApp.swift in Sources */,
+				7A2EE83A305205C0256BCD8F /* LifeLogSchema.swift in Sources */,
 				E8F8E81D0736610AC61C887B /* LocationRecorder.swift in Sources */,
 				87C656FE5056AB7AF361B02C /* ManualVisitView.swift in Sources */,
 				C975A398C4FCEB89BAB6E650 /* MapView.swift in Sources */,
@@ -318,6 +325,7 @@
 				5D8568D1511806DE576FAB9A /* ActivityImportActorTests.swift in Sources */,
 				079B2D6540571B6E67B89DC5 /* ActivityLocationPolicyTests.swift in Sources */,
 				8E704F71D1DDB0AF78FB71D4 /* SavedPlaceLearningTests.swift in Sources */,
+				D922EFA846AD3DED0FF17CDF /* SchemaMigrationTests.swift in Sources */,
 				E303203502DB7032D4510DC3 /* TimelineFixtureCoverageTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

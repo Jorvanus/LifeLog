@@ -10,7 +10,7 @@ This plan prioritises a dependable private diary on a physical iPhone before exp
 - [ ] Expand the Insights UI regression test to tap several donut segments repeatedly, deselect the active segment, select Sleep, scroll away and back, and confirm the chart remains hittable.
 - [ ] Make the current location the first visually distinct card in Today’s Journey, including elapsed time and a “waiting for visit confirmation” state before Core Location delivers a formal visit.
 - [ ] Add an explicit store-opening recovery path: preserve the protected store, show actionable diagnostics, allow export/recovery where possible, and never require deleting the app as the first remedy.
-- [ ] Introduce a versioned SwiftData schema and documented migration tests before adding another persisted field. Cover opening a copy of the current on-device schema and upgrading it without data loss.
+- [x] Introduce a versioned SwiftData schema and documented migration tests before adding another persisted field. Cover opening a copy of the current on-device schema and upgrading it without data loss.
 
 ## Week 2 — make Health and movement reliable
 

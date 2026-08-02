@@ -2,6 +2,12 @@
 
 ## 2026-08-03
 
+### Versioned SwiftData schema baseline
+
+- Added `LifeLogSchemaV1` and a migration plan for the current protected on-device models.
+- Added an on-disk compatibility test that writes the current schema, reopens the same store through the versioned plan, and verifies visits, saved places, corrections, diagnostics, notes, and candidate data survive.
+- Documented the required V2 workflow before adding another persisted field.
+
 ### Responsive background activity imports
 
 - Moved HealthKit and Core Motion history reading and SwiftData writes onto isolated actors, with database saves limited to small batches so app navigation and touch handling remain responsive.
