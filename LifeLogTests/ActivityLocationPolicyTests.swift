@@ -102,6 +102,36 @@ struct ActivityLocationPolicyTests {
         #expect(activities.isEmpty)
     }
 
+    @Test("Repeated automatic callbacks collapse into one location visit")
+    func deduplicatesRepeatedAutomaticLocations() throws {
+        let context = try makeContext()
+        for offset in [0.0, 0.5, 1.0] {
+            context.insert(Visit(
+                arrival: base.addingTimeInterval(offset), departure: nil,
+                latitude: -27.47, longitude: 153.03,
+                placeName: "Home", placeCategory: "Home",
+                inferredActivity: "At home", source: "automatic"
+            ))
+        }
+        context.insert(Visit(
+            arrival: base.addingTimeInterval(1_800), departure: nil,
+            latitude: -27.471, longitude: 153.031,
+            placeName: "Shopping", placeCategory: "Shopping",
+            inferredActivity: "Shopping", source: "automatic"
+        ))
+        try context.save()
+
+        let removed = try ActivityLocationPolicy.deduplicateAutomaticLocations(context: context)
+        try context.save()
+        let locations = try context.fetch(FetchDescriptor<Visit>(sortBy: [SortDescriptor(\.arrival)]))
+            .filter(ActivityLocationPolicy.isLocationVisit)
+
+        #expect(removed == 2)
+        #expect(locations.count == 2)
+        #expect(locations[0].departure == base.addingTimeInterval(1_800))
+        #expect(locations[1].departure == nil)
+    }
+
     @Test("Walking is only shown between two destinations")
     func walkingRequiresTwoDestinations() {
         let previous = Visit(

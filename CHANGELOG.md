@@ -12,6 +12,16 @@
 - Step-query diagnostics include privacy-safe error domain/code context and the Settings Health status now explains when Apple Health access is needed.
 - Renamed the Health permission action to make clear that it covers steps as well as sleep and workouts.
 
+### Repeated location callback deduplication
+
+- Prevented repeated Core Location arrival callbacks from creating duplicate Timeline cards.
+- Added a one-time cleanup for identical automatic visits already stored, while preserving later returns and manual entries.
+- Later destinations now close an earlier open stay so Insights can show the complete sequence, such as Shopping followed by Home.
+
+### Timeline journey time labels
+
+- Only the actual current visit uses “Since”; all other Today’s Journey cards show start and end times, including a safe current-time fallback for stale open records.
+
 ### Uncategorised location map editing
 
 - Added a recorded-location map to the uncategorised visit editor.

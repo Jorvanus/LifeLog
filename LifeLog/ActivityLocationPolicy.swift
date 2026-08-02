@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import CoreLocation
 
 /// Keeps the timeline location-first by removing device activity that occurs during a place visit.
 @MainActor
@@ -174,6 +175,50 @@ enum ActivityLocationPolicy {
             context: context,
             now: now
         )
+    }
+
+    /// Removes exact/repeated automatic callbacks that describe the same arrival.
+    /// A short time and coordinate tolerance handles Core Location replay without
+    /// merging a genuine later return to the same place.
+    @discardableResult
+    static func deduplicateAutomaticLocations(context: ModelContext) throws -> Int {
+        let visits = try context.fetch(FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.source == "automatic" },
+            sortBy: [SortDescriptor(\.arrival)]
+        ))
+        var retained: [Visit] = []
+        var removed = 0
+        for candidate in visits {
+            guard let previous = retained.last else {
+                retained.append(candidate)
+                continue
+            }
+
+            let sameArrival = previous.placeName == candidate.placeName &&
+                previous.placeCategory == candidate.placeCategory &&
+                abs(previous.arrival.timeIntervalSince(candidate.arrival)) <= 60 &&
+                CLLocation(latitude: previous.latitude, longitude: previous.longitude)
+                    .distance(from: CLLocation(latitude: candidate.latitude, longitude: candidate.longitude)) <= 60
+            if sameArrival {
+                // Merge repeated callbacks that describe the same arrival.
+                previous.arrival = min(previous.arrival, candidate.arrival)
+                switch (previous.departure, candidate.departure) {
+                case (nil, _), (_, nil): previous.departure = nil
+                case let (left?, right?): previous.departure = max(left, right)
+                }
+                context.delete(candidate)
+                removed += 1
+            } else {
+                // A later destination proves that an earlier open stay ended when this
+                // visit began. Closing it prevents an open stay from consuming the
+                // entire Insights interval.
+                if previous.departure == nil, candidate.arrival > previous.arrival {
+                    previous.departure = candidate.arrival
+                }
+                retained.append(candidate)
+            }
+        }
+        return removed
     }
 
     private static func fetchPolicyVisits(context: ModelContext) throws -> [Visit] {

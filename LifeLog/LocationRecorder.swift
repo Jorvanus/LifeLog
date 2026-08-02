@@ -167,6 +167,15 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     private func createVisit(at coordinate: CLLocationCoordinate2D, arrival: Date) {
         guard let context, CLLocationCoordinate2DIsValid(coordinate) else { return }
         let safeArrival = min(arrival, .now)
+        if let duplicate = recentDuplicateLocation(at: coordinate, arrival: safeArrival, context: context) {
+            // Core Location can replay the same arrival after a visit was closed. Keep
+            // the original record and update its bounds instead of creating a new card.
+            duplicate.arrival = min(duplicate.arrival, safeArrival)
+            if duplicate.needsCategorisation { identifyPlace(duplicate) }
+            reconcileActivity(with: duplicate, context: context)
+            save(context)
+            return
+        }
         if let latest = latestLocationVisit(in: context), latest.departure == nil {
             let existingLocation = CLLocation(latitude: latest.latitude, longitude: latest.longitude)
             let incomingLocation = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
@@ -195,6 +204,23 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
         save(context)
         if saved == nil { identifyPlace(item) }
+    }
+
+    private func recentDuplicateLocation(at coordinate: CLLocationCoordinate2D, arrival: Date,
+                                         context: ModelContext) -> Visit? {
+        var descriptor = FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.source == "automatic" },
+            sortBy: [SortDescriptor(\.arrival, order: .reverse)]
+        )
+        descriptor.fetchLimit = 30
+        guard let recent = try? context.fetch(descriptor) else { return nil }
+        let incoming = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        return recent.first { visit in
+            let recorded = CLLocation(latitude: visit.latitude, longitude: visit.longitude)
+            let sameArrival = abs(visit.arrival.timeIntervalSince(arrival)) <= 60
+            let sameOpenStay = visit.departure == nil
+            return recorded.distance(from: incoming) <= 60 && (sameArrival || sameOpenStay)
+        }
     }
 
     private func closeLatestVisit(at departure: Date) {

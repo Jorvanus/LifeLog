@@ -10,6 +10,7 @@ struct TimelineView: View {
            sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
     @State private var adding = false
     @AppStorage("location-policy-reconciled-v2") private var locationPolicyReconciled = false
+    @AppStorage("automatic-location-deduplicated-v1") private var automaticLocationDeduplicated = false
 
     private var today: [Visit] {
         let locationVisits = visits.filter(ActivityLocationPolicy.isLocationVisit)
@@ -44,6 +45,15 @@ struct TimelineView: View {
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $adding) { ManualVisitView() }
             .task {
+                if !automaticLocationDeduplicated {
+                    do {
+                        let removed = try ActivityLocationPolicy.deduplicateAutomaticLocations(context: context)
+                        if removed > 0 { try context.save() }
+                        automaticLocationDeduplicated = true
+                    } catch {
+                        // Retry after a protected-store failure on the next appearance.
+                    }
+                }
                 // This migration-style cleanup used to scan the complete timeline on
                 // every appearance. Large journal imports made that noticeable, so run
                 // it once per installation/version; new visits are reconciled as they
@@ -151,6 +161,8 @@ struct TimelineView: View {
                         }
                         Text("Since \(visit.arrival.formatted(date: .omitted, time: .shortened))")
                             .foregroundStyle(.secondary)
+                        Text("Started at \(visit.arrival.formatted(date: .omitted, time: .shortened))")
+                            .font(.caption).foregroundStyle(.tertiary)
                     }
                     Spacer()
                     Image(systemName: visit.needsCategorisation ? "flag.fill" : "location.circle.fill")
@@ -177,7 +189,8 @@ struct TimelineView: View {
             } else {
                 VStack(spacing: 12) {
                     ForEach(Array(today.enumerated()), id: \.element.id) { index, visit in
-                        JourneyRow(visit: visit, isFirst: index == 0, isLast: index == today.count - 1)
+                        JourneyRow(visit: visit, isCurrent: current?.id == visit.id,
+                                   isFirst: index == 0, isLast: index == today.count - 1)
                     }
                 }
             }
@@ -195,6 +208,7 @@ struct TimelineView: View {
 
 private struct JourneyRow: View {
     let visit: Visit
+    let isCurrent: Bool
     let isFirst: Bool
     let isLast: Bool
     private var color: Color { visit.needsCategorisation ? .orange : activityColor(visit.activity) }
@@ -238,10 +252,10 @@ private struct JourneyRow: View {
 
     @ViewBuilder private var status: some View {
         if visit.needsCategorisation {
-            Label(visit.departure == nil ? "Live · Categorise" : "Categorise", systemImage: "flag.fill")
+            Label(isCurrent ? "Live · Categorise" : "Categorise", systemImage: "flag.fill")
                 .font(.caption.weight(.semibold)).foregroundStyle(.orange)
                 .padding(.horizontal, 10).padding(.vertical, 6).background(.orange.opacity(0.1), in: Capsule())
-        } else if visit.departure == nil {
+        } else if isCurrent {
             Label("Live", systemImage: "circle.fill").font(.caption.weight(.semibold)).foregroundStyle(.green)
                 .labelStyle(.titleAndIcon)
         } else {
@@ -252,8 +266,9 @@ private struct JourneyRow: View {
 
     private var timeDescription: String {
         let start = visit.arrival.formatted(date: .omitted, time: .shortened)
-        if let departure = visit.departure { return "\(start) – \(departure.formatted(date: .omitted, time: .shortened))" }
-        return "Since \(start)"
+        if isCurrent { return "Since \(start)" }
+        let end = (visit.departure ?? .now).formatted(date: .omitted, time: .shortened)
+        return "\(start) – \(end)"
     }
 
     private var durationDescription: String {
