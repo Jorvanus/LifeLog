@@ -125,6 +125,8 @@ struct ActivityLocationPolicyTests {
 
         #expect(ActivityLocationPolicy.shouldShow(walking, alongside: [previous, walking]) == false)
         #expect(ActivityLocationPolicy.shouldShow(walking, alongside: [previous, walking, next]) == true)
+        // Batch consumers such as Insights pre-filter locations once for the same result.
+        #expect(ActivityLocationPolicy.shouldShow(walking, locationVisits: [previous, next]) == true)
 
         let walkingAtHome = Visit(
             arrival: base.addingTimeInterval(15 * 60),

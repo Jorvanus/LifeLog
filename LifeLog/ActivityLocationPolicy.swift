@@ -50,10 +50,20 @@ enum ActivityLocationPolicy {
     }
 
     static func shouldShow(_ visit: Visit, alongside allVisits: [Visit], now: Date = .now) -> Bool {
+        shouldShow(
+            visit,
+            locationVisits: allVisits.filter(isLocationVisit),
+            now: now
+        )
+    }
+
+    /// Use this overload in batch processing so the caller can filter locations once
+    /// instead of rescanning the entire timeline for every movement record.
+    static func shouldShow(_ visit: Visit, locationVisits: [Visit], now: Date = .now) -> Bool {
         guard isMovementActivity(visit) else { return true }
         return isBetweenDestinations(
             visit,
-            locationVisits: allVisits.filter(isLocationVisit),
+            locationVisits: locationVisits,
             now: now
         )
     }
