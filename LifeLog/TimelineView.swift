@@ -11,9 +11,10 @@ struct TimelineView: View {
     @AppStorage("location-policy-reconciled-v2") private var locationPolicyReconciled = false
 
     private var today: [Visit] {
-        visits.filter { Calendar.current.isDateInToday($0.arrival) }
+        let locationVisits = visits.filter(ActivityLocationPolicy.isLocationVisit)
+        return visits.filter { Calendar.current.isDateInToday($0.arrival) }
             .filter { !$0.isIgnored }
-            .filter { ActivityLocationPolicy.shouldShow($0, alongside: visits) }
+            .filter { ActivityLocationPolicy.shouldShow($0, locationVisits: locationVisits) }
     }
     private var reviewQueue: [Visit] {
         // The live unknown location has its own prominent card; the queue is for past stays.

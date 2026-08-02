@@ -72,7 +72,7 @@ enum ActivityLocationPolicy {
     /// Work and home are stable labels; other places need to recur across multiple days
     /// before they are used as a learned destination name.
     static func updateTravelDescriptions(context: ModelContext) throws {
-        let visits = try context.fetch(FetchDescriptor<Visit>())
+        let visits = try fetchPolicyVisits(context: context)
         let locations = visits.filter { isLocationVisit($0) && !$0.isIgnored }
         for activity in visits where isTravelActivity(activity) && !activity.isIgnored {
             let end = activity.departure ?? .now
@@ -156,7 +156,7 @@ enum ActivityLocationPolicy {
     /// Reconciles activity imported before a location visit arrived from Core Location.
     static func reconcile(locationVisit: Visit, context: ModelContext, now: Date = .now) throws {
         guard isLocationVisit(locationVisit) else { return }
-        let visits = try context.fetch(FetchDescriptor<Visit>())
+        let visits = try fetchPolicyVisits(context: context)
         try reconcile(
             activities: visits.filter(isDeviceActivity),
             against: [locationVisit],
@@ -167,13 +167,23 @@ enum ActivityLocationPolicy {
 
     /// Cleans timelines created by earlier app versions when the model container opens.
     static func reconcileAll(context: ModelContext, now: Date = .now) throws {
-        let visits = try context.fetch(FetchDescriptor<Visit>())
+        let visits = try fetchPolicyVisits(context: context)
         try reconcile(
             activities: visits.filter(isDeviceActivity),
             against: visits.filter(isLocationVisit),
             context: context,
             now: now
         )
+    }
+
+    private static func fetchPolicyVisits(context: ModelContext) throws -> [Visit] {
+        // Imported journals already contain resolved activity/location pairs and never
+        // participate in live movement reconciliation. Excluding them avoids loading a
+        // large archive during location updates.
+        let descriptor = FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.source != "imported-journal" }
+        )
+        return try context.fetch(descriptor)
     }
 
     private static func reconcile(activities: [Visit], against locations: [Visit],

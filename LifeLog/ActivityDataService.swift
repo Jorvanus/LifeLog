@@ -148,18 +148,8 @@ final class ActivityDataService {
     private func importHealthHistory(daysBack: Int, includeWorkouts: Bool) async {
         let startedAt = Date.now
         guard HKHealthStore.isHealthDataAvailable(), let context else { return }
-        importExistingVisits = try? context.fetch(FetchDescriptor<Visit>())
-        if let importExistingVisits {
-            importVisitsBySource = Dictionary(grouping: importExistingVisits, by: \.source)
-            importLocationVisits = importExistingVisits.filter(ActivityLocationPolicy.isLocationVisit)
-            importHealthVisits = importExistingVisits.filter { $0.source.hasPrefix("health") }
-        }
-        defer {
-            importExistingVisits = nil
-            importVisitsBySource.removeAll(keepingCapacity: false)
-            importLocationVisits.removeAll(keepingCapacity: false)
-            importHealthVisits.removeAll(keepingCapacity: false)
-        }
+        prepareImportCache(context: context)
+        defer { clearImportCache() }
         let start = Calendar.current.date(byAdding: .day, value: -daysBack, to: .now) ?? .now
         let datePredicate = HKQuery.predicateForSamples(withStart: start, end: .now, options: .strictEndDate)
         do {
@@ -270,6 +260,8 @@ final class ActivityDataService {
                     self.refreshMotionStatus()
                     return
                 }
+                self.prepareImportCache(context: context)
+                defer { self.clearImportCache() }
                 self.importMotionActivities(activities ?? [], context: context)
                 try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
                 try? context.save()
@@ -306,7 +298,9 @@ final class ActivityDataService {
     private func insertActivity(name: String, activity: String, category: String, source: String,
                                 start: Date, end: Date, context: ModelContext) {
         guard end > start else { return }
-        let existing = importExistingVisits ?? ((try? context.fetch(FetchDescriptor<Visit>())) ?? [])
+        let existing = importExistingVisits ?? ((try? context.fetch(FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.source != "imported-journal" }
+        ))) ?? [])
         let sourceVisits = importVisitsBySource[source] ?? existing.filter { $0.source == source }
         let locationVisits = importExistingVisits == nil
             ? existing.filter(ActivityLocationPolicy.isLocationVisit)
@@ -351,6 +345,23 @@ final class ActivityDataService {
             importExistingVisits?.append(visit)
             importVisitsBySource[source, default: []].append(visit)
         }
+    }
+
+    private func prepareImportCache(context: ModelContext) {
+        importExistingVisits = try? context.fetch(FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.source != "imported-journal" }
+        ))
+        guard let importExistingVisits else { return }
+        importVisitsBySource = Dictionary(grouping: importExistingVisits, by: \.source)
+        importLocationVisits = importExistingVisits.filter(ActivityLocationPolicy.isLocationVisit)
+        importHealthVisits = importExistingVisits.filter { $0.source.hasPrefix("health") }
+    }
+
+    private func clearImportCache() {
+        importExistingVisits = nil
+        importVisitsBySource.removeAll(keepingCapacity: false)
+        importLocationVisits.removeAll(keepingCapacity: false)
+        importHealthVisits.removeAll(keepingCapacity: false)
     }
 
     private func mergeIntervals(_ intervals: [DateInterval], maximumGap: TimeInterval) -> [DateInterval] {

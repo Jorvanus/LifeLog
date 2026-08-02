@@ -10,6 +10,7 @@ Priorities below reflect the current implementation and the risks that matter mo
 - [ ] Confirm the public HealthKit API surface on iOS 27: Apple does not expose a general-purpose official Sleep Score value, so show Apple Watch/Health sleep stages and keep any calculated score explicitly labeled as a LifeLog estimate.
 - [ ] Make sleep-session queries tolerant of boundary differences by padding the selected interval and grouping overlapping HealthKit stage samples into one night.
 - [ ] Add import idempotency tests for repeated HealthKit and motion imports, including overlapping samples, time zones, and daylight-saving transitions.
+- [ ] Repeat the launch, Timeline, Settings, Insights day/month/year, and donut-interaction checklist on the physical iPhone with the full 32,000-row Life Cycle archive after the date-scoped query changes.
 
 ## P1 — finish the daily workflow
 
@@ -17,7 +18,8 @@ Priorities below reflect the current implementation and the risks that matter mo
 - [x] Add an Uncategorised Locations queue in Settings. Applying a label should update the selected visit and backfill all matching historical visits and the learned Saved Place.
 - [ ] Make the current location the first, visually distinct card in Today’s Journey, with live status and elapsed duration even before Core Location delivers a visit.
 - [ ] Add UI/accessibility coverage for Timeline, Insights, Map, Settings, current-location labeling, and Saved Places.
-- [ ] Profile Insights and Map with month/year histories and large annotation counts; keep chart selection and scrolling responsive on a physical phone.
+- [x] Scope Insights to its selected/comparison periods and exclude irrelevant journal rows from Timeline, Map, Settings, Health, learning, and location queries.
+- [ ] Profile the new scoped Insights and Map queries with month/year histories and large annotation counts on a physical phone; confirm chart selection and scrolling remain responsive.
 - [ ] Add HealthKit observer/background delivery so new sleep and workout data can be imported without opening Settings.
 - [ ] Expand movement classification coverage for cycling, running, and car/plane travel, while preserving the location-first rule that excludes movement inside a place.
 - [x] Add weekday patterns, richer weekly comparisons, and CSV/JSON export for the trends data.
@@ -31,7 +33,7 @@ Priorities below reflect the current implementation and the risks that matter mo
 ## P2 — privacy, resilience, and polish
 
 - [ ] Design optional encrypted iCloud backup/sync with conflict resolution, an explicit opt-in, and a documented restore path; start with an exportable backup before full sync.
-- [ ] Add user-facing export, deletion, and retention controls for locations, HealthKit imports, and saved places.
+- [ ] Add user-facing export, deletion, and retention controls for locations, HealthKit imports, and saved places, including an optional compact-history tool that previews the effect of removing short or old imported entries before deleting anything.
 - [x] Add a local importer for Life Cycle CSV exports with duplicate protection and malformed-row reporting.
 - [ ] Complete the privacy manifest and App Store review checklist, including plain-language explanations for Location, Motion, and Health access.
 - [ ] Verify dark-mode and tinted Home Screen icon behavior across iOS 27 appearances and device sizes. Dark luminosity switching is implemented; tinted appearance still needs verification.
@@ -47,3 +49,4 @@ Priorities below reflect the current implementation and the risks that matter mo
 - A dark luminosity variant was added for the app icon.
 - Walking inside a current place is excluded from the location-first timeline; movement is retained only between destinations.
 - Saved Places already remember corrected location/activity choices and can be edited from Settings or Insights.
+- Large imported archives now stay out of unrelated screens and services; Insights fetches only the requested and comparison periods, while CSV parsing and import duplicate checks are batched.

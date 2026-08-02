@@ -85,7 +85,9 @@ enum SavedPlaceLearning {
         let activity = place.defaultActivity.isEmpty
             ? InferenceEngine.activity(placeName: place.name, category: place.category)
             : place.defaultActivity
-        let visits = try context.fetch(FetchDescriptor<Visit>())
+        let visits = try context.fetch(FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.latitude != 0 || $0.longitude != 0 }
+        ))
         for visit in visits where ActivityLocationPolicy.isLocationVisit(visit) && !visit.isIgnored && isLocated(visit) {
             let previous = VisitCorrectionSnapshot(
                 placeName: visit.placeName,

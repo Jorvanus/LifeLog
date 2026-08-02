@@ -6,7 +6,7 @@ import MapKit
 struct TrendsView: View {
     @Environment(\.modelContext) private var context
     let activityData: ActivityDataService
-    @Query(sort: \Visit.arrival) private var visits: [Visit]
+    @State private var visits: [Visit] = []
     @State private var window: InsightWindow = .day
     @State private var anchorDate = Date.now
     @State private var choosingDate = false
@@ -16,10 +16,6 @@ struct TrendsView: View {
     @State private var exportFile: TrendExportFile?
 
     private var interval: DateInterval { window.interval(containing: anchorDate) }
-    private var snapshotKey: InsightsSnapshotKey {
-        InsightsSnapshotKey(window: window, interval: interval, now: now, visits: visits)
-    }
-
     var body: some View {
         NavigationStack {
             ZStack {
@@ -49,7 +45,7 @@ struct TrendsView: View {
                         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { choosingDate = false } } }
                 }.presentationDetents([.medium])
             }
-            .sheet(item: $selectedSlice) { slice in
+            .sheet(item: $selectedSlice, onDismiss: reloadInsights) { slice in
                 let entries = visits(for: slice)
                 if entries.count == 1, let visit = entries.first {
                     NavigationStack { VisitEditor(visit: visit) }
@@ -73,14 +69,16 @@ struct TrendsView: View {
                 .presentationDetents([.medium])
             }
             .task {
-                rebuildSnapshot()
+                reloadInsights()
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(60))
                     guard !Task.isCancelled else { return }
                     now = .now
+                    reloadInsights()
                 }
             }
-            .onChange(of: snapshotKey) { _, _ in rebuildSnapshot() }
+            .onChange(of: window) { _, _ in reloadInsights() }
+            .onChange(of: anchorDate) { _, _ in reloadInsights() }
         }
     }
 
@@ -273,9 +271,42 @@ struct TrendsView: View {
         return "This \(window.title.lowercased()), you visited \(count) \(count == 1 ? "place" : "places") and logged \(formatHours(snapshot.loggedHours))."
     }
 
-    private func rebuildSnapshot() {
-        // This is the only expensive Insights boundary. Donut taps remain local to the
-        // chart and therefore never rebuild history, trends, place totals, or Map content.
+    private func reloadInsights() {
+        // Fetch only the selected and comparison periods. Keeping the nine-year journal
+        // archive out of memory is substantially cheaper than trimming useful history.
+        let currentInterval = window.interval(containing: anchorDate)
+        let fetchStart = currentInterval.start.addingTimeInterval(-currentInterval.duration)
+        let fetchEnd = currentInterval.contains(now) ? now : currentInterval.end
+        let fetchStartedAt = Date.now
+        let descriptor = FetchDescriptor<Visit>(
+            predicate: #Predicate { visit in
+                visit.arrival >= fetchStart && visit.arrival < fetchEnd
+            },
+            sortBy: [SortDescriptor(\.arrival)]
+        )
+        do {
+            var fetched = try context.fetch(descriptor)
+            // Preserve a current multi-day location whose arrival predates the comparison
+            // range without widening the main archive query.
+            let activeDescriptor = FetchDescriptor<Visit>(
+                predicate: #Predicate { $0.departure == nil },
+                sortBy: [SortDescriptor(\.arrival)]
+            )
+            let existingIDs = Set(fetched.map { ObjectIdentifier($0) })
+            fetched.append(contentsOf: try context.fetch(activeDescriptor).filter {
+                !existingIDs.contains(ObjectIdentifier($0))
+            })
+            visits = fetched.sorted { $0.arrival < $1.arrival }
+        } catch {
+            visits = []
+            Diagnostics.record(context, subsystem: "Insights",
+                               message: "A date-scoped Insights fetch failed; no location or activity data was displayed.")
+        }
+        Diagnostics.performance(context, subsystem: "Insights", operation: "period fetch",
+                                startedAt: fetchStartedAt, itemCount: visits.count)
+
+        // Donut taps remain local to the chart and never rebuild history, trends,
+        // place totals, or Map content.
         let startedAt = Date.now
         snapshot = InsightsSnapshot.make(visits: visits, window: window, anchorDate: anchorDate, now: now)
         Diagnostics.performance(context, subsystem: "Insights", operation: "snapshot rebuild",
@@ -344,54 +375,6 @@ enum InsightWindow: String, CaseIterable, Identifiable, Hashable {
         case .month: "\(Int(interval.duration / 86400)) days"
         case .year: "January – December"
         }
-    }
-}
-
-/// A lightweight change token prevents chart-only state updates from rebuilding the
-/// expensive snapshot while still detecting edits to any field used by Insights.
-private struct InsightsSnapshotKey: Hashable {
-    let window: InsightWindow
-    let intervalStart: Date
-    let cutoff: Date
-    let visits: [InsightVisitRevision]
-
-    init(window: InsightWindow, interval: DateInterval, now: Date, visits: [Visit]) {
-        self.window = window
-        intervalStart = interval.start
-        cutoff = interval.contains(now) ? now : interval.end
-        // Imported journals can contain tens of thousands of historical rows. Only
-        // visits that overlap the selected period can change this snapshot, so avoid
-        // hashing the entire archive every time SwiftUI reevaluates the view.
-        let analysisInterval = DateInterval(start: interval.start, end: cutoff)
-        self.visits = visits.lazy
-            .filter { $0.overlaps(analysisInterval, now: now) }
-            .map(InsightVisitRevision.init)
-    }
-}
-
-private struct InsightVisitRevision: Hashable {
-    let id: ObjectIdentifier
-    let arrival: Date
-    let departure: Date?
-    let latitude: Double
-    let longitude: Double
-    let placeName: String
-    let placeCategory: String
-    let inferredActivity: String
-    let userActivity: String?
-    let source: String
-
-    init(_ visit: Visit) {
-        id = ObjectIdentifier(visit)
-        arrival = visit.arrival
-        departure = visit.departure
-        latitude = visit.latitude
-        longitude = visit.longitude
-        placeName = visit.placeName
-        placeCategory = visit.placeCategory
-        inferredActivity = visit.inferredActivity
-        userActivity = visit.userActivity
-        source = visit.source
     }
 }
 

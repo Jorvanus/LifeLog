@@ -56,6 +56,13 @@
 
 - Replaced the weekday total-time chart with a weekday-by-weekday view of the activity taking the most time, including its duration.
 
+### Large archive performance sweep
+
+- Insights now fetches only the selected period, its comparison period, and active visits instead of loading the complete journal archive.
+- Scoped Health imports, movement reconciliation, Saved Place backfills, location lookup, Timeline, Map, and Settings queries to the record types they actually use.
+- Reused CSV date formatters for the complete file, substantially reducing processing overhead on large imports.
+- Kept historical import trimming non-destructive: the app retains meaningful short visits while avoiding full-archive work during everyday use.
+
 ### Trends analysis and export
 
 - Added weekday pattern bars with top activity and average logged-time context.

@@ -226,8 +226,12 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     }
 
     private func latestLocationVisit(in context: ModelContext) -> Visit? {
-        let descriptor = FetchDescriptor<Visit>(sortBy: [SortDescriptor(\.arrival, order: .reverse)])
-        return try? context.fetch(descriptor).first(where: ActivityLocationPolicy.isLocationVisit)
+        var descriptor = FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.source == "automatic" || $0.source == "manual" },
+            sortBy: [SortDescriptor(\.arrival, order: .reverse)]
+        )
+        descriptor.fetchLimit = 1
+        return try? context.fetch(descriptor).first
     }
 
     private func nearestSavedPlace(to coordinate: CLLocationCoordinate2D, context: ModelContext) -> SavedPlace? {
@@ -328,10 +332,13 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
 
     private func identifyRecentUnknown(near location: CLLocation) {
         guard let context else { return }
-        var descriptor = FetchDescriptor<Visit>(sortBy: [SortDescriptor(\.arrival, order: .reverse)])
+        var descriptor = FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.source == "automatic" && $0.placeCategory == "Other" },
+            sortBy: [SortDescriptor(\.arrival, order: .reverse)]
+        )
         descriptor.fetchLimit = 5
         guard let recent = try? context.fetch(descriptor) else { return }
-        for visit in recent where visit.source == "automatic" && visit.placeCategory == "Other" {
+        for visit in recent {
             let visitLocation = CLLocation(latitude: visit.latitude, longitude: visit.longitude)
             if visitLocation.distance(from: location) <= 250 {
                 identifyPlace(visit)

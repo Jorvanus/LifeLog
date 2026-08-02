@@ -19,6 +19,10 @@ struct JournalCSVImporter {
 
     static func parse(_ data: Data) -> (rows: [Row], malformed: Int) {
         guard let text = String(data: data, encoding: .utf8) else { return ([], 1) }
+        // Construct formatters once per file. Creating two DateFormatters for every
+        // 32,000-row import is much more expensive than the CSV parsing itself.
+        let zonedFormatter = makeDateFormatter(format: "yyyy-MM-dd HH:mm:ss zzz")
+        let utcFormatter = makeDateFormatter(format: "yyyy-MM-dd HH:mm:ss", utc: true)
         let lines = text.components(separatedBy: .newlines).dropFirst()
         var rows: [Row] = []
         var malformed = 0
@@ -26,8 +30,8 @@ struct JournalCSVImporter {
             let fields = line.split(separator: ",", maxSplits: 7, omittingEmptySubsequences: false)
                 .map { $0.trimmingCharacters(in: .whitespaces) }
             guard fields.count >= 8,
-                  let start = parseDate(String(fields[2])) ?? parseDate(String(fields[0])),
-                  let end = parseDate(String(fields[3])) ?? parseDate(String(fields[1])),
+                  let start = zonedFormatter.date(from: String(fields[2])) ?? utcFormatter.date(from: String(fields[0])),
+                  let end = zonedFormatter.date(from: String(fields[3])) ?? utcFormatter.date(from: String(fields[1])),
                   end >= start else {
                 malformed += 1
                 continue
@@ -44,7 +48,9 @@ struct JournalCSVImporter {
     static func importData(_ data: Data, into context: ModelContext) throws -> JournalImportResult {
         let startedAt = Date.now
         let parsed = parse(data)
-        let existing = try context.fetch(FetchDescriptor<Visit>())
+        let existing = try context.fetch(FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.source == "imported-journal" }
+        ))
         // Life Cycle exports can contain tens of thousands of rows. Keep duplicate
         // detection O(1) per row instead of scanning every existing Visit for each
         // imported entry, which otherwise makes a large import feel like a hang.
@@ -80,14 +86,12 @@ struct JournalCSVImporter {
         "\(start.timeIntervalSince1970.rounded())|\(place)|\(activity)"
     }
 
-    private static func parseDate(_ value: String) -> Date? {
+    private static func makeDateFormatter(format: String, utc: Bool = false) -> DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss zzz"
-        if let date = formatter.date(from: value) { return date }
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        return formatter.date(from: value)
+        formatter.dateFormat = format
+        if utc { formatter.timeZone = TimeZone(secondsFromGMT: 0) }
+        return formatter
     }
 
     private static func normalizedActivity(_ raw: String) -> String {
