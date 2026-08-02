@@ -1,0 +1,95 @@
+import CoreLocation
+import SwiftData
+
+@MainActor
+enum SavedPlaceLearning {
+    enum Change: Equatable {
+        case created
+        case updated
+    }
+
+    struct Result {
+        let place: SavedPlace
+        let change: Change
+    }
+
+    /// Creates or updates the geofence used to recognize future visits.
+    /// The prior name lets a renamed visit update its original SavedPlace rather than creating a duplicate.
+    static func upsert(from visit: Visit, previousPlaceName: String?, context: ModelContext,
+                       defaultRadius: CLLocationDistance = 100) throws -> Result? {
+        guard isLocated(visit) else { return nil }
+
+        let name = TextSafety.clean(visit.placeName, maximumLength: 100)
+        let category = TextSafety.clean(visit.placeCategory, maximumLength: 40)
+        let activity = TextSafety.clean(visit.activity, maximumLength: 80)
+        guard isReusableName(name), !activity.isEmpty else { return nil }
+
+        let radius = min(max(defaultRadius, 25), 500)
+        let location = CLLocation(latitude: visit.latitude, longitude: visit.longitude)
+        let places = try context.fetch(FetchDescriptor<SavedPlace>())
+        let nearby = places.compactMap { place -> (place: SavedPlace, distance: CLLocationDistance)? in
+            let savedLocation = CLLocation(latitude: place.latitude, longitude: place.longitude)
+            let distance = location.distance(from: savedLocation)
+            return distance <= 200 ? (place, distance) : nil
+        }
+
+        let previousKey = previousPlaceName.map(normalizedKey)
+        let currentKey = normalizedKey(name)
+        let previousMatch = previousKey.flatMap { key in
+            nearby.filter { normalizedKey($0.place.name) == key }
+                .min { $0.distance < $1.distance }?.place
+        }
+        let existing = previousMatch
+            ?? nearby.filter { normalizedKey($0.place.name) == currentKey }
+                .min { $0.distance < $1.distance }?.place
+            ?? nearby.filter { $0.distance <= 75 }
+                .min { $0.distance < $1.distance }?.place
+
+        let place: SavedPlace
+        let change: Change
+        if let existing {
+            existing.name = name
+            existing.category = category
+            existing.defaultActivity = activity
+            existing.radius = min(max(max(existing.radius, radius), 25), 500)
+            place = existing
+            change = .updated
+        } else {
+            let created = SavedPlace(
+                name: name,
+                latitude: visit.latitude,
+                longitude: visit.longitude,
+                radius: radius,
+                category: category,
+                defaultActivity: activity
+            )
+            context.insert(created)
+            place = created
+            change = .created
+        }
+
+        visit.placeName = name
+        visit.placeCategory = category
+        visit.inferredActivity = activity
+        visit.recognitionConfidence = "learned"
+        visit.placeSuggestions = []
+        try context.save()
+        return Result(place: place, change: change)
+    }
+
+    private static func isLocated(_ visit: Visit) -> Bool {
+        let coordinate = CLLocationCoordinate2D(latitude: visit.latitude, longitude: visit.longitude)
+        return CLLocationCoordinate2DIsValid(coordinate) && (visit.latitude != 0 || visit.longitude != 0)
+    }
+
+    private static func isReusableName(_ name: String) -> Bool {
+        let key = normalizedKey(name)
+        return !key.isEmpty && key != "identifying…" && key != "unknown place"
+    }
+
+    private static func normalizedKey(_ value: String) -> String {
+        TextSafety.clean(value, maximumLength: 100)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+    }
+}

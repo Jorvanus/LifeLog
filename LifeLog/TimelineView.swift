@@ -251,6 +251,7 @@ struct VisitEditor: View {
     @Environment(\.modelContext) private var context
     @Bindable var visit: Visit
     @State private var saveFailed = false
+    @State private var correctionBaseline: VisitCorrectionSnapshot?
     private let categories = ["Home", "Work", "Food & Drink", "Shopping", "Fitness", "Healthcare", "Education", "Travel", "Social", "Other"]
     private let activities = ["At home", "Working", "Eating", "Shopping", "Exercising", "Healthcare", "Studying", "Travelling", "Socialising", "Visiting"]
 
@@ -316,9 +317,9 @@ struct VisitEditor: View {
                         Label("Save & Learn Place", systemImage: "brain.head.profile")
                             .frame(maxWidth: .infinity)
                     }
-                    .disabled(visit.placeName.isEmpty || visit.placeCategory == "Other" || activityBinding.wrappedValue.isEmpty)
+                    .disabled(!canLearnPlace)
                 } footer: {
-                    Text("LifeLog will recognise future visits within about 100 metres and apply this activity automatically.")
+                    Text("LifeLog will update a nearby saved geofence or create a new 100-metre geofence, then reuse this place and activity automatically.")
                 }
             }
         }
@@ -334,6 +335,14 @@ struct VisitEditor: View {
         } message: {
             Text("LifeLog left your existing timeline unchanged.")
         }
+        .onAppear {
+            if correctionBaseline == nil { correctionBaseline = currentSnapshot }
+        }
+        .onDisappear {
+            guard !saveFailed else { return }
+            sanitizeVisit()
+            try? persistChanges(forceLearning: false)
+        }
     }
 
     private var activityBinding: Binding<String> {
@@ -342,12 +351,8 @@ struct VisitEditor: View {
 
     private func learnPlace() {
         sanitizeVisit()
-        let activity = activityBinding.wrappedValue
-        context.insert(SavedPlace(name: visit.placeName, latitude: visit.latitude, longitude: visit.longitude,
-                                  category: visit.placeCategory, defaultActivity: activity))
-        visit.inferredActivity = activity
         do {
-            try context.save()
+            try persistChanges(forceLearning: true)
             dismiss()
         } catch {
             saveFailed = true
@@ -364,7 +369,7 @@ struct VisitEditor: View {
     private func saveAndDismiss() {
         sanitizeVisit()
         do {
-            try context.save()
+            try persistChanges(forceLearning: false)
             dismiss()
         } catch {
             saveFailed = true
@@ -380,4 +385,39 @@ struct VisitEditor: View {
             visit.departure = visit.arrival
         }
     }
+
+    private var canLearnPlace: Bool {
+        (visit.latitude != 0 || visit.longitude != 0) &&
+        !TextSafety.clean(visit.placeName, maximumLength: 100).isEmpty &&
+        !TextSafety.clean(visit.activity, maximumLength: 80).isEmpty
+    }
+
+    private var currentSnapshot: VisitCorrectionSnapshot {
+        VisitCorrectionSnapshot(
+            placeName: visit.placeName,
+            category: visit.placeCategory,
+            activity: visit.userActivity ?? visit.inferredActivity
+        )
+    }
+
+    private func persistChanges(forceLearning: Bool) throws {
+        let corrected = correctionBaseline.map { $0 != currentSnapshot } ?? false
+        if forceLearning || corrected {
+            let result = try SavedPlaceLearning.upsert(
+                from: visit,
+                previousPlaceName: correctionBaseline?.placeName,
+                context: context
+            )
+            if result == nil { try context.save() }
+        } else {
+            try context.save()
+        }
+        correctionBaseline = currentSnapshot
+    }
+}
+
+private struct VisitCorrectionSnapshot: Equatable {
+    let placeName: String
+    let category: String
+    let activity: String
 }

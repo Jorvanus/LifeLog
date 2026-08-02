@@ -15,14 +15,14 @@ LifeLog can also import sleep, Apple Watch workouts, Watch walking, and iPhone m
 ## Important behavior
 
 - iOS, not the app, decides when visit events arrive. They can be delayed.
-- The app requests **When In Use** first and **Always** separately, as Apple recommends.
+- Explicit Core Location service sessions keep **When In Use** and background **Always** authorization as separate user-controlled workflows.
 - Background location is designed for low-power visit/significant-change monitoring, not continuous GPS tracking.
 - Data remains in local SwiftData storage protected by the device data-protection class.
+- Correcting a located visit creates or updates a reusable `SavedPlace` geofence. Future visits within its radius inherit the corrected name, category, and activity.
 - Connect Apple Health and Motion Activity from LifeLog Settings. Health data is imported for the most recent 30 days and iPhone motion history for the most recent 7 days.
 
 ## Next milestones
 
-- Turn corrected visits into reusable `SavedPlace` geofences.
 - Add MapKit local search for manual place selection.
 - Add weekly comparisons, weekday patterns, and CSV/JSON export.
 - Add an optional encrypted iCloud sync mode.

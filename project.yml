@@ -28,3 +28,26 @@ targets:
       properties:
         com.apple.developer.default-data-protection: NSFileProtectionCompleteUntilFirstUserAuthentication
         com.apple.developer.healthkit: true
+  LifeLogTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [LifeLogTests]
+    dependencies:
+      - target: LifeLog
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aaronbaxter.LifeLogTests
+        GENERATE_INFOPLIST_FILE: YES
+        IPHONEOS_DEPLOYMENT_TARGET: "27.0"
+schemes:
+  LifeLog:
+    build:
+      targets:
+        LifeLog: all
+        LifeLogTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - LifeLogTests

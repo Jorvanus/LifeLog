@@ -17,22 +17,36 @@
 		7495363AE868ECAAC60FA966 /* SmartActivityClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0903FE944E9BA6818CEF632B /* SmartActivityClassifier.swift */; };
 		87C656FE5056AB7AF361B02C /* ManualVisitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CC1523859D9C3C50CE0B0C8 /* ManualVisitView.swift */; };
 		8BDC88D2FBBE6FCC74D9F36A /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BE5AD5AA637543CED7D6187 /* SettingsView.swift */; };
+		8E704F71D1DDB0AF78FB71D4 /* SavedPlaceLearningTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 452978750FB4CA6A49A09C2A /* SavedPlaceLearningTests.swift */; };
 		99537CABDF7CF250FB9DD892 /* TimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B61B476B89FDE373D60B43C /* TimelineView.swift */; };
 		ADA726BB01719FCEA5B61298 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68BF51077D67E92A88F6FB79 /* RootView.swift */; };
 		C230D3A30B5955F581E8269F /* PlaceLookupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AA772D2482869E62414D007 /* PlaceLookupService.swift */; };
 		C975A398C4FCEB89BAB6E650 /* MapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B67547668C2606629916F0B6 /* MapView.swift */; };
 		DD8E7BFCC984E9B6BBA2B2E5 /* ActivityDataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A9921C3BD6F05CA5C2B6B9B /* ActivityDataService.swift */; };
 		E8F8E81D0736610AC61C887B /* LocationRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BB7EE63315EC7CC0A511303 /* LocationRecorder.swift */; };
+		EE018FBC1119FF49D463B185 /* SavedPlaceLearning.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF719128067426A354FA8F08 /* SavedPlaceLearning.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		6351EBBBB22A1DB84F6E06D3 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F4FDE6DAB95448E95B9699EB /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 3143EE0EA4D6F0278E0D327E;
+			remoteInfo = LifeLog;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		04E659A5C83835EC44949F88 /* PlacesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacesView.swift; sourceTree = "<group>"; };
 		0903FE944E9BA6818CEF632B /* SmartActivityClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartActivityClassifier.swift; sourceTree = "<group>"; };
 		0A9921C3BD6F05CA5C2B6B9B /* ActivityDataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityDataService.swift; sourceTree = "<group>"; };
 		0B61B476B89FDE373D60B43C /* TimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineView.swift; sourceTree = "<group>"; };
+		1E02A9CCD0CB966927A0A63E /* LifeLogTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = LifeLogTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3AA772D2482869E62414D007 /* PlaceLookupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceLookupService.swift; sourceTree = "<group>"; };
 		3BB7EE63315EC7CC0A511303 /* LocationRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationRecorder.swift; sourceTree = "<group>"; };
 		3CC1523859D9C3C50CE0B0C8 /* ManualVisitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManualVisitView.swift; sourceTree = "<group>"; };
+		452978750FB4CA6A49A09C2A /* SavedPlaceLearningTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedPlaceLearningTests.swift; sourceTree = "<group>"; };
 		68BF51077D67E92A88F6FB79 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		831D37D3F7E2A5C6BF0F1C74 /* LifeLogApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeLogApp.swift; sourceTree = "<group>"; };
 		8A01F3743E7844412FE163D6 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
@@ -45,9 +59,18 @@
 		DC096FDA8EA522B04B2F9890 /* InferenceEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InferenceEngine.swift; sourceTree = "<group>"; };
 		E305C81E7DB9868FD552A196 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		F0F429A366891C4A81D89BCD /* TrendsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendsView.swift; sourceTree = "<group>"; };
+		FF719128067426A354FA8F08 /* SavedPlaceLearning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedPlaceLearning.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
+		2C4ABC77861A343B71B1D3DC /* LifeLogTests */ = {
+			isa = PBXGroup;
+			children = (
+				452978750FB4CA6A49A09C2A /* SavedPlaceLearningTests.swift */,
+			);
+			path = LifeLogTests;
+			sourceTree = "<group>";
+		};
 		2DC92AB8B695A9D39C7CFD1F /* LifeLog */ = {
 			isa = PBXGroup;
 			children = (
@@ -65,6 +88,7 @@
 				04E659A5C83835EC44949F88 /* PlacesView.swift */,
 				E305C81E7DB9868FD552A196 /* PrivacyInfo.xcprivacy */,
 				68BF51077D67E92A88F6FB79 /* RootView.swift */,
+				FF719128067426A354FA8F08 /* SavedPlaceLearning.swift */,
 				8BE5AD5AA637543CED7D6187 /* SettingsView.swift */,
 				0903FE944E9BA6818CEF632B /* SmartActivityClassifier.swift */,
 				0B61B476B89FDE373D60B43C /* TimelineView.swift */,
@@ -77,6 +101,7 @@
 			isa = PBXGroup;
 			children = (
 				2DC92AB8B695A9D39C7CFD1F /* LifeLog */,
+				2C4ABC77861A343B71B1D3DC /* LifeLogTests */,
 				7BA6CE12EF1CBB9B90CEDCF6 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -85,6 +110,7 @@
 			isa = PBXGroup;
 			children = (
 				B4B8299006F8D67881EC2275 /* LifeLog.app */,
+				1E02A9CCD0CB966927A0A63E /* LifeLogTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -109,6 +135,24 @@
 			productName = LifeLog;
 			productReference = B4B8299006F8D67881EC2275 /* LifeLog.app */;
 			productType = "com.apple.product-type.application";
+		};
+		F718E8936DBB1C6C99019CBC /* LifeLogTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A85B569FEF60890DF4DC9FE3 /* Build configuration list for PBXNativeTarget "LifeLogTests" */;
+			buildPhases = (
+				81B0DB87F9CDD975679B8D2A /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				DA0B687E56A73EC853D4561F /* PBXTargetDependency */,
+			);
+			name = LifeLogTests;
+			packageProductDependencies = (
+			);
+			productName = LifeLogTests;
+			productReference = 1E02A9CCD0CB966927A0A63E /* LifeLogTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -139,6 +183,7 @@
 			projectRoot = "";
 			targets = (
 				3143EE0EA4D6F0278E0D327E /* LifeLog */,
+				F718E8936DBB1C6C99019CBC /* LifeLogTests */,
 			);
 		};
 /* End PBXProject section */
@@ -170,6 +215,7 @@
 				C230D3A30B5955F581E8269F /* PlaceLookupService.swift in Sources */,
 				54162656845A88BAAED358A1 /* PlacesView.swift in Sources */,
 				ADA726BB01719FCEA5B61298 /* RootView.swift in Sources */,
+				EE018FBC1119FF49D463B185 /* SavedPlaceLearning.swift in Sources */,
 				8BDC88D2FBBE6FCC74D9F36A /* SettingsView.swift in Sources */,
 				7495363AE868ECAAC60FA966 /* SmartActivityClassifier.swift in Sources */,
 				99537CABDF7CF250FB9DD892 /* TimelineView.swift in Sources */,
@@ -177,7 +223,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		81B0DB87F9CDD975679B8D2A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8E704F71D1DDB0AF78FB71D4 /* SavedPlaceLearningTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		DA0B687E56A73EC853D4561F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 3143EE0EA4D6F0278E0D327E /* LifeLog */;
+			targetProxy = 6351EBBBB22A1DB84F6E06D3 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		01CBB3DF0C4CBC6A57A061CC /* Debug */ = {
@@ -325,6 +387,42 @@
 			};
 			name = Release;
 		};
+		BD3A76BF97B6CD0462E6EC67 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.aaronbaxter.LifeLogTests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LifeLog.app/LifeLog";
+			};
+			name = Release;
+		};
+		CD4E385C1A0BB213F8F9232C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.aaronbaxter.LifeLogTests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LifeLog.app/LifeLog";
+			};
+			name = Debug;
+		};
 		D0E9A5271AF5A6BCA249FEC0 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -362,6 +460,15 @@
 			buildConfigurations = (
 				01CBB3DF0C4CBC6A57A061CC /* Debug */,
 				A92C1E614034B68AD62F67E2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		A85B569FEF60890DF4DC9FE3 /* Build configuration list for PBXNativeTarget "LifeLogTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CD4E385C1A0BB213F8F9232C /* Debug */,
+				BD3A76BF97B6CD0462E6EC67 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
