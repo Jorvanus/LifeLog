@@ -8,6 +8,8 @@ struct TrendsView: View {
     @State private var window: InsightWindow = .day
     @State private var anchorDate = Date.now
     @State private var choosingDate = false
+    @State private var selectedAngle: Double?
+    @State private var selectedSlice: TimeSlice?
 
     private var interval: DateInterval { window.interval(containing: anchorDate) }
     private var previousInterval: DateInterval {
@@ -17,7 +19,7 @@ struct TrendsView: View {
     private var slices: [TimeSlice] { makeSlices(for: interval) }
     private var placeTotals: [PlaceTotal] { makePlaceTotals(for: interval) }
     private var comparisons: [TrendComparison] { makeComparisons() }
-    private var loggedHours: Double { slices.filter { $0.name != "Unlogged" }.reduce(0) { $0 + $1.hours } }
+    private var loggedHours: Double { slices.filter { !$0.isUnlogged }.reduce(0) { $0 + $1.hours } }
     private var totalHours: Double { interval.duration / 3600 }
 
     var body: some View {
@@ -46,6 +48,16 @@ struct TrendsView: View {
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { choosingDate = false } } }
                 }.presentationDetents([.medium])
+            }
+            .sheet(item: $selectedSlice, onDismiss: { selectedAngle = nil }) { slice in
+                let entries = visits(for: slice)
+                if entries.count == 1, let visit = entries.first {
+                    NavigationStack { VisitEditor(visit: visit) }
+                        .presentationDetents([.large])
+                } else {
+                    InsightSliceEditor(slice: slice, visits: entries, interval: interval)
+                        .presentationDetents([.medium, .large])
+                }
             }
         }
     }
@@ -103,6 +115,12 @@ struct TrendsView: View {
                     }
                 }
                 .chartLegend(.hidden)
+                .chartAngleSelection(value: $selectedAngle)
+                .onChange(of: selectedAngle) { _, angle in
+                    guard let angle, let slice = slice(at: angle) else { return }
+                    selectedSlice = slice
+                }
+                .accessibilityHint("Select a segment to review and edit its visits")
                 VStack(spacing: 2) {
                     Text(formatHours(loggedHours)).font(.title.bold()).monospacedDigit()
                     Text("logged").font(.subheadline).foregroundStyle(.secondary)
@@ -113,13 +131,21 @@ struct TrendsView: View {
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 12) {
                 ForEach(slices.filter { $0.hours > 0 }) { slice in
-                    HStack(spacing: 9) {
-                        Circle().fill(slice.color).frame(width: 10, height: 10)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(slice.name).font(.subheadline).lineLimit(1)
-                            Text(formatHours(slice.hours)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    Button { selectedSlice = slice } label: {
+                        HStack(spacing: 9) {
+                            Circle().fill(slice.color).frame(width: 10, height: 10)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(slice.name).font(.subheadline).lineLimit(1)
+                                Text(formatHours(slice.hours)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 4)
+                            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
                         }
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(slice.name), \(formatHours(slice.hours))")
+                    .accessibilityHint(slice.isUnlogged ? "Add a visit" : "Review and edit visits")
                 }
             }
         }
@@ -234,12 +260,13 @@ struct TrendsView: View {
         }
         var values = grouped.map { name, items in
             TimeSlice(name: name, hours: items.reduce(0) { $0 + $1.duration(in: range) } / 3600,
-                      color: insightColor(for: name), symbol: insightSymbol(for: name))
+                      color: insightColor(for: name), symbol: insightSymbol(for: name), isUnlogged: false)
         }.filter { $0.hours > 0.01 }.sorted { $0.hours > $1.hours }
         let recorded = values.reduce(0) { $0 + $1.hours }
         let unlogged = max(0, range.duration / 3600 - recorded)
         if unlogged > 0.01 {
-            values.append(TimeSlice(name: "Unlogged", hours: unlogged, color: .gray.opacity(0.35), symbol: "moon.zzz.fill"))
+            values.append(TimeSlice(name: "Unlogged", hours: unlogged, color: .gray.opacity(0.35),
+                                    symbol: "moon.zzz.fill", isUnlogged: true))
         }
         return values
     }
@@ -254,11 +281,30 @@ struct TrendsView: View {
     }
 
     private func makeComparisons() -> [TrendComparison] {
-        let current = Dictionary(uniqueKeysWithValues: makeSlices(for: interval).filter { $0.name != "Unlogged" }.map { ($0.name, $0.hours) })
-        let previous = Dictionary(uniqueKeysWithValues: makeSlices(for: previousInterval).filter { $0.name != "Unlogged" }.map { ($0.name, $0.hours) })
+        let current = Dictionary(uniqueKeysWithValues: makeSlices(for: interval).filter { !$0.isUnlogged }.map { ($0.name, $0.hours) })
+        let previous = Dictionary(uniqueKeysWithValues: makeSlices(for: previousInterval).filter { !$0.isUnlogged }.map { ($0.name, $0.hours) })
         return Set(current.keys).union(previous.keys).map { name in
             TrendComparison(name: name, hours: current[name, default: 0], delta: current[name, default: 0] - previous[name, default: 0])
         }.filter { abs($0.delta) >= 0.25 }.sorted { abs($0.delta) > abs($1.delta) }
+    }
+
+    private func slice(at angle: Double) -> TimeSlice? {
+        guard angle.isFinite, angle >= 0 else { return nil }
+        var upperBound = 0.0
+        for slice in slices {
+            upperBound += slice.hours
+            if angle <= upperBound { return slice }
+        }
+        return slices.last
+    }
+
+    private func visits(for slice: TimeSlice) -> [Visit] {
+        guard !slice.isUnlogged else { return [] }
+        return periodVisits.filter { sliceName(for: $0) == slice.name }.sorted { $0.arrival > $1.arrival }
+    }
+
+    private func sliceName(for visit: Visit) -> String {
+        visit.placeCategory == "Other" ? visit.activity : visit.placeCategory
     }
 
     private func move(_ amount: Int) {
@@ -315,11 +361,86 @@ enum InsightWindow: String, CaseIterable, Identifiable {
 }
 
 private struct TimeSlice: Identifiable {
-    var id: String { name }
+    var id: String { "\(isUnlogged ? "gap" : "logged"):\(name)" }
     let name: String
     let hours: Double
     let color: Color
     let symbol: String
+    let isUnlogged: Bool
+}
+
+private struct InsightSliceEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    let slice: TimeSlice
+    let visits: [Visit]
+    let interval: DateInterval
+    @State private var addingVisit = false
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if slice.isUnlogged {
+                    ContentUnavailableView {
+                        Label("Unlogged time", systemImage: "clock.badge.questionmark")
+                    } description: {
+                        Text("There isn’t a visit to edit for this time yet. Add one to fill the gap in your insights.")
+                    } actions: {
+                        Button("Add Visit") { addingVisit = true }
+                            .buttonStyle(.borderedProminent)
+                    }
+                } else if visits.isEmpty {
+                    ContentUnavailableView("No matching visits", systemImage: "mappin.slash",
+                                           description: Text("This insight changed while it was open."))
+                } else {
+                    List {
+                        Section {
+                            HStack(spacing: 14) {
+                                Image(systemName: slice.symbol)
+                                    .font(.title2.bold()).foregroundStyle(.white)
+                                    .frame(width: 48, height: 48).background(slice.color.gradient, in: Circle())
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(formatHours(slice.hours)).font(.title3.bold()).monospacedDigit()
+                                    Text("across \(visits.count) \(visits.count == 1 ? "entry" : "entries")")
+                                        .font(.subheadline).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        Section("Tap an entry to edit") {
+                            ForEach(visits) { visit in
+                                NavigationLink { VisitEditor(visit: visit) } label: {
+                                    HStack(spacing: 12) {
+                                        ActivityIcon(activity: visit.activity, category: visit.placeCategory,
+                                                     color: activityColor(visit.activity))
+                                            .scaleEffect(0.72).frame(width: 42, height: 42)
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(visit.placeName).font(.headline).lineLimit(1)
+                                            Text(entryTime(for: visit)).font(.caption).foregroundStyle(.secondary)
+                                        }
+                                        Spacer()
+                                        Text(formatHours(visit.duration(in: interval) / 3600))
+                                            .font(.caption.bold().monospacedDigit()).foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle(slice.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
+            }
+        }
+        .sheet(isPresented: $addingVisit) { ManualVisitView() }
+    }
+
+    private func entryTime(for visit: Visit) -> String {
+        let start = max(visit.arrival, interval.start)
+        let end = min(visit.departure ?? .now, interval.end)
+        let date = start.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
+        return "\(date) · \(start.formatted(date: .omitted, time: .shortened))–\(end.formatted(date: .omitted, time: .shortened))"
+    }
 }
 
 private struct PlaceTotal: Identifiable {
