@@ -133,6 +133,11 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
 
     func locationManager(_ manager: CLLocationManager, didVisit visit: CLVisit) {
         guard visit.coordinate.latitude.isFinite, visit.coordinate.longitude.isFinite else { return }
+        let callbackDelay = Date.now.timeIntervalSince(visit.arrivalDate)
+        if callbackDelay > 15 * 60 {
+            Diagnostics.record(context, subsystem: "Core Location",
+                               message: "A visit arrived later than expected (\(Int(callbackDelay / 60)) minutes).")
+        }
         if visit.departureDate == .distantFuture {
             createVisit(at: visit.coordinate, arrival: visit.arrivalDate)
         } else {
@@ -154,7 +159,9 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         shouldSeedCurrentLocation = false
-        lastError = error.localizedDescription
+        _ = error
+        lastError = "Location updates are temporarily unavailable."
+        Diagnostics.record(context, subsystem: "Core Location", message: "A location update failed.")
     }
 
     private func createVisit(at coordinate: CLLocationCoordinate2D, arrival: Date) {
@@ -263,6 +270,8 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
                 save(context)
             } catch {
+                Diagnostics.record(context, subsystem: "MapKit",
+                                   message: "Nearby place lookup failed; fallback resolution was used.")
                 reverseGeocode(visit)
             }
         }
@@ -300,6 +309,8 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
                 save(context)
             } catch {
+                Diagnostics.record(context, subsystem: "MapKit",
+                                   message: "Reverse geocoding failed; the visit remains available for manual labeling.")
                 markUnknown(visit, context: context)
             }
         }

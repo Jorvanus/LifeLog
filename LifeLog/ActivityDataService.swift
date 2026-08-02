@@ -101,6 +101,8 @@ final class ActivityDataService {
             let samples = try await descriptor.result(for: healthStore)
             return SleepSummary(samples: samples, interval: interval)
         } catch {
+            Diagnostics.record(context, subsystem: "HealthKit",
+                               message: "A sleep query failed; no Health data was imported.")
             return nil
         }
     }
@@ -144,6 +146,8 @@ final class ActivityDataService {
             lastImport = .now
         } catch {
             lastError = "Recent Health data couldn’t be imported. Your existing timeline is unchanged."
+            Diagnostics.record(context, subsystem: "HealthKit",
+                               message: "A HealthKit history import failed; existing timeline data was preserved.")
         }
     }
 
@@ -194,6 +198,8 @@ final class ActivityDataService {
                 if let error {
                     _ = error
                     self.lastError = "Motion history couldn’t be imported. Check Motion & Fitness permissions."
+                    Diagnostics.record(context, subsystem: "Motion",
+                                       message: "Motion history import failed; existing timeline data was preserved.")
                     self.refreshMotionStatus()
                     return
                 }

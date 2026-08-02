@@ -2,6 +2,12 @@
 
 ## 2026-08-03
 
+### Privacy-safe diagnostics
+
+- Added local diagnostics for delayed Core Location callbacks, MapKit lookup/reverse-geocoding failures, HealthKit imports and sleep queries, and motion imports.
+- Diagnostics store only generic subsystem messages, severity, and timestamps; they never include precise locations, place names, HealthKit samples, or health values.
+- Settings now shows the latest diagnostic events and provides a clear action.
+
 ### Recognition confidence and correction history
 
 - Visits now retain a human-readable confidence state for Apple Maps matches, saved-place learning, device activity, and recurring travel destinations.

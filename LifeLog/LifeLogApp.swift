@@ -6,7 +6,7 @@ struct LifeLogApp: App {
     private let modelContainer: ModelContainer?
 
     init() {
-        let schema = Schema([Visit.self, SavedPlace.self, VisitCorrection.self])
+        let schema = Schema([Visit.self, SavedPlace.self, VisitCorrection.self, DiagnosticEvent.self])
         let configuration = ModelConfiguration(
             "LifeLog",
             schema: schema,

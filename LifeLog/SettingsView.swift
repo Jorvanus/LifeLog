@@ -5,6 +5,7 @@ import SwiftData
 struct SettingsView: View {
     @Query(sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
     @Query(sort: \SavedPlace.name) private var savedPlaces: [SavedPlace]
+    @Query(sort: \DiagnosticEvent.createdAt, order: .reverse) private var diagnostics: [DiagnosticEvent]
     let recorder: LocationRecorder
     let activityData: ActivityDataService
     var body: some View {
@@ -74,6 +75,28 @@ struct SettingsView: View {
                     Text("Health and Motion access is read-only. LifeLog never writes to Apple Health.")
                 }
                 if let error = recorder.lastError ?? activityData.lastError { Section("Last issue") { Text(error) } }
+                Section {
+                    if diagnostics.isEmpty {
+                        Text("No diagnostic events recorded.").foregroundStyle(.secondary)
+                    } else {
+                        ForEach(diagnostics.prefix(10)) { event in
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack {
+                                    Text(event.subsystem).font(.caption.bold())
+                                    Spacer()
+                                    Text(event.createdAt.formatted(date: .abbreviated, time: .shortened))
+                                        .font(.caption2).foregroundStyle(.secondary)
+                                }
+                                Text(event.message).font(.footnote)
+                            }
+                        }
+                        Button("Clear Diagnostics", role: .destructive) { clearDiagnostics() }
+                    }
+                } header: {
+                    Text("Diagnostics")
+                } footer: {
+                    Text("Diagnostics contain generic service timing and failure messages only. Precise locations and Health data are never recorded here.")
+                }
             }.navigationTitle("Settings").accessibilityIdentifier("settings-screen")
         }
     }
@@ -100,5 +123,10 @@ struct SettingsView: View {
         case .restricted: "Restricted"
         default: "Not requested"
         }
+    }
+
+    private func clearDiagnostics() {
+        for event in diagnostics { context.delete(event) }
+        try? context.save()
     }
 }
