@@ -5,18 +5,18 @@ This plan prioritises a dependable private diary on a physical iPhone before exp
 ## Week 1 — prove the daily record
 
 - [ ] Run a physical-iPhone test matrix for first launch, When In Use → Always authorization, background/foreground transitions, overnight use, relaunch, reboot, denied permission, and delayed `CLVisit` delivery. Record expected versus observed behavior without recording coordinates.
-- [ ] Establish performance budgets using the full 32,000-row Life Cycle archive: responsive first screen, no main-thread stall over 250 ms during normal interaction, and bounded day/month/year Insights loading. Add a repeatable device checklist and retain aggregate timings in Diagnostics.
+- [ ] Re-run the physical-device performance checklist with the latest 32,000-row archive and confirm no main-thread stall over 250 ms; keep only aggregate timings in Diagnostics.
 - [ ] Add deterministic UI-test seed data so Timeline, current location, uncategorised locations, Saved Places, Map, Sleep, and every donut interaction can be exercised without depending on live sensors.
 - [ ] Expand the Insights UI regression test to tap several donut segments repeatedly, deselect the active segment, select Sleep, scroll away and back, and confirm the chart remains hittable.
-- [ ] Make the current location the first visually distinct card in Today’s Journey, including elapsed time and a “waiting for visit confirmation” state before Core Location delivers a formal visit.
-- [ ] Add an explicit store-opening recovery path: preserve the protected store, show actionable diagnostics, allow export/recovery where possible, and never require deleting the app as the first remedy.
+- [x] Make the current location the first visually distinct card in Today’s Journey, including elapsed time and a “waiting for visit confirmation” state before Core Location delivers a formal visit.
+- [x] Add an explicit store-opening recovery path: preserve the protected store, show actionable diagnostics, allow export/recovery where possible, and never require deleting the app as the first remedy.
 - [x] Introduce a versioned SwiftData schema and documented migration tests before adding another persisted field. Cover opening a copy of the current on-device schema and upgrading it without data loss.
 
 ## Week 2 — make Health and movement reliable
 
 - [x] Move HealthKit and Motion ingestion off the main interaction path using an isolated background model context/actor, small save batches, cancellation, and progress state in Settings.
-- [ ] Replace repeated history reads with incremental HealthKit anchors. Import only new or changed sleep/workout samples, persist the anchor safely, and remain idempotent after relaunch.
-- [ ] Add HealthKit observer/background delivery only after the incremental importer is proven not to freeze Timeline or Insights.
+- [x] Replace repeated history reads with incremental HealthKit anchors. Import only new or changed sleep/workout samples, persist the anchor safely, and remain idempotent after relaunch.
+- [x] Add HealthKit observer/background delivery only after the incremental importer is proven not to freeze Timeline or Insights.
 - [ ] Make sleep-session queries tolerant of date boundaries by padding the selected interval, grouping stage samples into one night, and clearly labelling the score as a LifeLog estimate rather than an Apple score.
 - [ ] Test Health permission denial, partial permission, no data, Apple Watch disconnected, duplicate samples, deleted samples, daylight-saving transitions, and unusual time zones.
 - [ ] Expand movement classification for walking, running, cycling, automotive travel, and possible flights while preserving the location-first rule: movement inside Home, Work, or another destination must not become a separate timeline entry.
@@ -27,21 +27,34 @@ This plan prioritises a dependable private diary on a physical iPhone before exp
 - [ ] Extract Insights aggregation from the private SwiftUI view into a testable analysis engine. Cover overlapping visits, comparison windows, unlogged gaps, active visits, weekday rhythm, ignored records, and the 32,000-row fixture.
 - [ ] Make inferred activities explainable: show the evidence used—saved place, Maps category, time of day, recurrence, device movement, or on-device model—and show confidence without presenting guesses as facts.
 - [ ] Allow activity and category correction from Timeline and Insights, then verify the learned choice is reused for future visits while remaining editable.
-- [ ] Add editable category colours and use them consistently across the donut, Timeline, Map, Saved Places, exports, and accessibility labels.
-- [ ] Finish historical backfill rules for corrected and ignored locations, with a preview of how many visits will change and an undo/recovery path.
-- [ ] Replace the fragile arrival/coordinate-based ignored-location key with a stable identifier as part of the planned schema migration.
-- [ ] Add RFC 4180-compatible CSV parsing for quoted commas, quotes, embedded line breaks, alternate encodings, and very large files; retain duplicate and malformed-row reporting.
+- [x] Add editable category colours and use them consistently across the donut, Timeline, Map, Saved Places, exports, and accessibility labels.
+- [x] Finish historical backfill rules for corrected and ignored locations, with a preview of how many visits will change and an undo/recovery path.
+- [x] Replace the fragile arrival/coordinate-based ignored-location key with a stable identifier as part of the planned schema migration.
+- [x] Add RFC 4180-compatible CSV parsing for quoted commas, quotes, embedded line breaks, alternate encodings, and very large files; retain duplicate and malformed-row reporting.
 
 ## Week 4 — data ownership, privacy, and release polish
 
-- [ ] Add a complete local backup/restore format covering visits, Saved Places, corrections, ignored state, activity/category definitions, and app preferences. Validate round-trip restoration into an empty test store.
-- [ ] Add a compact-history preview for imported journals. Show record and storage savings for options such as keeping all data, merging equivalent adjacent entries, or removing old/short entries; require confirmation and export a backup before destructive cleanup.
+- [x] Add a complete local backup/restore format covering visits, Saved Places, corrections, ignored state, activity/category definitions, and app preferences. Validate round-trip restoration into an empty test store.
+- [x] Add a compact-history preview for imported journals. Show record and storage savings for options such as keeping all data, merging equivalent adjacent entries, or removing old/short entries; require confirmation and export a backup before destructive cleanup.
 - [ ] Add deletion and retention controls for imported journals, Health/Motion activity, diagnostics, locations, and all app data. Display exact scope and make destructive actions explicit.
-- [ ] Bound diagnostic retention and add a shareable privacy-safe performance report containing only subsystem, duration, counts, app version, and device/OS class—never coordinates, place names, notes, or Health values.
-- [ ] Clean up temporary CSV/JSON exports after sharing or expiry and test export failure, low-storage, and protected-file cases.
+- [x] Bound diagnostic retention and add a shareable privacy-safe performance report containing only subsystem, duration, counts, app version, and device/OS class—never coordinates, place names, notes, or Health values.
+- [x] Clean up temporary CSV/JSON exports after sharing or expiry and test export failure, low-storage, and protected-file cases.
 - [ ] Complete the privacy manifest and permission-copy review for Location, Motion, Health, Apple Maps lookup, Foundation Models, local diagnostics, backup, and retention behavior.
 - [ ] Verify VoiceOver, Dynamic Type, Reduce Motion, contrast, landscape/iPad behavior, and dark/tinted Home Screen icons on iOS 27.
 - [ ] Refresh README setup, behavior, Health import, diagnostics, backup, and current milestones so it matches the shipped app.
+
+## Next review — UI, security, and efficiency
+
+- [ ] Make Timeline overlap resolution deterministic in the data layer, not only the view: preserve raw visits, mark superseded callbacks, and add tests for Home → destination → Home sequences.
+- [ ] Add a first-run privacy dashboard explaining Location, Health, Motion, Maps lookup, local backup, diagnostics, and retention in plain language with links to revoke each permission.
+- [ ] Add explicit retention controls for imported journals, Health/Motion records, diagnostics, exports, and all app data; show counts and estimated storage before deletion.
+- [ ] Add low-storage handling for imports, backups, and reports: preflight available space, show a recoverable error, and never delete source data on a failed export.
+- [ ] Add UI tests for the new Diagnostics and Journal Storage screens, including backup failure, protected-file failure, empty history, Dynamic Type, VoiceOver, and dark mode.
+- [ ] Improve current-activity artwork layout with asset bounds tests so transparent illustrations cannot enlarge or distort cards.
+- [ ] Add import progress with cancel/retry and a post-import summary showing duplicates, malformed rows, compactable rows, and storage impact.
+- [ ] Move Insights aggregation into a reusable actor/cache with invalidation on visit edits, imports, corrections, and HealthKit updates.
+- [ ] Add an offline-only security review: file protection class, backup exclusion decisions, temporary-file permissions, redacted logs, and no sensitive data in crash breadcrumbs.
+- [ ] Add a release checklist for iOS 27 device classes, fresh install, upgrade, migration, store recovery, backup restore, permission changes, and uninstall/reinstall behavior.
 
 ## Later — after the four-week foundation
 
