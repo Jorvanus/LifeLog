@@ -20,6 +20,25 @@ final class DiagnosticEvent {
 
 @MainActor
 enum Diagnostics {
+    /// Product-level performance budgets. These are intentionally centralized so
+    /// device checks and diagnostic records use the same limits.
+    enum PerformanceBudget {
+        static let responsiveFirstScreen: TimeInterval = 0.25
+        static let normalInteraction: TimeInterval = 0.25
+        static let insightsDay: TimeInterval = 0.25
+        static let insightsMonth: TimeInterval = 0.75
+        static let insightsYear: TimeInterval = 1.5
+
+        static func insights(window: InsightWindow) -> TimeInterval {
+            switch window {
+            case .day: insightsDay
+            case .week: 0.5
+            case .month: insightsMonth
+            case .year: insightsYear
+            }
+        }
+    }
+
     static func record(_ context: ModelContext?, subsystem: String, message: String,
                        severity: String = "warning") {
         guard let context else { return }
@@ -38,6 +57,19 @@ enum Diagnostics {
         record(context, subsystem: subsystem,
                message: "Slow \(operation): \(Int((elapsed * 1000).rounded())) ms\(countText)",
                severity: "info")
+    }
+
+    /// Retains one privacy-safe timing sample for a budgeted operation. The
+    /// record contains only elapsed time, the budget, and an aggregate count;
+    /// it never includes places, coordinates, notes, or health values.
+    static func budget(_ context: ModelContext?, subsystem: String, operation: String,
+                       startedAt: Date, budget: TimeInterval, itemCount: Int? = nil) {
+        let elapsed = Date.now.timeIntervalSince(startedAt)
+        let status = elapsed <= budget ? "pass" : "over budget"
+        let countText = itemCount.map { ", \($0) items" } ?? ""
+        record(context, subsystem: subsystem,
+               message: "Budget \(status): \(operation), \(Int((elapsed * 1000).rounded())) ms / \(Int((budget * 1000).rounded())) ms\(countText)",
+               severity: elapsed <= budget ? "info" : "warning")
     }
 
     /// Error diagnostics retain only an NSError domain/code pair. This distinguishes

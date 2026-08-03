@@ -23,6 +23,9 @@ struct RootView: View {
             activityData.connect(context, container: modelContainer)
             Diagnostics.performance(context, subsystem: "Launch", operation: "service setup",
                                     startedAt: startedAt, threshold: 0.1)
+            Diagnostics.budget(context, subsystem: "Launch", operation: "responsive first screen",
+                               startedAt: startedAt,
+                               budget: Diagnostics.PerformanceBudget.responsiveFirstScreen)
         }
     }
 }

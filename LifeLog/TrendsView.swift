@@ -333,6 +333,10 @@ struct TrendsView: View {
         }
         Diagnostics.performance(context, subsystem: "Insights", operation: "period fetch",
                                 startedAt: fetchStartedAt, itemCount: visits.count)
+        Diagnostics.budget(context, subsystem: "Insights", operation: "\(window.rawValue) period fetch",
+                           startedAt: fetchStartedAt,
+                           budget: Diagnostics.PerformanceBudget.insights(window: window),
+                           itemCount: visits.count)
 
         // Donut taps remain local to the chart and never rebuild history, trends,
         // place totals, or Map content.
@@ -340,6 +344,10 @@ struct TrendsView: View {
         snapshot = InsightsSnapshot.make(visits: visits, window: window, anchorDate: anchorDate, now: now)
         Diagnostics.performance(context, subsystem: "Insights", operation: "snapshot rebuild",
                                 startedAt: startedAt, itemCount: visits.count)
+        Diagnostics.budget(context, subsystem: "Insights", operation: "\(window.rawValue) snapshot rebuild",
+                           startedAt: startedAt,
+                           budget: Diagnostics.PerformanceBudget.insights(window: window),
+                           itemCount: visits.count)
     }
 
     private func visits(for slice: TimeSlice) -> [Visit] {
