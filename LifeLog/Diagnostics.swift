@@ -20,6 +20,7 @@ final class DiagnosticEvent {
 
 @MainActor
 enum Diagnostics {
+    static let retentionLimit = 500
     /// Product-level performance budgets. These are intentionally centralized so
     /// device checks and diagnostic records use the same limits.
     enum PerformanceBudget {
@@ -43,7 +44,32 @@ enum Diagnostics {
                        severity: String = "warning") {
         guard let context else { return }
         context.insert(DiagnosticEvent(subsystem: subsystem, severity: severity, message: message))
+        if let existing = try? context.fetch(FetchDescriptor<DiagnosticEvent>(sortBy: [SortDescriptor(\DiagnosticEvent.createdAt, order: .forward)])), existing.count > retentionLimit {
+            for event in existing.prefix(existing.count - retentionLimit) { context.delete(event) }
+        }
         try? context.save()
+    }
+
+    struct PerformanceReport: Codable {
+        let generatedAt: Date
+        let appVersion: String
+        let deviceClass: String
+        let osClass: String
+        let samples: [Sample]
+        struct Sample: Codable { let createdAt: Date; let subsystem: String; let durationMs: Int?; let itemCount: Int?; let severity: String }
+    }
+
+    static func makePerformanceReport(events: [DiagnosticEvent]) -> Data {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+        let device = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] ?? "iPhone"
+        let os = ProcessInfo.processInfo.operatingSystemVersion
+        let osClass = "iOS \(os.majorVersion).\(os.minorVersion)"
+        let samples = events.map { event -> PerformanceReport.Sample in
+            let duration = event.message.range(of: #"(\d+) ms"#, options: .regularExpression).flatMap { Int(event.message[$0].split(separator: " ").first ?? "") }
+            let count = event.message.range(of: #"(\d+) items"#, options: .regularExpression).flatMap { Int(event.message[$0].split(separator: " ").first ?? "") }
+            return .init(createdAt: event.createdAt, subsystem: event.subsystem, durationMs: duration, itemCount: count, severity: event.severity)
+        }
+        return (try? JSONEncoder().encode(PerformanceReport(generatedAt: .now, appVersion: version, deviceClass: device, osClass: osClass, samples: samples))) ?? Data()
     }
 
     /// Records only slow operations. The message intentionally contains timing and

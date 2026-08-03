@@ -132,26 +132,11 @@ struct SettingsView: View {
                 }
                 if let error = recorder.lastError ?? activityData.lastError { Section("Last issue") { Text(error) } }
                 Section {
-                    if diagnostics.isEmpty {
-                        Text("No diagnostic events recorded.").foregroundStyle(.secondary)
-                    } else {
-                        ForEach(diagnostics.prefix(10)) { event in
-                            VStack(alignment: .leading, spacing: 3) {
-                                HStack {
-                                    Text(event.subsystem).font(.caption.bold())
-                                    Spacer()
-                                    Text(event.createdAt.formatted(date: .abbreviated, time: .shortened))
-                                        .font(.caption2).foregroundStyle(.secondary)
-                                }
-                                Text(event.message).font(.footnote)
-                            }
-                        }
-                        Button("Clear Diagnostics", role: .destructive) { clearDiagnostics() }
+                    NavigationLink { DiagnosticsView() } label: {
+                        Label("Diagnostics", systemImage: "stethoscope")
                     }
-                } header: {
-                    Text("Diagnostics")
                 } footer: {
-                    Text("Diagnostics contain generic service timing and failure messages only. Precise locations and Health data are never recorded here.")
+                    Text("View service timing and failure diagnostics in a separate screen.")
                 }
                 Section {
                     Button {
