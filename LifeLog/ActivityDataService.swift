@@ -35,6 +35,11 @@ final class ActivityDataService {
     private var importTask: Task<Void, Never>?
     private var importID: UUID?
     private var stepCache: [String: Double] = [:]
+    private var healthObserverQueries: [HKQuery] = []
+    /// Deliberately opt-in while the anchored importer is validated on a real
+    /// device. Background delivery must never be allowed to surprise the main
+    /// Timeline/Insights interaction path before that validation is complete.
+    private let backgroundDeliveryKey = "LifeLog.HealthKit.backgroundDeliveryValidated.v1"
     private let sleepAnchorKey = "LifeLog.HealthKit.sleepAnchor.v1"
     private let workoutAnchorKey = "LifeLog.HealthKit.workoutAnchor.v1"
 
@@ -50,8 +55,48 @@ final class ActivityDataService {
         self.context = context
         modelContainer = container
         refreshMotionStatus()
+        configureBackgroundDeliveryIfValidated()
         // History remains opt-in. When requested, its queries and writes use isolated
         // actors so navigation and touch handling stay on the main interaction path.
+    }
+
+    /// Enables observer delivery only after the incremental importer has been
+    /// proven responsive on-device. The callback schedules the same isolated,
+    /// anchored import used by Settings; it does not query or write on the main
+    /// interaction path.
+    func setBackgroundDeliveryValidated(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: backgroundDeliveryKey)
+        if enabled { configureBackgroundDeliveryIfValidated() }
+        else { disableBackgroundDelivery() }
+    }
+
+    private func configureBackgroundDeliveryIfValidated() {
+        guard UserDefaults.standard.bool(forKey: backgroundDeliveryKey),
+              HKHealthStore.isHealthDataAvailable() else { return }
+        guard healthObserverQueries.isEmpty else { return }
+        guard let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return }
+        let types: [HKSampleType] = [sleepType, HKWorkoutType.workoutType()]
+        for type in types {
+            let query = HKObserverQuery(sampleType: type, predicate: nil) { [weak self] _, completion, _ in
+                completion()
+                Task { @MainActor [weak self] in
+                    guard let self, !self.isImporting else { return }
+                    self.startImport(healthDays: 30, motionDays: nil)
+                }
+            }
+            healthStore.execute(query)
+            healthObserverQueries.append(query)
+            healthStore.enableBackgroundDelivery(for: type, frequency: .hourly) { _, _ in }
+        }
+    }
+
+    private func disableBackgroundDelivery() {
+        for query in healthObserverQueries { healthStore.stop(query) }
+        healthObserverQueries.removeAll()
+        if let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) {
+            healthStore.disableBackgroundDelivery(for: sleepType) { _, _ in }
+        }
+        healthStore.disableBackgroundDelivery(for: HKWorkoutType.workoutType()) { _, _ in }
     }
 
     func requestHealthAccess() {

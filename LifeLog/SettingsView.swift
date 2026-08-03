@@ -12,6 +12,7 @@ struct SettingsView: View {
     @Query(sort: \SavedPlace.name) private var savedPlaces: [SavedPlace]
     @Query(sort: \DiagnosticEvent.createdAt, order: .reverse) private var diagnostics: [DiagnosticEvent]
     @State private var importingJournal = false
+    @AppStorage("LifeLog.HealthKit.backgroundDeliveryValidated.v1") private var backgroundDeliveryValidated = false
     @State private var importMessage: String?
     let recorder: LocationRecorder
     let activityData: ActivityDataService
@@ -67,6 +68,12 @@ struct SettingsView: View {
                         .disabled(activityData.isImporting)
                     Button("Import Recent Activity") { activityData.importAll() }
                         .disabled(activityData.isImporting)
+                    Toggle("HealthKit background delivery (validated testing only)", isOn: $backgroundDeliveryValidated)
+                        .onChange(of: backgroundDeliveryValidated) { _, enabled in
+                            activityData.setBackgroundDeliveryValidated(enabled)
+                        }
+                    Text("Leave this off until the anchored importer has been tested on-device without Timeline or Insights stalls.")
+                        .font(.caption).foregroundStyle(.secondary)
                         .accessibilityIdentifier("import-recent-activity")
                     if let progress = activityData.importProgress {
                         VStack(alignment: .leading, spacing: 9) {

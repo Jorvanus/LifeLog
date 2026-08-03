@@ -2,6 +2,11 @@
 
 ## 2026-08-03
 
+### Gated HealthKit background delivery
+
+- Added opt-in HealthKit sleep/workout observers that trigger the existing anchored importer in isolated batches.
+- Background delivery is disabled by default and exposes an explicit validation-only Settings toggle so it cannot affect Timeline or Insights before the incremental importer is proven responsive on-device.
+
 ### Incremental HealthKit history imports
 
 - Sleep and workout imports now use persisted HealthKit anchors, requesting only samples added or changed since the previous successful import.
