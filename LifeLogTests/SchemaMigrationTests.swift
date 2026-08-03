@@ -7,6 +7,27 @@ import Testing
 /// on-device release, then reopen the same SQLite copy through the versioned plan.
 /// Keep this fixture representative when the schema grows.
 struct SchemaMigrationTests {
+    @Test("Store recovery exports do not modify the original files")
+    func exportsRecoveryCopyWithoutDeletingSource() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LifeLog-recovery-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let storeURL = directory.appendingPathComponent("LifeLog.store")
+        try Data("fixture".utf8).write(to: storeURL)
+        try Data("wal".utf8).write(to: URL(fileURLWithPath: storeURL.path + "-wal"))
+        let failure = StoreOpenError(
+            error: NSError(domain: "SwiftData", code: 11), storeURL: storeURL
+        )
+
+        let copy = try StoreRecoverySupport.makeStoreCopy(from: storeURL, failure: failure)
+        defer { try? FileManager.default.removeItem(at: copy) }
+
+        #expect(FileManager.default.fileExists(atPath: storeURL.path))
+        #expect(FileManager.default.fileExists(atPath: copy.appendingPathComponent("LifeLog.store").path))
+        #expect(FileManager.default.fileExists(atPath: copy.appendingPathComponent("LifeLog.store-wal").path))
+    }
+
     @Test("A current store opens through V1 without data loss")
     func opensCurrentStoreThroughVersionedPlan() throws {
         let storeURL = FileManager.default.temporaryDirectory

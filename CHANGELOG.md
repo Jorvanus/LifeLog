@@ -2,6 +2,11 @@
 
 ## 2026-08-03
 
+### Protected store recovery
+
+- Replaced the generic store-opening failure screen with a recovery flow that preserves the original protected store, supports retrying, and explains the next safe steps.
+- Added privacy-safe diagnostic report export and a best-effort copy of the store, WAL, and SHM files for recovery before any destructive action.
+
 ### Versioned SwiftData schema baseline
 
 - Added `LifeLogSchemaV1` and a migration plan for the current protected on-device models.
