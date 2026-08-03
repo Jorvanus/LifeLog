@@ -1,5 +1,16 @@
 # Repository workflow
 
+## Project scope
+
+LifeLog is a private, personal-use app for the owner’s iPhone and is not currently
+being prepared for App Store distribution. Prioritise useful behaviour, correctness,
+diagnostics, responsiveness, and efficient storage over broad-market accessibility,
+generalized privacy copy, or release-readiness work. For diagnostics, exposing the
+owner’s personal data is acceptable when explicitly useful for troubleshooting, but
+do not publish or push personal data, credentials, signing material, or device
+backups. Continue to protect against accidental destructive changes and explain
+when a diagnostic intentionally includes sensitive local data.
+
 For every requested edit in this repository:
 
 1. Add a concise dated entry to `CHANGELOG.md` describing the user-facing change. Do not add routine verification, test, or build text.

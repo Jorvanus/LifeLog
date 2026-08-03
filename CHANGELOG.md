@@ -2,6 +2,10 @@
 
 ## 2026-08-03
 
+### Personal-use roadmap priorities
+
+- Documented that LifeLog is currently a private personal-device project. The roadmap now prioritises correctness, useful diagnostics, responsiveness, and storage efficiency over App Store generalisation and broad release certification.
+
 ### Split activity illustration assets
 
 - Added individually named, unscaled activity-card image assets for Coffee, Beers, Fitness, Donate Blood, Meeting, Doctor Visit, Shopping, Visiting Family, Work Trip, and Work.

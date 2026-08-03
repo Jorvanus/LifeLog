@@ -20,24 +20,24 @@ This plan prioritises a dependable private diary on a physical iPhone before exp
 - [ ] Make inferred activities explainable: show the evidence used—saved place, Maps category, time of day, recurrence, device movement, or on-device model—and show confidence without presenting guesses as facts.
 - [ ] Allow activity and category correction from Timeline and Insights, then verify the learned choice is reused for future visits while remaining editable.
 
-## Week 4 — data ownership, privacy, and release polish
+## Week 4 — data ownership and personal-device reliability
 
 - [ ] Add deletion and retention controls for imported journals, Health/Motion activity, diagnostics, locations, and all app data. Display exact scope and make destructive actions explicit.
-- [ ] Complete the privacy manifest and permission-copy review for Location, Motion, Health, Apple Maps lookup, Foundation Models, local diagnostics, backup, and retention behavior.
-- [ ] Verify VoiceOver, Dynamic Type, Reduce Motion, contrast, landscape/iPad behavior, and dark/tinted Home Screen icons on iOS 27.
-- [ ] Refresh README setup, behavior, Health import, diagnostics, backup, and current milestones so it matches the shipped app.
+- [ ] Keep the privacy manifest and permission copy accurate for the personal-device build, without expanding into App Store compliance work yet.
+- [ ] Prioritise iPhone layout, Dynamic Type, and dark mode regressions that affect the owner’s device; defer broad iPad and accessibility certification until distribution is planned.
+- [ ] Refresh README setup, behavior, Health import, diagnostics, backup, and current milestones so personal testing remains repeatable.
 
-## Next review — UI, security, and efficiency
+## Next review — personal quality and speed
 
-- [ ] Add a first-run privacy dashboard explaining Location, Health, Motion, Maps lookup, local backup, diagnostics, and retention in plain language with links to revoke each permission.
+- [ ] Add a simple settings summary for permissions, data sources, storage, and diagnostics; defer generalized privacy onboarding until store distribution is considered.
 - [ ] Add explicit retention controls for imported journals, Health/Motion records, diagnostics, exports, and all app data; show counts and estimated storage before deletion.
 - [ ] Add low-storage handling for imports, backups, and reports: preflight available space, show a recoverable error, and never delete source data on a failed export.
 - [ ] Add UI tests for the new Diagnostics and Journal Storage screens, including backup failure, protected-file failure, empty history, Dynamic Type, VoiceOver, and dark mode.
 - [ ] Improve current-activity artwork layout with asset bounds tests so transparent illustrations cannot enlarge or distort cards.
 - [ ] Add import progress with cancel/retry and a post-import summary showing duplicates, malformed rows, compactable rows, and storage impact.
 - [ ] Move Insights aggregation into a reusable actor/cache with invalidation on visit edits, imports, corrections, and HealthKit updates.
-- [ ] Add an offline-only security review: file protection class, backup exclusion decisions, temporary-file permissions, redacted logs, and no sensitive data in crash breadcrumbs.
-- [ ] Add a release checklist for iOS 27 device classes, fresh install, upgrade, migration, store recovery, backup restore, permission changes, and uninstall/reinstall behavior.
+- [ ] Add a practical on-device data-safety review: file protection, backup scope, temporary-file permissions, and an explicit switch for detailed personal diagnostics.
+- [ ] Add a personal-device regression checklist for fresh install, upgrade, migration, store recovery, backup restore, permission changes, and relaunch.
 
 ## Location and Maps efficiency review
 
