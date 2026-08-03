@@ -30,6 +30,9 @@ enum IgnoredLocations {
         Set(UserDefaults.standard.stringArray(forKey: storageKey) ?? [])
     }
 
+    static func exportKeys() -> [String] { Array(storedKeys) }
+    static func importKeys(_ keys: [String]) { UserDefaults.standard.set(keys, forKey: storageKey) }
+
     /// SwiftData assigns this identifier independently of mutable visit fields,
     /// so edits to arrival time or coordinates cannot orphan an ignore state.
     private static func stableKey(for visit: Visit) -> String {

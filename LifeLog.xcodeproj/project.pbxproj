@@ -8,8 +8,10 @@
 
 /* Begin PBXBuildFile section */
 		079B2D6540571B6E67B89DC5 /* ActivityLocationPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F6EFD93E6C35C60C97969D4 /* ActivityLocationPolicyTests.swift */; };
+		1BBFE65C0530FF99B8D9B104 /* LocalBackup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1CCFB9DCAC0C12584C27D68 /* LocalBackup.swift */; };
 		1F61C35AD1AB6CB698D5439D /* ActivityImportActor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27863B7E1F9D43C1794A6DB4 /* ActivityImportActor.swift */; };
 		2112622DCFE0CC3DAA5AEDEF /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A01F3743E7844412FE163D6 /* Models.swift */; };
+		218485C59F61E8DC4CBCD9F8 /* LocalBackupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E17E384A813C0062E6F2396F /* LocalBackupTests.swift */; };
 		352BAD62A270167F82B0E062 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = E305C81E7DB9868FD552A196 /* PrivacyInfo.xcprivacy */; };
 		37DFB747A7509C6AD3A1E97C /* TrendsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0F429A366891C4A81D89BCD /* TrendsView.swift */; };
 		3ABD058A23052EDA905A28F9 /* LifeLogApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 831D37D3F7E2A5C6BF0F1C74 /* LifeLogApp.swift */; };
@@ -88,6 +90,7 @@
 		8BE5AD5AA637543CED7D6187 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		95189CB130173B9A604C5E26 /* LifeLog.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LifeLog.entitlements; sourceTree = "<group>"; };
 		9B4F84FC6736D6EBD795192C /* JournalCSVImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalCSVImporter.swift; sourceTree = "<group>"; };
+		A1CCFB9DCAC0C12584C27D68 /* LocalBackup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalBackup.swift; sourceTree = "<group>"; };
 		AB2ED3DB389DF4AB007C68A3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		AFAE754CED69E401D1F84CA1 /* ActivityCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityCatalog.swift; sourceTree = "<group>"; };
 		B4B8299006F8D67881EC2275 /* LifeLog.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = LifeLog.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -95,6 +98,7 @@
 		BDA3990118D7AF857B32CE2A /* LifeLogSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeLogSchema.swift; sourceTree = "<group>"; };
 		D936E236D5176123EE3DAD91 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		DC096FDA8EA522B04B2F9890 /* InferenceEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InferenceEngine.swift; sourceTree = "<group>"; };
+		E17E384A813C0062E6F2396F /* LocalBackupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalBackupTests.swift; sourceTree = "<group>"; };
 		E305C81E7DB9868FD552A196 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		EFCE5913178C6E80B80E1DE3 /* Diagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Diagnostics.swift; sourceTree = "<group>"; };
 		F00A33A60B150AFDBD347BC6 /* SchemaMigrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemaMigrationTests.swift; sourceTree = "<group>"; };
@@ -108,6 +112,7 @@
 			children = (
 				346E0ECB4A8D7AA9F0DC7BE2 /* ActivityImportActorTests.swift */,
 				2F6EFD93E6C35C60C97969D4 /* ActivityLocationPolicyTests.swift */,
+				E17E384A813C0062E6F2396F /* LocalBackupTests.swift */,
 				452978750FB4CA6A49A09C2A /* SavedPlaceLearningTests.swift */,
 				F00A33A60B150AFDBD347BC6 /* SchemaMigrationTests.swift */,
 				1F988CF286B464E43CCCF80A /* TimelineFixtureCoverageTests.swift */,
@@ -133,6 +138,7 @@
 				95189CB130173B9A604C5E26 /* LifeLog.entitlements */,
 				831D37D3F7E2A5C6BF0F1C74 /* LifeLogApp.swift */,
 				BDA3990118D7AF857B32CE2A /* LifeLogSchema.swift */,
+				A1CCFB9DCAC0C12584C27D68 /* LocalBackup.swift */,
 				3BB7EE63315EC7CC0A511303 /* LocationRecorder.swift */,
 				3CC1523859D9C3C50CE0B0C8 /* ManualVisitView.swift */,
 				B67547668C2606629916F0B6 /* MapView.swift */,
@@ -305,6 +311,7 @@
 				A8C2618DAB163744EAD89C5F /* JournalCSVImporter.swift in Sources */,
 				3ABD058A23052EDA905A28F9 /* LifeLogApp.swift in Sources */,
 				7A2EE83A305205C0256BCD8F /* LifeLogSchema.swift in Sources */,
+				1BBFE65C0530FF99B8D9B104 /* LocalBackup.swift in Sources */,
 				E8F8E81D0736610AC61C887B /* LocationRecorder.swift in Sources */,
 				87C656FE5056AB7AF361B02C /* ManualVisitView.swift in Sources */,
 				C975A398C4FCEB89BAB6E650 /* MapView.swift in Sources */,
@@ -328,6 +335,7 @@
 			files = (
 				5D8568D1511806DE576FAB9A /* ActivityImportActorTests.swift in Sources */,
 				079B2D6540571B6E67B89DC5 /* ActivityLocationPolicyTests.swift in Sources */,
+				218485C59F61E8DC4CBCD9F8 /* LocalBackupTests.swift in Sources */,
 				8E704F71D1DDB0AF78FB71D4 /* SavedPlaceLearningTests.swift in Sources */,
 				D922EFA846AD3DED0FF17CDF /* SchemaMigrationTests.swift in Sources */,
 				E303203502DB7032D4510DC3 /* TimelineFixtureCoverageTests.swift in Sources */,

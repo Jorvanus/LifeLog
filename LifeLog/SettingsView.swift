@@ -12,6 +12,8 @@ struct SettingsView: View {
     @Query(sort: \SavedPlace.name) private var savedPlaces: [SavedPlace]
     @Query(sort: \DiagnosticEvent.createdAt, order: .reverse) private var diagnostics: [DiagnosticEvent]
     @State private var importingJournal = false
+    @State private var importingBackup = false
+    @State private var backupURL: URL?
     @AppStorage("LifeLog.HealthKit.backgroundDeliveryValidated.v1") private var backgroundDeliveryValidated = false
     @State private var importMessage: String?
     let recorder: LocationRecorder
@@ -162,6 +164,22 @@ struct SettingsView: View {
                 } header: {
                     Text("Data import")
                 }
+                Section("Local backup") {
+                    Button {
+                        do {
+                            let data = try LocalBackupService.makeBackup(context: context, diagnostics: diagnostics)
+                            let url = FileManager.default.temporaryDirectory.appendingPathComponent("LifeLog-Backup-\(Int(Date.now.timeIntervalSince1970)).json")
+                            try data.write(to: url, options: .atomic)
+                            backupURL = url
+                        } catch { importMessage = "LifeLog couldn’t create a backup." }
+                    } label: { Label("Create backup", systemImage: "externaldrive.badge.timemachine") }
+                    if let backupURL {
+                        ShareLink(item: backupURL) { Label("Share backup", systemImage: "square.and.arrow.up") }
+                    }
+                    Button { importingBackup = true } label: { Label("Restore backup", systemImage: "arrow.clockwise.icloud") }
+                    Text("Backups include visits, Saved Places, corrections, ignored state, activities, category colours, and LifeLog preferences. Restore into an empty store for a complete replacement.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
                 Section("About") {
                     LabeledContent("Version", value: appVersion)
                 }
@@ -171,6 +189,14 @@ struct SettingsView: View {
                               allowedContentTypes: [.commaSeparatedText, .text],
                               allowsMultipleSelection: false) { result in
                     importJournal(result)
+                }
+                .fileImporter(isPresented: $importingBackup, allowedContentTypes: [.json], allowsMultipleSelection: false) { result in
+                    do {
+                        guard let url = try result.get().first else { return }
+                        let accessed = url.startAccessingSecurityScopedResource(); defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+                        try LocalBackupService.restore(Data(contentsOf: url), into: context)
+                        importMessage = "Backup restored. Restart LifeLog to refresh all screens."
+                    } catch { importMessage = "LifeLog couldn’t restore that backup. No changes were applied if validation failed." }
                 }
                 .alert("Journal import", isPresented: Binding(get: { importMessage != nil }, set: { if !$0 { importMessage = nil } })) {
                     Button("OK", role: .cancel) { importMessage = nil }

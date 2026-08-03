@@ -2,6 +2,11 @@
 
 ## 2026-08-03
 
+### Complete local backup and restore
+
+- Added a versioned JSON backup covering visits, Saved Places, corrections, diagnostics, ignored state, activity definitions, category colours, and LifeLog preferences.
+- Added Settings export/restore controls and a round-trip test restoring into an empty in-memory store.
+
 ### RFC 4180 journal CSV parsing
 
 - Life Cycle imports now handle quoted commas, escaped quotes, embedded line breaks, UTF-8/UTF-16 encodings, and very large records without splitting fields incorrectly.
