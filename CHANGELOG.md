@@ -2,6 +2,10 @@
 
 ## 2026-08-03
 
+### Deterministic Core Location departures
+
+- Departure callbacks now match stored arrivals using callback coordinate, arrival order, and overlap state. Unmatched delayed callbacks are diagnosed instead of closing the newest visit.
+
 ### Location reliability roadmap audit
 
 - Expanded the roadmap with prioritized Core Location callback matching, deterministic resolution invariants, Apple Maps/Saved Place scoring, personal detailed diagnostics, replay tests, and safer automatic place learning.

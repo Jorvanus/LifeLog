@@ -45,6 +45,33 @@ enum ActivityLocationPolicy {
         isWalkingActivity(visit) || isTravelActivity(visit)
     }
 
+    /// Finds the stored arrival represented by a departure callback. Core
+    /// Location can deliver callbacks out of order, so recency alone is not a
+    /// reliable identity. Arrival proximity is strongest, then coordinate
+    /// distance and whether the stored visit is still open.
+    static func matchDeparture(coordinate: CLLocationCoordinate2D, arrival: Date,
+                               departure: Date, visits: [Visit]) -> Visit? {
+        guard CLLocationCoordinate2DIsValid(coordinate), departure >= arrival else { return nil }
+        let callbackLocation = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        let candidates = visits.compactMap { visit -> (visit: Visit, arrivalDelta: TimeInterval,
+                                                        distance: CLLocationDistance, isClosed: Bool)? in
+            guard isLocationVisit(visit), visit.resolutionState != .superseded,
+                  visit.arrival <= departure else { return nil }
+            let recorded = CLLocation(latitude: visit.latitude, longitude: visit.longitude)
+            let distance = callbackLocation.distance(from: recorded)
+            let arrivalDelta = abs(visit.arrival.timeIntervalSince(arrival))
+            let overlapsCallback = visit.arrival <= departure && (visit.departure ?? .distantFuture) >= arrival
+            guard distance <= 350, overlapsCallback,
+                  arrivalDelta <= 45 * 60 || visit.departure == nil else { return nil }
+            return (visit, arrivalDelta, distance, visit.departure != nil)
+        }
+        return candidates.min {
+            if $0.arrivalDelta != $1.arrivalDelta { return $0.arrivalDelta < $1.arrivalDelta }
+            if $0.distance != $1.distance { return $0.distance < $1.distance }
+            return !$0.isClosed && $1.isClosed
+        }?.visit
+    }
+
     /// Movement is useful as a travel segment only when it sits between two destinations.
     /// This also hides stale records that were imported before Core Location delivered
     /// the surrounding visits.

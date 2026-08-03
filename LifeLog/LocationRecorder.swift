@@ -146,7 +146,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         if visit.departureDate == .distantFuture {
             createVisit(at: visit.coordinate, arrival: visit.arrivalDate)
         } else {
-            closeLatestVisit(at: visit.departureDate)
+            closeVisit(at: visit.coordinate, arrival: visit.arrivalDate, departure: visit.departureDate)
         }
     }
 
@@ -239,14 +239,27 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         }
     }
 
-    private func closeLatestVisit(at departure: Date) {
+    private func closeVisit(at coordinate: CLLocationCoordinate2D, arrival: Date, departure: Date) {
         guard let context else { return }
-        if let latest = latestLocationVisit(in: context), latest.departure == nil {
-            latest.departure = max(latest.arrival, min(departure, .now))
-            reconcileActivity(with: latest, context: context)
-            try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
-            save(context)
+        var descriptor = FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.source == "automatic" || $0.source == "manual" },
+            sortBy: [SortDescriptor(\.arrival, order: .reverse)]
+        )
+        descriptor.fetchLimit = 50
+        guard let candidates = try? context.fetch(descriptor),
+              let matched = ActivityLocationPolicy.matchDeparture(
+                coordinate: coordinate, arrival: min(arrival, .now),
+                departure: min(departure, .now), visits: candidates
+              ) else {
+            Diagnostics.record(context, subsystem: "Core Location",
+                               message: "A departure callback did not match a stored arrival.")
+            return
         }
+        matched.departure = max(matched.arrival, min(departure, .now))
+        reconcileActivity(with: matched, context: context)
+        _ = try? ActivityLocationPolicy.resolveLocationCallbacks(context: context)
+        try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
+        save(context)
     }
 
     private func seedCurrentVisit(from location: CLLocation) {

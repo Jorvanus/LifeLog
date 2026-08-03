@@ -56,7 +56,7 @@ This plan prioritises a dependable private diary on a physical iPhone before exp
 
 ## High-priority location correctness
 
-- [ ] Match every `CLVisit` departure to the correct stored arrival using callback coordinate, arrival ordering, and overlap state; never blindly close the latest visit when delayed callbacks arrive out of order.
+- [x] Match every `CLVisit` departure to the correct stored arrival using callback coordinate, arrival ordering, and overlap state; never blindly close the latest visit when delayed callbacks arrive out of order.
 - [ ] Treat one-shot `requestLocation` fixes as provisional evidence only. Promote them to resolved visits after dwell time, a matching `CLVisit`, a Saved Place geofence match, or repeated stationary samples.
 - [ ] Run the location resolver immediately after every arrival, departure, correction, Saved Place edit, and app relaunch so the store always maintains one deterministic current visit.
 - [ ] Add a location-event journal for personal diagnostics containing callback type, callback/arrival/departure times, coordinate, accuracy, distance from current visit, chosen resolution transition, and related visit identifier.
