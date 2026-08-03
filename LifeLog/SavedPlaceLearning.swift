@@ -100,6 +100,10 @@ enum SavedPlaceLearning {
             visit.placeName = place.name
             visit.placeCategory = place.category
             visit.inferredActivity = activity
+            // A prior manual label takes precedence in presentation. Update it
+            // too, otherwise historical check-ins can keep showing the old
+            // activity even though the Saved Place has learned the new one.
+            visit.userActivity = activity
             visit.recognitionConfidence = "learned"
             visit.placeSuggestions = []
             CorrectionHistory.record(visit: visit, from: previous, context: context,

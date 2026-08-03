@@ -71,9 +71,14 @@ final class Visit {
     var suspectedActivity: String {
         needsCategorisation ? inferredActivity : activity
     }
+    /// Groups time by what the person did, independent of the place type.
+    /// The persisted placeCategory remains available for map/place recognition.
+    var activityCategory: String {
+        ActivityCatalog.category(for: suspectedActivity)
+    }
     var insightCategory: String {
         if needsCategorisation { return "Uncategorised" }
-        return placeCategory == "Other" ? activity : placeCategory
+        return activityCategory
     }
     var placeSuggestions: [PlaceSuggestion] {
         get {

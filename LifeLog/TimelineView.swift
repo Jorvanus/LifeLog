@@ -526,7 +526,7 @@ struct VisitEditor: View {
             }
             Section("Place") {
                 TextField("Place name", text: $visit.placeName)
-                Picker("Category", selection: $visit.placeCategory) {
+                Picker("Place type", selection: $visit.placeCategory) {
                     ForEach(categories, id: \.self) { Text($0).tag($0) }
                 }
             }

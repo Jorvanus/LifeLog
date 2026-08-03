@@ -120,7 +120,7 @@ private struct SavedPlaceEditor: View {
         Form {
             Section("Place") {
                 TextField("Name", text: $place.name)
-                Picker("Type", selection: $place.category) {
+                Picker("Place type", selection: $place.category) {
                     ForEach(categories, id: \.self) { Text($0).tag($0) }
                 }
             }

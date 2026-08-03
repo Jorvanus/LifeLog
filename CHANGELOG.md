@@ -2,6 +2,15 @@
 
 ## 2026-08-03
 
+### Separate place types from activity categories
+
+- Place categories are now presented as “Place type” for recognition and geofencing, while Insights groups time using an activity category derived from the activity itself.
+- Existing persisted stores remain compatible; no destructive schema rename is required.
+
+### Propagate learned place activities
+
+- Correcting an entry such as Gracemere Shopping World now updates the learned Saved Place and all matching historical check-ins, including visits with an existing manual activity label.
+
 ### Gated HealthKit background delivery
 
 - Added opt-in HealthKit sleep/workout observers that trigger the existing anchored importer in isolated batches.
