@@ -11,8 +11,10 @@
 		141A4E88095D602B747431D2 /* PlaceActivitySelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47896E03D6ED231032CC152B /* PlaceActivitySelection.swift */; };
 		1BBFE65C0530FF99B8D9B104 /* LocalBackup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1CCFB9DCAC0C12584C27D68 /* LocalBackup.swift */; };
 		1F61C35AD1AB6CB698D5439D /* ActivityImportActor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27863B7E1F9D43C1794A6DB4 /* ActivityImportActor.swift */; };
+		20B34801C4AD29DE40CF78B8 /* InsightsAggregationCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCF7D783E0D20CD245ACCA8C /* InsightsAggregationCache.swift */; };
 		2112622DCFE0CC3DAA5AEDEF /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A01F3743E7844412FE163D6 /* Models.swift */; };
 		218485C59F61E8DC4CBCD9F8 /* LocalBackupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E17E384A813C0062E6F2396F /* LocalBackupTests.swift */; };
+		27D43A1C35EFA7B52DE438D7 /* InsightsAggregationCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68B312E02829D6B2AA4ADE95 /* InsightsAggregationCacheTests.swift */; };
 		352BAD62A270167F82B0E062 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = E305C81E7DB9868FD552A196 /* PrivacyInfo.xcprivacy */; };
 		37DFB747A7509C6AD3A1E97C /* TrendsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0F429A366891C4A81D89BCD /* TrendsView.swift */; };
 		3ABD058A23052EDA905A28F9 /* LifeLogApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 831D37D3F7E2A5C6BF0F1C74 /* LifeLogApp.swift */; };
@@ -26,6 +28,7 @@
 		6D90B9EA0E51B99238D9F404 /* ActivityCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFAE754CED69E401D1F84CA1 /* ActivityCatalog.swift */; };
 		7495363AE868ECAAC60FA966 /* SmartActivityClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0903FE944E9BA6818CEF632B /* SmartActivityClassifier.swift */; };
 		7A2EE83A305205C0256BCD8F /* LifeLogSchema.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDA3990118D7AF857B32CE2A /* LifeLogSchema.swift */; };
+		7B18EC1FCB076D852D3032C7 /* ActivityArtworkBoundsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0E3999799A52E0A43018F76 /* ActivityArtworkBoundsTests.swift */; };
 		8231CB72D6C8640D07C59050 /* ActivityLocationPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 730162A4687A39AF180FF3EA /* ActivityLocationPolicy.swift */; };
 		87C656FE5056AB7AF361B02C /* ManualVisitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CC1523859D9C3C50CE0B0C8 /* ManualVisitView.swift */; };
 		8BDC88D2FBBE6FCC74D9F36A /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BE5AD5AA637543CED7D6187 /* SettingsView.swift */; };
@@ -90,6 +93,7 @@
 		5977B19648754DE23F384F3F /* ActivitiesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivitiesView.swift; sourceTree = "<group>"; };
 		5B966AABF4CCD0CC5F1BF97B /* TrendExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendExport.swift; sourceTree = "<group>"; };
 		65FE8C413DBE943F6F12FC6A /* CorrectionHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorrectionHistory.swift; sourceTree = "<group>"; };
+		68B312E02829D6B2AA4ADE95 /* InsightsAggregationCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsAggregationCacheTests.swift; sourceTree = "<group>"; };
 		68BF51077D67E92A88F6FB79 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		730162A4687A39AF180FF3EA /* ActivityLocationPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityLocationPolicy.swift; sourceTree = "<group>"; };
 		831D37D3F7E2A5C6BF0F1C74 /* LifeLogApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeLogApp.swift; sourceTree = "<group>"; };
@@ -99,6 +103,7 @@
 		8BE5AD5AA637543CED7D6187 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		95189CB130173B9A604C5E26 /* LifeLog.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LifeLog.entitlements; sourceTree = "<group>"; };
 		9B4F84FC6736D6EBD795192C /* JournalCSVImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalCSVImporter.swift; sourceTree = "<group>"; };
+		A0E3999799A52E0A43018F76 /* ActivityArtworkBoundsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityArtworkBoundsTests.swift; sourceTree = "<group>"; };
 		A1CCFB9DCAC0C12584C27D68 /* LocalBackup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalBackup.swift; sourceTree = "<group>"; };
 		AB2ED3DB389DF4AB007C68A3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		AC56B8BAB2BB0A8764D18B1E /* DiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsView.swift; sourceTree = "<group>"; };
@@ -106,6 +111,7 @@
 		B4B8299006F8D67881EC2275 /* LifeLog.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = LifeLog.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B67547668C2606629916F0B6 /* MapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapView.swift; sourceTree = "<group>"; };
 		BDA3990118D7AF857B32CE2A /* LifeLogSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeLogSchema.swift; sourceTree = "<group>"; };
+		CCF7D783E0D20CD245ACCA8C /* InsightsAggregationCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsAggregationCache.swift; sourceTree = "<group>"; };
 		D936E236D5176123EE3DAD91 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		DC096FDA8EA522B04B2F9890 /* InferenceEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InferenceEngine.swift; sourceTree = "<group>"; };
 		E17E384A813C0062E6F2396F /* LocalBackupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalBackupTests.swift; sourceTree = "<group>"; };
@@ -120,8 +126,10 @@
 		2C4ABC77861A343B71B1D3DC /* LifeLogTests */ = {
 			isa = PBXGroup;
 			children = (
+				A0E3999799A52E0A43018F76 /* ActivityArtworkBoundsTests.swift */,
 				346E0ECB4A8D7AA9F0DC7BE2 /* ActivityImportActorTests.swift */,
 				2F6EFD93E6C35C60C97969D4 /* ActivityLocationPolicyTests.swift */,
+				68B312E02829D6B2AA4ADE95 /* InsightsAggregationCacheTests.swift */,
 				E17E384A813C0062E6F2396F /* LocalBackupTests.swift */,
 				452978750FB4CA6A49A09C2A /* SavedPlaceLearningTests.swift */,
 				F00A33A60B150AFDBD347BC6 /* SchemaMigrationTests.swift */,
@@ -146,6 +154,7 @@
 				4EE15F0F10705EC8163D24F5 /* IgnoredLocations.swift */,
 				DC096FDA8EA522B04B2F9890 /* InferenceEngine.swift */,
 				AB2ED3DB389DF4AB007C68A3 /* Info.plist */,
+				CCF7D783E0D20CD245ACCA8C /* InsightsAggregationCache.swift */,
 				0DDBAC8BA93246A8040B6941 /* JournalCompactionView.swift */,
 				9B4F84FC6736D6EBD795192C /* JournalCSVImporter.swift */,
 				95189CB130173B9A604C5E26 /* LifeLog.entitlements */,
@@ -325,6 +334,7 @@
 				C194BCC0D6453A63D4F67918 /* ExportFileCleanup.swift in Sources */,
 				5EC68C3D5BA2BFE1C7A4713F /* IgnoredLocations.swift in Sources */,
 				424B5084CB08F752AD18F6E0 /* InferenceEngine.swift in Sources */,
+				20B34801C4AD29DE40CF78B8 /* InsightsAggregationCache.swift in Sources */,
 				A8C2618DAB163744EAD89C5F /* JournalCSVImporter.swift in Sources */,
 				B1B6C438FC8C412A7E8098EE /* JournalCompactionView.swift in Sources */,
 				3ABD058A23052EDA905A28F9 /* LifeLogApp.swift in Sources */,
@@ -353,8 +363,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7B18EC1FCB076D852D3032C7 /* ActivityArtworkBoundsTests.swift in Sources */,
 				5D8568D1511806DE576FAB9A /* ActivityImportActorTests.swift in Sources */,
 				079B2D6540571B6E67B89DC5 /* ActivityLocationPolicyTests.swift in Sources */,
+				27D43A1C35EFA7B52DE438D7 /* InsightsAggregationCacheTests.swift in Sources */,
 				218485C59F61E8DC4CBCD9F8 /* LocalBackupTests.swift in Sources */,
 				8E704F71D1DDB0AF78FB71D4 /* SavedPlaceLearningTests.swift in Sources */,
 				D922EFA846AD3DED0FF17CDF /* SchemaMigrationTests.swift in Sources */,
