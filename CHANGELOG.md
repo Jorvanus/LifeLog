@@ -2,6 +2,10 @@
 
 ## 2026-08-03
 
+### Commit versioning
+
+- Documented the repository rule to increment the app build number for every commit and apply sensible patch/minor/major marketing-version changes based on the size and compatibility impact of the work.
+
 ### Expanded location performance diagnostics
 
 - Added aggregate metrics for callback-to-save time, serialized Maps candidate payload size, and Saved Place lookup refresh time/counts alongside existing Maps latency, cache-hit, candidate-count, and match-distance metrics.

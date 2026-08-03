@@ -19,3 +19,4 @@ For every requested edit in this repository:
 4. Do not commit or push automatically. Leave source and changelog edits for the user to review and commit.
 5. Never commit credentials, signing certificates, provisioning profiles, personal location data, or generated build products.
 6. Add concise code comments for non-obvious intent, safeguards, and edge cases. Explain why the behavior exists without restating straightforward code.
+7. Before each commit, increment `CURRENT_PROJECT_VERSION` by one. Apply sensible semantic versioning to `MARKETING_VERSION`: increment the patch component for a tiny fix, the minor component for a substantial cohesive feature or workflow, and the major component only for a breaking data or user-flow change. Keep the version shown in Settings aligned with the generated build.
