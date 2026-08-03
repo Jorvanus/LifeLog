@@ -3,6 +3,35 @@ import SwiftData
 
 @MainActor
 enum SavedPlaceLearning {
+    struct BackfillPreview {
+        let matchingVisits: Int
+        let ignoredVisits: Int
+        var description: String { "\(matchingVisits) historical \(matchingVisits == 1 ? "visit" : "visits") will change" }
+    }
+
+    static func preview(_ place: SavedPlace, context: ModelContext) throws -> BackfillPreview {
+        let visits = try context.fetch(FetchDescriptor<Visit>())
+        let location = CLLocation(latitude: place.latitude, longitude: place.longitude)
+        let matching = visits.filter { visit in
+            guard ActivityLocationPolicy.isLocationVisit(visit), isLocated(visit) else { return false }
+            return location.distance(from: CLLocation(latitude: visit.latitude, longitude: visit.longitude)) <= place.radius
+        }
+        return BackfillPreview(matchingVisits: matching.count, ignoredVisits: matching.filter(\.isIgnored).count)
+    }
+
+    static func applyIgnored(_ ignored: Bool, to place: SavedPlace, context: ModelContext) throws -> Int {
+        let visits = try context.fetch(FetchDescriptor<Visit>())
+        let location = CLLocation(latitude: place.latitude, longitude: place.longitude)
+        var changed = 0
+        for visit in visits where ActivityLocationPolicy.isLocationVisit(visit) && isLocated(visit) {
+            guard location.distance(from: CLLocation(latitude: visit.latitude, longitude: visit.longitude)) <= place.radius,
+                  visit.isIgnored != ignored else { continue }
+            visit.isIgnored = ignored
+            changed += 1
+        }
+        try context.save()
+        return changed
+    }
     enum Change: Equatable {
         case created
         case updated

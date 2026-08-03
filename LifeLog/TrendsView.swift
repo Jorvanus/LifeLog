@@ -495,7 +495,7 @@ private struct InsightsSnapshot {
                                      range: DateInterval, now: Date) -> [InsightSegment] {
         let orderedVisits = visits
             .filter { $0.overlaps(range, now: now) && !$0.isIgnored }
-            .filter { ActivityLocationPolicy.shouldShow($0, locationVisits: locationVisits, now: now) }
+            .filter { ActivityLocationPolicy.shouldShowInInsights($0, locationVisits: locationVisits, now: now) }
         // Imported journals and delayed Core Location callbacks can contain an old
         // open stay that overlaps several completed destinations. Resolve the day in
         // small boundary slices so a broad open stay cannot hide a real visit such as

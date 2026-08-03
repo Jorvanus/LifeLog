@@ -153,6 +153,8 @@ private struct SavedPlaceEditor: View {
     @Environment(\.modelContext) private var context
     @Bindable var place: SavedPlace
     @State private var saveFailed = false
+    @State private var backfillPreview: SavedPlaceLearning.BackfillPreview?
+    @State private var confirmingIgnore = false
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var adjustingLocation = false
 
@@ -208,6 +210,14 @@ private struct SavedPlaceEditor: View {
                           systemImage: adjustingLocation ? "checkmark.circle" : "mappin.and.ellipse")
                 }
             }
+            if let backfillPreview, backfillPreview.matchingVisits > 0 {
+                Section("Historical backfill") {
+                    Label(backfillPreview.description, systemImage: "arrow.triangle.2.circlepath")
+                    Text("Saving changes updates matching history. Corrections are recorded for recovery.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Button("Ignore all matching visits", role: .destructive) { confirmingIgnore = true }
+                }
+            }
             Section("Default activity") {
                 Picker("Activity", selection: $place.defaultActivity) {
                     Text("Choose an activity").tag("")
@@ -231,6 +241,7 @@ private struct SavedPlaceEditor: View {
             mapPosition = .region(MKCoordinateRegion(center: coordinate,
                                                       span: .init(latitudeDelta: 0.004, longitudeDelta: 0.004)))
         }
+        .task { backfillPreview = try? SavedPlaceLearning.preview(place, context: context) }
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Done") { save() }
@@ -241,6 +252,15 @@ private struct SavedPlaceEditor: View {
             Button("OK", role: .cancel) { }
         } message: {
             Text("LifeLog left the existing place and timeline unchanged.")
+        }
+        .confirmationDialog("Ignore matching visits?", isPresented: $confirmingIgnore) {
+            Button("Ignore \(backfillPreview?.matchingVisits ?? 0) visits", role: .destructive) {
+                try? SavedPlaceLearning.applyIgnored(true, to: place, context: context)
+                backfillPreview = try? SavedPlaceLearning.preview(place, context: context)
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This hides matching visits from Timeline, Insights, and Map. You can restore them from Ignored Locations.")
         }
     }
 

@@ -2,6 +2,19 @@
 
 ## 2026-08-03
 
+### Sensible timeline visit deletion
+
+- Timeline visits can now be deleted with confirmation. Matching bordering visits merge their time when they represent the same place and activity; different destinations are preserved without an unsafe guess.
+
+### Travel as an Insights-only event
+
+- Travel between destinations now remains a distinct Insights event, including shorter trips, while Timeline hides trips under one hour and shows only long journeys as cards.
+
+### Historical backfill previews and recovery
+
+- Saved Place editing now previews how many historical visits will change and records corrections for recovery.
+- Saved Places can ignore all matching visits with confirmation; ignored visits remain restorable from Ignored Locations.
+
 ### Enrich imported journal locations
 
 - Core Location visits now enrich matching imported journal rows with coordinates, place identity, and place type when time and place/activity evidence agree.

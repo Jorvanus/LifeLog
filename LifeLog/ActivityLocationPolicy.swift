@@ -69,6 +69,21 @@ enum ActivityLocationPolicy {
         )
     }
 
+    /// Timeline stays location-first: short movement between destinations is
+    /// retained for Insights but omitted from the daily card list. Long trips
+    /// remain visible because they are meaningful events in their own right.
+    static func shouldShowInTimeline(_ visit: Visit, locationVisits: [Visit], now: Date = .now) -> Bool {
+        guard isMovementActivity(visit) else { return true }
+        let duration = (visit.departure ?? now).timeIntervalSince(visit.arrival)
+        return duration >= 60 * 60 && isBetweenDestinations(visit, locationVisits: locationVisits, now: now)
+    }
+
+    /// Insights retains every valid between-destination travel segment, including
+    /// short commutes, so time spent travelling is not lost from the day total.
+    static func shouldShowInInsights(_ visit: Visit, locationVisits: [Visit], now: Date = .now) -> Bool {
+        shouldShow(visit, locationVisits: locationVisits, now: now)
+    }
+
     /// Gives movement records a useful destination label once the next place is known.
     /// Work and home are stable labels; other places need to recur across multiple days
     /// before they are used as a learned destination name.

@@ -19,7 +19,7 @@ struct TimelineView: View {
         let locationVisits = visits.filter(ActivityLocationPolicy.isLocationVisit)
         return visits.filter { Calendar.current.isDateInToday($0.arrival) }
             .filter { !$0.isIgnored }
-            .filter { ActivityLocationPolicy.shouldShow($0, locationVisits: locationVisits) }
+            .filter { ActivityLocationPolicy.shouldShowInTimeline($0, locationVisits: locationVisits) }
     }
     private var reviewQueue: [Visit] {
         // The live unknown location has its own prominent card; the queue is for past stays.
@@ -462,6 +462,7 @@ struct VisitEditor: View {
     @Query(sort: \VisitCorrection.changedAt, order: .reverse) private var corrections: [VisitCorrection]
     @Query(sort: \Visit.arrival, order: .reverse) private var history: [Visit]
     @State private var saveFailed = false
+    @State private var confirmingDelete = false
     @State private var correctionBaseline: VisitCorrectionSnapshot?
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var adjustingLocation = false
@@ -643,6 +644,12 @@ struct VisitEditor: View {
             }
         }
         .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button(role: .destructive) { confirmingDelete = true } label: {
+                    Image(systemName: "trash")
+                }
+                .accessibilityLabel("Delete visit")
+            }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Done") { saveAndDismiss() }
             }
@@ -651,6 +658,12 @@ struct VisitEditor: View {
             Button("OK", role: .cancel) { }
         } message: {
             Text("LifeLog left your existing timeline unchanged.")
+        }
+        .confirmationDialog("Delete this visit?", isPresented: $confirmingDelete) {
+            Button("Delete visit", role: .destructive) { deleteVisit() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("If the visits before and after it are the same place and activity, their time will be merged. Otherwise no surrounding visit will be guessed.")
         }
         .onAppear {
             if correctionBaseline == nil { correctionBaseline = currentSnapshot }
@@ -717,6 +730,31 @@ struct VisitEditor: View {
         } catch {
             saveFailed = true
         }
+    }
+
+    private func deleteVisit() {
+        do {
+            let all = try context.fetch(FetchDescriptor<Visit>(sortBy: [SortDescriptor(\.arrival)]))
+            let previous = all.filter { $0.id != visit.id && ($0.departure ?? .now) <= visit.arrival }
+                .max { $0.arrival < $1.arrival }
+            let end = visit.departure ?? visit.arrival
+            let next = all.filter { $0.id != visit.id && $0.arrival >= end }
+                .min { $0.arrival < $1.arrival }
+            if let previous, let next, sameActivityLocation(previous, next) {
+                previous.departure = next.departure ?? next.arrival
+            }
+            context.delete(visit)
+            try context.save()
+            dismiss()
+        } catch {
+            saveFailed = true
+        }
+    }
+
+    private func sameActivityLocation(_ lhs: Visit, _ rhs: Visit) -> Bool {
+        let lhsPlace = lhs.placeName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let rhsPlace = rhs.placeName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return lhsPlace == rhsPlace && lhs.activity.caseInsensitiveCompare(rhs.activity) == .orderedSame
     }
 
     private func sanitizeVisit() {
