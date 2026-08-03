@@ -151,6 +151,7 @@ struct SettingsView: View {
                 }
                 Section("Local backup") {
                     Button {
+                        ExportFileCleanup.removeExpired()
                         do {
                             let data = try LocalBackupService.makeBackup(context: context, diagnostics: diagnostics)
                             let url = FileManager.default.temporaryDirectory.appendingPathComponent("LifeLog-Backup-\(Int(Date.now.timeIntervalSince1970)).json")

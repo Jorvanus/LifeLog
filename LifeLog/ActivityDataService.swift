@@ -274,7 +274,10 @@ final class ActivityDataService {
                 }
 
                 try Task.checkCancellation()
-                let batchSize = 40
+                // Larger background batches reduce SwiftData transaction overhead;
+                // the actor remains off the interaction path and cancellation is
+                // still checked between each batch.
+                let batchSize = 80
                 var completed = 0
                 for startIndex in stride(from: 0, to: records.count, by: batchSize) {
                     try Task.checkCancellation()

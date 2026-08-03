@@ -97,6 +97,7 @@ struct StoreRecoveryView: View {
 
     private func createReport() {
         do {
+            ExportFileCleanup.removeExpired()
             reportURL = try StoreRecoverySupport.makeDiagnosticReport(failure: failure)
             exportError = nil
         } catch {

@@ -18,6 +18,7 @@ struct RootView: View {
         .tint(.blue)
         .accessibilityIdentifier("root-tab-view")
         .task {
+            ExportFileCleanup.removeExpired()
             let startedAt = Date.now
             recorder.connect(context)
             activityData.connect(context, container: modelContainer)

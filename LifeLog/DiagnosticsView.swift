@@ -25,6 +25,7 @@ struct DiagnosticsView: View {
             }
             Section("Share") {
                 Button {
+                    ExportFileCleanup.removeExpired()
                     let data = Diagnostics.makePerformanceReport(events: diagnostics)
                     let url = FileManager.default.temporaryDirectory.appendingPathComponent("LifeLog-Performance-Report.json")
                     try? data.write(to: url, options: .atomic); reportURL = url
