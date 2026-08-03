@@ -580,6 +580,15 @@ struct VisitEditor: View {
                 }
             }
             Section("What were you doing?") {
+                if !historicalActivities.isEmpty {
+                    Menu {
+                        ForEach(historicalActivities, id: \.self) { activity in
+                            Button(activity) { visit.userActivity = activity }
+                        }
+                    } label: {
+                        Label("Use a previous activity here", systemImage: "clock.arrow.circlepath")
+                    }
+                }
                 Picker("Activity", selection: activityBinding) {
                     Text("Choose an activity").tag("")
                     ForEach(availableActivities, id: \.self) { Text($0).tag($0) }
@@ -680,6 +689,14 @@ struct VisitEditor: View {
 
     private var activityBinding: Binding<String> {
         Binding(get: { visit.userActivity ?? "" }, set: { visit.userActivity = $0 })
+    }
+
+    private var historicalActivities: [String] {
+        var values = history
+            .filter { $0.id != visit.id && $0.placeName.caseInsensitiveCompare(visit.placeName) == .orderedSame }
+            .map(\.activity)
+        values.append(contentsOf: ActivityCatalog.load().map(\.name))
+        return Array(Set(values)).filter { !$0.isEmpty }.sorted()
     }
 
     private var inferenceEvidenceText: String {

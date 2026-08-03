@@ -132,7 +132,11 @@ enum SavedPlaceLearning {
             // A prior manual label takes precedence in presentation. Update it
             // too, otherwise historical check-ins can keep showing the old
             // activity even though the Saved Place has learned the new one.
-            visit.userActivity = activity
+            // A saved-place default is a future suggestion, not a permanent
+            // label. The same location can be Breakfast one day and Lunch next.
+            if visit.userActivity == nil || visit.userActivity?.isEmpty == true {
+                visit.inferredActivity = activity
+            }
             visit.recognitionConfidence = "learned"
             visit.placeSuggestions = []
             CorrectionHistory.record(visit: visit, from: previous, context: context,

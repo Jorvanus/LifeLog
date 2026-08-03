@@ -17,7 +17,6 @@ struct ActivitiesView: View {
                         Label {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(activity.name).font(.headline)
-                                Text(activity.category).font(.caption).foregroundStyle(.secondary)
                             }
                         } icon: {
                             Image(systemName: activity.symbol).foregroundStyle(activityColor(activity.name))

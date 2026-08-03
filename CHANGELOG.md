@@ -2,6 +2,15 @@
 
 ## 2026-08-03
 
+### Simpler Activities list
+
+- Activities settings now shows only each activity name; category remains editable inside the activity editor and is used for Insights grouping.
+
+### Flexible activity vocabulary
+
+- Activities now model reusable things people do—such as Coffee, Beers, Breakfast, Lunch, Dining out, Concert, and Football—rather than forcing one permanent activity onto a place.
+- Saved Place defaults remain future suggestions, while each visit can keep a different activity. Visit editing also offers activities previously used at the same place and supports custom additions.
+
 ### Complete local backup and restore
 
 - Added a versioned JSON backup covering visits, Saved Places, corrections, diagnostics, ignored state, activity definitions, category colours, and LifeLog preferences.

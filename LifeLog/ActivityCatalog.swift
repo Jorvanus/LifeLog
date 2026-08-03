@@ -18,7 +18,11 @@ enum ActivityCatalog {
     private static let storageKey = "LifeLog.ActivityCatalog.v1"
     static let defaults: [(name: String, category: String, symbol: String)] = [
         ("At home", "Home", "house.fill"), ("Working", "Work", "briefcase.fill"),
-        ("Eating", "Food & Drink", "fork.knife"), ("Shopping", "Shopping", "bag.fill"),
+        ("Coffee", "Food & Drink", "cup.and.saucer.fill"), ("Beers", "Food & Drink", "mug.fill"),
+        ("Breakfast", "Food & Drink", "sunrise.fill"), ("Lunch", "Food & Drink", "fork.knife"),
+        ("Dining out", "Food & Drink", "fork.knife"), ("Eating", "Food & Drink", "fork.knife"),
+        ("Shopping", "Shopping", "bag.fill"),
+        ("Concert", "Entertainment", "music.mic"), ("Football", "Entertainment", "sportscourt.fill"),
         ("Exercising", "Fitness", "figure.run"), ("Healthcare", "Healthcare", "cross.case.fill"),
         ("Studying", "Education", "book.fill"), ("Travelling", "Travel", "car.fill"),
         ("Socialising", "Social", "person.2.fill"), ("Visiting", "Other", "mappin.and.ellipse"),
@@ -45,6 +49,8 @@ enum ActivityCatalog {
         case "at home": return "Home"
         case "working": return "Work"
         case "eating": return "Food & Drink"
+        case "coffee", "beers", "breakfast", "lunch", "dining out": return "Food & Drink"
+        case "concert", "football": return "Entertainment"
         case "shopping": return "Shopping"
         case "exercising", "walking", "running", "cycling": return "Fitness"
         case "healthcare": return "Healthcare"
