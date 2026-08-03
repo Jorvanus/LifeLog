@@ -2,6 +2,18 @@
 
 ## 2026-08-03
 
+### Current-activity artwork positioning
+
+- Shifted the enlarged current-activity illustration upward inside its fixed clipping frame so the artwork subject is not cut off at the bottom.
+
+### Current-activity artwork scale
+
+- Increased the scene illustration rendering to 3× inside the same clipped card footprint, keeping the card dimensions fixed.
+
+### Bounded current-activity artwork
+
+- Removed oversized artwork scaling from the current-activity card, added a clipped fixed footprint, and added asset-dimension regression tests so transparent illustrations cannot distort the card layout.
+
 ### Explainable activity inference
 
 - Insights donut focus now shows confidence and the evidence behind an inferred activity, including Saved Places, Maps category, time of day, recurrence, device movement, and on-device inference. Guesses remain explicitly editable.

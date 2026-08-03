@@ -463,11 +463,13 @@ private struct ActivityScene: View {
             Image(assetName)
                 .resizable()
                 .scaledToFit()
-                // Keep the layout footprint compact while enlarging the transparent
-                // artwork itself; this prevents the card from growing wider.
-                .frame(width: 145, height: 88)
+                // The image is deliberately clipped to this fixed footprint. Do not
+                // let the transformed artwork affect layout: transparent source
+                // padding must never enlarge the card or push text out of alignment.
                 .scaleEffect(3.0)
-                .offset(y: -22)
+                .frame(width: ActivityArtworkLayout.width, height: ActivityArtworkLayout.height)
+                .offset(y: ActivityArtworkLayout.verticalOffset)
+                .clipped()
                 .accessibilityHidden(true)
         }
     }
@@ -475,6 +477,15 @@ private struct ActivityScene: View {
     private var assetName: String? {
         ActivityIcon(activity: activity, category: category, color: .clear).resolvedAssetName
     }
+}
+
+/// Stable bounds for the decorative scene on the current-activity card. Keeping
+/// these values in one place lets UI tests catch accidental artwork regressions.
+enum ActivityArtworkLayout {
+    static let width: CGFloat = 170
+    static let height: CGFloat = 88
+    static let maximumScale: CGFloat = 3
+    static let verticalOffset: CGFloat = -16
 }
 
 func activityColor(_ activity: String) -> Color {

@@ -33,7 +33,7 @@ This plan prioritises a dependable private diary on a physical iPhone before exp
 - [ ] Add explicit retention controls for imported journals, Health/Motion records, diagnostics, exports, and all app data; show counts and estimated storage before deletion.
 - [ ] Add low-storage handling for imports, backups, and reports: preflight available space, show a recoverable error, and never delete source data on a failed export.
 - [ ] Add UI tests for the new Diagnostics and Journal Storage screens, including backup failure, protected-file failure, empty history, Dynamic Type, VoiceOver, and dark mode.
-- [ ] Improve current-activity artwork layout with asset bounds tests so transparent illustrations cannot enlarge or distort cards.
+- [x] Improve current-activity artwork layout with asset bounds tests so transparent illustrations cannot enlarge or distort cards.
 - [ ] Add import progress with cancel/retry and a post-import summary showing duplicates, malformed rows, compactable rows, and storage impact.
 - [ ] Move Insights aggregation into a reusable actor/cache with invalidation on visit edits, imports, corrections, and HealthKit updates.
 - [ ] Add a practical on-device data-safety review: file protection, backup scope, temporary-file permissions, and an explicit switch for detailed personal diagnostics.
