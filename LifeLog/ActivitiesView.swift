@@ -54,7 +54,7 @@ struct ActivitiesView: View {
     }
 }
 
-private struct ActivityEditor: View {
+struct ActivityEditor: View {
     @Environment(\.dismiss) private var dismiss
     let existing: ActivityDefinition?
     let onSave: (ActivityDefinition) -> Void

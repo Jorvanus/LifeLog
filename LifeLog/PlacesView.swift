@@ -162,16 +162,6 @@ private struct SavedPlaceEditor: View {
         "Home", "Work", "Food & Drink", "Shopping", "Fitness", "Healthcare",
         "Education", "Travel", "Entertainment", "Social", "Other"
     ]
-    private let activities = [
-        "At home", "Working", "Eating", "Shopping", "Exercising", "Healthcare",
-        "Studying", "Travelling", "Socialising", "Visiting"
-    ]
-
-    private var availableActivities: [String] {
-        let names = ActivityCatalog.load().map(\.name)
-        return names.isEmpty ? activities : names
-    }
-
     var body: some View {
         Form {
             Section("Place") {
@@ -219,11 +209,11 @@ private struct SavedPlaceEditor: View {
                 }
             }
             Section("Default activity") {
-                Picker("Activity", selection: $place.defaultActivity) {
-                    Text("Choose an activity").tag("")
-                    ForEach(availableActivities, id: \.self) { Text($0).tag($0) }
+                NavigationLink {
+                    PlaceActivitySelection(selection: $place.defaultActivity)
+                } label: {
+                    LabeledContent("Activity", value: place.defaultActivity.isEmpty ? "Choose an activity" : place.defaultActivity)
                 }
-                TextField("Or enter your own", text: $place.defaultActivity)
             }
             Section {
                 Slider(value: $place.radius, in: 25...500, step: 25)

@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		079B2D6540571B6E67B89DC5 /* ActivityLocationPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F6EFD93E6C35C60C97969D4 /* ActivityLocationPolicyTests.swift */; };
+		141A4E88095D602B747431D2 /* PlaceActivitySelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47896E03D6ED231032CC152B /* PlaceActivitySelection.swift */; };
 		1BBFE65C0530FF99B8D9B104 /* LocalBackup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1CCFB9DCAC0C12584C27D68 /* LocalBackup.swift */; };
 		1F61C35AD1AB6CB698D5439D /* ActivityImportActor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27863B7E1F9D43C1794A6DB4 /* ActivityImportActor.swift */; };
 		2112622DCFE0CC3DAA5AEDEF /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A01F3743E7844412FE163D6 /* Models.swift */; };
@@ -83,6 +84,7 @@
 		3BB7EE63315EC7CC0A511303 /* LocationRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationRecorder.swift; sourceTree = "<group>"; };
 		3CC1523859D9C3C50CE0B0C8 /* ManualVisitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManualVisitView.swift; sourceTree = "<group>"; };
 		452978750FB4CA6A49A09C2A /* SavedPlaceLearningTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedPlaceLearningTests.swift; sourceTree = "<group>"; };
+		47896E03D6ED231032CC152B /* PlaceActivitySelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceActivitySelection.swift; sourceTree = "<group>"; };
 		4D49D411624E1C10FDE393AF /* LifeLogUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = LifeLogUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4EE15F0F10705EC8163D24F5 /* IgnoredLocations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IgnoredLocations.swift; sourceTree = "<group>"; };
 		5977B19648754DE23F384F3F /* ActivitiesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivitiesView.swift; sourceTree = "<group>"; };
@@ -154,6 +156,7 @@
 				3CC1523859D9C3C50CE0B0C8 /* ManualVisitView.swift */,
 				B67547668C2606629916F0B6 /* MapView.swift */,
 				8A01F3743E7844412FE163D6 /* Models.swift */,
+				47896E03D6ED231032CC152B /* PlaceActivitySelection.swift */,
 				3AA772D2482869E62414D007 /* PlaceLookupService.swift */,
 				04E659A5C83835EC44949F88 /* PlacesView.swift */,
 				E305C81E7DB9868FD552A196 /* PrivacyInfo.xcprivacy */,
@@ -331,6 +334,7 @@
 				87C656FE5056AB7AF361B02C /* ManualVisitView.swift in Sources */,
 				C975A398C4FCEB89BAB6E650 /* MapView.swift in Sources */,
 				2112622DCFE0CC3DAA5AEDEF /* Models.swift in Sources */,
+				141A4E88095D602B747431D2 /* PlaceActivitySelection.swift in Sources */,
 				C230D3A30B5955F581E8269F /* PlaceLookupService.swift in Sources */,
 				54162656845A88BAAED358A1 /* PlacesView.swift in Sources */,
 				ADA726BB01719FCEA5B61298 /* RootView.swift in Sources */,
