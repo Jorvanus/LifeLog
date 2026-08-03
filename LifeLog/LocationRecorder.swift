@@ -172,6 +172,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     private func createVisit(at coordinate: CLLocationCoordinate2D, arrival: Date) {
         guard let context, CLLocationCoordinate2DIsValid(coordinate) else { return }
         let safeArrival = min(arrival, .now)
+        var inferredDeparture: Date?
         if let duplicate = recentDuplicateLocation(at: coordinate, arrival: safeArrival, context: context) {
             // Core Location can replay the same arrival after a visit was closed. Keep
             // the original record and update its bounds instead of creating a new card.
@@ -193,7 +194,14 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 save(context)
                 return
             }
-            latest.departure = max(latest.arrival, safeArrival)
+            if safeArrival < latest.arrival {
+                // CLVisit callbacks can be delayed and delivered after a newer
+                // one-shot current-location visit. This is historical evidence,
+                // not a new current stay, so bound it at the newer arrival.
+                inferredDeparture = latest.arrival
+            } else {
+                latest.departure = max(latest.arrival, safeArrival)
+            }
         }
 
         let saved = nearestSavedPlace(to: coordinate, context: context)
@@ -201,7 +209,8 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         let category = saved?.category ?? "Other"
         let activity = InferenceEngine.activity(placeName: name, category: category,
                                                 defaultActivity: saved?.defaultActivity, arrival: safeArrival)
-        let item = Visit(arrival: safeArrival, latitude: coordinate.latitude, longitude: coordinate.longitude,
+        let item = Visit(arrival: safeArrival, departure: inferredDeparture,
+                         latitude: coordinate.latitude, longitude: coordinate.longitude,
                          placeName: name, placeCategory: category, inferredActivity: activity,
                          recognitionConfidence: saved == nil ? nil : "learned")
         context.insert(item)

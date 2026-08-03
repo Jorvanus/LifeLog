@@ -13,12 +13,13 @@ struct TimelineView: View {
     @State private var adding = false
     @State private var clock = Date.now
     @AppStorage("location-policy-reconciled-v2") private var locationPolicyReconciled = false
-    @AppStorage("automatic-location-deduplicated-v1") private var automaticLocationDeduplicated = false
+    @AppStorage("automatic-location-deduplicated-v2") private var automaticLocationDeduplicated = false
 
     private var today: [Visit] {
         let locationVisits = visits.filter(ActivityLocationPolicy.isLocationVisit)
         return visits.filter { Calendar.current.isDateInToday($0.arrival) }
             .filter { !$0.isIgnored }
+            .filter { !ActivityLocationPolicy.isSupersededLocation($0) }
             .filter { ActivityLocationPolicy.shouldShowInTimeline($0, locationVisits: locationVisits) }
             // Core Location can replay an older unknown callback after a later
             // named visit arrives. Do not show that stale review row when its
@@ -82,6 +83,16 @@ struct TimelineView: View {
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $adding) { ManualVisitView() }
             .task {
+                do {
+                    let repaired = try ActivityLocationPolicy.closeSupersededOpenLocations(context: context)
+                    if repaired > 0 {
+                        try context.save()
+                        Diagnostics.record(context, subsystem: "Core Location",
+                                           message: "Closed \(repaired) superseded open visit records.", severity: "info")
+                    }
+                } catch {
+                    // Protected stores are retried when Timeline next appears.
+                }
                 if !automaticLocationDeduplicated {
                     do {
                         let removed = try ActivityLocationPolicy.deduplicateAutomaticLocations(context: context)

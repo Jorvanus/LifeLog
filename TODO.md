@@ -45,7 +45,7 @@ This plan prioritises a dependable private diary on a physical iPhone before exp
 
 ## Next review — UI, security, and efficiency
 
-- [ ] Make Timeline overlap resolution deterministic in the data layer, not only the view: preserve raw visits, mark superseded callbacks, and add tests for Home → destination → Home sequences.
+- [x] Make Timeline overlap resolution deterministic in the data layer, not only the view: preserve raw visits, mark superseded callbacks, and add tests for Home → destination → Home sequences.
 - [ ] Add a first-run privacy dashboard explaining Location, Health, Motion, Maps lookup, local backup, diagnostics, and retention in plain language with links to revoke each permission.
 - [ ] Add explicit retention controls for imported journals, Health/Motion records, diagnostics, exports, and all app data; show counts and estimated storage before deletion.
 - [ ] Add low-storage handling for imports, backups, and reports: preflight available space, show a recoverable error, and never delete source data on a failed export.

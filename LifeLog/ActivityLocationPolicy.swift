@@ -5,8 +5,14 @@ import CoreLocation
 /// Keeps the timeline location-first by removing device activity that occurs during a place visit.
 @MainActor
 enum ActivityLocationPolicy {
+    static let supersededLocationSource = "automatic-superseded"
+
     static func isLocationVisit(_ visit: Visit) -> Bool {
         visit.source == "automatic" || visit.source == "manual"
+    }
+
+    nonisolated static func isSupersededLocation(_ visit: Visit) -> Bool {
+        visit.source == "automatic-superseded"
     }
 
     static func isDeviceActivity(_ visit: Visit) -> Bool {
@@ -73,6 +79,7 @@ enum ActivityLocationPolicy {
     /// retained for Insights but omitted from the daily card list. Long trips
     /// remain visible because they are meaningful events in their own right.
     static func shouldShowInTimeline(_ visit: Visit, locationVisits: [Visit], now: Date = .now) -> Bool {
+        guard !isSupersededLocation(visit) else { return false }
         // Timeline is destination-first: device activity that occurs inside a
         // recorded place is retained for Insights but does not become another
         // simultaneous card. Sleep is the intentional exception.
@@ -92,7 +99,8 @@ enum ActivityLocationPolicy {
     /// Insights retains every valid between-destination travel segment, including
     /// short commutes, so time spent travelling is not lost from the day total.
     static func shouldShowInInsights(_ visit: Visit, locationVisits: [Visit], now: Date = .now) -> Bool {
-        shouldShow(visit, locationVisits: locationVisits, now: now)
+        guard !isSupersededLocation(visit) else { return false }
+        return shouldShow(visit, locationVisits: locationVisits, now: now)
     }
 
     /// Gives movement records a useful destination label once the next place is known.
@@ -209,22 +217,22 @@ enum ActivityLocationPolicy {
     @discardableResult
     static func deduplicateAutomaticLocations(context: ModelContext) throws -> Int {
         let visits = try context.fetch(FetchDescriptor<Visit>(
-            predicate: #Predicate { $0.source == "automatic" },
+            predicate: #Predicate { $0.source == "automatic" || $0.source == "automatic-superseded" },
             sortBy: [SortDescriptor(\.arrival)]
         ))
         var retained: [Visit] = []
         var removed = 0
-        for candidate in visits {
+        for candidate in visits where !isSupersededLocation(candidate) {
             guard let previous = retained.last else {
                 retained.append(candidate)
                 continue
             }
 
-            let sameArrival = previous.placeName == candidate.placeName &&
-                previous.placeCategory == candidate.placeCategory &&
+            let sameLogicalPlace = previous.placeName.caseInsensitiveCompare(candidate.placeName) == .orderedSame
+            let sameArrival = sameLogicalPlace &&
                 abs(previous.arrival.timeIntervalSince(candidate.arrival)) <= 60 &&
                 CLLocation(latitude: previous.latitude, longitude: previous.longitude)
-                    .distance(from: CLLocation(latitude: candidate.latitude, longitude: candidate.longitude)) <= 60
+                    .distance(from: CLLocation(latitude: candidate.latitude, longitude: candidate.longitude)) <= 250
             if sameArrival {
                 // Merge repeated callbacks that describe the same arrival.
                 previous.arrival = min(previous.arrival, candidate.arrival)
@@ -232,7 +240,14 @@ enum ActivityLocationPolicy {
                 case (nil, _), (_, nil): previous.departure = nil
                 case let (left?, right?): previous.departure = max(left, right)
                 }
-                context.delete(candidate)
+                if candidate.recognitionConfidence == "confirmed" {
+                    previous.placeName = candidate.placeName
+                    previous.placeCategory = candidate.placeCategory
+                    previous.inferredActivity = candidate.inferredActivity
+                    previous.userActivity = candidate.userActivity
+                    previous.recognitionConfidence = candidate.recognitionConfidence
+                }
+                candidate.source = supersededLocationSource
                 removed += 1
             } else {
                 // A later destination proves that an earlier open stay ended when this
@@ -245,6 +260,25 @@ enum ActivityLocationPolicy {
             }
         }
         return removed
+    }
+
+    /// Restores the core timeline invariant that only the newest location may be
+    /// open. Older nil-departure records came from delayed callbacks in previous
+    /// builds and otherwise keep growing as though they are still current.
+    @discardableResult
+    static func closeSupersededOpenLocations(context: ModelContext) throws -> Int {
+        let locations = try context.fetch(FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.source == "automatic" || $0.source == "manual" },
+            sortBy: [SortDescriptor(\.arrival)]
+        ))
+        guard let latest = locations.last else { return 0 }
+        var repaired = 0
+        for visit in locations where visit.departure == nil && visit.id != latest.id {
+            guard let next = locations.first(where: { $0.arrival > visit.arrival }) else { continue }
+            visit.departure = next.arrival
+            repaired += 1
+        }
+        return repaired
     }
 
     private static func fetchPolicyVisits(context: ModelContext) throws -> [Visit] {

@@ -322,6 +322,55 @@ struct ActivityLocationPolicyTests {
         #expect(travel.inferredActivity == "Travelling to Work")
     }
 
+    @Test("Home destination Home has one deterministic open visit")
+    func resolvesHomeDestinationHomeSequence() throws {
+        let context = try makeContext()
+        let firstHome = Visit(arrival: base, latitude: -23.37, longitude: 150.51,
+                              placeName: "Home", placeCategory: "Home",
+                              inferredActivity: "At home", source: "automatic")
+        let destination = Visit(arrival: base.addingTimeInterval(60 * 60),
+                                latitude: -23.43, longitude: 150.45,
+                                placeName: "Shops", placeCategory: "Shopping",
+                                inferredActivity: "Shopping", source: "automatic")
+        let secondHome = Visit(arrival: base.addingTimeInterval(2 * 60 * 60),
+                               latitude: -23.37, longitude: 150.51,
+                               placeName: "Home", placeCategory: "Home",
+                               inferredActivity: "At home", source: "automatic")
+        [firstHome, destination, secondHome].forEach(context.insert)
+        try context.save()
+
+        let repaired = try ActivityLocationPolicy.closeSupersededOpenLocations(context: context)
+
+        #expect(repaired == 2)
+        #expect(firstHome.departure == destination.arrival)
+        #expect(destination.departure == secondHome.arrival)
+        #expect(secondHome.departure == nil)
+    }
+
+    @Test("Duplicate delayed callback is preserved and marked superseded")
+    func preservesSupersededDelayedCallback() throws {
+        let context = try makeContext()
+        let learned = Visit(arrival: base, departure: base.addingTimeInterval(20 * 60),
+                            latitude: -23.40, longitude: 150.50,
+                            placeName: "Park", placeCategory: "Fitness",
+                            inferredActivity: "Exercising", source: "automatic",
+                            recognitionConfidence: "learned")
+        let corrected = Visit(arrival: base.addingTimeInterval(30), departure: base.addingTimeInterval(25 * 60),
+                              latitude: -23.399, longitude: 150.50,
+                              placeName: "Park", placeCategory: "Fitness",
+                              inferredActivity: "Exercising", userActivity: "Exercising",
+                              source: "automatic", recognitionConfidence: "confirmed")
+        context.insert(learned); context.insert(corrected); try context.save()
+
+        let marked = try ActivityLocationPolicy.deduplicateAutomaticLocations(context: context)
+        let records = try context.fetch(FetchDescriptor<Visit>())
+
+        #expect(marked == 1)
+        #expect(records.count == 2)
+        #expect(records.filter(ActivityLocationPolicy.isSupersededLocation).count == 1)
+        #expect(records.first(where: { !ActivityLocationPolicy.isSupersededLocation($0) })?.recognitionConfidence == "confirmed")
+    }
+
     private func makeContext() throws -> ModelContext {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(
