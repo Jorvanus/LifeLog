@@ -18,30 +18,89 @@ struct JournalCSVImporter {
     }
 
     static func parse(_ data: Data) -> (rows: [Row], malformed: Int) {
-        guard let text = String(data: data, encoding: .utf8) else { return ([], 1) }
+        guard let text = decodeText(data) else { return ([], 1) }
         // Construct formatters once per file. Creating two DateFormatters for every
         // 32,000-row import is much more expensive than the CSV parsing itself.
         let zonedFormatter = makeDateFormatter(format: "yyyy-MM-dd HH:mm:ss zzz")
         let utcFormatter = makeDateFormatter(format: "yyyy-MM-dd HH:mm:ss", utc: true)
-        let lines = text.components(separatedBy: .newlines).dropFirst()
+        let records = csvRecords(text).dropFirst()
         var rows: [Row] = []
         var malformed = 0
-        for line in lines where !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let fields = line.split(separator: ",", maxSplits: 7, omittingEmptySubsequences: false)
-                .map { $0.trimmingCharacters(in: .whitespaces) }
+        for fields in records where fields.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
             guard fields.count >= 8,
-                  let start = zonedFormatter.date(from: String(fields[2])) ?? utcFormatter.date(from: String(fields[0])),
-                  let end = zonedFormatter.date(from: String(fields[3])) ?? utcFormatter.date(from: String(fields[1])),
+                  let start = zonedFormatter.date(from: fields[2]) ?? utcFormatter.date(from: fields[0]),
+                  let end = zonedFormatter.date(from: fields[3]) ?? utcFormatter.date(from: fields[1]),
                   end >= start else {
                 malformed += 1
                 continue
             }
             rows.append(Row(start: start, end: end,
-                            name: TextSafety.clean(String(fields[5]), maximumLength: 80),
-                            location: TextSafety.clean(String(fields[6]), maximumLength: 120),
-                            note: TextSafety.clean(String(fields[7]), maximumLength: 2_000)))
+                            name: TextSafety.clean(fields[5], maximumLength: 80),
+                            location: TextSafety.clean(fields[6], maximumLength: 120),
+                            note: TextSafety.clean(fields[7], maximumLength: 2_000)))
         }
         return (rows, malformed)
+    }
+
+    /// Decodes the common export encodings, including BOM-marked UTF-16 files.
+    private static func decodeText(_ data: Data) -> String? {
+        if data.starts(with: [0xFF, 0xFE]) {
+            return String(data: data, encoding: .utf16LittleEndian)
+        }
+        if data.starts(with: [0xFE, 0xFF]) {
+            return String(data: data, encoding: .utf16BigEndian)
+        }
+        if let text = String(data: data, encoding: .utf8) { return text }
+        if let text = String(data: data, encoding: .utf16) { return text }
+        if let text = String(data: data, encoding: .utf16LittleEndian) { return text }
+        return String(data: data, encoding: .utf16BigEndian)
+    }
+
+    /// RFC 4180 parser. It keeps commas and line breaks inside quoted fields,
+    /// and turns doubled quotes (`""`) back into a literal quote. Parsing by
+    /// character state avoids the incorrect line splitting used previously and
+    /// does not allocate a substring for every physical line.
+    private static func csvRecords(_ text: String) -> [[String]] {
+        var records: [[String]] = []
+        var record: [String] = []
+        var field = String()
+        var quoted = false
+        var pendingQuote = false
+        let scalars = Array(text.unicodeScalars)
+        var index = 0
+        while index < scalars.count {
+            let scalar = scalars[index]
+            if pendingQuote {
+                if scalar == "\"" {
+                    field.append("\"")
+                    pendingQuote = false
+                    index += 1
+                    continue
+                }
+                quoted = false
+                pendingQuote = false
+            }
+            if quoted {
+                if scalar == "\"" { pendingQuote = true }
+                else { field.unicodeScalars.append(scalar) }
+            } else {
+                switch scalar {
+                case "\"": quoted = true
+                case ",": record.append(field); field.removeAll(keepingCapacity: true)
+                case "\r", "\n":
+                    record.append(field); field.removeAll(keepingCapacity: true)
+                    records.append(record); record.removeAll(keepingCapacity: true)
+                    if scalar == "\r", index + 1 < scalars.count, scalars[index + 1] == "\n" { index += 1 }
+                default: field.unicodeScalars.append(scalar)
+                }
+            }
+            index += 1
+        }
+        if !field.isEmpty || !record.isEmpty {
+            record.append(field)
+            records.append(record)
+        }
+        return records
     }
 
     @MainActor

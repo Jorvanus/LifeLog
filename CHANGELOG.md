@@ -2,6 +2,16 @@
 
 ## 2026-08-03
 
+### RFC 4180 journal CSV parsing
+
+- Life Cycle imports now handle quoted commas, escaped quotes, embedded line breaks, UTF-8/UTF-16 encodings, and very large records without splitting fields incorrectly.
+- Duplicate and malformed-row reporting remains unchanged.
+
+### Stable ignored-location identifiers
+
+- Ignore state now uses each Visit’s stable SwiftData persistent identifier instead of mutable arrival and coordinate values.
+- Existing coordinate-based ignore entries migrate lazily the next time each visit is read, preserving current user choices while preparing for the planned schema migration.
+
 ### Sensible timeline visit deletion
 
 - Timeline visits can now be deleted with confirmation. Matching bordering visits merge their time when they represent the same place and activity; different destinations are preserved without an unsafe guess.
