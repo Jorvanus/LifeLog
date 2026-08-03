@@ -20,14 +20,40 @@ struct PlaceLookupResult {
 
 @MainActor
 enum PlaceLookupService {
+    private struct CachedResult { let createdAt: Date; let result: PlaceLookupResult }
+    private static var cache: [String: CachedResult] = [:]
+    private static var cancelledLookups: Set<UUID> = []
+    private static var lookupGeneration = 0
+    private static let cacheLifetime: TimeInterval = 15 * 60
+
+    static func cancelLookup(id: UUID) {
+        cancelledLookups.insert(id)
+    }
+
+    static func cancelAllLookups() {
+        lookupGeneration += 1
+    }
+
     static func nearbyPlaces(at coordinate: CLLocationCoordinate2D, radius: CLLocationDistance = 150,
-                             arrival: Date = .now) async throws -> PlaceLookupResult {
+                             arrival: Date = .now, category: String? = nil, lookupID: UUID? = nil) async throws -> PlaceLookupResult {
         guard CLLocationCoordinate2DIsValid(coordinate) else {
             return PlaceLookupResult(confidence: .low, suggestions: [])
         }
         let boundedRadius = min(max(radius, 75), 500)
+        let generation = lookupGeneration
+        // A roughly 100 m cell avoids retaining exact user coordinates while
+        // still reusing nearby results during repeated callback retries.
+        let cell = "\(Int((coordinate.latitude * 900).rounded())):\(Int((coordinate.longitude * 900).rounded())):\(Int(boundedRadius)):\(category ?? \"all\")"
+        if let cached = cache[cell], Date.now.timeIntervalSince(cached.createdAt) < cacheLifetime {
+            return cached.result
+        }
+        try Task.checkCancellation()
         let request = MKLocalPointsOfInterestRequest(center: coordinate, radius: boundedRadius)
         let response = try await MKLocalSearch(request: request).start()
+        if generation != lookupGeneration || (lookupID.map({ cancelledLookups.contains($0) }) ?? false) {
+            cancelledLookups.remove(lookupID)
+            throw CancellationError()
+        }
         let origin = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
 
         var suggestions = response.mapItems.compactMap { item -> PlaceSuggestion? in
@@ -81,7 +107,10 @@ enum PlaceLookupService {
         } else {
             confidence = .low
         }
-        return PlaceLookupResult(confidence: confidence, suggestions: suggestions)
+        let result = PlaceLookupResult(confidence: confidence, suggestions: suggestions)
+        cache[cell] = CachedResult(createdAt: .now, result: result)
+        if let lookupID { cancelledLookups.remove(lookupID) }
+        return result
     }
 
     private static func placeCategory(from category: MKPointOfInterestCategory?) -> String {

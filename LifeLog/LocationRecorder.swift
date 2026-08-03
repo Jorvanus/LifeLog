@@ -15,6 +15,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     private var serviceSessionRequirement: CLServiceSession.AuthorizationRequirement?
     private var diagnosticTask: Task<Void, Never>?
     private var identifyingVisits: Set<ObjectIdentifier> = []
+    private var lookupIDs: [ObjectIdentifier: UUID] = [:]
     /// Limits immediate-place creation to samples explicitly requested by LifeLog.
     /// Significant-change callbacks can arrive while travelling and must not become visits.
     private var shouldSeedCurrentLocation = false
@@ -289,11 +290,13 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         let identity = ObjectIdentifier(visit)
         guard identifyingVisits.insert(identity).inserted else { return }
         let coordinate = CLLocationCoordinate2D(latitude: visit.latitude, longitude: visit.longitude)
+        let lookupID = UUID()
+        lookupIDs[identity] = lookupID
         Task { @MainActor [weak self] in
             guard let self, let context = self.context else { return }
             defer { self.identifyingVisits.remove(identity) }
             do {
-                let result = try await PlaceLookupService.nearbyPlaces(at: coordinate, arrival: visit.arrival)
+                let result = try await PlaceLookupService.nearbyPlaces(at: coordinate, arrival: visit.arrival, lookupID: lookupID)
                 // The user may label Home or Work while Maps is still searching. Never let
                 // a late public-place result overwrite that explicit correction.
                 guard visit.needsCategorisation else { return }
@@ -315,11 +318,22 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
                 save(context)
             } catch {
+                if Task.isCancelled { return }
                 Diagnostics.record(context, subsystem: "MapKit",
                                    message: "Nearby place lookup failed; fallback resolution was used.")
                 reverseGeocode(visit)
             }
         }
+    }
+
+    /// Corrections and superseded callbacks invalidate pending public-place
+    /// lookups so a late Maps response cannot overwrite the user’s choice.
+    func cancelPlaceLookup(for visit: Visit) {
+        let identity = ObjectIdentifier(visit)
+        if let id = lookupIDs.removeValue(forKey: identity) {
+            PlaceLookupService.cancelLookup(id: id)
+        }
+        identifyingVisits.remove(identity)
     }
 
     private func cache(_ match: PlaceSuggestion, context: ModelContext) {

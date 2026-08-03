@@ -889,6 +889,7 @@ struct VisitEditor: View {
     }
 
     private func sanitizeVisit() {
+        PlaceLookupService.cancelAllLookups()
         visit.placeName = TextSafety.clean(visit.placeName, maximumLength: 120)
         visit.placeCategory = TextSafety.clean(visit.placeCategory, maximumLength: 40)
         visit.userActivity = visit.userActivity.map { TextSafety.clean($0, maximumLength: 80) }
