@@ -54,6 +54,31 @@ This plan prioritises a dependable private diary on a physical iPhone before exp
 - [ ] Review Apple Maps request policy and privacy copy; make lookup opt-out explicit and provide a manual-pin fallback that never requires network access.
 - [ ] Scope location queries by date/window wherever possible and avoid loading imported journal rows or superseded callbacks into interactive views.
 
+## High-priority location correctness
+
+- [ ] Match every `CLVisit` departure to the correct stored arrival using callback coordinate, arrival ordering, and overlap state; never blindly close the latest visit when delayed callbacks arrive out of order.
+- [ ] Treat one-shot `requestLocation` fixes as provisional evidence only. Promote them to resolved visits after dwell time, a matching `CLVisit`, a Saved Place geofence match, or repeated stationary samples.
+- [ ] Run the location resolver immediately after every arrival, departure, correction, Saved Place edit, and app relaunch so the store always maintains one deterministic current visit.
+- [ ] Add a location-event journal for personal diagnostics containing callback type, callback/arrival/departure times, coordinate, accuracy, distance from current visit, chosen resolution transition, and related visit identifier.
+- [ ] Add a “Location Debug” screen that shows the raw callback sequence beside the resolved Timeline, with actions to export the detailed report and rerun resolution without deleting raw data.
+- [ ] Record why a callback was merged, superseded, closed, or promoted, and include MapKit cache hit/miss, query radius, candidate names/distances/categories, selected result, and fallback reason.
+- [ ] Add an optional high-detail diagnostics mode for personal testing. Keep it off by default, automatically expire detailed location records, and clearly mark exports as containing personal location data.
+- [ ] Add deterministic replay tests for departure-before-arrival delivery, repeated arrival callbacks, coordinate drift, stale one-shot fixes, overlapping geofences, missing departures, relaunch while a visit is open, and Home → destination → Home.
+- [ ] Add invariants checked after each resolution pass: at most one current resolved location, no resolved location overlap, no negative duration, no superseded visit in Timeline/Insights, and no user correction overwritten by automation.
+
+## Apple data auto-population
+
+- [ ] Build one place-scoring pipeline combining Saved Place geofence, Apple Maps POI distance/category, dwell duration, horizontal accuracy, recurrence, time of day, and prior corrections; store the score breakdown for later inspection.
+- [ ] Prefer Saved Places before making a Maps request, then reuse rounded-cell Maps results and reverse geocoding only as a fallback. Show which Apple source supplied each field.
+- [ ] Do not permanently create a Saved Place from one high-confidence Maps result. Require a correction, repeated visits, or a configurable confidence streak before learning it as reusable.
+- [ ] Learn aliases for GPS drift around large venues so multiple nearby Apple Maps pins resolve to one Saved Place without merging genuinely separate businesses.
+- [ ] Refresh unresolved visits when better Apple Maps information becomes available, while preserving the original candidates and never replacing a confirmed user choice.
+- [ ] Use Apple Maps category plus visit time to suggest activities such as Coffee, Lunch, Shopping, Cinema, Healthcare, or Work, but keep place identity separate from the activity chosen for that visit.
+- [ ] Add a review queue ranked by confidence and impact: current unresolved location first, then long-duration unknown visits, repeated unknown coordinates, and low-confidence Maps matches.
+- [ ] Show nearby Apple Maps alternatives with distance and category when editing a visit or Saved Place, and remember the selected Apple Maps identifier/alias where the API permits.
+- [ ] Add a bounded in-memory Saved Place spatial index and rounded-cell Maps cache so callbacks do not repeatedly fetch every place or contact Maps for the same area.
+- [ ] Add aggregate and detailed diagnostics for callback-to-resolution time, Maps latency, cache hit rate, candidate count, Saved Place match distance, resolver repairs, and incorrect suggestions later corrected by the user.
+
 ## Later — after the four-week foundation
 
 - [ ] Add optional notes and photos with local file protection, storage limits, export/deletion support, and explicit privacy controls.

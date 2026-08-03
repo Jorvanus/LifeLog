@@ -2,6 +2,10 @@
 
 ## 2026-08-03
 
+### Location reliability roadmap audit
+
+- Expanded the roadmap with prioritized Core Location callback matching, deterministic resolution invariants, Apple Maps/Saved Place scoring, personal detailed diagnostics, replay tests, and safer automatic place learning.
+
 ### Simplified main navigation
 
 - Removed the standalone Map tab from the main tab bar; map-based place tools remain available from relevant location workflows.
