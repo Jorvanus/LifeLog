@@ -21,7 +21,8 @@ enum ActivityCatalog {
         ("Eating", "Food & Drink", "fork.knife"), ("Shopping", "Shopping", "bag.fill"),
         ("Exercising", "Fitness", "figure.run"), ("Healthcare", "Healthcare", "cross.case.fill"),
         ("Studying", "Education", "book.fill"), ("Travelling", "Travel", "car.fill"),
-        ("Socialising", "Social", "person.2.fill"), ("Visiting", "Other", "mappin.and.ellipse")
+        ("Socialising", "Social", "person.2.fill"), ("Visiting", "Other", "mappin.and.ellipse"),
+        ("Watching a movie", "Entertainment", "film.fill")
     ]
 
     static func load() -> [ActivityDefinition] {
@@ -50,6 +51,7 @@ enum ActivityCatalog {
         case "studying": return "Education"
         case "travelling", "traveling", "in transit": return "Travel"
         case "socialising", "socializing": return "Social"
+        case "watching a movie": return "Entertainment"
         case "sleeping": return "Sleep"
         default: break
         }

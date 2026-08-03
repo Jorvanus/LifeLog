@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import MapKit
 
 struct PlacesView: View {
     @Environment(\.modelContext) private var context
@@ -18,6 +19,36 @@ struct PlacesView: View {
 
     var body: some View {
         List {
+            Section("Review") {
+                NavigationLink {
+                    LocationVisitList(title: "Uncategorised Locations", visits: uncategorised, mode: .uncategorised)
+                } label: {
+                    Label {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Uncategorised Locations").font(.headline)
+                            Text(uncategorised.isEmpty ? "None to review" : "\(uncategorised.count) to categorise")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "questionmark.circle.fill").foregroundStyle(.orange)
+                    }
+                }
+                .accessibilityIdentifier("uncategorised-locations-link")
+                NavigationLink {
+                    LocationVisitList(title: "Ignored Locations", visits: ignored, mode: .ignored)
+                } label: {
+                    Label {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Ignored Locations").font(.headline)
+                            Text(ignored.isEmpty ? "None ignored" : "\(ignored.count) hidden locations")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "eye.slash.fill").foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityIdentifier("ignored-locations-link")
+            }
             Section {
                 if places.isEmpty {
                     Text("No saved places yet.").foregroundStyle(.secondary)
@@ -35,33 +66,14 @@ struct PlacesView: View {
                                 }
                             }
                         }
+                        .accessibilityValue("Category colour \(categoryColorHex(forCategory: ActivityCatalog.category(for: place.defaultActivity)))")
                     }
                     .onDelete(perform: delete)
                 }
             } header: {
-                Text("Saved Places")
+                Text("All locations")
             } footer: {
                 Text("Saved places recognise future visits automatically. Editing one also updates matching timeline history inside its geofence.")
-            }
-            Section {
-                if uncategorised.isEmpty {
-                    Text("No uncategorised locations.").foregroundStyle(.secondary)
-                } else {
-                    ForEach(uncategorised) { visit in
-                        locationRow(visit)
-                    }
-                }
-            } header: {
-                Text("Uncategorised Locations")
-            }
-            if !ignored.isEmpty {
-                Section {
-                    ForEach(ignored) { visit in locationRow(visit) }
-                } header: {
-                    Text("Ignored Locations")
-                } footer: {
-                    Text("Ignored visits stay in your local data but are hidden from Timeline, Insights, and Map. Restore one to include it again.")
-                }
             }
         }
         .navigationTitle("Locations")
@@ -96,15 +108,57 @@ struct PlacesView: View {
     }
 }
 
+private struct LocationVisitList: View {
+    enum Mode { case uncategorised, ignored }
+    let title: String
+    let visits: [Visit]
+    let mode: Mode
+    @Environment(\.modelContext) private var context
+
+    var body: some View {
+        List {
+            if visits.isEmpty {
+                ContentUnavailableView(
+                    mode == .uncategorised ? "No uncategorised locations" : "No ignored locations",
+                    systemImage: mode == .uncategorised ? "checkmark.circle" : "eye",
+                    description: Text(mode == .uncategorised ? "New locations needing a label will appear here." : "Ignored locations will appear here when you hide them."))
+            } else {
+                ForEach(visits) { visit in
+                    HStack {
+                        NavigationLink { VisitEditor(visit: visit) } label: {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(visit.displayPlaceName).font(.headline)
+                                Text(visit.arrival.formatted(date: .abbreviated, time: .shortened))
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer()
+                        Button(mode == .ignored ? "Restore" : "Ignore") {
+                            visit.isIgnored = mode != .ignored
+                            try? context.save()
+                        }
+                        .font(.caption.bold()).buttonStyle(.bordered)
+                        .tint(mode == .ignored ? .green : .orange)
+                    }
+                }
+            }
+        }
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 private struct SavedPlaceEditor: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Bindable var place: SavedPlace
     @State private var saveFailed = false
+    @State private var mapPosition: MapCameraPosition = .automatic
+    @State private var adjustingLocation = false
 
     private let categories = [
         "Home", "Work", "Food & Drink", "Shopping", "Fitness", "Healthcare",
-        "Education", "Travel", "Social", "Other"
+        "Education", "Travel", "Entertainment", "Social", "Other"
     ]
     private let activities = [
         "At home", "Working", "Eating", "Shopping", "Exercising", "Healthcare",
@@ -122,6 +176,36 @@ private struct SavedPlaceEditor: View {
                 TextField("Name", text: $place.name)
                 Picker("Place type", selection: $place.category) {
                     ForEach(categories, id: \.self) { Text($0).tag($0) }
+                }
+            }
+            Section("Map location") {
+                let coordinate = CLLocationCoordinate2D(latitude: place.latitude, longitude: place.longitude)
+                MapReader { proxy in
+                    Map(position: $mapPosition) {
+                        Marker(place.name, coordinate: coordinate)
+                            .tint(adjustingLocation ? .orange : .blue)
+                    }
+                    .frame(height: 220)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .mapControls { MapCompass(); MapUserLocationButton() }
+                    .onTapGesture(coordinateSpace: .local) { point in
+                        guard adjustingLocation,
+                              let updated = proxy.convert(point, from: .local),
+                              CLLocationCoordinate2DIsValid(updated) else { return }
+                        place.latitude = updated.latitude
+                        place.longitude = updated.longitude
+                        mapPosition = .region(MKCoordinateRegion(center: updated,
+                                                                  span: .init(latitudeDelta: 0.004, longitudeDelta: 0.004)))
+                    }
+                }
+                .accessibilityIdentifier("saved-place-map-picker")
+                Text(adjustingLocation ? "Tap the map to move the pin, then finish adjusting." : "Tap Adjust pin to choose a new location.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                Button {
+                    adjustingLocation.toggle()
+                } label: {
+                    Label(adjustingLocation ? "Finish adjusting pin" : "Adjust pin location",
+                          systemImage: adjustingLocation ? "checkmark.circle" : "mappin.and.ellipse")
                 }
             }
             Section("Default activity") {
@@ -142,6 +226,11 @@ private struct SavedPlaceEditor: View {
         }
         .navigationTitle(place.name.isEmpty ? "Edit Place" : place.name)
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            let coordinate = CLLocationCoordinate2D(latitude: place.latitude, longitude: place.longitude)
+            mapPosition = .region(MKCoordinateRegion(center: coordinate,
+                                                      span: .init(latitudeDelta: 0.004, longitudeDelta: 0.004)))
+        }
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Done") { save() }

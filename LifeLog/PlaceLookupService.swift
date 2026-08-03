@@ -86,6 +86,9 @@ enum PlaceLookupService {
 
     private static func placeCategory(from category: MKPointOfInterestCategory?) -> String {
         let value = category?.rawValue.lowercased() ?? ""
+        if value.contains("cinema") || value.contains("movie") || value.contains("theater") || value.contains("theatre") {
+            return "Entertainment"
+        }
         if value.contains("restaurant") || value.contains("cafe") || value.contains("bakery") || value.contains("brewery") {
             return "Food & Drink"
         }
@@ -104,7 +107,7 @@ enum PlaceLookupService {
         if value.contains("airport") || value.contains("transport") || value.contains("hotel") || value.contains("marina") {
             return "Travel"
         }
-        if value.contains("nightlife") || value.contains("theater") || value.contains("museum") || value.contains("music") {
+        if value.contains("nightlife") || value.contains("museum") || value.contains("music") {
             return "Social"
         }
         return "Other"

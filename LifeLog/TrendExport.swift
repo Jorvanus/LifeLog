@@ -13,6 +13,7 @@ enum TrendExport {
         let checkOut: String
         let place: String
         let category: String
+        let categoryColor: String
         let activity: String
         let durationHours: Double
         let source: String
@@ -29,6 +30,7 @@ enum TrendExport {
                     checkOut: (visit.departure ?? now).formatted(date: .omitted, time: .standard),
                     place: visit.displayPlaceName,
                     category: visit.insightCategory,
+                    categoryColor: categoryColorHex(forCategory: visit.insightCategory),
                     activity: visit.activity,
                     durationHours: rounded(hours(visit, interval: interval, now: now)),
                     source: visit.source,
@@ -53,9 +55,9 @@ enum TrendExport {
     }
 
     private static func csv(_ rows: [Row]) -> String {
-        var lines = ["date,check_in,check_out,place,category,activity,duration_hours,source,confidence"]
+        var lines = ["date,check_in,check_out,place,category,category_color,activity,duration_hours,source,confidence"]
         lines += rows.map { row in
-            [row.date, row.checkIn, row.checkOut, row.place, row.category, row.activity,
+            [row.date, row.checkIn, row.checkOut, row.place, row.category, row.categoryColor, row.activity,
              String(row.durationHours), row.source, row.confidence].map(csvField).joined(separator: ",")
         }
         return lines.joined(separator: "\n") + "\n"

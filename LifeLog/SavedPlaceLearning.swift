@@ -112,6 +112,32 @@ enum SavedPlaceLearning {
         try ActivityLocationPolicy.updateTravelDescriptions(context: context)
     }
 
+    /// Adds Core Location detail to imported journal rows without changing their
+    /// source. Imported entries often have no coordinates; a matching automatic
+    /// visit can safely supply them when time and place/activity evidence agree.
+    static func enrichImportedVisits(with coreVisit: Visit, context: ModelContext) throws {
+        guard isLocated(coreVisit), coreVisit.source == "automatic" else { return }
+        let imported = try context.fetch(FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.source == "imported-journal" }
+        ))
+        let coreName = normalizedTokens(coreVisit.placeName)
+        let coreActivity = normalizedTokens(coreVisit.activity)
+        for visit in imported where visit.latitude == 0 && visit.longitude == 0 {
+            let timeDistance = abs(visit.arrival.timeIntervalSince(coreVisit.arrival))
+            guard timeDistance <= 6 * 60 * 60 else { continue }
+            let nameMatch = !coreName.isEmpty && !normalizedTokens(visit.placeName).isDisjoint(with: coreName)
+            let activityMatch = !coreActivity.isEmpty && !normalizedTokens(visit.activity).isDisjoint(with: coreActivity)
+            guard nameMatch || (activityMatch && timeDistance <= 90 * 60) else { continue }
+            visit.latitude = coreVisit.latitude
+            visit.longitude = coreVisit.longitude
+            if coreVisit.placeName != "Identifying…" && coreVisit.placeName != "Unknown place" {
+                visit.placeName = coreVisit.placeName
+            }
+            visit.placeCategory = coreVisit.placeCategory
+            visit.recognitionConfidence = "enriched"
+        }
+    }
+
     private static func isLocated(_ visit: Visit) -> Bool {
         let coordinate = CLLocationCoordinate2D(latitude: visit.latitude, longitude: visit.longitude)
         return CLLocationCoordinate2DIsValid(coordinate) && (visit.latitude != 0 || visit.longitude != 0)
@@ -126,5 +152,12 @@ enum SavedPlaceLearning {
         TextSafety.clean(value, maximumLength: 100)
             .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
             .lowercased()
+    }
+
+    private static func normalizedTokens(_ value: String) -> Set<String> {
+        Set(normalizedKey(value)
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .map(String.init)
+            .filter { $0.count > 2 })
     }
 }

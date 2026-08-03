@@ -206,6 +206,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                          recognitionConfidence: saved == nil ? nil : "learned")
         context.insert(item)
         reconcileActivity(with: item, context: context)
+        try? SavedPlaceLearning.enrichImportedVisits(with: item, context: context)
         try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
         save(context)
         if saved == nil { identifyPlace(item) }

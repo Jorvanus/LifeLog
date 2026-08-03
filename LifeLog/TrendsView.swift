@@ -160,7 +160,7 @@ struct TrendsView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("\(slice.name), \(formatHours(slice.hours))")
+                    .accessibilityLabel("\(slice.name), \(formatHours(slice.hours)), category colour \(categoryColorHex(forCategory: slice.name))")
                     .accessibilityHint(slice.isUnlogged ? "Add a visit" : "Review and edit visits")
                 }
             }
@@ -969,7 +969,9 @@ private struct InsightSliceEditor: View {
                                 }
                             }
                         }
-                        Section("Tap an entry to edit") {
+                        Section("Edit activity or place type") {
+                            Text("Choose an entry to correct its activity or place type. Recognised locations reuse the saved choice for future visits, and remain editable.")
+                                .font(.footnote).foregroundStyle(.secondary)
                             ForEach(visits) { visit in
                                 NavigationLink { VisitEditor(visit: visit) } label: {
                                     HStack(spacing: 12) {
@@ -1088,6 +1090,7 @@ private func formatSteps(_ count: Double) -> String {
 
 private func insightColor(for value: String) -> Color {
     let text = value.lowercased()
+    if !text.contains("unlogged") && !text.contains("uncategor") { return categoryColor(forCategory: value) }
     if text.contains("uncategor") { return .orange }
     if text.contains("home") { return .cyan }
     if text.contains("work") { return Color(red: 0.22, green: 0.40, blue: 0.52) }

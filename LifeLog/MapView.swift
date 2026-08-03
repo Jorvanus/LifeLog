@@ -18,6 +18,8 @@ struct MapView: View {
                         Annotation(visit.placeName, coordinate: .init(latitude: visit.latitude, longitude: visit.longitude)) {
                             ActivityIcon(activity: visit.activity, category: visit.placeCategory,
                                          color: activityColor(visit.activity)).scaleEffect(0.72)
+                                .accessibilityLabel("\(visit.displayPlaceName), \(visit.activity)")
+                                .accessibilityValue("Category colour \(categoryColorHex(forCategory: visit.insightCategory))")
                         }
                     }
                     UserAnnotation()

@@ -6,6 +6,7 @@ enum InferenceEngine {
         if let defaultActivity, !defaultActivity.isEmpty { return defaultActivity }
         let text = "\(placeName) \(category)".lowercased()
         let rules: [(String, [String])] = [
+            ("Watching a movie", ["cinema", "movie theater", "movie theatre", "film theatre", "event cinemas", "reading cinemas"]),
             ("Working", ["work", "office", "cowork"]),
             ("Exercising", ["gym", "fitness", "pool", "sport", "park"]),
             ("Shopping", ["shop", "store", "market", "mall", "supermarket"]),
@@ -20,4 +21,3 @@ enum InferenceEngine {
         return "Visiting"
     }
 }
-

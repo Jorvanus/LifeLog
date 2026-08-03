@@ -99,6 +99,32 @@ final class Visit {
         default: "Pending"
         }
     }
+
+    /// Privacy-safe provenance for the displayed activity inference. This is
+    /// derived from existing local fields so no new persisted schema is needed.
+    var inferenceEvidence: [String] {
+        var evidence: [String] = []
+        if recognitionConfidence == "learned" { evidence.append("Saved place") }
+        if placeCategory != "Other" && !placeCategory.isEmpty {
+            evidence.append("Maps/place type: \(placeCategory)")
+        }
+        let hour = Calendar.current.component(.hour, from: arrival)
+        if hour < 11 { evidence.append("Morning time") }
+        else if hour < 17 { evidence.append("Afternoon time") }
+        else { evidence.append("Evening time") }
+        if source == "motion" || source == "health-walking" || source == "health-workout" {
+            evidence.append("Device movement")
+        }
+        if source == "automatic" && recognitionConfidence != "learned" {
+            evidence.append("On-device inference")
+        }
+        return evidence
+    }
+
+    var inferenceSummary: String {
+        let evidence = inferenceEvidence
+        return evidence.isEmpty ? "No inference evidence recorded" : evidence.joined(separator: " · ")
+    }
 }
 
 

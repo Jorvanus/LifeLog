@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import MapKit
+import UIKit
 
 struct TimelineView: View {
     @Environment(\.modelContext) private var context
@@ -327,7 +328,9 @@ private struct JourneyRow: View {
                 .padding(.horizontal, 14).frame(height: 108)
                 .lifeCard()
             }
-        }.buttonStyle(.plain)
+        }
+        .accessibilityValue("Category colour \(categoryColorHex(forCategory: visit.insightCategory))")
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder private var status: some View {
@@ -392,16 +395,44 @@ struct ActivityIcon: View {
 }
 
 func activityColor(_ activity: String) -> Color {
-    let text = activity.lowercased()
-    if text.contains("travel") || text.contains("transit") { return .blue }
-    if text.contains("home") { return .green }
-    if text.contains("work") { return .purple }
-    if text.contains("eat") || text.contains("lunch") { return .orange }
-    if text.contains("exercise") { return .pink }
-    if text.contains("walk") || text.contains("run") { return .teal }
-    if text.contains("cycl") { return .blue }
-    if text.contains("sleep") { return Color(red: 0.22, green: 0.40, blue: 0.52) }
-    return .blue
+    categoryColor(forCategory: ActivityCatalog.category(for: activity))
+}
+
+func categoryColor(forCategory category: String) -> Color {
+    let key = category.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let stored = UserDefaults.standard.string(forKey: "LifeLog.CategoryColor.\(key)"),
+       let color = Color(hex: stored) { return color }
+    switch key.lowercased() {
+    case "home": return .green
+    case "work": return .purple
+    case "food & drink": return .orange
+    case "shopping": return .indigo
+    case "fitness": return .pink
+    case "healthcare": return .red
+    case "education": return .yellow
+    case "travel": return .blue
+    case "entertainment": return .purple
+    case "social": return .teal
+    case "sleep": return Color(red: 0.22, green: 0.40, blue: 0.52)
+    default: return .gray
+    }
+}
+
+func saveCategoryColor(_ color: Color, forCategory category: String) {
+    var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+    guard UIColor(color).getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return }
+    let hex = [red, green, blue].map { String(format: "%02X", Int(($0 * 255).rounded())) }.joined()
+    UserDefaults.standard.set(hex, forKey: "LifeLog.CategoryColor.\(category.trimmingCharacters(in: .whitespacesAndNewlines))")
+}
+
+func categoryColorHex(forCategory category: String) -> String {
+    if let stored = UserDefaults.standard.string(forKey: "LifeLog.CategoryColor.\(category.trimmingCharacters(in: .whitespacesAndNewlines))") {
+        return "#\(stored)"
+    }
+    let defaults: [String: String] = ["Home": "#34C759", "Work": "#AF52DE", "Food & Drink": "#FF9500",
+                                      "Shopping": "#5856D6", "Fitness": "#FF2D55", "Healthcare": "#FF3B30",
+                                      "Education": "#FFCC00", "Travel": "#007AFF", "Social": "#30B0C7", "Sleep": "#386680"]
+    return defaults[category] ?? "#8E8E93"
 }
 
 private extension View {
@@ -414,6 +445,14 @@ private extension View {
 extension Color {
     static let lifeBackground = Color(uiColor: .systemGroupedBackground)
     static let lifeCard = Color(uiColor: .secondarySystemGroupedBackground)
+
+    init?(hex: String) {
+        let value = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        guard value.count == 6, let number = UInt64(value, radix: 16) else { return nil }
+        self.init(red: Double((number >> 16) & 0xff) / 255,
+                  green: Double((number >> 8) & 0xff) / 255,
+                  blue: Double(number & 0xff) / 255)
+    }
 }
 
 struct VisitEditor: View {
@@ -421,11 +460,13 @@ struct VisitEditor: View {
     @Environment(\.modelContext) private var context
     @Bindable var visit: Visit
     @Query(sort: \VisitCorrection.changedAt, order: .reverse) private var corrections: [VisitCorrection]
+    @Query(sort: \Visit.arrival, order: .reverse) private var history: [Visit]
     @State private var saveFailed = false
     @State private var correctionBaseline: VisitCorrectionSnapshot?
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var adjustingLocation = false
-    private let categories = ["Home", "Work", "Food & Drink", "Shopping", "Fitness", "Healthcare", "Education", "Travel", "Social", "Other"]
+    @State private var showingNearbyPlaces = false
+    private let categories = ["Home", "Work", "Food & Drink", "Shopping", "Fitness", "Healthcare", "Education", "Travel", "Entertainment", "Social", "Other"]
     private let activities = ["At home", "Working", "Eating", "Shopping", "Exercising", "Healthcare", "Studying", "Travelling", "Socialising", "Visiting"]
 
     private var availableActivities: [String] {
@@ -483,7 +524,7 @@ struct VisitEditor: View {
                     Text("Suggestions are nearby public places from Apple Maps.")
                 }
             }
-            if visit.needsCategorisation {
+            if visit.latitude != 0 || visit.longitude != 0 {
                 Section {
                     if let coordinate = recordedCoordinate {
                         MapReader { proxy in
@@ -503,7 +544,7 @@ struct VisitEditor: View {
                                 mapPosition = .region(region(centeredOn: updated))
                             }
                         }
-                        .accessibilityIdentifier("uncategorised-location-map")
+                        .accessibilityIdentifier("visit-location-map-picker")
                         Text(adjustingLocation
                              ? "Tap the map to move the pin, then tap Done to save it."
                              : "Recorded at the location shown above.")
@@ -519,13 +560,20 @@ struct VisitEditor: View {
                             .foregroundStyle(.secondary)
                     }
                 } header: {
-                    Text("Recorded location")
+                    Text("Map location")
                 } footer: {
                     Text("Adjusting the pin changes this visit’s stored coordinate. It does not contact Apple Maps until you choose a place suggestion or save a place.")
                 }
             }
             Section("Place") {
                 TextField("Place name", text: $visit.placeName)
+                if recordedCoordinate != nil {
+                    Button {
+                        showingNearbyPlaces = true
+                    } label: {
+                        Label("Choose nearby Apple Maps place", systemImage: "mappin.and.ellipse")
+                    }
+                }
                 Picker("Place type", selection: $visit.placeCategory) {
                     ForEach(categories, id: \.self) { Text($0).tag($0) }
                 }
@@ -538,8 +586,18 @@ struct VisitEditor: View {
                 TextField("Or enter your own", text: activityBinding)
                 TextField("Notes", text: $visit.note, axis: .vertical)
             }
+            Text("Changing the activity or place type updates this visit. For a recognised location, saving also learns the choice for future check-ins; you can edit it again at any time.")
+                .font(.footnote).foregroundStyle(.secondary)
             Section("Recognition") {
                 LabeledContent("Confidence", value: visit.confidenceLabel)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Inferred activity evidence")
+                        .font(.subheadline.weight(.semibold))
+                    Text(inferenceEvidenceText)
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Text("This is an inference, not a confirmed fact. You can edit the activity above.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 if !matchingCorrections.isEmpty {
                     ForEach(matchingCorrections.prefix(5)) { correction in
                         VStack(alignment: .leading, spacing: 3) {
@@ -574,6 +632,16 @@ struct VisitEditor: View {
         }
         .navigationTitle(visit.needsCategorisation ? "Categorise Place" : "Visit")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showingNearbyPlaces) {
+            if let coordinate = recordedCoordinate {
+                NearbyPlacePicker(coordinate: coordinate, arrival: visit.arrival) { suggestion in
+                    select(suggestion)
+                    visit.latitude = suggestion.latitude
+                    visit.longitude = suggestion.longitude
+                    showingNearbyPlaces = false
+                }
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Done") { saveAndDismiss() }
@@ -599,6 +667,21 @@ struct VisitEditor: View {
 
     private var activityBinding: Binding<String> {
         Binding(get: { visit.userActivity ?? "" }, set: { visit.userActivity = $0 })
+    }
+
+    private var inferenceEvidenceText: String {
+        var evidence = visit.inferenceEvidence
+        let key = visit.placeName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !key.isEmpty, key != "identifying…", key != "unknown place" {
+            let recurrence = history.reduce(into: 0) { count, candidate in
+                if candidate.id != visit.id,
+                   candidate.placeName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == key {
+                    count += 1
+                }
+            }
+            if recurrence > 0 { evidence.append("Recurring place (\(recurrence) prior check-in\(recurrence == 1 ? "" : "s"))") }
+        }
+        return evidence.isEmpty ? "No inference evidence recorded" : evidence.joined(separator: " · ")
     }
 
     private func learnPlace() {
@@ -698,5 +781,63 @@ struct VisitEditor: View {
             try context.save()
         }
         correctionBaseline = currentSnapshot
+    }
+}
+
+private struct NearbyPlacePicker: View {
+    @Environment(\.dismiss) private var dismiss
+    let coordinate: CLLocationCoordinate2D
+    let arrival: Date
+    let onSelect: (PlaceSuggestion) -> Void
+    @State private var suggestions: [PlaceSuggestion] = []
+    @State private var isLoading = true
+    @State private var failed = false
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if isLoading {
+                    ProgressView("Searching Apple Maps…")
+                } else if failed || suggestions.isEmpty {
+                    ContentUnavailableView("No nearby places found", systemImage: "mappin.slash",
+                                           description: Text("Try adjusting the pin or enter the place name manually."))
+                } else {
+                    List(suggestions) { suggestion in
+                        Button {
+                            onSelect(suggestion)
+                            dismiss()
+                        } label: {
+                            HStack(spacing: 12) {
+                                ActivityIcon(activity: suggestion.suggestedActivity,
+                                             category: suggestion.category,
+                                             color: activityColor(suggestion.suggestedActivity))
+                                    .scaleEffect(0.72).frame(width: 42, height: 42)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(suggestion.name).foregroundStyle(.primary)
+                                    Text("\(suggestion.category) · \(Int(suggestion.distance.rounded())) m away")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Nearby Apple Maps places")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            }
+            .task {
+                do {
+                    let result = try await PlaceLookupService.nearbyPlaces(at: coordinate, radius: 250, arrival: arrival)
+                    suggestions = result.suggestions
+                } catch {
+                    failed = true
+                }
+                isLoading = false
+            }
+        }
     }
 }

@@ -2,6 +2,40 @@
 
 ## 2026-08-03
 
+### Enrich imported journal locations
+
+- Core Location visits now enrich matching imported journal rows with coordinates, place identity, and place type when time and place/activity evidence agree.
+- Imported source and original journal content remain intact; enrichment is non-destructive and marked with an enriched confidence.
+
+### Locations settings navigation
+
+- Locations settings now leads with clickable Uncategorised Locations and Ignored Locations rows, each opening a dedicated review page, followed by the full Saved Places list.
+
+### Cinema and entertainment inference
+
+- Apple Maps cinema categories and cinema-like names now suggest “Watching a movie” under Entertainment, with the existing evidence and confidence UI keeping the suggestion editable and clearly provisional.
+
+### Editable category colours
+
+- Added editable category colours in Activities settings and a shared resolver used by the Insights donut, Timeline, Map, Saved Places, exports, and accessibility-facing labels.
+
+### Editable learned activity corrections
+
+- Timeline and Insights now explicitly expose activity and place-type correction flows, with guidance that recognised locations learn the saved choice for future visits while remaining editable.
+
+### Apple Maps nearby-place picker
+
+- Visit editing now offers a dedicated nearby-place page that searches Apple Maps around the recorded pin and lets users match the visit to a nearby business by name and distance.
+
+### Map pin editing for visits and places
+
+- Visit and Saved Place editors now include an interactive map picker for adjusting the stored location pin before saving.
+
+### Explainable activity inferences
+
+- Visit editing now shows the evidence behind inferred activities, including saved places, Maps/place types, time of day, device movement, and on-device inference.
+- Confidence and inference language make clear when a value is a suggestion rather than a confirmed fact.
+
 ### Separate place types from activity categories
 
 - Place categories are now presented as “Place type” for recognition and geofencing, while Insights groups time using an activity category derived from the activity itself.
