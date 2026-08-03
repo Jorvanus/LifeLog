@@ -2,6 +2,10 @@
 
 ## 2026-08-03
 
+### Location resolution diagnostics
+
+- Added bounded metric events for callback resolution time, Maps latency/cache hits/candidate counts, Saved Place match distance, resolver repairs, and suggestions later corrected by the user.
+
 ### Deterministic Core Location departures
 
 - Departure callbacks now match stored arrivals using callback coordinate, arrival order, and overlap state. Unmatched delayed callbacks are diagnosed instead of closing the newest visit.

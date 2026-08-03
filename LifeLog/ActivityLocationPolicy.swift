@@ -21,7 +21,11 @@ enum ActivityLocationPolicy {
     static func resolveLocationCallbacks(context: ModelContext) throws -> Int {
         let repaired = try closeSupersededOpenLocations(context: context)
         let marked = try deduplicateAutomaticLocations(context: context)
-        return repaired + marked
+        let total = repaired + marked
+        if total > 0 {
+            Diagnostics.locationMetric(context, operation: "resolver_repairs", repairs: total)
+        }
+        return total
     }
 
     static func isDeviceActivity(_ visit: Visit) -> Bool {

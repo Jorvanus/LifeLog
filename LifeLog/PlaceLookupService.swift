@@ -16,6 +16,18 @@ struct PlaceLookupResult {
     enum Confidence: String { case high, medium, low }
     let confidence: Confidence
     let suggestions: [PlaceSuggestion]
+    let cacheHit: Bool
+    let latencyMs: Int
+    let candidateCount: Int
+
+    init(confidence: Confidence, suggestions: [PlaceSuggestion], cacheHit: Bool = false,
+         latencyMs: Int = 0, candidateCount: Int = 0) {
+        self.confidence = confidence
+        self.suggestions = suggestions
+        self.cacheHit = cacheHit
+        self.latencyMs = latencyMs
+        self.candidateCount = candidateCount
+    }
 }
 
 @MainActor
@@ -36,6 +48,7 @@ enum PlaceLookupService {
 
     static func nearbyPlaces(at coordinate: CLLocationCoordinate2D, radius: CLLocationDistance = 150,
                              arrival: Date = .now, category: String? = nil, lookupID: UUID? = nil) async throws -> PlaceLookupResult {
+        let startedAt = Date.now
         guard CLLocationCoordinate2DIsValid(coordinate) else {
             return PlaceLookupResult(confidence: .low, suggestions: [])
         }
@@ -45,7 +58,11 @@ enum PlaceLookupService {
         // still reusing nearby results during repeated callback retries.
         let cell = "\(Int((coordinate.latitude * 900).rounded())):\(Int((coordinate.longitude * 900).rounded())):\(Int(boundedRadius)):\(category ?? "all")"
         if let cached = cache[cell], Date.now.timeIntervalSince(cached.createdAt) < cacheLifetime {
-            return cached.result
+            return PlaceLookupResult(confidence: cached.result.confidence,
+                                     suggestions: cached.result.suggestions,
+                                     cacheHit: true,
+                                     latencyMs: Int((Date.now.timeIntervalSince(startedAt) * 1000).rounded()),
+                                     candidateCount: cached.result.candidateCount)
         }
         try Task.checkCancellation()
         let request = MKLocalPointsOfInterestRequest(center: coordinate, radius: boundedRadius)
@@ -94,7 +111,9 @@ enum PlaceLookupService {
         suggestions = Array(suggestions.prefix(3))
 
         guard let first = suggestions.first else {
-            return PlaceLookupResult(confidence: .low, suggestions: [])
+            return PlaceLookupResult(confidence: .low, suggestions: [],
+                                     latencyMs: Int((Date.now.timeIntervalSince(startedAt) * 1000).rounded()),
+                                     candidateCount: response.mapItems.count)
         }
 
         let secondDistance = suggestions.dropFirst().first?.distance
@@ -107,7 +126,9 @@ enum PlaceLookupService {
         } else {
             confidence = .low
         }
-        let result = PlaceLookupResult(confidence: confidence, suggestions: suggestions)
+        let result = PlaceLookupResult(confidence: confidence, suggestions: suggestions,
+                                       latencyMs: Int((Date.now.timeIntervalSince(startedAt) * 1000).rounded()),
+                                       candidateCount: response.mapItems.count)
         cache[cell] = CachedResult(createdAt: .now, result: result)
         if let lookupID { cancelledLookups.remove(lookupID) }
         return result

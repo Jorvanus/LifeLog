@@ -206,6 +206,12 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         }
 
         let saved = nearestSavedPlace(to: coordinate, context: context)
+        if let saved {
+            let distance = CLLocation(latitude: saved.latitude, longitude: saved.longitude)
+                .distance(from: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude))
+            Diagnostics.locationMetric(context, operation: "saved_place_match",
+                                       distanceMeters: Int(distance.rounded()))
+        }
         let name = saved?.name ?? "Identifying…"
         let category = saved?.category ?? "Other"
         let activity = InferenceEngine.activity(placeName: name, category: category,
@@ -241,6 +247,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
 
     private func closeVisit(at coordinate: CLLocationCoordinate2D, arrival: Date, departure: Date) {
         guard let context else { return }
+        let resolutionStartedAt = Date.now
         var descriptor = FetchDescriptor<Visit>(
             predicate: #Predicate { $0.source == "automatic" || $0.source == "manual" },
             sortBy: [SortDescriptor(\.arrival, order: .reverse)]
@@ -259,6 +266,8 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         reconcileActivity(with: matched, context: context)
         _ = try? ActivityLocationPolicy.resolveLocationCallbacks(context: context)
         try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
+        Diagnostics.locationMetric(context, operation: "callback_resolution",
+                                   durationMs: Int((Date.now.timeIntervalSince(resolutionStartedAt) * 1000).rounded()))
         save(context)
     }
 
@@ -310,6 +319,10 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             defer { self.identifyingVisits.remove(identity) }
             do {
                 let result = try await PlaceLookupService.nearbyPlaces(at: coordinate, arrival: visit.arrival, lookupID: lookupID)
+                Diagnostics.locationMetric(context, operation: "maps_lookup",
+                                           durationMs: result.latencyMs,
+                                           candidateCount: result.candidateCount,
+                                           cacheHit: result.cacheHit)
                 // The user may label Home or Work while Maps is still searching. Never let
                 // a late public-place result overwrite that explicit correction.
                 guard visit.needsCategorisation else { return }
@@ -334,6 +347,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 if Task.isCancelled { return }
                 Diagnostics.record(context, subsystem: "MapKit",
                                    message: "Nearby place lookup failed; fallback resolution was used.")
+                Diagnostics.locationMetric(context, operation: "maps_lookup_failed", severity: "warning")
                 reverseGeocode(visit)
             }
         }

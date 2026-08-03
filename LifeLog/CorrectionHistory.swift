@@ -19,6 +19,11 @@ enum CorrectionHistory {
             confidence: visit.recognitionConfidence ?? "pending"
         )
         guard previous != current else { return }
+        let suggestionWasCorrected = previous.confidence.lowercased() == "high" ||
+            previous.confidence.lowercased() == "medium" ||
+            previous.confidence.lowercased() == "low"
+        Diagnostics.locationMetric(context, operation: "visit_correction",
+                                   correctedSuggestion: suggestionWasCorrected)
         context.insert(VisitCorrection(
             visitArrival: visit.arrival,
             latitude: visit.latitude,

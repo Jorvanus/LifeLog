@@ -77,7 +77,7 @@ This plan prioritises a dependable private diary on a physical iPhone before exp
 - [ ] Add a review queue ranked by confidence and impact: current unresolved location first, then long-duration unknown visits, repeated unknown coordinates, and low-confidence Maps matches.
 - [ ] Show nearby Apple Maps alternatives with distance and category when editing a visit or Saved Place, and remember the selected Apple Maps identifier/alias where the API permits.
 - [ ] Add a bounded in-memory Saved Place spatial index and rounded-cell Maps cache so callbacks do not repeatedly fetch every place or contact Maps for the same area.
-- [ ] Add aggregate and detailed diagnostics for callback-to-resolution time, Maps latency, cache hit rate, candidate count, Saved Place match distance, resolver repairs, and incorrect suggestions later corrected by the user.
+- [x] Add aggregate and detailed diagnostics for callback-to-resolution time, Maps latency, cache hit rate, candidate count, Saved Place match distance, resolver repairs, and incorrect suggestions later corrected by the user.
 
 ## Later — after the four-week foundation
 

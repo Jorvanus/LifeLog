@@ -98,6 +98,26 @@ enum Diagnostics {
                severity: elapsed <= budget ? "info" : "warning")
     }
 
+    /// Stores structured-but-human-readable location metrics in the existing
+    /// bounded event stream. These fields deliberately avoid names and raw
+    /// coordinates while remaining detailed enough to diagnose this personal
+    /// device's resolver and Maps behavior.
+    static func locationMetric(_ context: ModelContext?, operation: String,
+                               durationMs: Int? = nil, candidateCount: Int? = nil,
+                               cacheHit: Bool? = nil, distanceMeters: Int? = nil,
+                               repairs: Int? = nil, correctedSuggestion: Bool? = nil,
+                               severity: String = "info") {
+        var fields = ["operation=\(TextSafety.clean(operation, maximumLength: 40))"]
+        if let durationMs { fields.append("duration_ms=\(max(0, durationMs))") }
+        if let candidateCount { fields.append("candidates=\(max(0, candidateCount))") }
+        if let cacheHit { fields.append("cache_hit=\(cacheHit)") }
+        if let distanceMeters { fields.append("distance_m=\(max(0, distanceMeters))") }
+        if let repairs { fields.append("repairs=\(max(0, repairs))") }
+        if let correctedSuggestion { fields.append("suggestion_corrected=\(correctedSuggestion)") }
+        record(context, subsystem: "Location Diagnostics",
+               message: fields.joined(separator: " "), severity: severity)
+    }
+
     /// Error diagnostics retain only an NSError domain/code pair. This distinguishes
     /// protected-store and permission failures without persisting user data.
     static func record(_ error: Error, context: ModelContext?, subsystem: String,
