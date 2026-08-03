@@ -11,7 +11,7 @@ struct DiagnosticsView: View {
             Section("Summary") {
                 LabeledContent("Events retained", value: "\(diagnostics.count)")
                 LabeledContent("Subsystems", value: "\(Set(diagnostics.map(\.subsystem)).count)")
-                LabeledContent("Slow or over-budget", value: "\(diagnostics.filter { $0.message.localizedCaseInsensitiveContains(\"slow\") || $0.message.localizedCaseInsensitiveContains(\"over budget\") }.count)")
+                LabeledContent("Slow or over-budget", value: "\(diagnostics.filter { $0.message.localizedCaseInsensitiveContains("slow") || $0.message.localizedCaseInsensitiveContains("over budget") }.count)")
             }
             Section("Events") {
                 if diagnostics.isEmpty { Text("No diagnostic events recorded.").foregroundStyle(.secondary) }
