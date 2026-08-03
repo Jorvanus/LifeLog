@@ -32,6 +32,24 @@ struct TimelineView: View {
                     return other.arrival < end && otherEnd > visit.arrival
                 }
             }
+            .filter { visit in
+                // Health and Motion can emit a short workout plus a longer
+                // duplicate with the same start. Keep the more precise sample
+                // when one interval is fully contained by another.
+                guard ActivityLocationPolicy.isDeviceActivity(visit),
+                      !visit.source.hasPrefix("health-sleep") else { return true }
+                let end = visit.departure ?? .now
+                return !visits.contains { other in
+                    guard other.id != visit.id,
+                          ActivityLocationPolicy.isDeviceActivity(other),
+                          !other.source.hasPrefix("health-sleep"),
+                          other.activity.caseInsensitiveCompare(visit.activity) == .orderedSame else { return false }
+                    let otherEnd = other.departure ?? .now
+                    let contains = other.arrival <= visit.arrival && otherEnd >= end
+                    let strictlyBroader = other.arrival < visit.arrival || otherEnd > end
+                    return contains && strictlyBroader
+                }
+            }
     }
     private var reviewQueue: [Visit] {
         // The live unknown location has its own prominent card; the queue is for past stays.

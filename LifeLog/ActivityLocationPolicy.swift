@@ -73,6 +73,17 @@ enum ActivityLocationPolicy {
     /// retained for Insights but omitted from the daily card list. Long trips
     /// remain visible because they are meaningful events in their own right.
     static func shouldShowInTimeline(_ visit: Visit, locationVisits: [Visit], now: Date = .now) -> Bool {
+        // Timeline is destination-first: device activity that occurs inside a
+        // recorded place is retained for Insights but does not become another
+        // simultaneous card. Sleep is the intentional exception.
+        if isDeviceActivity(visit), !visit.source.hasPrefix("health-sleep") {
+            let end = visit.departure ?? now
+            let overlapsDestination = locationVisits.contains { location in
+                let locationEnd = location.departure ?? now
+                return location.arrival < end && locationEnd > visit.arrival
+            }
+            if overlapsDestination { return false }
+        }
         guard isMovementActivity(visit) else { return true }
         let duration = (visit.departure ?? now).timeIntervalSince(visit.arrival)
         return duration >= 60 * 60 && isBetweenDestinations(visit, locationVisits: locationVisits, now: now)
