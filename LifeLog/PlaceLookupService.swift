@@ -43,7 +43,7 @@ enum PlaceLookupService {
         let generation = lookupGeneration
         // A roughly 100 m cell avoids retaining exact user coordinates while
         // still reusing nearby results during repeated callback retries.
-        let cell = "\(Int((coordinate.latitude * 900).rounded())):\(Int((coordinate.longitude * 900).rounded())):\(Int(boundedRadius)):\(category ?? \"all\")"
+        let cell = "\(Int((coordinate.latitude * 900).rounded())):\(Int((coordinate.longitude * 900).rounded())):\(Int(boundedRadius)):\(category ?? "all")"
         if let cached = cache[cell], Date.now.timeIntervalSince(cached.createdAt) < cacheLifetime {
             return cached.result
         }
@@ -51,7 +51,7 @@ enum PlaceLookupService {
         let request = MKLocalPointsOfInterestRequest(center: coordinate, radius: boundedRadius)
         let response = try await MKLocalSearch(request: request).start()
         if generation != lookupGeneration || (lookupID.map({ cancelledLookups.contains($0) }) ?? false) {
-            cancelledLookups.remove(lookupID)
+            if let lookupID { cancelledLookups.remove(lookupID) }
             throw CancellationError()
         }
         let origin = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)

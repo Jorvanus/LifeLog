@@ -27,6 +27,10 @@ struct TrendsView: View {
                     LazyVStack(spacing: 22) {
                         controls
                         donutSection
+                        if window == .day { dailyTimelineSection }
+                        awayFromHomeSection
+                        activityChangesSection
+                        dataQualitySection
                         trendsSection
                         weekdayPatternsSection
                         placesSection
@@ -194,6 +198,69 @@ struct TrendsView: View {
         }
         .padding(18)
         .insightCard()
+    }
+
+    private var dailyTimelineSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Your day").font(.title2.bold())
+            Text("A 24-hour view of where your time went").font(.subheadline).foregroundStyle(.secondary)
+            GeometryReader { proxy in
+                HStack(spacing: 2) {
+                    ForEach(snapshot.segments) { segment in
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(segment.color)
+                            .frame(width: max(3, proxy.size.width * segment.hours / max(snapshot.totalHours, 0.01)))
+                            .accessibilityLabel("\(segment.activity), \(formatHours(segment.hours))")
+                    }
+                }
+            }
+            .frame(height: 34)
+            HStack { Text("12am"); Spacer(); Text("6am"); Spacer(); Text("12pm"); Spacer(); Text("6pm"); Spacer(); Text("Now") }
+                .font(.caption2).foregroundStyle(.secondary)
+        }.padding(20).insightsCard()
+    }
+
+    private var awayFromHomeSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Time away from Home").font(.title2.bold())
+            Text(formatHours(snapshot.awayFromHomeHours)).font(.system(size: 32, weight: .bold, design: .rounded))
+            ProgressView(value: snapshot.awayFromHomeHours, total: max(snapshot.loggedHours, 0.01)).tint(.blue)
+            Text("\(Int((snapshot.awayFromHomeHours / max(snapshot.loggedHours, 0.01) * 100).rounded()))% of logged time")
+                .font(.subheadline).foregroundStyle(.secondary)
+        }.padding(20).insightsCard()
+    }
+
+    private var activityChangesSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Activity changes").font(.title2.bold())
+            if snapshot.comparisons.isEmpty {
+                InsightEmptyRow(icon: "chart.bar.xaxis", title: "Not enough history", detail: "Changes appear after two comparable periods.")
+            } else {
+                let maximum = max(snapshot.comparisons.map { abs($0.delta) }.max() ?? 0, 0.01)
+                ForEach(snapshot.comparisons.prefix(6)) { item in
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack { Text(item.name).font(.subheadline.bold()); Spacer(); Text("\(item.delta >= 0 ? "+" : "−")\(formatHours(abs(item.delta)))").foregroundStyle(item.delta >= 0 ? .orange : .blue) }
+                        GeometryReader { proxy in
+                            Capsule().fill((item.delta >= 0 ? Color.orange : Color.blue).opacity(0.8))
+                                .frame(width: max(4, proxy.size.width * abs(item.delta) / maximum))
+                        }.frame(height: 8)
+                    }
+                }
+            }
+        }.padding(20).insightsCard()
+    }
+
+    private var dataQualitySection: some View {
+        Group {
+            if snapshot.provisionalCount > 0 || snapshot.supersededCount > 0 || snapshot.unloggedHours > 0.25 {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Timeline quality").font(.title2.bold())
+                    if snapshot.provisionalCount > 0 { Label("\(snapshot.provisionalCount) location callbacks need review", systemImage: "questionmark.circle") }
+                    if snapshot.supersededCount > 0 { Label("\(snapshot.supersededCount) duplicate callbacks resolved", systemImage: "checkmark.circle") }
+                    if snapshot.unloggedHours > 0.25 { Label("\(formatHours(snapshot.unloggedHours)) is not logged", systemImage: "clock.badge.questionmark") }
+                }.padding(20).insightsCard()
+            }
+        }
     }
 
     private var placesSection: some View {
@@ -429,6 +496,10 @@ private struct InsightsSnapshot {
     let mapRegion: MKCoordinateRegion
     let mapID: Int
     let weekdayPatterns: [WeekdayPattern]
+    let awayFromHomeHours: Double
+    let unloggedHours: Double
+    let provisionalCount: Int
+    let supersededCount: Int
 
     static let empty = InsightsSnapshot(
         generatedAt: .distantPast,
@@ -439,7 +510,8 @@ private struct InsightsSnapshot {
             center: .init(latitude: -27.47, longitude: 153.03),
             span: .init(latitudeDelta: 0.2, longitudeDelta: 0.2)
         ),
-        mapID: 0, weekdayPatterns: WeekdayPattern.empty
+        mapID: 0, weekdayPatterns: WeekdayPattern.empty,
+        awayFromHomeHours: 0, unloggedHours: 0, provisionalCount: 0, supersededCount: 0
     )
 
     static func make(visits: [Visit], window: InsightWindow, anchorDate: Date, now: Date) -> InsightsSnapshot {
@@ -474,6 +546,12 @@ private struct InsightsSnapshot {
         let placeTotals = makePlaceTotals(visits: visits, range: analysisInterval, now: now)
         let mappablePlaces = placeTotals.filter { $0.latitude != 0 || $0.longitude != 0 }
         let loggedHours = segments.filter { !$0.isUnlogged }.reduce(0) { $0 + $1.hours }
+        let awayFromHomeHours = segments.filter {
+            !$0.isUnlogged && !$0.activity.localizedCaseInsensitiveContains("home") &&
+            !($0.placeName?.localizedCaseInsensitiveContains("home") ?? false)
+        }.reduce(0) { $0 + $1.hours }
+        let unloggedHours = segments.filter(\.isUnlogged).reduce(0) { $0 + $1.hours }
+        let periodVisits = visits.filter { $0.overlaps(analysisInterval, now: now) }
 
         return InsightsSnapshot(
             generatedAt: now,
@@ -487,7 +565,11 @@ private struct InsightsSnapshot {
             mappablePlaces: mappablePlaces,
             mapRegion: makeMapRegion(for: mappablePlaces),
             mapID: makeMapID(for: mappablePlaces),
-            weekdayPatterns: makeWeekdayPatterns(from: segments)
+            weekdayPatterns: makeWeekdayPatterns(from: segments),
+            awayFromHomeHours: awayFromHomeHours,
+            unloggedHours: unloggedHours,
+            provisionalCount: periodVisits.filter { $0.resolutionState == .provisional }.count,
+            supersededCount: periodVisits.filter { $0.resolutionState == .superseded }.count
         )
     }
 
@@ -1060,6 +1142,13 @@ private struct InsightEmptyRow: View {
                 Text(detail).font(.caption).foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+private extension View {
+    func insightsCard() -> some View {
+        background(Color.lifeCard, in: RoundedRectangle(cornerRadius: 20))
+            .shadow(color: .black.opacity(0.045), radius: 12, y: 5)
     }
 }
 

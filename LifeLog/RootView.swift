@@ -12,8 +12,7 @@ struct RootView: View {
         TabView(selection: $selectedTab) {
             TimelineView(recorder: recorder).tabItem { Label("Timeline", systemImage: "clock") }.tag(0)
             TrendsView(activityData: activityData).tabItem { Label("Insights", systemImage: "chart.bar.xaxis") }.tag(1)
-            MapView().tabItem { Label("Map", systemImage: "map") }.tag(2)
-            SettingsView(recorder: recorder, activityData: activityData).tabItem { Label("Settings", systemImage: "gear") }.tag(3)
+            SettingsView(recorder: recorder, activityData: activityData).tabItem { Label("Settings", systemImage: "gear") }.tag(2)
         }
         .tint(.blue)
         .accessibilityIdentifier("root-tab-view")

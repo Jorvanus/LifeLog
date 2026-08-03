@@ -2,6 +2,14 @@
 
 ## 2026-08-03
 
+### Simplified main navigation
+
+- Removed the standalone Map tab from the main tab bar; map-based place tools remain available from relevant location workflows.
+
+### Richer personal Insights
+
+- Added a daily time strip, time-away-from-Home summary, visual activity-change bars, and a conditional timeline-quality card using the existing cached Insights snapshot.
+
 ### Personal-use roadmap priorities
 
 - Documented that LifeLog is currently a private personal-device project. The roadmap now prioritises correctness, useful diagnostics, responsiveness, and storage efficiency over App Store generalisation and broad release certification.
