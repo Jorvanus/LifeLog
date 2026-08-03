@@ -17,7 +17,7 @@ This plan prioritises a dependable private diary on a physical iPhone before exp
 ## Week 3 — improve correction and learning
 
 - [ ] Extract Insights aggregation from the private SwiftUI view into a testable analysis engine. Cover overlapping visits, comparison windows, unlogged gaps, active visits, weekday rhythm, ignored records, and the 32,000-row fixture.
-- [ ] Make inferred activities explainable: show the evidence used—saved place, Maps category, time of day, recurrence, device movement, or on-device model—and show confidence without presenting guesses as facts.
+- [x] Make inferred activities explainable: show the evidence used—saved place, Maps category, time of day, recurrence, device movement, or on-device model—and show confidence without presenting guesses as facts.
 - [ ] Allow activity and category correction from Timeline and Insights, then verify the learned choice is reused for future visits while remaining editable.
 
 ## Week 4 — data ownership and personal-device reliability

@@ -2,6 +2,10 @@
 
 ## 2026-08-03
 
+### Explainable activity inference
+
+- Insights donut focus now shows confidence and the evidence behind an inferred activity, including Saved Places, Maps category, time of day, recurrence, device movement, and on-device inference. Guesses remain explicitly editable.
+
 ### Location resolution diagnostics
 
 - Added bounded metric events for callback resolution time, Maps latency/cache hits/candidate counts, Saved Place match distance, resolver repairs, and suggestions later corrected by the user.

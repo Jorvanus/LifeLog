@@ -924,6 +924,20 @@ private struct InsightsDonutChart: View {
             if let placeName = segment.placeName, placeName != segment.activity {
                 Text(placeName).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
+            if let visit = segment.visit {
+                Text(visit.confidenceLabel)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(visit.recognitionConfidence == "confirmed" ? .green : .secondary)
+                Text("Evidence: \(evidenceText(for: visit))")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+            } else {
+                Text("No inferred activity")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
             Divider().padding(.vertical, 2)
             Text("In  \(timeLabel(segment.start))")
             Text("Out  \(segment.isLive ? "Now" : timeLabel(segment.end))")
@@ -934,7 +948,20 @@ private struct InsightsDonutChart: View {
         .foregroundStyle(.primary)
         .frame(width: 176)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(segment.activity), \(segment.placeName ?? ""), in \(timeLabel(segment.start)), out \(segment.isLive ? "now" : timeLabel(segment.end)), duration \(formatHours(segment.end.timeIntervalSince(segment.start) / 3600))")
+        .accessibilityLabel("\(segment.activity), \(segment.placeName ?? ""), \(segment.visit?.confidenceLabel ?? "not inferred"), evidence \(segment.visit.map(evidenceText) ?? "none"), in \(timeLabel(segment.start)), out \(segment.isLive ? "now" : timeLabel(segment.end)), duration \(formatHours(segment.end.timeIntervalSince(segment.start) / 3600))")
+    }
+
+    private func evidenceText(for visit: Visit) -> String {
+        var evidence = visit.inferenceEvidence
+        let key = visit.placeName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !key.isEmpty, key != "identifying…", key != "unknown place" {
+            let recurrence = segments.compactMap(\.visit).filter { candidate in
+                candidate.id != visit.id &&
+                    candidate.placeName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == key
+            }.count
+            if recurrence > 0 { evidence.append("Recurring place") }
+        }
+        return evidence.isEmpty ? "No evidence recorded" : evidence.joined(separator: " · ")
     }
 
     private func timeLabel(_ date: Date) -> String {
