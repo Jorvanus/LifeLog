@@ -31,6 +31,7 @@
 		8E704F71D1DDB0AF78FB71D4 /* SavedPlaceLearningTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 452978750FB4CA6A49A09C2A /* SavedPlaceLearningTests.swift */; };
 		8F996AD3E6B7C5A76AAEFEE2 /* Diagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFCE5913178C6E80B80E1DE3 /* Diagnostics.swift */; };
 		99537CABDF7CF250FB9DD892 /* TimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B61B476B89FDE373D60B43C /* TimelineView.swift */; };
+		9AD357F342F13C44BA37652C /* DiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC56B8BAB2BB0A8764D18B1E /* DiagnosticsView.swift */; };
 		A8C2618DAB163744EAD89C5F /* JournalCSVImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B4F84FC6736D6EBD795192C /* JournalCSVImporter.swift */; };
 		ADA726BB01719FCEA5B61298 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68BF51077D67E92A88F6FB79 /* RootView.swift */; };
 		C230D3A30B5955F581E8269F /* PlaceLookupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AA772D2482869E62414D007 /* PlaceLookupService.swift */; };
@@ -92,6 +93,7 @@
 		9B4F84FC6736D6EBD795192C /* JournalCSVImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalCSVImporter.swift; sourceTree = "<group>"; };
 		A1CCFB9DCAC0C12584C27D68 /* LocalBackup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalBackup.swift; sourceTree = "<group>"; };
 		AB2ED3DB389DF4AB007C68A3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		AC56B8BAB2BB0A8764D18B1E /* DiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsView.swift; sourceTree = "<group>"; };
 		AFAE754CED69E401D1F84CA1 /* ActivityCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityCatalog.swift; sourceTree = "<group>"; };
 		B4B8299006F8D67881EC2275 /* LifeLog.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = LifeLog.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B67547668C2606629916F0B6 /* MapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapView.swift; sourceTree = "<group>"; };
@@ -131,6 +133,7 @@
 				D936E236D5176123EE3DAD91 /* Assets.xcassets */,
 				65FE8C413DBE943F6F12FC6A /* CorrectionHistory.swift */,
 				EFCE5913178C6E80B80E1DE3 /* Diagnostics.swift */,
+				AC56B8BAB2BB0A8764D18B1E /* DiagnosticsView.swift */,
 				4EE15F0F10705EC8163D24F5 /* IgnoredLocations.swift */,
 				DC096FDA8EA522B04B2F9890 /* InferenceEngine.swift */,
 				AB2ED3DB389DF4AB007C68A3 /* Info.plist */,
@@ -306,6 +309,7 @@
 				8231CB72D6C8640D07C59050 /* ActivityLocationPolicy.swift in Sources */,
 				F2ADEFB0210575F3459AEF29 /* CorrectionHistory.swift in Sources */,
 				8F996AD3E6B7C5A76AAEFEE2 /* Diagnostics.swift in Sources */,
+				9AD357F342F13C44BA37652C /* DiagnosticsView.swift in Sources */,
 				5EC68C3D5BA2BFE1C7A4713F /* IgnoredLocations.swift in Sources */,
 				424B5084CB08F752AD18F6E0 /* InferenceEngine.swift in Sources */,
 				A8C2618DAB163744EAD89C5F /* JournalCSVImporter.swift in Sources */,
