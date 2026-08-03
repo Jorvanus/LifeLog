@@ -813,6 +813,8 @@ private struct InsightsDonutChart: View {
                 Text("\(sleepSummary.estimatedScore)")
                     .font(.title.bold()).monospacedDigit().foregroundStyle(.blue)
                 Text("LifeLog sleep estimate").font(.caption.bold())
+                Text("Not an Apple Health score")
+                    .font(.caption2).foregroundStyle(.secondary)
                 Text("Asleep  \(formatHours(sleepSummary.totalSleep / 3600))")
                 Text("In bed  \(formatHours(sleepSummary.timeInBed / 3600))")
                 Text("Deep \(formatHours(sleepSummary.deep / 3600))  •  REM \(formatHours(sleepSummary.rem / 3600))")

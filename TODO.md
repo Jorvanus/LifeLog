@@ -17,7 +17,7 @@ This plan prioritises a dependable private diary on a physical iPhone before exp
 - [x] Move HealthKit and Motion ingestion off the main interaction path using an isolated background model context/actor, small save batches, cancellation, and progress state in Settings.
 - [x] Replace repeated history reads with incremental HealthKit anchors. Import only new or changed sleep/workout samples, persist the anchor safely, and remain idempotent after relaunch.
 - [x] Add HealthKit observer/background delivery only after the incremental importer is proven not to freeze Timeline or Insights.
-- [ ] Make sleep-session queries tolerant of date boundaries by padding the selected interval, grouping stage samples into one night, and clearly labelling the score as a LifeLog estimate rather than an Apple score.
+- [x] Make sleep-session queries tolerant of date boundaries by padding the selected interval, grouping stage samples into one night, and clearly labelling the score as a LifeLog estimate rather than an Apple score.
 - [ ] Test Health permission denial, partial permission, no data, Apple Watch disconnected, duplicate samples, deleted samples, daylight-saving transitions, and unusual time zones.
 - [ ] Expand movement classification for walking, running, cycling, automotive travel, and possible flights while preserving the location-first rule: movement inside Home, Work, or another destination must not become a separate timeline entry.
 - [ ] Add recurring-trip tests for “Travelling to Work/Home,” including incomplete destinations and corrected place labels.

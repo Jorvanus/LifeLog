@@ -147,9 +147,14 @@ final class ActivityDataService {
     func sleepSummary(for interval: DateInterval) async -> SleepSummary? {
         guard HKHealthStore.isHealthDataAvailable(),
               let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return nil }
+        // Sleep commonly crosses midnight. Padding the request by half a day
+        // lets one selected night include stages recorded just outside the
+        // visible Insights interval.
+        let padded = DateInterval(start: interval.start.addingTimeInterval(-12 * 60 * 60),
+                                  end: interval.end.addingTimeInterval(12 * 60 * 60))
         let predicate = HKQuery.predicateForSamples(
-            withStart: interval.start,
-            end: interval.end,
+            withStart: padded.start,
+            end: padded.end,
             options: [.strictStartDate, .strictEndDate]
         )
         do {
@@ -158,7 +163,7 @@ final class ActivityDataService {
                 sortDescriptors: [SortDescriptor(\.startDate)]
             )
             let samples = try await descriptor.result(for: healthStore)
-            return SleepSummary(samples: samples, interval: interval)
+            return SleepSummary(samples: samples, interval: padded)
         } catch {
             Diagnostics.record(context, subsystem: "HealthKit",
                                message: "A sleep query failed; no Health data was imported.")
@@ -368,12 +373,26 @@ private extension SleepSummary {
         var deep = 0.0
         var interruptions = 0
 
+        var occupied: [Int: [DateInterval]] = [:]
         for sample in samples {
             let start = max(sample.startDate, interval.start)
             let end = min(sample.endDate, interval.end)
             guard end > start,
                   let value = HKCategoryValueSleepAnalysis(rawValue: sample.value) else { continue }
-            let duration = end.timeIntervalSince(start)
+            occupied[value.rawValue, default: []].append(DateInterval(start: start, end: end))
+        }
+        // Watch and phone can report overlapping stage samples. Merge each
+        // stage before calculating one overnight session so durations stay
+        // accurate and the estimate is never inflated by duplicates.
+        for (rawValue, intervals) in occupied {
+            guard let value = HKCategoryValueSleepAnalysis(rawValue: rawValue) else { continue }
+            let merged = intervals.sorted { $0.start < $1.start }.reduce(into: [DateInterval]()) { result, interval in
+                guard let last = result.last else { result.append(interval); return }
+                if interval.start <= last.end {
+                    result[result.count - 1] = DateInterval(start: last.start, end: max(last.end, interval.end))
+                } else { result.append(interval) }
+            }
+            let duration = merged.reduce(0) { $0 + $1.duration }
             switch value {
             case .inBed:
                 timeInBed += duration
