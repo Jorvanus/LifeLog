@@ -255,8 +255,12 @@ private struct SavedPlaceEditor: View {
         }
         .confirmationDialog("Ignore matching visits?", isPresented: $confirmingIgnore) {
             Button("Ignore \(backfillPreview?.matchingVisits ?? 0) visits", role: .destructive) {
-                try? SavedPlaceLearning.applyIgnored(true, to: place, context: context)
-                backfillPreview = try? SavedPlaceLearning.preview(place, context: context)
+                do {
+                    _ = try SavedPlaceLearning.applyIgnored(true, to: place, context: context)
+                    backfillPreview = try SavedPlaceLearning.preview(place, context: context)
+                } catch {
+                    saveFailed = true
+                }
             }
             Button("Cancel", role: .cancel) { }
         } message: {

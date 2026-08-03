@@ -20,6 +20,18 @@ struct TimelineView: View {
         return visits.filter { Calendar.current.isDateInToday($0.arrival) }
             .filter { !$0.isIgnored }
             .filter { ActivityLocationPolicy.shouldShowInTimeline($0, locationVisits: locationVisits) }
+            // Core Location can replay an older unknown callback after a later
+            // named visit arrives. Do not show that stale review row when its
+            // interval is covered by a more useful location record.
+            .filter { visit in
+                guard visit.needsCategorisation else { return true }
+                let end = visit.departure ?? .now
+                return !locationVisits.contains { other in
+                    guard other.id != visit.id, !other.needsCategorisation else { return false }
+                    let otherEnd = other.departure ?? .now
+                    return other.arrival < end && otherEnd > visit.arrival
+                }
+            }
     }
     private var reviewQueue: [Visit] {
         // The live unknown location has its own prominent card; the queue is for past stays.
@@ -162,12 +174,6 @@ struct TimelineView: View {
                     }
                 }
                 HStack(spacing: 14) {
-                    ActivityIcon(
-                        activity: visit.suspectedActivity,
-                        category: visit.insightCategory,
-                        color: visit.needsCategorisation ? .orange : .green,
-                        size: 60
-                    )
                     VStack(alignment: .leading, spacing: 5) {
                         Text(visit.displayPlaceName).font(.title2.bold()).foregroundStyle(.primary)
                         if visit.needsCategorisation {
@@ -180,14 +186,13 @@ struct TimelineView: View {
                             Text(visit.activity).foregroundStyle(.secondary)
                         }
                         Text("Since \(visit.arrival.formatted(date: .omitted, time: .shortened)) · \(elapsedVisitDuration(visit))")
+                            .font(.subheadline)
                             .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                     }
                     Spacer()
-                    Image(systemName: visit.needsCategorisation ? "flag.fill" : "location.fill")
-                        .font(.system(size: 29, weight: .semibold))
-                        .foregroundStyle(visit.needsCategorisation ? Color.orange : Color.green)
-                        .frame(width: 56, height: 56)
-                        .background((visit.needsCategorisation ? Color.orange : Color.green).opacity(0.1), in: Circle())
+                    ActivityScene(activity: visit.suspectedActivity, category: visit.insightCategory)
                 }
             }
             .padding(20)
@@ -370,12 +375,15 @@ struct ActivityIcon: View {
     let color: Color
     var size: CGFloat = 54
     var body: some View {
-        Image(systemName: symbol)
-            .font(.system(size: size * 0.4, weight: .semibold))
-            .foregroundStyle(.white)
-            .frame(width: size, height: size)
-            .background(color.gradient, in: Circle())
-            .shadow(color: color.opacity(0.16), radius: 7, y: 4)
+        Group {
+            Image(systemName: symbol)
+                .font(.system(size: size * 0.4, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: size, height: size)
+                .background(color.gradient, in: Circle())
+        }
+        .frame(width: size, height: size)
+        .shadow(color: color.opacity(0.16), radius: 7, y: 4)
     }
     private var symbol: String {
         let text = "\(activity) \(category)".lowercased()
@@ -391,6 +399,53 @@ struct ActivityIcon: View {
         if text.contains("sleep") { return "bed.double.fill" }
         if text.contains("shop") { return "bag.fill" }
         return "mappin"
+    }
+
+    fileprivate var resolvedAssetName: String? {
+        let text = "\(activity) \(category)".lowercased()
+        if text.contains("home") { return "ActivityHome" }
+        if text.contains("beer") { return "ActivityBeers" }
+        if text.contains("exercise") || text.contains("fitness") || text.contains("gym") { return "ActivityExercise" }
+        if text.contains("meeting") { return "ActivityMeeting" }
+        if text.contains("doctor") { return "ActivityDoctor" }
+        if text.contains("health") || text.contains("medical") || text.contains("hospital") { return "ActivityHealthcare" }
+        if text.contains("grocer") || text.contains("supermarket") { return "ActivityGroceries" }
+        if text.contains("family") || text.contains("child") { return "ActivityFamily" }
+        if text.contains("hotel") || text.contains("lodging") { return "ActivityHotel" }
+        if text.contains("desk") { return "ActivityDesk" }
+        if text.contains("shop") { return "ActivityShopping" }
+        if text.contains("sleep") { return "ActivitySleep" }
+        if text.contains("work") || text.contains("office") { return "ActivityWork" }
+        if text.contains("travel") || text.contains("transit") || text.contains("drive") || text.contains("car") { return "ActivityDriving" }
+        if text.contains("walk") { return "ActivityWalking" }
+        if text.contains("coffee") || text.contains("cafe") { return "ActivityCoffee" }
+        if text.contains("flight") || text.contains("plane") || text.contains("airport") { return "ActivityFlight" }
+        return nil
+    }
+}
+
+/// The larger scene illustration is reserved for the current-activity card;
+/// compact timeline cards keep their readable circular activity icons.
+private struct ActivityScene: View {
+    let activity: String
+    let category: String
+
+    var body: some View {
+        if let assetName {
+            Image(assetName)
+                .resizable()
+                .scaledToFit()
+                // Keep the layout footprint compact while enlarging the transparent
+                // artwork itself; this prevents the card from growing wider.
+                .frame(width: 145, height: 88)
+                .scaleEffect(3.0)
+                .offset(y: -22)
+                .accessibilityHidden(true)
+        }
+    }
+
+    private var assetName: String? {
+        ActivityIcon(activity: activity, category: category, color: .clear).resolvedAssetName
     }
 }
 

@@ -2,6 +2,19 @@
 
 ## 2026-08-03
 
+### Split activity illustration assets
+
+- Added individually named, unscaled activity-card image assets for Coffee, Beers, Fitness, Donate Blood, Meeting, Doctor Visit, Shopping, Visiting Family, Work Trip, and Work.
+
+### Expanded activity illustrations
+
+- Added Coffee, Beers, Exercise, Healthcare, Meeting, Doctor, Groceries, Family, Hotel, and Desk illustrations for current activity cards.
+- Timeline selects the most specific illustration available and keeps the existing SF Symbol fallback for activities without artwork.
+
+### Illustrated current activity cards
+
+- Added the supplied activity illustrations to the asset catalog and connected Home, Shopping, Sleep, Work, Driving, Walking, Cafe, and Flight visuals to Timeline activity cards, with SF Symbol fallback for other activities.
+
 ### Simpler Activities list
 
 - Activities settings now shows only each activity name; category remains editable inside the activity editor and is used for Insights grouping.
