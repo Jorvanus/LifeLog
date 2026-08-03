@@ -4,11 +4,13 @@ import MapKit
 
 struct TimelineView: View {
     @Environment(\.modelContext) private var context
+    let recorder: LocationRecorder
     // Imported journal rows are used by Insights, but are not automatic locations
     // or review items. Excluding them keeps the launch timeline query lightweight.
     @Query(filter: #Predicate<Visit> { $0.source != "imported-journal" },
            sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
     @State private var adding = false
+    @State private var clock = Date.now
     @AppStorage("location-policy-reconciled-v2") private var locationPolicyReconciled = false
     @AppStorage("automatic-location-deduplicated-v1") private var automaticLocationDeduplicated = false
 
@@ -26,6 +28,11 @@ struct TimelineView: View {
         visits.first { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored && $0.departure == nil }
     }
 
+    private var isWaitingForVisitConfirmation: Bool {
+        guard current == nil, recorder.latestLocationTimestamp != nil else { return false }
+        return recorder.authorization == .authorizedAlways || recorder.authorization == .authorizedWhenInUse
+    }
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -33,7 +40,6 @@ struct TimelineView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 28) {
                         header
-                        if let current { currentCard(current) }
                         if let review = reviewQueue.first { reviewCard(review) }
                         journey
                     }
@@ -75,6 +81,13 @@ struct TimelineView: View {
                 } catch {
                     // Leave the flag unset so a transient protected-store failure can
                     // be retried on the next appearance.
+                }
+            }
+            .task {
+                // Refresh elapsed labels without polling Core Location or the store.
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(60))
+                    clock = .now
                 }
             }
         }
@@ -165,7 +178,7 @@ struct TimelineView: View {
                         } else {
                             Text(visit.activity).foregroundStyle(.secondary)
                         }
-                        Text("Since \(visit.arrival.formatted(date: .omitted, time: .shortened))")
+                        Text("Since \(visit.arrival.formatted(date: .omitted, time: .shortened)) · \(elapsedVisitDuration(visit))")
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -186,7 +199,7 @@ struct TimelineView: View {
     private var journey: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("Today’s Journey").font(.system(size: 28, weight: .bold, design: .rounded))
-            if today.isEmpty {
+            if today.isEmpty && current == nil && !isWaitingForVisitConfirmation {
                 VStack(spacing: 14) {
                     Image(systemName: "location.slash").font(.largeTitle).foregroundStyle(.secondary)
                     Text("Your visits will appear here").font(.headline)
@@ -195,13 +208,61 @@ struct TimelineView: View {
                 }.frame(maxWidth: .infinity).padding(32).lifeCard()
             } else {
                 VStack(spacing: 12) {
-                    ForEach(Array(today.enumerated()), id: \.element.id) { index, visit in
-                        JourneyRow(visit: visit, isCurrent: current?.id == visit.id,
-                                   isFirst: index == 0, isLast: index == today.count - 1)
+                    if let current {
+                        currentCard(current)
+                    } else if isWaitingForVisitConfirmation {
+                        waitingForVisitCard
+                    }
+                    let historicalVisits = today.filter { current?.id != $0.id }
+                    ForEach(Array(historicalVisits.enumerated()), id: \.element.id) { index, visit in
+                        JourneyRow(visit: visit, isCurrent: false,
+                                   isFirst: current == nil && !isWaitingForVisitConfirmation && index == 0,
+                                   isLast: index == historicalVisits.count - 1)
                     }
                 }
             }
         }.accessibilityIdentifier("todays-journey")
+    }
+
+    private var waitingForVisitCard: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle().fill(.green.opacity(0.12)).frame(width: 60, height: 60)
+                ProgressView().tint(.green)
+            }
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Current location").font(.headline.weight(.semibold))
+                Text("Waiting for visit confirmation")
+                    .font(.subheadline).foregroundStyle(.secondary)
+                if let timestamp = recorder.latestLocationTimestamp {
+                    Text("Location received \(elapsedDescription(since: timestamp)) ago")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+        }
+        .padding(20)
+        .background(Color.green.opacity(0.045), in: RoundedRectangle(cornerRadius: 22))
+        .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color.green.opacity(0.3)))
+        .accessibilityIdentifier("waiting-for-visit-confirmation")
+        .accessibilityLabel("Current location, waiting for visit confirmation")
+    }
+
+    private func elapsedDescription(since date: Date) -> String {
+        let seconds = max(0, Int(clock.timeIntervalSince(date)))
+        let minutes = seconds / 60
+        if minutes < 1 { return "just now" }
+        if minutes == 1 { return "1 minute" }
+        return "\(minutes) minutes"
+    }
+
+    private func elapsedVisitDuration(_ visit: Visit) -> String {
+        let totalMinutes = max(0, Int(clock.timeIntervalSince(visit.arrival) / 60))
+        let hours = totalMinutes / 60
+        let minutes = totalMinutes % 60
+        if hours == 0 { return "\(minutes)m" }
+        if minutes == 0 { return "\(hours)h" }
+        return "\(hours)h \(minutes)m"
     }
 
     private var greeting: String {

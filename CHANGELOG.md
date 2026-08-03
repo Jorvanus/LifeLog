@@ -2,6 +2,10 @@
 
 ## 2026-08-03
 
+### Current location journey state
+
+- Today’s Journey now puts the current location first with a distinct live card and elapsed time. A validated location sample that arrives before Core Location confirms a formal visit is shown as a privacy-safe “Waiting for visit confirmation” state rather than a duplicate provisional entry.
+
 ### Protected store recovery
 
 - Replaced the generic store-opening failure screen with a recovery flow that preserves the original protected store, supports retrying, and explains the next safe steps.

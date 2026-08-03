@@ -21,6 +21,10 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     var authorization: CLAuthorizationStatus = .notDetermined
     var isBackgroundLoggingEnabled = false
     var lastError: String?
+    /// The most recent validated location sample is intentionally exposed only as
+    /// a timestamp. Timeline can explain a pending visit without displaying a
+    /// precise coordinate or duplicating a provisional visit in the data model.
+    private(set) var latestLocationTimestamp: Date?
 
     override init() {
         super.init()
@@ -150,6 +154,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
               location.horizontalAccuracy >= 0,
               location.horizontalAccuracy <= 1_000,
               abs(location.timestamp.timeIntervalSinceNow) <= 5 * 60 else { return }
+        latestLocationTimestamp = location.timestamp
         if shouldSeedCurrentLocation {
             shouldSeedCurrentLocation = false
             seedCurrentVisit(from: location)
