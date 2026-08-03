@@ -146,6 +146,7 @@ struct SettingsView: View {
                     }
                     Text("Imports Life Cycle CSV exports on this iPhone. Existing imported rows are skipped when you import the same file again.")
                         .font(.footnote).foregroundStyle(.secondary)
+                    NavigationLink { JournalCompactionView() } label: { Label("Manage imported journal storage", systemImage: "arrow.triangle.2.circlepath") }
                 } header: {
                     Text("Data import")
                 }

@@ -34,6 +34,7 @@
 		9AD357F342F13C44BA37652C /* DiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC56B8BAB2BB0A8764D18B1E /* DiagnosticsView.swift */; };
 		A8C2618DAB163744EAD89C5F /* JournalCSVImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B4F84FC6736D6EBD795192C /* JournalCSVImporter.swift */; };
 		ADA726BB01719FCEA5B61298 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68BF51077D67E92A88F6FB79 /* RootView.swift */; };
+		B1B6C438FC8C412A7E8098EE /* JournalCompactionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DDBAC8BA93246A8040B6941 /* JournalCompactionView.swift */; };
 		C194BCC0D6453A63D4F67918 /* ExportFileCleanup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 841EFA06D9C1D3D5DE11BCCC /* ExportFileCleanup.swift */; };
 		C230D3A30B5955F581E8269F /* PlaceLookupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AA772D2482869E62414D007 /* PlaceLookupService.swift */; };
 		C975A398C4FCEB89BAB6E650 /* MapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B67547668C2606629916F0B6 /* MapView.swift */; };
@@ -69,6 +70,7 @@
 		0903FE944E9BA6818CEF632B /* SmartActivityClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartActivityClassifier.swift; sourceTree = "<group>"; };
 		0A9921C3BD6F05CA5C2B6B9B /* ActivityDataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityDataService.swift; sourceTree = "<group>"; };
 		0B61B476B89FDE373D60B43C /* TimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineView.swift; sourceTree = "<group>"; };
+		0DDBAC8BA93246A8040B6941 /* JournalCompactionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalCompactionView.swift; sourceTree = "<group>"; };
 		1E02A9CCD0CB966927A0A63E /* LifeLogTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = LifeLogTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1F988CF286B464E43CCCF80A /* TimelineFixtureCoverageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineFixtureCoverageTests.swift; sourceTree = "<group>"; };
 		20F66D93CEC288FCC9E45F8C /* LifeLogUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeLogUITests.swift; sourceTree = "<group>"; };
@@ -140,6 +142,7 @@
 				4EE15F0F10705EC8163D24F5 /* IgnoredLocations.swift */,
 				DC096FDA8EA522B04B2F9890 /* InferenceEngine.swift */,
 				AB2ED3DB389DF4AB007C68A3 /* Info.plist */,
+				0DDBAC8BA93246A8040B6941 /* JournalCompactionView.swift */,
 				9B4F84FC6736D6EBD795192C /* JournalCSVImporter.swift */,
 				95189CB130173B9A604C5E26 /* LifeLog.entitlements */,
 				831D37D3F7E2A5C6BF0F1C74 /* LifeLogApp.swift */,
@@ -317,6 +320,7 @@
 				5EC68C3D5BA2BFE1C7A4713F /* IgnoredLocations.swift in Sources */,
 				424B5084CB08F752AD18F6E0 /* InferenceEngine.swift in Sources */,
 				A8C2618DAB163744EAD89C5F /* JournalCSVImporter.swift in Sources */,
+				B1B6C438FC8C412A7E8098EE /* JournalCompactionView.swift in Sources */,
 				3ABD058A23052EDA905A28F9 /* LifeLogApp.swift in Sources */,
 				7A2EE83A305205C0256BCD8F /* LifeLogSchema.swift in Sources */,
 				1BBFE65C0530FF99B8D9B104 /* LocalBackup.swift in Sources */,
