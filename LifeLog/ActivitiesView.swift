@@ -77,15 +77,14 @@ struct ActivityEditor: View {
         _name = State(initialValue: activity?.name ?? "")
         _category = State(initialValue: activity?.category ?? "Other")
         _symbol = State(initialValue: activity?.symbol ?? "circle.fill")
-        _categoryColorValue = State(initialValue: categoryColor(forCategory: activity?.category ?? "Other"))
+        _categoryColorValue = State(initialValue: activity.map { activityColor($0.name) } ?? .gray)
     }
 
     var body: some View {
         NavigationStack {
             Form {
                 TextField("Activity name", text: $name)
-                TextField("Category", text: $category)
-                ColorPicker("Category colour", selection: $categoryColorValue, supportsOpacity: false)
+                ColorPicker("Activity colour", selection: $categoryColorValue, supportsOpacity: false)
                 Picker("Icon", selection: $symbol) {
                     ForEach(iconOptions, id: \.1) { option in
                         Label(option.0, systemImage: option.1).tag(option.1)
@@ -107,10 +106,12 @@ struct ActivityEditor: View {
         let cleanName = TextSafety.clean(name, maximumLength: 80)
         let cleanCategory = TextSafety.clean(category, maximumLength: 40)
         let cleanSymbol = TextSafety.clean(symbol, maximumLength: 60)
-        saveCategoryColor(categoryColorValue, forCategory: cleanCategory.isEmpty ? "Other" : cleanCategory)
-        onSave(ActivityDefinition(id: existing?.id ?? UUID(), name: cleanName,
+        saveActivityColor(categoryColorValue, forActivity: cleanName)
+        var definition = ActivityDefinition(id: existing?.id ?? UUID(), name: cleanName,
                                   category: cleanCategory.isEmpty ? "Other" : cleanCategory,
-                                  symbol: cleanSymbol.isEmpty ? "circle.fill" : cleanSymbol))
+                                  symbol: cleanSymbol.isEmpty ? "circle.fill" : cleanSymbol)
+        definition.colorHex = activityColorHex(categoryColorValue)
+        onSave(definition)
         dismiss()
     }
 }

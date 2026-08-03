@@ -5,12 +5,14 @@ struct ActivityDefinition: Codable, Identifiable, Hashable {
     var name: String
     var category: String
     var symbol: String
+    var colorHex: String?
 
     init(id: UUID = UUID(), name: String, category: String = "Other", symbol: String = "circle.fill") {
         self.id = id
         self.name = TextSafety.clean(name, maximumLength: 80)
         self.category = TextSafety.clean(category, maximumLength: 40)
         self.symbol = TextSafety.clean(symbol, maximumLength: 60)
+        self.colorHex = nil
     }
 }
 

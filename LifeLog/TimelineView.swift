@@ -450,7 +450,38 @@ private struct ActivityScene: View {
 }
 
 func activityColor(_ activity: String) -> Color {
-    categoryColor(forCategory: ActivityCatalog.category(for: activity))
+    let key = activity.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let definition = ActivityCatalog.load().first(where: { $0.name.caseInsensitiveCompare(key) == .orderedSame }),
+       let colorHex = definition.colorHex, let color = Color(hex: colorHex) { return color }
+    if let stored = UserDefaults.standard.string(forKey: "LifeLog.ActivityColor.\(key)"),
+       let color = Color(hex: stored) { return color }
+    if key.caseInsensitiveCompare("Visiting") == .orderedSame { return .gray }
+    return categoryColor(forCategory: ActivityCatalog.category(for: activity))
+}
+
+func saveActivityColor(_ color: Color, forActivity activity: String) {
+    let resolved = UIColor(color).resolvedColor(with: UITraitCollection(userInterfaceStyle: .light))
+    var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+    if !resolved.getRed(&red, green: &green, blue: &blue, alpha: &alpha),
+       let components = resolved.cgColor.components, components.count >= 3 {
+        red = components[0]; green = components[1]; blue = components[2]
+        alpha = components.count >= 4 ? components[3] : 1
+    }
+    let hex = [red, green, blue].map { String(format: "%02X", Int(($0 * 255).rounded())) }.joined()
+    var definitions = ActivityCatalog.load()
+    if let index = definitions.firstIndex(where: { $0.name.caseInsensitiveCompare(activity) == .orderedSame }) {
+        definitions[index].colorHex = hex
+        ActivityCatalog.save(definitions)
+    }
+    UserDefaults.standard.set(hex, forKey: "LifeLog.ActivityColor.\(activity.trimmingCharacters(in: .whitespacesAndNewlines))")
+    UserDefaults.standard.synchronize()
+}
+
+func activityColorHex(_ color: Color) -> String {
+    let resolved = UIColor(color).resolvedColor(with: UITraitCollection(userInterfaceStyle: .light))
+    var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+    guard resolved.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return "8E8E93" }
+    return [red, green, blue].map { String(format: "%02X", Int(($0 * 255).rounded())) }.joined()
 }
 
 func categoryColor(forCategory category: String) -> Color {

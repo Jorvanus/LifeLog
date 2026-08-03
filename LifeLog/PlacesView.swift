@@ -57,7 +57,7 @@ struct PlacesView: View {
                         NavigationLink { SavedPlaceEditor(place: place) } label: {
                             HStack(spacing: 12) {
                                 ActivityIcon(activity: place.defaultActivity, category: place.category,
-                                             color: activityColor(place.defaultActivity))
+                                             color: .blue)
                                     .scaleEffect(0.72).frame(width: 42, height: 42)
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(place.name).font(.headline)
@@ -66,7 +66,7 @@ struct PlacesView: View {
                                 }
                             }
                         }
-                        .accessibilityValue("Category colour \(categoryColorHex(forCategory: ActivityCatalog.category(for: place.defaultActivity)))")
+                        .accessibilityValue("Activity colour")
                     }
                     .onDelete(perform: delete)
                 }
