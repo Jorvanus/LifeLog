@@ -14,6 +14,8 @@ struct TrendsView: View {
     @State private var now = Date.now
     @State private var snapshot = InsightsSnapshot.empty
     @State private var exportFile: TrendExportFile?
+    @State private var aggregationGeneration = 0
+    @State private var snapshotCache = InsightsSnapshotCache()
 
     private var interval: DateInterval { window.interval(containing: anchorDate) }
     private var sleepRefreshKey: String {
@@ -76,11 +78,13 @@ struct TrendsView: View {
                 .presentationDetents([.medium])
             }
             .task {
+                aggregationGeneration = await InsightsAggregationActor.shared.currentGeneration()
                 reloadInsights()
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(60))
                     guard !Task.isCancelled else { return }
                     now = .now
+                    aggregationGeneration = await InsightsAggregationActor.shared.currentGeneration()
                     reloadInsights()
                 }
             }
@@ -89,7 +93,11 @@ struct TrendsView: View {
                 let queryInterval = DateInterval(start: interval.start, end: queryEnd)
                 _ = await activityData.refreshSleep(for: queryInterval, context: context)
                 guard !Task.isCancelled else { return }
+                aggregationGeneration = await InsightsAggregationActor.shared.currentGeneration()
                 reloadInsights()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: InsightsInvalidation.notification)) { _ in
+                Task { aggregationGeneration = await InsightsAggregationActor.shared.currentGeneration(); reloadInsights() }
             }
             .onChange(of: window) { _, _ in reloadInsights() }
             .onChange(of: anchorDate) { _, _ in reloadInsights() }
@@ -408,7 +416,12 @@ struct TrendsView: View {
         // Donut taps remain local to the chart and never rebuild history, trends,
         // place totals, or Map content.
         let startedAt = Date.now
-        snapshot = InsightsSnapshot.make(visits: visits, window: window, anchorDate: anchorDate, now: now)
+        // The generation is captured with the input. A write arriving during
+        // aggregation will post invalidation and trigger a fresh rebuild.
+        let cacheKey = "\(window.rawValue)|\(anchorDate.timeIntervalSinceReferenceDate)|\(Int(now.timeIntervalSinceReferenceDate / 60))|\(visits.count)"
+        snapshot = snapshotCache.snapshot(key: cacheKey, generation: aggregationGeneration) {
+            InsightsSnapshot.make(visits: visits, window: window, anchorDate: anchorDate, now: now)
+        }
         Diagnostics.performance(context, subsystem: "Insights", operation: "snapshot rebuild",
                                 startedAt: startedAt, itemCount: visits.count)
         Diagnostics.budget(context, subsystem: "Insights", operation: "\(window.rawValue) snapshot rebuild",
@@ -714,6 +727,25 @@ private struct InsightsSnapshot {
             hasher.combine(place.longitude)
         }
         return hasher.finalize()
+    }
+}
+
+/// Main-actor cache for UI-ready snapshots. SwiftData models stay on the main
+/// actor; the companion actor only owns the invalidation generation, keeping
+/// background imports from racing this cache.
+@MainActor
+private final class InsightsSnapshotCache {
+    private var key: String?
+    private var generation = -1
+    private var value = InsightsSnapshot.empty
+
+    func snapshot(key: String, generation: Int, build: () -> InsightsSnapshot) -> InsightsSnapshot {
+        if self.key == key, self.generation == generation { return value }
+        let rebuilt = build()
+        self.key = key
+        self.generation = generation
+        value = rebuilt
+        return rebuilt
     }
 }
 

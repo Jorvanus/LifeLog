@@ -35,7 +35,7 @@ This plan prioritises a dependable private diary on a physical iPhone before exp
 - [ ] Add UI tests for the new Diagnostics and Journal Storage screens, including backup failure, protected-file failure, empty history, Dynamic Type, VoiceOver, and dark mode.
 - [x] Improve current-activity artwork layout with asset bounds tests so transparent illustrations cannot enlarge or distort cards.
 - [ ] Add import progress with cancel/retry and a post-import summary showing duplicates, malformed rows, compactable rows, and storage impact.
-- [ ] Move Insights aggregation into a reusable actor/cache with invalidation on visit edits, imports, corrections, and HealthKit updates.
+- [x] Move Insights aggregation into a reusable actor/cache with invalidation on visit edits, imports, corrections, and HealthKit updates.
 - [ ] Add a practical on-device data-safety review: file protection, backup scope, temporary-file permissions, and an explicit switch for detailed personal diagnostics.
 - [ ] Add a personal-device regression checklist for fresh install, upgrade, migration, store recovery, backup restore, permission changes, and relaunch.
 
@@ -50,7 +50,7 @@ This plan prioritises a dependable private diary on a physical iPhone before exp
 - [ ] Add delayed/out-of-order Core Location fixtures with GPS drift, repeated callbacks, overlapping open visits, and Home → destination → Home return sequences.
 - [ ] Add location retention controls: precise coordinates for a configurable period, rounded coordinates for older history, and a clear irreversible-delete scope.
 - [ ] Add a “why this place?” detail showing Saved Place, Maps result, distance, recurrence, and confidence without exposing raw coordinates.
-- [ ] Measure MapKit lookup latency, cache hit rate, callback-to-save latency, candidate payload size, and spatial-index refresh time using aggregate Diagnostics only.
+- [x] Measure MapKit lookup latency, cache hit rate, callback-to-save latency, candidate payload size, and spatial-index refresh time using aggregate Diagnostics only.
 - [ ] Review Apple Maps request policy and privacy copy; make lookup opt-out explicit and provide a manual-pin fallback that never requires network access.
 - [ ] Scope location queries by date/window wherever possible and avoid loading imported journal rows or superseded callbacks into interactive views.
 

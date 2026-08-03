@@ -961,6 +961,7 @@ struct VisitEditor: View {
         } else {
             try context.save()
         }
+        InsightsInvalidation.invalidate(reason: corrected ? "visit correction" : "visit edit")
         correctionBaseline = currentSnapshot
     }
 }

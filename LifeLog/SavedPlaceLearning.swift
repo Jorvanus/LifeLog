@@ -99,6 +99,7 @@ enum SavedPlaceLearning {
 
         try apply(place, context: context)
         try context.save()
+        InsightsInvalidation.invalidate(reason: "Saved Place correction")
         return Result(place: place, change: change)
     }
 

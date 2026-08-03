@@ -106,6 +106,7 @@ enum Diagnostics {
                                durationMs: Int? = nil, candidateCount: Int? = nil,
                                cacheHit: Bool? = nil, distanceMeters: Int? = nil,
                                repairs: Int? = nil, correctedSuggestion: Bool? = nil,
+                               payloadBytes: Int? = nil,
                                severity: String = "info") {
         var fields = ["operation=\(TextSafety.clean(operation, maximumLength: 40))"]
         if let durationMs { fields.append("duration_ms=\(max(0, durationMs))") }
@@ -114,6 +115,7 @@ enum Diagnostics {
         if let distanceMeters { fields.append("distance_m=\(max(0, distanceMeters))") }
         if let repairs { fields.append("repairs=\(max(0, repairs))") }
         if let correctedSuggestion { fields.append("suggestion_corrected=\(correctedSuggestion)") }
+        if let payloadBytes { fields.append("payload_bytes=\(max(0, payloadBytes))") }
         record(context, subsystem: "Location Diagnostics",
                message: fields.joined(separator: " "), severity: severity)
     }

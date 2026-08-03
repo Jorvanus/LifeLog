@@ -19,14 +19,16 @@ struct PlaceLookupResult {
     let cacheHit: Bool
     let latencyMs: Int
     let candidateCount: Int
+    let candidatePayloadBytes: Int
 
     init(confidence: Confidence, suggestions: [PlaceSuggestion], cacheHit: Bool = false,
-         latencyMs: Int = 0, candidateCount: Int = 0) {
+         latencyMs: Int = 0, candidateCount: Int = 0, candidatePayloadBytes: Int = 0) {
         self.confidence = confidence
         self.suggestions = suggestions
         self.cacheHit = cacheHit
         self.latencyMs = latencyMs
         self.candidateCount = candidateCount
+        self.candidatePayloadBytes = candidatePayloadBytes
     }
 }
 
@@ -62,7 +64,8 @@ enum PlaceLookupService {
                                      suggestions: cached.result.suggestions,
                                      cacheHit: true,
                                      latencyMs: Int((Date.now.timeIntervalSince(startedAt) * 1000).rounded()),
-                                     candidateCount: cached.result.candidateCount)
+                                     candidateCount: cached.result.candidateCount,
+                                     candidatePayloadBytes: cached.result.candidatePayloadBytes)
         }
         try Task.checkCancellation()
         let request = MKLocalPointsOfInterestRequest(center: coordinate, radius: boundedRadius)
@@ -113,7 +116,8 @@ enum PlaceLookupService {
         guard let first = suggestions.first else {
             return PlaceLookupResult(confidence: .low, suggestions: [],
                                      latencyMs: Int((Date.now.timeIntervalSince(startedAt) * 1000).rounded()),
-                                     candidateCount: response.mapItems.count)
+                                     candidateCount: response.mapItems.count,
+                                     candidatePayloadBytes: 0)
         }
 
         let secondDistance = suggestions.dropFirst().first?.distance
@@ -128,7 +132,8 @@ enum PlaceLookupService {
         }
         let result = PlaceLookupResult(confidence: confidence, suggestions: suggestions,
                                        latencyMs: Int((Date.now.timeIntervalSince(startedAt) * 1000).rounded()),
-                                       candidateCount: response.mapItems.count)
+                                       candidateCount: response.mapItems.count,
+                                       candidatePayloadBytes: (try? JSONEncoder().encode(suggestions).count) ?? 0)
         cache[cell] = CachedResult(createdAt: .now, result: result)
         if let lookupID { cancelledLookups.remove(lookupID) }
         return result

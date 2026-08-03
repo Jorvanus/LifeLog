@@ -172,6 +172,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
 
     private func createVisit(at coordinate: CLLocationCoordinate2D, arrival: Date) {
         guard let context, CLLocationCoordinate2DIsValid(coordinate) else { return }
+        let callbackStartedAt = Date.now
         let safeArrival = min(arrival, .now)
         var inferredDeparture: Date?
         if let duplicate = recentDuplicateLocation(at: coordinate, arrival: safeArrival, context: context) {
@@ -181,6 +182,8 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             if duplicate.needsCategorisation { identifyPlace(duplicate) }
             reconcileActivity(with: duplicate, context: context)
             save(context)
+            Diagnostics.locationMetric(context, operation: "callback_to_save",
+                                       durationMs: Int((Date.now.timeIntervalSince(callbackStartedAt) * 1000).rounded()))
             return
         }
         if let latest = latestLocationVisit(in: context), latest.departure == nil {
@@ -193,6 +196,8 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 reconcileActivity(with: latest, context: context)
                 try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
                 save(context)
+                Diagnostics.locationMetric(context, operation: "callback_to_save",
+                                           durationMs: Int((Date.now.timeIntervalSince(callbackStartedAt) * 1000).rounded()))
                 return
             }
             if safeArrival < latest.arrival {
@@ -225,6 +230,8 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         try? SavedPlaceLearning.enrichImportedVisits(with: item, context: context)
         try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
         save(context)
+        Diagnostics.locationMetric(context, operation: "callback_to_save",
+                                   durationMs: Int((Date.now.timeIntervalSince(callbackStartedAt) * 1000).rounded()))
         if saved == nil { identifyPlace(item) }
     }
 
@@ -266,9 +273,11 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         reconcileActivity(with: matched, context: context)
         _ = try? ActivityLocationPolicy.resolveLocationCallbacks(context: context)
         try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
+        save(context)
         Diagnostics.locationMetric(context, operation: "callback_resolution",
                                    durationMs: Int((Date.now.timeIntervalSince(resolutionStartedAt) * 1000).rounded()))
-        save(context)
+        Diagnostics.locationMetric(context, operation: "callback_to_save",
+                                   durationMs: Int((Date.now.timeIntervalSince(resolutionStartedAt) * 1000).rounded()))
     }
 
     private func seedCurrentVisit(from location: CLLocation) {
@@ -299,8 +308,13 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     }
 
     private func nearestSavedPlace(to coordinate: CLLocationCoordinate2D, context: ModelContext) -> SavedPlace? {
+        let startedAt = Date.now
         let current = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
-        return (try? context.fetch(FetchDescriptor<SavedPlace>()))?
+        let places = try? context.fetch(FetchDescriptor<SavedPlace>())
+        Diagnostics.locationMetric(context, operation: "saved_place_index_refresh",
+                                   durationMs: Int((Date.now.timeIntervalSince(startedAt) * 1000).rounded()),
+                                   candidateCount: places?.count ?? 0)
+        return places?
             .compactMap { place -> (SavedPlace, CLLocationDistance)? in
                 let distance = current.distance(from: CLLocation(latitude: place.latitude, longitude: place.longitude))
                 return distance <= min(max(place.radius, 25), 500) ? (place, distance) : nil
@@ -322,7 +336,8 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 Diagnostics.locationMetric(context, operation: "maps_lookup",
                                            durationMs: result.latencyMs,
                                            candidateCount: result.candidateCount,
-                                           cacheHit: result.cacheHit)
+                                           cacheHit: result.cacheHit,
+                                           payloadBytes: result.candidatePayloadBytes)
                 // The user may label Home or Work while Maps is still searching. Never let
                 // a late public-place result overwrite that explicit correction.
                 guard visit.needsCategorisation else { return }

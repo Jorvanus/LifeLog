@@ -2,6 +2,14 @@
 
 ## 2026-08-03
 
+### Expanded location performance diagnostics
+
+- Added aggregate metrics for callback-to-save time, serialized Maps candidate payload size, and Saved Place lookup refresh time/counts alongside existing Maps latency, cache-hit, candidate-count, and match-distance metrics.
+
+### Reusable Insights aggregation cache
+
+- Added an actor-coordinated Insights generation and UI snapshot cache. Visit edits, Saved Place corrections, imports, and HealthKit sleep/activity updates now invalidate cached aggregation before the next refresh.
+
 ### Current-activity artwork positioning
 
 - Shifted the enlarged current-activity illustration upward inside its fixed clipping frame so the artwork subject is not cut off at the bottom.
