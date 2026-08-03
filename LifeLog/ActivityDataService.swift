@@ -35,6 +35,8 @@ final class ActivityDataService {
     private var importTask: Task<Void, Never>?
     private var importID: UUID?
     private var stepCache: [String: Double] = [:]
+    private let sleepAnchorKey = "LifeLog.HealthKit.sleepAnchor.v1"
+    private let workoutAnchorKey = "LifeLog.HealthKit.workoutAnchor.v1"
 
     var healthStatus = "Not connected"
     var motionStatus = "Not connected"
@@ -196,16 +198,24 @@ final class ActivityDataService {
             do {
                 try await importWriter.prepare()
                 var records: [ActivityImportRecord] = []
+                var sleepResultAnchor = Data()
+                var workoutResultAnchor = Data()
                 let end = Date.now
 
                 if let healthDays {
                     let start = Calendar.current.date(byAdding: .day, value: -healthDays, to: end) ?? end
                     let interval = DateInterval(start: start, end: end)
                     updateProgress(id: id, state: .reading, title: "Reading sleep…", completed: 0, total: 0)
-                    records += try await sampleReader.sleepRecords(in: interval)
+                    let sleepResult = try await sampleReader.anchoredSleepRecords(
+                        in: interval, anchorData: UserDefaults.standard.data(forKey: sleepAnchorKey))
+                    records += sleepResult.records
+                    sleepResultAnchor = sleepResult.anchorData
                     try Task.checkCancellation()
                     updateProgress(id: id, state: .reading, title: "Reading workouts…", completed: 0, total: 0)
-                    records += try await sampleReader.workoutRecords(in: interval)
+                    let workoutResult = try await sampleReader.anchoredWorkoutRecords(
+                        in: interval, anchorData: UserDefaults.standard.data(forKey: workoutAnchorKey))
+                    records += workoutResult.records
+                    workoutResultAnchor = workoutResult.anchorData
                     try Task.checkCancellation()
                     updateProgress(id: id, state: .reading, title: "Reading walking…", completed: 0, total: 0)
                     records += try await sampleReader.walkingRecords(in: interval)
@@ -232,6 +242,14 @@ final class ActivityDataService {
                 }
                 try Task.checkCancellation()
                 try await importWriter.finish()
+                // Commit anchors only after all records have been saved. If the
+                // task is cancelled or the store fails, the next launch safely
+                // re-reads that window and the writer's duplicate checks remain
+                // idempotent.
+                if healthDays != nil {
+                    UserDefaults.standard.set(sleepResultAnchor, forKey: sleepAnchorKey)
+                    UserDefaults.standard.set(workoutResultAnchor, forKey: workoutAnchorKey)
+                }
                 guard importID == id else { return }
                 healthStatus = healthDays == nil ? healthStatus : "Connected"
                 refreshMotionStatus()

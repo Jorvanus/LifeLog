@@ -34,6 +34,12 @@ struct ActivityImportProgress: Equatable, Sendable {
     }
 }
 
+struct ActivityAnchorResult: Sendable {
+    let records: [ActivityImportRecord]
+    let anchorData: Data
+    let deletedObjectCount: Int
+}
+
 /// Health and Motion history is read away from the main actor and converted into
 /// small Sendable records before any database work begins.
 actor ActivitySampleReader {
@@ -41,15 +47,21 @@ actor ActivitySampleReader {
     private let motionManager = CMMotionActivityManager()
 
     func sleepRecords(in interval: DateInterval) async throws -> [ActivityImportRecord] {
-        guard let type = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return [] }
+        try await anchoredSleepRecords(in: interval, anchorData: nil).records
+    }
+
+    func anchoredSleepRecords(in interval: DateInterval, anchorData: Data?) async throws -> ActivityAnchorResult {
+        guard let type = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else {
+            return ActivityAnchorResult(records: [], anchorData: Data(), deletedObjectCount: 0)
+        }
         let predicate = HKQuery.predicateForSamples(
             withStart: interval.start, end: interval.end, options: .strictEndDate
         )
-        let descriptor = HKSampleQueryDescriptor<HKCategorySample>(
-            predicates: [.categorySample(type: type, predicate: predicate)],
-            sortDescriptors: [SortDescriptor(\.startDate)]
-        )
-        let samples = try await descriptor.result(for: healthStore)
+        let anchor = decodeAnchor(anchorData)
+        let descriptor = HKAnchoredObjectQueryDescriptor<HKCategorySample>(
+            predicates: [.categorySample(type: type, predicate: predicate)], anchor: anchor)
+        let result = try await descriptor.result(for: healthStore)
+        let samples = result.addedSamples
         try Task.checkCancellation()
         let asleep = samples.compactMap { sample -> DateInterval? in
             guard let value = HKCategoryValueSleepAnalysis(rawValue: sample.value),
@@ -57,30 +69,47 @@ actor ActivitySampleReader {
                   value == .asleepREM || value == .asleepUnspecified else { return nil }
             return DateInterval(start: sample.startDate, end: sample.endDate)
         }
-        return merge(asleep, maximumGap: 15 * 60)
+        let records = merge(asleep, maximumGap: 15 * 60)
             .filter { $0.duration >= 20 * 60 }
             .map {
                 ActivityImportRecord(name: "Sleep", activity: "Sleeping", category: "Sleep",
                                      source: "health-sleep", start: $0.start, end: $0.end)
             }
+        return ActivityAnchorResult(records: records, anchorData: encodeAnchor(result.newAnchor),
+                                    deletedObjectCount: result.deletedObjects.count)
     }
 
     func workoutRecords(in interval: DateInterval) async throws -> [ActivityImportRecord] {
+        try await anchoredWorkoutRecords(in: interval, anchorData: nil).records
+    }
+
+    func anchoredWorkoutRecords(in interval: DateInterval, anchorData: Data?) async throws -> ActivityAnchorResult {
         let predicate = HKQuery.predicateForSamples(
             withStart: interval.start, end: interval.end, options: .strictEndDate
         )
-        let descriptor = HKSampleQueryDescriptor<HKWorkout>(
-            predicates: [.workout(predicate)],
-            sortDescriptors: [SortDescriptor(\.startDate)]
-        )
-        let workouts = try await descriptor.result(for: healthStore)
+        let anchor = decodeAnchor(anchorData)
+        let descriptor = HKAnchoredObjectQueryDescriptor<HKWorkout>(
+            predicates: [.workout(predicate)], anchor: anchor)
+        let result = try await descriptor.result(for: healthStore)
+        let workouts = result.addedSamples
         try Task.checkCancellation()
-        return workouts.map { workout in
+        let records = workouts.map { workout in
             let activity = workoutActivity(workout.workoutActivityType)
             return ActivityImportRecord(name: "\(activity) workout", activity: activity,
                                         category: activity, source: "health-workout",
                                         start: workout.startDate, end: workout.endDate)
         }
+        return ActivityAnchorResult(records: records, anchorData: encodeAnchor(result.newAnchor),
+                                    deletedObjectCount: result.deletedObjects.count)
+    }
+
+    private func encodeAnchor(_ anchor: HKQueryAnchor) -> Data {
+        (try? NSKeyedArchiver.archivedData(withRootObject: anchor, requiringSecureCoding: true)) ?? Data()
+    }
+
+    private func decodeAnchor(_ data: Data?) -> HKQueryAnchor? {
+        guard let data, !data.isEmpty else { return nil }
+        return try? NSKeyedUnarchiver.unarchivedObject(ofClass: HKQueryAnchor.self, from: data)
     }
 
     func walkingRecords(in interval: DateInterval) async throws -> [ActivityImportRecord] {
@@ -220,11 +249,18 @@ actor ActivityImportActor {
 
             for segment in segments {
                 let sourceVisits = visitsBySource[record.source, default: []]
-                let duplicate = sourceVisits.contains {
-                    abs($0.arrival.timeIntervalSince(segment.start)) < 120 &&
-                    abs(($0.departure ?? $0.arrival).timeIntervalSince(segment.end)) < 120
+                if let existing = sourceVisits.first(where: {
+                    abs($0.arrival.timeIntervalSince(segment.start)) < 120
+                }) {
+                    // Anchored queries can replay a changed sample. Update the
+                    // existing visit instead of creating a second timeline row.
+                    existing.departure = segment.end
+                    existing.placeName = record.name
+                    existing.placeCategory = record.category
+                    existing.inferredActivity = record.activity
+                    existing.userActivity = record.activity
+                    continue
                 }
-                guard !duplicate else { continue }
                 if record.source == "motion", overlaps(segment, visits: healthVisits) { continue }
                 if record.source == "health-walking",
                    overlaps(segment, visits: visitsBySource["health-workout", default: []]) { continue }

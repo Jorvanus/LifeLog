@@ -2,6 +2,11 @@
 
 ## 2026-08-03
 
+### Incremental HealthKit history imports
+
+- Sleep and workout imports now use persisted HealthKit anchors, requesting only samples added or changed since the previous successful import.
+- Anchors are saved only after the corresponding SwiftData batches finish saving, so cancellation, relaunch, and protected-store failures remain safe and idempotent.
+
 ### Faster large-period Insights snapshots
 
 - Reworked overlapping-visit segmentation to sweep sorted arrivals instead of scanning the full archive at every time boundary, reducing year-view snapshot work for large Life Cycle imports.
