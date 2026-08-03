@@ -15,6 +15,15 @@ enum ActivityLocationPolicy {
         visit.source == "automatic-superseded"
     }
 
+    /// Single resolver for callback order and overlap. Raw callbacks remain
+    /// stored; duplicates are marked superseded and older open stays bounded.
+    @discardableResult
+    static func resolveLocationCallbacks(context: ModelContext) throws -> Int {
+        let repaired = try closeSupersededOpenLocations(context: context)
+        let marked = try deduplicateAutomaticLocations(context: context)
+        return repaired + marked
+    }
+
     static func isDeviceActivity(_ visit: Visit) -> Bool {
         visit.source == "motion" || visit.source.hasPrefix("health-")
     }

@@ -117,7 +117,7 @@ enum SavedPlaceLearning {
         let visits = try context.fetch(FetchDescriptor<Visit>(
             predicate: #Predicate { $0.latitude != 0 || $0.longitude != 0 }
         ))
-        for visit in visits where ActivityLocationPolicy.isLocationVisit(visit) && !visit.isIgnored && isLocated(visit) {
+        for visit in visits where ActivityLocationPolicy.isLocationVisit(visit) && visit.resolutionState == .resolved && isLocated(visit) {
             let previous = VisitCorrectionSnapshot(
                 placeName: visit.placeName,
                 category: visit.placeCategory,

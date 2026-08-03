@@ -41,7 +41,7 @@ This plan prioritises a dependable private diary on a physical iPhone before exp
 
 ## Location and Maps efficiency review
 
-- [ ] Add a persisted resolution state for location callbacks (provisional, resolved, superseded, ignored) with one data-layer resolver used by Timeline, Insights, Map, exports, and Saved Places backfill.
+- [x] Add a persisted resolution state for location callbacks (provisional, resolved, superseded, ignored) with one data-layer resolver used by Timeline, Insights, Map, exports, and Saved Places backfill.
 - [ ] Cache Apple Maps results by a privacy-preserving rounded grid cell and place category, with a short expiry; cancel stale lookups when a visit is corrected or superseded.
 - [ ] Add a per-visit lookup cooldown and retry budget so repeated location updates cannot trigger repeated MapKit searches or reverse geocoding.
 - [ ] Store only the top few MapKit candidates needed for correction, discard duplicate candidates, and cap candidate payload size before writing it to SwiftData.

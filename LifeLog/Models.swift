@@ -2,6 +2,13 @@ import Foundation
 import SwiftData
 import CoreLocation
 
+enum VisitResolutionState: String, Codable, Sendable {
+    case provisional
+    case resolved
+    case superseded
+    case ignored
+}
+
 @Model
 final class SavedPlace {
     var name: String

@@ -49,4 +49,15 @@ extension Visit {
         get { IgnoredLocations.contains(self) }
         set { IgnoredLocations.setIgnored(newValue, for: self) }
     }
+
+    /// Derived from persisted source/confidence fields and the stable ignore
+    /// registry, so resolution survives relaunch without another schema field.
+    var resolutionState: VisitResolutionState {
+        if isIgnored { return .ignored }
+        if ActivityLocationPolicy.isSupersededLocation(self) { return .superseded }
+        if source == "automatic" && (placeCategory == "Other" || recognitionConfidence == nil) {
+            return .provisional
+        }
+        return .resolved
+    }
 }

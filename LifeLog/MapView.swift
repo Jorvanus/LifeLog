@@ -9,7 +9,7 @@ struct MapView: View {
            sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
     @Query(sort: \SavedPlace.name) private var places: [SavedPlace]
     private var locatedVisits: [Visit] {
-        visits.filter { !$0.isIgnored && !ActivityLocationPolicy.isSupersededLocation($0) }
+        visits.filter { $0.resolutionState != .ignored && $0.resolutionState != .superseded }
     }
 
     var body: some View {

@@ -22,7 +22,7 @@ enum TrendExport {
 
     static func makeFile(format: String, visits: [Visit], interval: DateInterval, now: Date) -> TrendExportFile? {
         ExportFileCleanup.removeExpired()
-        let rows = visits.filter { !$0.isIgnored && !ActivityLocationPolicy.isSupersededLocation($0) && overlaps($0, interval: interval, now: now) }
+        let rows = visits.filter { $0.resolutionState != .ignored && $0.resolutionState != .superseded && overlaps($0, interval: interval, now: now) }
             .sorted { $0.arrival < $1.arrival }
             .map { visit in
                 Row(

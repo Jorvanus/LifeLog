@@ -18,8 +18,7 @@ struct TimelineView: View {
     private var today: [Visit] {
         let locationVisits = visits.filter(ActivityLocationPolicy.isLocationVisit)
         return visits.filter { Calendar.current.isDateInToday($0.arrival) }
-            .filter { !$0.isIgnored }
-            .filter { !ActivityLocationPolicy.isSupersededLocation($0) }
+            .filter { $0.resolutionState != .ignored && $0.resolutionState != .superseded }
             .filter { ActivityLocationPolicy.shouldShowInTimeline($0, locationVisits: locationVisits) }
             // Core Location can replay an older unknown callback after a later
             // named visit arrives. Do not show that stale review row when its
@@ -84,7 +83,7 @@ struct TimelineView: View {
             .sheet(isPresented: $adding) { ManualVisitView() }
             .task {
                 do {
-                    let repaired = try ActivityLocationPolicy.closeSupersededOpenLocations(context: context)
+                    let repaired = try ActivityLocationPolicy.resolveLocationCallbacks(context: context)
                     if repaired > 0 {
                         try context.save()
                         Diagnostics.record(context, subsystem: "Core Location",
