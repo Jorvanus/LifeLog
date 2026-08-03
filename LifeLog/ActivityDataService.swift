@@ -153,15 +153,18 @@ final class ActivityDataService {
             options: [.strictStartDate, .strictEndDate]
         )
         do {
-            let descriptor = HKSampleQueryDescriptor<HKQuantitySample>(
-                predicates: [.quantitySample(type: stepType, predicate: predicate)],
-                sortDescriptors: [SortDescriptor(\.startDate)]
+            // HealthKit's cumulative statistic applies source-aware de-duplication
+            // for overlapping iPhone and Apple Watch samples. That is the accurate
+            // total for Insights and avoids loading tens of thousands of rows.
+            let descriptor = HKStatisticsQueryDescriptor(
+                predicate: .quantitySample(type: stepType, predicate: predicate),
+                options: .cumulativeSum
             )
-            let samples = try await descriptor.result(for: healthStore)
-            let total = samples.reduce(0) { $0 + $1.quantity.doubleValue(for: .count()) }
+            let statistics = try await descriptor.result(for: healthStore)
+            let total = statistics?.sumQuantity()?.doubleValue(for: .count()) ?? 0
             stepCache[cacheKey] = total
             Diagnostics.performance(context, subsystem: "HealthKit", operation: "step query",
-                                    startedAt: startedAt, itemCount: samples.count)
+                                    startedAt: startedAt)
             return total
         } catch {
             healthStatus = "Connect Apple Health to show steps"

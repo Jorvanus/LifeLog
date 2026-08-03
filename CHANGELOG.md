@@ -2,6 +2,14 @@
 
 ## 2026-08-03
 
+### Faster large-period Insights snapshots
+
+- Reworked overlapping-visit segmentation to sweep sorted arrivals instead of scanning the full archive at every time boundary, reducing year-view snapshot work for large Life Cycle imports.
+
+### Accurate HealthKit step totals
+
+- Insights uses HealthKit’s source-aware cumulative step statistic, which avoids double-counting overlapping iPhone and Apple Watch samples while keeping year queries fast.
+
 ### Performance budgets for large archives
 
 - Added centralized 250 ms responsive-first-screen and normal-interaction budgets, plus bounded Day/Week/Month/Year Insights budgets.

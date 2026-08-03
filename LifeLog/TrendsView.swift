@@ -506,6 +506,13 @@ private struct InsightsSnapshot {
             boundaries.insert(min(visit.departure ?? now, range.end))
         }
         let times = boundaries.sorted()
+        // Avoid scanning the entire archive for every boundary. The previous
+        // implementation was O(boundaries × visits), which made a year with
+        // 6,000 rows take several seconds. Keep only visits active at the
+        // current boundary while walking the already sorted timeline.
+        let arrivalSorted = orderedVisits.sorted { $0.arrival < $1.arrival }
+        var nextArrival = 0
+        var activeVisits: [Visit] = []
         var result: [InsightSegment] = []
         var gapIndex = 0
 
@@ -513,8 +520,13 @@ private struct InsightsSnapshot {
             let start = pair.0
             let end = pair.1
             guard end > start else { continue }
+            while nextArrival < arrivalSorted.count && arrivalSorted[nextArrival].arrival <= start {
+                activeVisits.append(arrivalSorted[nextArrival])
+                nextArrival += 1
+            }
+            activeVisits.removeAll { ($0.departure ?? now) <= start }
             let midpoint = start.addingTimeInterval(end.timeIntervalSince(start) / 2)
-            let matching = orderedVisits.filter {
+            let matching = activeVisits.filter {
                 $0.arrival <= midpoint && ($0.departure ?? now) > midpoint
             }
             if let visit = matching.min(by: { left, right in
