@@ -37,6 +37,7 @@
 		B1B6C438FC8C412A7E8098EE /* JournalCompactionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DDBAC8BA93246A8040B6941 /* JournalCompactionView.swift */; };
 		C194BCC0D6453A63D4F67918 /* ExportFileCleanup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 841EFA06D9C1D3D5DE11BCCC /* ExportFileCleanup.swift */; };
 		C230D3A30B5955F581E8269F /* PlaceLookupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AA772D2482869E62414D007 /* PlaceLookupService.swift */; };
+		C7260FB67C2A79251F59E0E7 /* UITestSeedData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 843C2D162240003CB5929574 /* UITestSeedData.swift */; };
 		C975A398C4FCEB89BAB6E650 /* MapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B67547668C2606629916F0B6 /* MapView.swift */; };
 		D6704F5947B4D5A3684E5C3E /* TrendExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B966AABF4CCD0CC5F1BF97B /* TrendExport.swift */; };
 		D922EFA846AD3DED0FF17CDF /* SchemaMigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00A33A60B150AFDBD347BC6 /* SchemaMigrationTests.swift */; };
@@ -91,6 +92,7 @@
 		730162A4687A39AF180FF3EA /* ActivityLocationPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityLocationPolicy.swift; sourceTree = "<group>"; };
 		831D37D3F7E2A5C6BF0F1C74 /* LifeLogApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeLogApp.swift; sourceTree = "<group>"; };
 		841EFA06D9C1D3D5DE11BCCC /* ExportFileCleanup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportFileCleanup.swift; sourceTree = "<group>"; };
+		843C2D162240003CB5929574 /* UITestSeedData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITestSeedData.swift; sourceTree = "<group>"; };
 		8A01F3743E7844412FE163D6 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		8BE5AD5AA637543CED7D6187 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		95189CB130173B9A604C5E26 /* LifeLog.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LifeLog.entitlements; sourceTree = "<group>"; };
@@ -163,6 +165,7 @@
 				0B61B476B89FDE373D60B43C /* TimelineView.swift */,
 				5B966AABF4CCD0CC5F1BF97B /* TrendExport.swift */,
 				F0F429A366891C4A81D89BCD /* TrendsView.swift */,
+				843C2D162240003CB5929574 /* UITestSeedData.swift */,
 			);
 			path = LifeLog;
 			sourceTree = "<group>";
@@ -338,6 +341,7 @@
 				99537CABDF7CF250FB9DD892 /* TimelineView.swift in Sources */,
 				D6704F5947B4D5A3684E5C3E /* TrendExport.swift in Sources */,
 				37DFB747A7509C6AD3A1E97C /* TrendsView.swift in Sources */,
+				C7260FB67C2A79251F59E0E7 /* UITestSeedData.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

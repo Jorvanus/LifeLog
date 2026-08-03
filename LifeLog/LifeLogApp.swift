@@ -15,7 +15,7 @@ struct LifeLogApp: App {
         storeConfiguration = ModelConfiguration(
             "LifeLog",
             schema: schema,
-            isStoredInMemoryOnly: false,
+            isStoredInMemoryOnly: ProcessInfo.processInfo.arguments.contains(UITestSeedData.launchArgument),
             allowsSave: true,
             groupContainer: .none,
             cloudKitDatabase: .none
@@ -23,6 +23,9 @@ struct LifeLogApp: App {
         do {
             _modelContainer = State(initialValue: try Self.openContainer(configuration: storeConfiguration, schema: schema))
             _storeOpenError = State(initialValue: nil)
+            if ProcessInfo.processInfo.arguments.contains(UITestSeedData.launchArgument), let container = _modelContainer.wrappedValue {
+                try UITestSeedData.install(in: container)
+            }
         } catch {
             _modelContainer = State(initialValue: nil)
             _storeOpenError = State(initialValue: StoreOpenError(error: error, storeURL: storeConfiguration.url))
