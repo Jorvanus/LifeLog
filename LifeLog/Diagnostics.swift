@@ -44,10 +44,24 @@ enum Diagnostics {
                        severity: String = "warning") {
         guard let context else { return }
         context.insert(DiagnosticEvent(subsystem: subsystem, severity: severity, message: message))
-        if let existing = try? context.fetch(FetchDescriptor<DiagnosticEvent>(sortBy: [SortDescriptor(\DiagnosticEvent.createdAt, order: .forward)])), existing.count > retentionLimit {
-            for event in existing.prefix(existing.count - retentionLimit) { context.delete(event) }
-        }
+        trimToRetentionLimit(context)
         try? context.save()
+    }
+
+    /// Keeps the diagnostic log bounded without loading every event on every write.
+    /// `record(...)` runs on the hot path (every HealthKit/MapKit/location callback
+    /// can log one), so this uses a lightweight count fetch first and only pulls the
+    /// specific overflow rows that need deleting, instead of fetching the full table
+    /// each time just to check its size.
+    private static func trimToRetentionLimit(_ context: ModelContext) {
+        guard let count = try? context.fetchCount(FetchDescriptor<DiagnosticEvent>()),
+              count > retentionLimit else { return }
+        var descriptor = FetchDescriptor<DiagnosticEvent>(
+            sortBy: [SortDescriptor(\DiagnosticEvent.createdAt, order: .forward)])
+        descriptor.fetchLimit = count - retentionLimit
+        if let stale = try? context.fetch(descriptor) {
+            for event in stale { context.delete(event) }
+        }
     }
 
     struct PerformanceReport: Codable {
@@ -125,8 +139,13 @@ enum Diagnostics {
     static func record(_ error: Error, context: ModelContext?, subsystem: String,
                        operation: String, severity: String = "warning") {
         let nsError = error as NSError
+        // `operation` must be interpolated (`\(operation)`), not written as a literal
+        // "(operation)". The literal form previously meant every error diagnostic
+        // across HealthKit, MapKit, and Activity Import read as the same generic
+        // "(operation) failed" text, making it impossible to tell which call site
+        // actually failed from the Diagnostics screen.
         record(context, subsystem: subsystem,
-               message: "(operation) failed (\(nsError.domain) code \(nsError.code)).",
+               message: "\(operation) failed (\(nsError.domain) code \(nsError.code)).",
                severity: severity)
     }
 }

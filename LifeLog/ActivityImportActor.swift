@@ -258,7 +258,15 @@ actor ActivityImportActor {
                     existing.placeName = record.name
                     existing.placeCategory = record.category
                     existing.inferredActivity = record.activity
-                    existing.userActivity = record.activity
+                    // Only refresh `userActivity` from the device sample if the person
+                    // hasn't explicitly confirmed a label on this visit. Without this
+                    // guard, a later replay of the same HealthKit/Motion anchor would
+                    // silently overwrite a manual correction with the original device
+                    // guess (recognitionConfidence == "confirmed" marks a person-picked
+                    // activity; see TimelineView.select/applyQuickLabel).
+                    if existing.recognitionConfidence != "confirmed" {
+                        existing.userActivity = record.activity
+                    }
                     continue
                 }
                 if record.source == "motion", overlaps(segment, visits: healthVisits) { continue }

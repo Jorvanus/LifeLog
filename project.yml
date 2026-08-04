@@ -22,8 +22,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.aaronbaxter.LifeLog
-        MARKETING_VERSION: "1.0.3"
-        CURRENT_PROJECT_VERSION: "4"
+        MARKETING_VERSION: "1.0.4"
+        CURRENT_PROJECT_VERSION: "5"
         INFOPLIST_FILE: LifeLog/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
@@ -34,8 +34,10 @@ targets:
     entitlements:
       path: LifeLog/LifeLog.entitlements
       properties:
-        # Background Core Location may relaunch LifeLog while the screen is locked.
-        com.apple.developer.default-data-protection: NSFileProtectionCompleteUntilFirstUserAuthentication
+        # This value must remain aligned with the personal-team provisioning profile.
+        # StoreProtection applies the background-compatible class to the SQLite
+        # files after a successful foreground open.
+        com.apple.developer.default-data-protection: NSFileProtectionComplete
         com.apple.developer.healthkit: true
   LifeLogTests:
     type: bundle.unit-test
