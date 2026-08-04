@@ -134,9 +134,19 @@ enum PlaceLookupService {
                                        latencyMs: Int((Date.now.timeIntervalSince(startedAt) * 1000).rounded()),
                                        candidateCount: response.mapItems.count,
                                        candidatePayloadBytes: (try? JSONEncoder().encode(suggestions).count) ?? 0)
+        evictExpired()
         cache[cell] = CachedResult(createdAt: .now, result: result)
         if let lookupID { cancelledLookups.remove(lookupID) }
         return result
+    }
+
+    /// Cache entries are only checked for expiry on read, so without this a
+    /// long-running background session would accumulate one permanent entry
+    /// per distinct ~100 m cell ever visited. Sweeping on every write bounds
+    /// memory to whatever was looked up within the last `cacheLifetime`.
+    private static func evictExpired() {
+        let now = Date.now
+        cache = cache.filter { now.timeIntervalSince($0.value.createdAt) < cacheLifetime }
     }
 
     private static func placeCategory(from category: MKPointOfInterestCategory?) -> String {

@@ -2,6 +2,10 @@
 
 ## 2026-08-04
 
+### Bounded place lookup cache
+
+- Place lookup results are now swept for expired entries on every new lookup instead of only being checked on read, so a long-running background session no longer accumulates one permanent in-memory entry per distinct location ever visited.
+
 ### Tap to navigate from Insights
 
 - Tapping a donut wedge on the Insights tab now highlights it as before, and tapping the centre card that appears opens the underlying visit (or the "Add Visit" flow for unlogged time), matching the legend rows below the chart.
