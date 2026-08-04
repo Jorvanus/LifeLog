@@ -257,6 +257,14 @@ enum ActivityLocationPolicy {
         ))
         var retained: [Visit] = []
         var removed = 0
+        // Heal rows stranded by earlier builds, which relabelled a duplicate without
+        // closing it. They are excluded from every screen, so this only bounds their
+        // stored duration; it never changes what is displayed.
+        var healed = 0
+        for stale in visits where isSupersededLocation(stale) && stale.departure == nil {
+            stale.departure = stale.arrival
+            healed += 1
+        }
         for candidate in visits where !isSupersededLocation(candidate) {
             guard let previous = retained.last else {
                 retained.append(candidate)
@@ -285,6 +293,12 @@ enum ActivityLocationPolicy {
                     previous.userActivity = candidate.userActivity
                     previous.recognitionConfidence = candidate.recognitionConfidence
                 }
+                // The candidate's interval now lives on `previous`, including its
+                // open-endedness, so the superseded row must not stay open itself.
+                // `closeSupersededOpenLocations` only fetches live locations and can
+                // never reach it, which otherwise leaves a row whose `duration` grows
+                // for the life of the store.
+                candidate.departure = candidate.arrival
                 candidate.source = supersededLocationSource
                 removed += 1
             } else {
@@ -297,7 +311,9 @@ enum ActivityLocationPolicy {
                 retained.append(candidate)
             }
         }
-        return removed
+        // Healed rows are counted so the caller still saves, and is still told it
+        // repaired something, on a pass that only closed stranded records.
+        return removed + healed
     }
 
     /// Higher-quality recognition wins when Core Location supplies two views of

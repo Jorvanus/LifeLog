@@ -162,6 +162,54 @@ struct ActivityLocationPolicyTests {
         #expect(locations[1].departure == nil)
     }
 
+    @Test("A superseded duplicate is closed so its duration cannot grow forever")
+    func supersededDuplicatesAreClosed() throws {
+        let context = try makeContext()
+        let winner = Visit(arrival: base, latitude: -23.37, longitude: 150.51,
+                           placeName: "Home", inferredActivity: "At home", source: "automatic",
+                           recognitionConfidence: "learned")
+        // A second open callback for the same arrival, as Core Location replays.
+        let duplicate = Visit(arrival: base.addingTimeInterval(20), latitude: -23.3702, longitude: 150.5101,
+                              placeName: "Identifying…", inferredActivity: "Visiting", source: "automatic")
+        context.insert(winner)
+        context.insert(duplicate)
+        try context.save()
+
+        _ = try ActivityLocationPolicy.deduplicateAutomaticLocations(context: context)
+        try context.save()
+
+        let superseded = try context.fetch(FetchDescriptor<Visit>())
+            .filter(ActivityLocationPolicy.isSupersededLocation)
+        #expect(superseded.count == 1)
+        // The interval moved to the winner, so the loser must not stay open.
+        #expect(superseded.first?.departure != nil)
+        #expect(superseded.first?.duration == 0)
+        // The surviving visit keeps the open stay.
+        let live = try context.fetch(FetchDescriptor<Visit>())
+            .filter { ActivityLocationPolicy.isLocationVisit($0) }
+        #expect(live.count == 1)
+        #expect(live.first?.departure == nil)
+    }
+
+    @Test("Superseded rows stranded open by earlier builds are healed")
+    func healsStrandedSupersededRows() throws {
+        let context = try makeContext()
+        // Written as an earlier build left it: relabelled but never closed.
+        let stranded = Visit(arrival: base, latitude: -23.37, longitude: 150.51,
+                             placeName: "atWork Australia", inferredActivity: "Working",
+                             source: "automatic-superseded", recognitionConfidence: "low")
+        context.insert(stranded)
+        try context.save()
+        #expect(stranded.departure == nil)
+
+        let repaired = try ActivityLocationPolicy.deduplicateAutomaticLocations(context: context)
+        try context.save()
+
+        #expect(repaired == 1, "The caller only saves when a repair is reported")
+        #expect(stranded.departure == stranded.arrival)
+        #expect(stranded.duration == 0)
+    }
+
     @Test("A learned Home callback replaces a duplicate identifying arrival")
     func mergesIdentifyingCallbackIntoLearnedHome() throws {
         let context = try makeContext()

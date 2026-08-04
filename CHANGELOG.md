@@ -2,6 +2,10 @@
 
 ## 2026-08-05
 
+### Bounded superseded location callbacks
+
+- When Core Location replays an arrival, LifeLog keeps the best record and marks the duplicates superseded. Those duplicates handed their time to the surviving visit but were left open-ended, so their recorded length kept growing for as long as the store existed. They are now closed when superseded, and any left open by an earlier build are repaired the next time the Timeline opens. Nothing changes on screen: superseded records were already hidden everywhere.
+
 ### Removed place type
 
 - Editing a visit now offers just the place name and the nearby Apple Maps picker. The "Place type" control is gone from both the visit editor and the Saved Place editor, and LifeLog no longer stores a place type anywhere.
