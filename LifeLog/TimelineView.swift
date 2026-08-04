@@ -963,7 +963,7 @@ struct VisitEditor: View {
         } else {
             try context.save()
         }
-        InsightsInvalidation.invalidate(reason: corrected ? "visit correction" : "visit edit")
+        InsightsInvalidation.invalidate(reason: corrected ? "visit correction" : "visit edit", context: context)
         correctionBaseline = currentSnapshot
     }
 }

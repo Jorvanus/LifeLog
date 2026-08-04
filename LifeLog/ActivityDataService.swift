@@ -184,7 +184,7 @@ final class ActivityDataService {
             let records = try await sampleReader.sleepRecords(in: interval)
             guard !records.isEmpty else { return false }
             let imported = try await importWriter.importStandalone(records) > 0
-            if imported { InsightsInvalidation.invalidate(reason: "HealthKit sleep update") }
+            if imported { InsightsInvalidation.invalidate(reason: "HealthKit sleep update", context: context) }
             return imported
         } catch {
             Diagnostics.record(error, context: context, subsystem: "HealthKit",
@@ -314,7 +314,7 @@ final class ActivityDataService {
                 importTask = nil
                 Diagnostics.performance(context, subsystem: "Activity Import", operation: "background import",
                                         startedAt: startedAt, itemCount: records.count)
-                InsightsInvalidation.invalidate(reason: "HealthKit or Motion import")
+                InsightsInvalidation.invalidate(reason: "HealthKit or Motion import", context: context)
             } catch is CancellationError {
                 await importWriter.cancel()
                 guard importID == id else { return }

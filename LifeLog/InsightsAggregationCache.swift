@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 /// Coordinates invalidation from background imports and HealthKit without
 /// sending SwiftData models across actors. The UI cache reads the generation
@@ -7,9 +8,8 @@ actor InsightsAggregationActor {
     static let shared = InsightsAggregationActor()
     private var generation = 0
 
-    func invalidate(reason: String) {
+    func invalidate() {
         generation &+= 1
-        _ = reason
     }
 
     func currentGeneration() -> Int { generation }
@@ -18,12 +18,16 @@ actor InsightsAggregationActor {
 enum InsightsInvalidation {
     static let notification = Notification.Name("LifeLog.InsightsInvalidated")
 
-    static func invalidate(reason: String) {
-        Task {
-            await InsightsAggregationActor.shared.invalidate(reason: reason)
-            await MainActor.run {
-                NotificationCenter.default.post(name: notification, object: reason)
-            }
-        }
+    /// `context` is optional because a few callers invalidate before a model
+    /// context is available; when present, the reason is recorded alongside
+    /// the app's other privacy-safe diagnostics instead of being discarded.
+    /// MainActor-isolated because `ModelContext` isn't Sendable and every
+    /// caller already holds one on the main actor.
+    @MainActor
+    static func invalidate(reason: String, context: ModelContext? = nil) {
+        Diagnostics.record(context, subsystem: "Insights",
+                           message: "Cache invalidated: \(reason)", severity: "info")
+        NotificationCenter.default.post(name: notification, object: reason)
+        Task { await InsightsAggregationActor.shared.invalidate() }
     }
 }
