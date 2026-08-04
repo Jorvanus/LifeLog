@@ -44,7 +44,8 @@ struct ActivitiesView: View {
             Section {
                 ForEach(activities) { activity in
                     NavigationLink {
-                        ActivityEditor(activity: activity) { updated in
+                        ActivityEditor(activity: activity,
+                                       usageCount: usageCount(activity.name)) { updated in
                             replace(updated)
                         }
                     } label: {
@@ -221,6 +222,7 @@ struct ActivitiesView: View {
 struct ActivityEditor: View {
     @Environment(\.dismiss) private var dismiss
     let existing: ActivityDefinition?
+    let usageCount: Int
     let onSave: (ActivityDefinition) -> Void
     @State private var name: String
     @State private var category: String
@@ -235,8 +237,10 @@ struct ActivityEditor: View {
         ("Social", "person.2.fill"), ("Place", "mappin.and.ellipse")
     ]
 
-    init(activity: ActivityDefinition? = nil, onSave: @escaping (ActivityDefinition) -> Void) {
+    init(activity: ActivityDefinition? = nil, usageCount: Int = 0,
+         onSave: @escaping (ActivityDefinition) -> Void) {
         existing = activity
+        self.usageCount = usageCount
         self.onSave = onSave
         _name = State(initialValue: activity?.name ?? "")
         _category = State(initialValue: activity?.category ?? "Other")
@@ -259,6 +263,20 @@ struct ActivityEditor: View {
             Picker("Icon", selection: $symbol) {
                 ForEach(iconOptions, id: \.1) { option in
                     Label(option.0, systemImage: option.1).tag(option.1)
+                }
+            }
+            // The count on the list was a dead end: it said how much history an
+            // edit would affect without letting any of it be inspected or fixed.
+            if let existing, usageCount > 0 {
+                Section {
+                    NavigationLink {
+                        ActivityVisitsView(activityName: existing.name)
+                    } label: {
+                        LabeledContent("Visits using this", value: "\(usageCount)")
+                    }
+                    .accessibilityIdentifier("activity-visits-link")
+                } footer: {
+                    Text("Open to review them, or correct one on its own without changing the rest.")
                 }
             }
         }
@@ -286,5 +304,59 @@ struct ActivityEditor: View {
         definition.colorHex = activityColorHex(categoryColorValue)
         onSave(definition)
         dismiss()
+    }
+}
+
+
+/// Every visit currently labelled with one activity, newest first, each opening the
+/// normal visit editor. Matching mirrors `Visit.activity`: an explicit choice wins,
+/// and the inferred value only counts when no explicit one was made — so this list
+/// always agrees with the count shown alongside it.
+private struct ActivityVisitsView: View {
+    let activityName: String
+    @Query private var candidates: [Visit]
+
+    init(activityName: String) {
+        self.activityName = activityName
+        let name = activityName
+        // SwiftData cannot filter on `activity` because it is computed, so the fetch
+        // is deliberately loose and narrowed below rather than duplicating the rule.
+        _candidates = Query(
+            filter: #Predicate<Visit> { $0.userActivity == name || $0.inferredActivity == name },
+            sort: [SortDescriptor(\Visit.arrival, order: .reverse)]
+        )
+    }
+
+    private var visits: [Visit] {
+        let key = activityName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return candidates.filter {
+            $0.activity.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == key
+        }
+    }
+
+    var body: some View {
+        List {
+            if visits.isEmpty {
+                ContentUnavailableView("No visits use this", systemImage: "clock.badge.questionmark",
+                                       description: Text("Nothing in your timeline is labelled “\(activityName)” right now."))
+            } else {
+                Section {
+                    ForEach(visits) { visit in
+                        NavigationLink { VisitEditor(visit: visit) } label: {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(visit.displayPlaceName).font(.headline).lineLimit(1)
+                                Text(visit.arrival.formatted(date: .abbreviated, time: .shortened))
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                } footer: {
+                    Text("Editing one visit changes only that visit. To change them all at once, use Place History for a place, or rename the activity itself.")
+                }
+            }
+        }
+        .navigationTitle(activityName)
+        .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("activity-visits-screen")
     }
 }

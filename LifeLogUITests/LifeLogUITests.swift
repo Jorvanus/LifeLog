@@ -132,6 +132,35 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(clear.isHittable)
     }
 
+    /// The usage count has to lead somewhere: opening an activity should list the
+    /// visits it covers, and each should open for individual correction.
+    func testActivityVisitsAreListedAndEditable() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+
+        app.tabBars.buttons["Settings"].tap()
+        let activities = element("activities-link")
+        XCTAssertTrue(activities.waitForExistence(timeout: 10))
+        activities.tap()
+
+        // "At home" is seeded and used by the seeded timeline.
+        let row = app.staticTexts["At home"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.tap()
+
+        let visitsLink = element("activity-visits-link")
+        XCTAssertTrue(visitsLink.waitForExistence(timeout: 5))
+        visitsLink.tap()
+
+        XCTAssertTrue(element("activity-visits-screen").waitForExistence(timeout: 5))
+        // Opening a listed visit must reach the ordinary editor.
+        let firstVisit = app.cells.firstMatch
+        XCTAssertTrue(firstVisit.waitForExistence(timeout: 5))
+        firstVisit.tap()
+        XCTAssertTrue(app.textFields["Place name"].waitForExistence(timeout: 5))
+    }
+
     func testManualEntryIsAccessibleFromTimeline() {
         let addVisit = app.buttons["Add visit"]
         XCTAssertTrue(addVisit.waitForExistence(timeout: 5))

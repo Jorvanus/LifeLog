@@ -2,6 +2,11 @@
 
 ## 2026-08-05
 
+### See and correct the visits behind an activity
+
+- Opening an activity now shows how many visits use it and lets you open the list. Each visit opens in the ordinary editor, so one can be corrected without touching the rest.
+- The list always matches the count beside it: an activity you chose yourself wins, and an inferred one only counts when you have not chosen.
+
 ### Renaming an activity onto an existing one merges them
 
 - Renaming an activity to a name already in the list now offers to merge: its visits move onto the existing activity and the duplicate entry is removed. Previously the list would keep two entries with the same name, and which one decided the Insights group depended on their order.
