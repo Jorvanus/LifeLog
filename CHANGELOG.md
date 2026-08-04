@@ -2,6 +2,11 @@
 
 ## 2026-08-05
 
+### Uncertain place matches ask before being accepted
+
+- Apple Maps sometimes returns a nearby business for a coordinate it is not confident about — a workplace matched onto a home address, for example. LifeLog was writing that name in as though it were settled. An uncertain match now appears in the review queue asking "Is this right?", showing the guessed name, with a "Yes, this is right" button that confirms it and remembers the place for future visits. Correcting the name instead teaches it the same way as before.
+- Places LifeLog could not name at all continue to appear as "Uncategorised location". The Settings review list now covers both, and is named "Locations to Review".
+
 ### Bounded superseded location callbacks
 
 - When Core Location replays an arrival, LifeLog keeps the best record and marks the duplicates superseded. Those duplicates handed their time to the surviving visit but were left open-ended, so their recorded length kept growing for as long as the store existed. They are now closed when superseded, and any left open by an earlier build are repaired the next time the Timeline opens. Nothing changes on screen: superseded records were already hidden everywhere.

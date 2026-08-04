@@ -58,7 +58,7 @@ struct TimelineView: View {
     }
     private var reviewQueue: [Visit] {
         // The live unknown location has its own prominent card; the queue is for past stays.
-        visits.filter { $0.needsCategorisation && !$0.isIgnored && $0.departure != nil }
+        visits.filter { $0.needsReview && !$0.isIgnored && $0.departure != nil }
     }
     private var current: Visit? {
         visits.first { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored && $0.departure == nil }
@@ -152,7 +152,7 @@ struct TimelineView: View {
                     Text(headerDate)
                         .font(.title3).foregroundStyle(.secondary)
                     if !reviewQueue.isEmpty {
-                        Text("\(reviewQueue.count) \(reviewQueue.count == 1 ? "place" : "places") to categorise")
+                        Text("\(reviewQueue.count) \(reviewQueue.count == 1 ? "place" : "places") to review")
                             .font(.subheadline.weight(.medium)).foregroundStyle(.orange)
                             .padding(.top, 4)
                     }
@@ -177,15 +177,24 @@ struct TimelineView: View {
                 HStack(spacing: 14) {
                     ActivityIcon(activity: visit.activity, context: visit.displayPlaceName, color: .orange)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Uncategorised location").font(.headline).foregroundStyle(.primary)
-                        if visit.placeName != "Identifying…" && visit.placeName != "Unknown place" {
-                            Text("Likely: \(visit.placeName)").font(.subheadline).foregroundStyle(.secondary)
+                        // A weak Apple Maps guess already has a name, so asking the
+                        // person to agree with it reads very differently from asking
+                        // them to identify a place LifeLog knows nothing about.
+                        if visit.needsConfirmation {
+                            Text("Is this right?").font(.headline).foregroundStyle(.primary)
+                            Text(visit.placeName).font(.subheadline).foregroundStyle(.secondary)
+                        } else {
+                            Text("Uncategorised location").font(.headline).foregroundStyle(.primary)
+                            if !visit.hasPlaceholderName {
+                                Text("Likely: \(visit.placeName)").font(.subheadline).foregroundStyle(.secondary)
+                            }
                         }
                         Text("Suspected activity: \(visit.inferredActivity)")
                             .font(.subheadline).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Text("Categorise").font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                    Text(visit.needsConfirmation ? "Check" : "Categorise")
+                        .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
                         .padding(.horizontal, 15).padding(.vertical, 8)
                         .background(.orange.gradient, in: RoundedRectangle(cornerRadius: 9))
                     Image(systemName: "chevron.right").foregroundStyle(.orange)
@@ -692,7 +701,7 @@ struct VisitEditor: View {
                     Text("Adjusting the pin changes this visit’s stored coordinate. It does not contact Apple Maps until you choose a place suggestion or save a place.")
                 }
             }
-            Section("Place") {
+            Section {
                 TextField("Place name", text: $visit.placeName)
                 if recordedCoordinate != nil {
                     Button {
@@ -700,6 +709,21 @@ struct VisitEditor: View {
                     } label: {
                         Label("Choose nearby Apple Maps place", systemImage: "mappin.and.ellipse")
                     }
+                }
+                if visit.needsConfirmation {
+                    // Without this there is no way to agree with a weak guess:
+                    // dismissing the editor leaves the confidence untouched, so the
+                    // visit would return to the review queue forever.
+                    Button { confirmPlace() } label: {
+                        Label("Yes, this is right", systemImage: "checkmark.circle.fill")
+                    }
+                    .accessibilityIdentifier("confirm-place")
+                }
+            } header: {
+                Text("Place")
+            } footer: {
+                if visit.needsConfirmation {
+                    Text("LifeLog matched this from Apple Maps but isn\u{2019}t confident. Confirming remembers it for future visits here; correcting the name teaches it instead.")
                 }
             }
             Section("What were you doing?") {
@@ -835,6 +859,17 @@ struct VisitEditor: View {
             if recurrence > 0 { evidence.append("Recurring place (\(recurrence) prior check-in\(recurrence == 1 ? "" : "s"))") }
         }
         return evidence.isEmpty ? "No inference evidence recorded" : evidence.joined(separator: " · ")
+    }
+
+    /// Accepts a weak Apple Maps guess as correct. The inferred activity becomes an
+    /// explicit choice so the visit stops reading as a guess, and learning it saves
+    /// the place for future arrivals.
+    private func confirmPlace() {
+        if visit.userActivity?.isEmpty != false {
+            visit.userActivity = visit.inferredActivity
+        }
+        visit.recognitionConfidence = "confirmed"
+        learnPlace()
     }
 
     private func learnPlace() {

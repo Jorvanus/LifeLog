@@ -11,8 +11,10 @@ struct PlacesView: View {
            sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
     let recorder: LocationRecorder
 
-    private var uncategorised: [Visit] {
-        visits.filter { $0.needsCategorisation && !$0.isIgnored }
+    // Matches the Timeline review queue: places LifeLog could not identify, plus
+    // weak Apple Maps guesses still waiting for someone to agree with them.
+    private var needingReview: [Visit] {
+        visits.filter { $0.needsReview && !$0.isIgnored }
     }
     private var ignored: [Visit] {
         visits.filter { $0.isIgnored && ActivityLocationPolicy.isLocationVisit($0) }
@@ -22,12 +24,12 @@ struct PlacesView: View {
         List {
             Section("Review") {
                 NavigationLink {
-                    LocationVisitList(title: "Uncategorised Locations", visits: uncategorised, mode: .uncategorised)
+                    LocationVisitList(title: "Locations to Review", visits: needingReview, mode: .uncategorised)
                 } label: {
                     Label {
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("Uncategorised Locations").font(.headline)
-                            Text(uncategorised.isEmpty ? "None to review" : "\(uncategorised.count) to categorise")
+                            Text("Locations to Review").font(.headline)
+                            Text(needingReview.isEmpty ? "None to review" : "\(needingReview.count) to review")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     } icon: {
@@ -120,9 +122,9 @@ private struct LocationVisitList: View {
         List {
             if visits.isEmpty {
                 ContentUnavailableView(
-                    mode == .uncategorised ? "No uncategorised locations" : "No ignored locations",
+                    mode == .uncategorised ? "Nothing to review" : "No ignored locations",
                     systemImage: mode == .uncategorised ? "checkmark.circle" : "eye",
-                    description: Text(mode == .uncategorised ? "New locations needing a label will appear here." : "Ignored locations will appear here when you hide them."))
+                    description: Text(mode == .uncategorised ? "Places needing a label, or an uncertain match needing confirmation, will appear here." : "Ignored locations will appear here when you hide them."))
             } else {
                 ForEach(visits) { visit in
                     HStack {

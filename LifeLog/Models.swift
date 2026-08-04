@@ -86,6 +86,24 @@ final class Visit {
     var needsCategorisation: Bool {
         source == "automatic" && hasPlaceholderName && userActivity?.isEmpty != false
     }
+
+    /// A named guess LifeLog is not sure about. Apple Maps can return a nearby
+    /// business with weak confidence — a workplace matched to a home address, say
+    /// — and simply writing that name in would look like a settled fact. The place
+    /// has a name, so it is not "uncategorised"; it still needs a person to agree.
+    var needsConfirmation: Bool {
+        guard source == "automatic", !hasPlaceholderName,
+              userActivity?.isEmpty != false else { return false }
+        switch recognitionConfidence?.lowercased() {
+        case "low", "medium": return true
+        default: return false
+        }
+    }
+
+    /// Everything worth putting in front of a person: a place LifeLog could not
+    /// identify, or one it guessed at without much certainty.
+    var needsReview: Bool { needsCategorisation || needsConfirmation }
+
     /// Presentation values keep a recorded-but-unknown place visibly logged without
     /// exposing placeholder names such as “Identifying…” in Timeline and Insights.
     var displayPlaceName: String {
