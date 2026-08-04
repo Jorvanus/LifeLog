@@ -109,10 +109,10 @@ struct TimelineFixtureCoverageTests {
 
         let csvText = try String(contentsOf: csv.url, encoding: .utf8)
         let jsonText = try String(contentsOf: json.url, encoding: .utf8)
-        #expect(csvText.contains("place,category,activity"))
+        #expect(csvText.contains("place,category,category_color,activity"))
         #expect(csvText.contains("Corner, Cafe"))
         #expect(jsonText.contains("Corner, Cafe"))
-        #expect(jsonText.contains("confirmed"))
+        #expect(jsonText.contains("Confirmed"))
     }
 
     @Test("Life Cycle journal CSV maps activities and tolerates malformed rows")
