@@ -12,16 +12,16 @@ struct ActivitiesView: View {
                         ActivityEditor(activity: activity) { updated in
                             replace(updated)
                         }
-                        .accessibilityValue("Category colour \(categoryColorHex(forCategory: activity.category))")
                     } label: {
                         Label {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(activity.name).font(.headline)
-                            }
+                            Text(activity.name).font(.headline)
                         } icon: {
                             Image(systemName: activity.symbol).foregroundStyle(activityColor(activity.name))
                         }
                     }
+                    // Belongs on the row, not the pushed destination, so the colour
+                    // is announced while moving through the list.
+                    .accessibilityValue("Category colour \(categoryColorHex(forCategory: activity.category))")
                 }
                 .onDelete { offsets in
                     activities.remove(atOffsets: offsets)
@@ -40,9 +40,13 @@ struct ActivitiesView: View {
         }
         .task { ActivityCatalog.seed(); activities = ActivityCatalog.load() }
         .sheet(isPresented: $adding) {
-            ActivityEditor { newActivity in
-                activities.append(newActivity)
-                ActivityCatalog.save(activities)
+            // Modal presentation supplies the navigation container, matching how
+            // VisitEditor and SavedPlaceEditor are presented elsewhere.
+            NavigationStack {
+                ActivityEditor { newActivity in
+                    activities.append(newActivity)
+                    ActivityCatalog.save(activities)
+                }
             }
         }
     }
@@ -80,24 +84,30 @@ struct ActivityEditor: View {
         _categoryColorValue = State(initialValue: activity.map { activityColor($0.name) } ?? .gray)
     }
 
+    // Adding is always presented modally and editing is always pushed, so this
+    // also decides whether an explicit Cancel button is needed alongside the
+    // navigation stack's own back button.
+    private var isModal: Bool { existing == nil }
+
     var body: some View {
-        NavigationStack {
-            Form {
-                TextField("Activity name", text: $name)
-                ColorPicker("Activity colour", selection: $categoryColorValue, supportsOpacity: false)
-                Picker("Icon", selection: $symbol) {
-                    ForEach(iconOptions, id: \.1) { option in
-                        Label(option.0, systemImage: option.1).tag(option.1)
-                    }
+        Form {
+            TextField("Activity name", text: $name)
+            ColorPicker("Activity colour", selection: $categoryColorValue, supportsOpacity: false)
+            Picker("Icon", selection: $symbol) {
+                ForEach(iconOptions, id: \.1) { option in
+                    Label(option.0, systemImage: option.1).tag(option.1)
                 }
             }
-            .navigationTitle(existing == nil ? "Add Activity" : "Edit Activity")
-            .toolbar {
+        }
+        .navigationTitle(isModal ? "Add Activity" : "Edit Activity")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if isModal {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { save() }
-                        .disabled(TextSafety.clean(name, maximumLength: 80).isEmpty)
-                }
+            }
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save") { save() }
+                    .disabled(TextSafety.clean(name, maximumLength: 80).isEmpty)
             }
         }
     }

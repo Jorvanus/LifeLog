@@ -11,42 +11,65 @@ final class LifeLogUITests: XCTestCase {
         app.launch()
     }
 
+    /// Screen identifiers are attached to whatever container SwiftUI renders
+    /// (a ScrollView for Timeline, a Form/List elsewhere), so they never appear
+    /// under `otherElements`. Matching on `.any` asserts the hook is present
+    /// without pinning the test to the concrete element type SwiftUI chooses.
+    private func element(_ identifier: String) -> XCUIElement {
+        app.descendants(matching: .any)[identifier]
+    }
+
     func testPrimaryScreensExposeStableAccessibilityHooks() {
-        XCTAssertTrue(app.otherElements["timeline-screen"].waitForExistence(timeout: 5))
+        XCTAssertTrue(element("timeline-screen").waitForExistence(timeout: 5))
         XCTAssertTrue(app.tabBars.buttons["Insights"].exists)
-        XCTAssertTrue(app.tabBars.buttons["Map"].exists)
         XCTAssertTrue(app.tabBars.buttons["Settings"].exists)
 
         app.tabBars.buttons["Insights"].tap()
-        XCTAssertTrue(app.otherElements["insights-screen"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.otherElements["insights-donut-chart"].exists)
-
-        app.tabBars.buttons["Map"].tap()
-        XCTAssertTrue(app.otherElements["map-screen"].waitForExistence(timeout: 5))
+        XCTAssertTrue(element("insights-screen").waitForExistence(timeout: 5))
+        XCTAssertTrue(element("insights-donut-chart").waitForExistence(timeout: 5))
 
         app.tabBars.buttons["Settings"].tap()
-        XCTAssertTrue(app.otherElements["settings-screen"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.descendants(matching: .any)["saved-places-link"].waitForExistence(timeout: 5))
+        XCTAssertTrue(element("settings-screen").waitForExistence(timeout: 5))
+        XCTAssertTrue(element("saved-places-link").waitForExistence(timeout: 5))
     }
 
     func testSavedPlacesScreenIsReachableFromSettings() {
         app.tabBars.buttons["Settings"].tap()
-        let savedPlaces = app.descendants(matching: .any)["saved-places-link"]
+        let savedPlaces = element("saved-places-link")
         XCTAssertTrue(savedPlaces.waitForExistence(timeout: 5))
         savedPlaces.tap()
-        XCTAssertTrue(app.otherElements["saved-places-screen"].waitForExistence(timeout: 5))
+        XCTAssertTrue(element("saved-places-screen").waitForExistence(timeout: 5))
     }
 
     func testCurrentLocationLabelingHookIsExposedWhenAVisitIsActive() {
         app.tabBars.buttons["Settings"].tap()
-        XCTAssertTrue(app.otherElements["settings-screen"].waitForExistence(timeout: 5))
+        XCTAssertTrue(element("settings-screen").waitForExistence(timeout: 5))
 
         // A fresh install may have no active location yet. When one exists,
         // the control must be discoverable and tappable for accessibility users.
-        let labelControl = app.descendants(matching: .any)["current-location-label"]
+        let labelControl = element("current-location-label")
         if labelControl.exists {
             XCTAssertTrue(labelControl.isHittable)
         }
+    }
+
+    /// Editing an activity pushes onto the Settings stack, so the editor keeps a
+    /// working back button and offers Save without a redundant Cancel.
+    func testEditingAnActivityPushesOntoTheSettingsStack() {
+        app.tabBars.buttons["Settings"].tap()
+        let activities = element("activities-link")
+        XCTAssertTrue(activities.waitForExistence(timeout: 5))
+        activities.tap()
+
+        let firstActivity = app.cells.firstMatch
+        XCTAssertTrue(firstActivity.waitForExistence(timeout: 5))
+        firstActivity.tap()
+
+        let bar = app.navigationBars["Edit Activity"]
+        XCTAssertTrue(bar.waitForExistence(timeout: 5))
+        XCTAssertTrue(bar.buttons["Activities"].exists, "Pushed editor should keep a back button")
+        XCTAssertTrue(bar.buttons["Save"].exists)
+        XCTAssertFalse(bar.buttons["Cancel"].exists, "Cancel is only for the modal add flow")
     }
 
     func testManualEntryIsAccessibleFromTimeline() {

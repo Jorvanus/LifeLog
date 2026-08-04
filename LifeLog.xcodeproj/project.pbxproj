@@ -43,7 +43,6 @@
 		C194BCC0D6453A63D4F67918 /* ExportFileCleanup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 841EFA06D9C1D3D5DE11BCCC /* ExportFileCleanup.swift */; };
 		C230D3A30B5955F581E8269F /* PlaceLookupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AA772D2482869E62414D007 /* PlaceLookupService.swift */; };
 		C7260FB67C2A79251F59E0E7 /* UITestSeedData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 843C2D162240003CB5929574 /* UITestSeedData.swift */; };
-		C975A398C4FCEB89BAB6E650 /* MapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B67547668C2606629916F0B6 /* MapView.swift */; };
 		D6704F5947B4D5A3684E5C3E /* TrendExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B966AABF4CCD0CC5F1BF97B /* TrendExport.swift */; };
 		D922EFA846AD3DED0FF17CDF /* SchemaMigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00A33A60B150AFDBD347BC6 /* SchemaMigrationTests.swift */; };
 		DD8E7BFCC984E9B6BBA2B2E5 /* ActivityDataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A9921C3BD6F05CA5C2B6B9B /* ActivityDataService.swift */; };
@@ -52,6 +51,7 @@
 		E9B89A4B8DD841BF6BE226B6 /* LifeLogUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20F66D93CEC288FCC9E45F8C /* LifeLogUITests.swift */; };
 		EE018FBC1119FF49D463B185 /* SavedPlaceLearning.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF719128067426A354FA8F08 /* SavedPlaceLearning.swift */; };
 		F4720F0709560024ADC50277 /* SpatialBounds.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30F57D08CA67F2A6700D4C1 /* SpatialBounds.swift */; };
+		F16C3923AD72AA76DFF98C54 /* CardStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30964332BBB52D818D5C082 /* CardStyle.swift */; };
 		F2ADEFB0210575F3459AEF29 /* CorrectionHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65FE8C413DBE943F6F12FC6A /* CorrectionHistory.swift */; };
 /* End PBXBuildFile section */
 
@@ -111,7 +111,6 @@
 		AC56B8BAB2BB0A8764D18B1E /* DiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsView.swift; sourceTree = "<group>"; };
 		AFAE754CED69E401D1F84CA1 /* ActivityCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityCatalog.swift; sourceTree = "<group>"; };
 		B4B8299006F8D67881EC2275 /* LifeLog.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = LifeLog.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		B67547668C2606629916F0B6 /* MapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapView.swift; sourceTree = "<group>"; };
 		BDA3990118D7AF857B32CE2A /* LifeLogSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeLogSchema.swift; sourceTree = "<group>"; };
 		CCF7D783E0D20CD245ACCA8C /* InsightsAggregationCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsAggregationCache.swift; sourceTree = "<group>"; };
 		D936E236D5176123EE3DAD91 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -124,6 +123,7 @@
 		F0F429A366891C4A81D89BCD /* TrendsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendsView.swift; sourceTree = "<group>"; };
 		FF719128067426A354FA8F08 /* SavedPlaceLearning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedPlaceLearning.swift; sourceTree = "<group>"; };
 		C30F57D08CA67F2A6700D4C1 /* SpatialBounds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialBounds.swift; sourceTree = "<group>"; };
+		E30964332BBB52D818D5C082 /* CardStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardStyle.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -151,6 +151,7 @@
 				27863B7E1F9D43C1794A6DB4 /* ActivityImportActor.swift */,
 				730162A4687A39AF180FF3EA /* ActivityLocationPolicy.swift */,
 				D936E236D5176123EE3DAD91 /* Assets.xcassets */,
+				E30964332BBB52D818D5C082 /* CardStyle.swift */,
 				65FE8C413DBE943F6F12FC6A /* CorrectionHistory.swift */,
 				EFCE5913178C6E80B80E1DE3 /* Diagnostics.swift */,
 				AC56B8BAB2BB0A8764D18B1E /* DiagnosticsView.swift */,
@@ -167,7 +168,6 @@
 				A1CCFB9DCAC0C12584C27D68 /* LocalBackup.swift */,
 				3BB7EE63315EC7CC0A511303 /* LocationRecorder.swift */,
 				3CC1523859D9C3C50CE0B0C8 /* ManualVisitView.swift */,
-				B67547668C2606629916F0B6 /* MapView.swift */,
 				8A01F3743E7844412FE163D6 /* Models.swift */,
 				47896E03D6ED231032CC152B /* PlaceActivitySelection.swift */,
 				3AA772D2482869E62414D007 /* PlaceLookupService.swift */,
@@ -334,6 +334,7 @@
 				DD8E7BFCC984E9B6BBA2B2E5 /* ActivityDataService.swift in Sources */,
 				1F61C35AD1AB6CB698D5439D /* ActivityImportActor.swift in Sources */,
 				8231CB72D6C8640D07C59050 /* ActivityLocationPolicy.swift in Sources */,
+				F16C3923AD72AA76DFF98C54 /* CardStyle.swift in Sources */,
 				F2ADEFB0210575F3459AEF29 /* CorrectionHistory.swift in Sources */,
 				8F996AD3E6B7C5A76AAEFEE2 /* Diagnostics.swift in Sources */,
 				9AD357F342F13C44BA37652C /* DiagnosticsView.swift in Sources */,
@@ -348,7 +349,6 @@
 				1BBFE65C0530FF99B8D9B104 /* LocalBackup.swift in Sources */,
 				E8F8E81D0736610AC61C887B /* LocationRecorder.swift in Sources */,
 				87C656FE5056AB7AF361B02C /* ManualVisitView.swift in Sources */,
-				C975A398C4FCEB89BAB6E650 /* MapView.swift in Sources */,
 				2112622DCFE0CC3DAA5AEDEF /* Models.swift in Sources */,
 				141A4E88095D602B747431D2 /* PlaceActivitySelection.swift in Sources */,
 				C230D3A30B5955F581E8269F /* PlaceLookupService.swift in Sources */,

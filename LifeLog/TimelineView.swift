@@ -562,13 +562,6 @@ func categoryColorHex(forCategory category: String) -> String {
     return defaults[category] ?? "#8E8E93"
 }
 
-private extension View {
-    func lifeCard() -> some View {
-        background(Color.lifeCard, in: RoundedRectangle(cornerRadius: 20))
-            .shadow(color: .black.opacity(0.045), radius: 12, y: 5)
-    }
-}
-
 extension Color {
     static let lifeBackground = Color(uiColor: .systemGroupedBackground)
     static let lifeCard = Color(uiColor: .secondarySystemGroupedBackground)

@@ -126,17 +126,33 @@ struct TrendsView: View {
     private var controls: some View {
         VStack(spacing: 16) {
             HStack {
-                Button { move(-1) } label: { Image(systemName: "chevron.left").font(.title3.bold()) }
+                // A bare glyph only takes the tap area of the symbol itself, which
+                // left these primary controls well under the 44pt minimum target.
+                Button { move(-1) } label: {
+                    Image(systemName: "chevron.left").font(.title3.bold())
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Previous \(window.title.lowercased())")
                 Spacer()
                 Button { choosingDate = true } label: {
                     VStack(spacing: 2) {
                         Text(periodTitle).font(.title3.bold()).foregroundStyle(.primary)
                         Text(periodSubtitle).font(.caption).foregroundStyle(.secondary)
                     }
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
                 }
+                .accessibilityLabel("\(periodTitle), \(periodSubtitle)")
+                .accessibilityHint("Choose a different date")
                 Spacer()
-                Button { move(1) } label: { Image(systemName: "chevron.right").font(.title3.bold()) }
-                    .disabled(isCurrentWindow)
+                Button { move(1) } label: {
+                    Image(systemName: "chevron.right").font(.title3.bold())
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .disabled(isCurrentWindow)
+                .accessibilityLabel("Next \(window.title.lowercased())")
             }
             Picker("Time window", selection: $window) {
                 ForEach(InsightWindow.allCases) { Text($0.title).tag($0) }
@@ -198,7 +214,7 @@ struct TrendsView: View {
             }
         }
         .padding(18)
-        .insightCard()
+        .lifeCard()
     }
 
     private var trendsSection: some View {
@@ -225,7 +241,7 @@ struct TrendsView: View {
             }
         }
         .padding(18)
-        .insightCard()
+        .lifeCard()
     }
 
     private var dailyTimelineSection: some View {
@@ -245,7 +261,7 @@ struct TrendsView: View {
             .frame(height: 34)
             HStack { Text("12am"); Spacer(); Text("6am"); Spacer(); Text("12pm"); Spacer(); Text("6pm"); Spacer(); Text("Now") }
                 .font(.caption2).foregroundStyle(.secondary)
-        }.padding(20).insightsCard()
+        }.padding(20).lifeCard()
     }
 
     private var awayFromHomeSection: some View {
@@ -255,7 +271,7 @@ struct TrendsView: View {
             ProgressView(value: snapshot.awayFromHomeHours, total: max(snapshot.loggedHours, 0.01)).tint(.blue)
             Text("\(Int((snapshot.awayFromHomeHours / max(snapshot.loggedHours, 0.01) * 100).rounded()))% of logged time")
                 .font(.subheadline).foregroundStyle(.secondary)
-        }.padding(20).insightsCard()
+        }.padding(20).lifeCard()
     }
 
     private var activityChangesSection: some View {
@@ -275,7 +291,7 @@ struct TrendsView: View {
                     }
                 }
             }
-        }.padding(20).insightsCard()
+        }.padding(20).lifeCard()
     }
 
     private var dataQualitySection: some View {
@@ -286,7 +302,7 @@ struct TrendsView: View {
                     if snapshot.provisionalCount > 0 { Label("\(snapshot.provisionalCount) location callbacks need review", systemImage: "questionmark.circle") }
                     if snapshot.supersededCount > 0 { Label("\(snapshot.supersededCount) duplicate callbacks resolved", systemImage: "checkmark.circle") }
                     if snapshot.unloggedHours > 0.25 { Label("\(formatHours(snapshot.unloggedHours)) is not logged", systemImage: "clock.badge.questionmark") }
-                }.padding(20).insightsCard()
+                }.padding(20).lifeCard()
             }
         }
     }
@@ -305,7 +321,7 @@ struct TrendsView: View {
             }
         }
         .padding(18)
-        .insightCard()
+        .lifeCard()
     }
 
     private var weekdayPatternsSection: some View {
@@ -341,7 +357,7 @@ struct TrendsView: View {
             }
         }
         .padding(18)
-        .insightCard()
+        .lifeCard()
     }
 
     private var topPlacesSection: some View {
@@ -373,7 +389,7 @@ struct TrendsView: View {
             }
         }
         .padding(18)
-        .insightCard()
+        .lifeCard()
     }
 
     private var placeSummary: String {
@@ -1264,26 +1280,12 @@ private struct InsightEmptyRow: View {
     }
 }
 
-private extension View {
-    func insightsCard() -> some View {
-        background(Color.lifeCard, in: RoundedRectangle(cornerRadius: 20))
-            .shadow(color: .black.opacity(0.045), radius: 12, y: 5)
-    }
-}
-
 private extension Visit {
     func overlaps(_ range: DateInterval, now: Date = .now) -> Bool {
         arrival < range.end && (departure ?? now) > range.start
     }
     func duration(in range: DateInterval, now: Date = .now) -> TimeInterval {
         max(0, min(departure ?? now, range.end).timeIntervalSince(max(arrival, range.start)))
-    }
-}
-
-private extension View {
-    func insightCard() -> some View {
-        background(Color.lifeCard, in: RoundedRectangle(cornerRadius: 22))
-            .shadow(color: .black.opacity(0.04), radius: 12, y: 5)
     }
 }
 
