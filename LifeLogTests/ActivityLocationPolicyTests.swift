@@ -370,8 +370,8 @@ struct ActivityLocationPolicyTests {
         #expect(ActivityLocationPolicy.shouldShowInTimeline(walks[0], locationVisits: [home, park], now: now))
     }
 
-    @Test("A walk around the block resumes the stay it started from")
-    func walkFromOpenStayResumesIt() throws {
+    @Test("Walking at a place LifeLog never saw you leave is not a journey")
+    func walkInsideOpenStayIsNotAJourney() throws {
         let context = try makeContext()
         let home = Visit(arrival: base, latitude: -23.37, longitude: 150.51,
                          placeName: "Home", inferredActivity: "At home", source: "automatic",
@@ -383,23 +383,75 @@ struct ActivityLocationPolicyTests {
         [home, walk].forEach(context.insert)
         try context.save()
 
-        let now = base.addingTimeInterval(2 * 60 * 60)
-        try ActivityLocationPolicy.reconcileAll(context: context, now: now)
+        try ActivityLocationPolicy.reconcileAll(context: context, now: base.addingTimeInterval(2 * 60 * 60))
         try context.save()
 
-        let stays = try context.fetch(FetchDescriptor<Visit>(sortBy: [SortDescriptor(\.arrival)]))
-            .filter(ActivityLocationPolicy.isLocationVisit)
+        let stays = try context.fetch(FetchDescriptor<Visit>()).filter(ActivityLocationPolicy.isLocationVisit)
         let walks = try context.fetch(FetchDescriptor<Visit>()).filter { $0.source == "health-walking" }
 
-        #expect(walks.count == 1, "An unbounded stay must not swallow the walk inside it")
-        #expect(stays.count == 2)
-        #expect(stays[0].departure == base.addingTimeInterval(60 * 60))
-        // The person came back, so Home resumes and remains the current stay.
-        #expect(stays[1].arrival == base.addingTimeInterval(75 * 60))
-        #expect(stays[1].departure == nil)
-        #expect(stays[1].placeName == "Home")
-        #expect(stays[1].recognitionConfidence == "learned")
-        #expect(ActivityLocationPolicy.shouldShowInTimeline(walks[0], locationVisits: stays, now: now))
+        // No departure was ever recorded, so the person is still at home. Reading the
+        // walk as leaving and returning would invent an arrival they never made.
+        #expect(stays.count == 1)
+        #expect(home.departure == nil)
+        #expect(walks.isEmpty)
+    }
+
+    @Test("Stays split by a walk at the same place are rejoined")
+    func rejoinsStaysSplitByMovement() throws {
+        let context = try makeContext()
+        // The shape an earlier build wrote: one stay at home, cut in two by a walk.
+        let first = Visit(arrival: base, departure: base.addingTimeInterval(60 * 60),
+                          latitude: -23.37, longitude: 150.51,
+                          placeName: "Home", inferredActivity: "At home", source: "automatic",
+                          recognitionConfidence: "learned")
+        let walk = Visit(arrival: base.addingTimeInterval(60 * 60),
+                         departure: base.addingTimeInterval(70 * 60),
+                         latitude: 0, longitude: 0, placeName: "Walking",
+                         inferredActivity: "Walking", userActivity: "Walking", source: "health-walking")
+        let second = Visit(arrival: base.addingTimeInterval(70 * 60),
+                           latitude: -23.37, longitude: 150.51,
+                           placeName: "Home", inferredActivity: "At home", source: "automatic",
+                           recognitionConfidence: "learned")
+        [first, walk, second].forEach(context.insert)
+        try context.save()
+
+        let rejoined = try ActivityLocationPolicy.rejoinStaysSplitByMovement(context: context)
+        try ActivityLocationPolicy.reconcileAll(context: context, now: base.addingTimeInterval(2 * 60 * 60))
+        try context.save()
+
+        let stays = try context.fetch(FetchDescriptor<Visit>()).filter(ActivityLocationPolicy.isLocationVisit)
+        #expect(rejoined == 1)
+        #expect(stays.count == 1)
+        #expect(first.departure == nil, "The rejoined stay carries on as the current one")
+        // Reconciliation then reabsorbs the walk that sat between the two halves.
+        #expect(try context.fetch(FetchDescriptor<Visit>()).filter { $0.source == "health-walking" }.isEmpty)
+    }
+
+    @Test("A real outing between two places is never rejoined")
+    func doesNotRejoinAcrossADifferentPlace() throws {
+        let context = try makeContext()
+        let home = Visit(arrival: base, departure: base.addingTimeInterval(60 * 60),
+                         latitude: -23.37, longitude: 150.51,
+                         placeName: "Home", inferredActivity: "At home", source: "automatic")
+        let park = Visit(arrival: base.addingTimeInterval(70 * 60),
+                         departure: base.addingTimeInterval(100 * 60),
+                         latitude: -23.40, longitude: 150.50,
+                         placeName: "Park", inferredActivity: "Exercising", source: "automatic")
+        let backHome = Visit(arrival: base.addingTimeInterval(110 * 60),
+                             latitude: -23.37, longitude: 150.51,
+                             placeName: "Home", inferredActivity: "At home", source: "automatic")
+        let walk = Visit(arrival: base.addingTimeInterval(60 * 60),
+                         departure: base.addingTimeInterval(70 * 60),
+                         latitude: 0, longitude: 0, placeName: "Walking",
+                         inferredActivity: "Walking", userActivity: "Walking", source: "health-walking")
+        [home, park, backHome, walk].forEach(context.insert)
+        try context.save()
+
+        let rejoined = try ActivityLocationPolicy.rejoinStaysSplitByMovement(context: context)
+
+        #expect(rejoined == 0)
+        #expect(try context.fetch(FetchDescriptor<Visit>())
+            .filter(ActivityLocationPolicy.isLocationVisit).count == 3)
     }
 
     @Test("A hand-entered visit keeps the times the person gave it")
@@ -420,28 +472,6 @@ struct ActivityLocationPolicyTests {
 
         #expect(entered.departure == base.addingTimeInterval(2 * 60 * 60))
         #expect(try context.fetch(FetchDescriptor<Visit>()).filter(ActivityLocationPolicy.isLocationVisit).count == 1)
-    }
-
-    @Test("Vehicle travel bounds an open stay without inventing a return")
-    func travelFromOpenStayDoesNotResumeIt() throws {
-        let context = try makeContext()
-        let home = Visit(arrival: base, latitude: -23.37, longitude: 150.51,
-                         placeName: "Home", inferredActivity: "At home", source: "automatic")
-        let drive = Visit(arrival: base.addingTimeInterval(60 * 60),
-                          departure: base.addingTimeInterval(85 * 60),
-                          latitude: 0, longitude: 0, placeName: "In transit",
-                          inferredActivity: "Travelling", userActivity: "Travelling", source: "motion")
-        [home, drive].forEach(context.insert)
-        try context.save()
-
-        try ActivityLocationPolicy.reconcileAll(context: context, now: base.addingTimeInterval(2 * 60 * 60))
-        try context.save()
-
-        let stays = try context.fetch(FetchDescriptor<Visit>()).filter(ActivityLocationPolicy.isLocationVisit)
-        #expect(stays.count == 1)
-        #expect(home.departure == base.addingTimeInterval(60 * 60))
-        // Where the drive ended is unknown until the next callback, so nothing is guessed.
-        #expect(try context.fetch(FetchDescriptor<Visit>()).filter { $0.source == "motion" }.count == 1)
     }
 
     @Test("LifeLog sleep estimate reflects duration, stages, and interruptions")

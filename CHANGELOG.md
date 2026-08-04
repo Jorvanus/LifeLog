@@ -10,8 +10,13 @@
 
 - A walk to the park and back is now a timeline entry. Movement previously needed to last an hour to earn a card, which hid every ordinary walk. Anything over five minutes between two places is shown; shorter samples are still counted in Insights only.
 - Leaving somewhere is now recorded as leaving. A departure is timed from the next arrival, so a stay looked like it covered the walk out the door — and a stay LifeLog has not closed yet looked like it covered everything after it. Either way the walk sat inside a stay and was deleted rather than shown. A finished walk or drive now ends the stay where it began.
-- A walk that starts and finishes at the same place is treated as a loop: the stay resumes when you get back, so leaving for a walk and returning reads as home, walk, home. Vehicle travel does not resume a stay, because where it went is unknown until the next location arrives.
 - Movement that finishes inside a place is still absorbed, so pacing at home or a lap of the office does not become an entry of its own.
+
+### Walking at home is not leaving home
+
+- A walk recorded while you were at a place LifeLog had never seen you leave was briefly read as leaving and coming back, which split one stay in two and invented an arrival you never made: "Home, walking, Home" while you were home the whole time. It no longer does. Without a departure, movement inside a place is movement at that place. Telling a loop around the block apart from pacing at home needs to know where the walk went, and LifeLog does not record that yet.
+- Stays that were split this way are rejoined on the next launch, and the walk between the two halves goes back to being counted in Insights only. Only a split at the same place, with nothing but a short walk between the halves, is repaired — a real outing between two places is left alone.
+- A walk described by both the iPhone's motion history and Apple Health over exactly the same minutes is now shown once, using whichever source knows more. Whether the duplicate appeared depended on which import arrived first.
 
 ### See and correct the visits behind an activity
 

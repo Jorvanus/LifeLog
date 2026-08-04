@@ -16,9 +16,11 @@ struct TimelineView: View {
     // Dynamic Type glyph overflows a fixed-size circle at accessibility sizes.
     @ScaledMetric(relativeTo: .title2) private var addButtonDiameter: CGFloat = 56
     // Bump this marker whenever reconciliation learns a new rule, so an installed
-    // timeline is repaired once rather than only new records benefiting. v3 bounds a
-    // stay at the walk or drive that left it.
-    @AppStorage("location-policy-reconciled-v3") private var locationPolicyReconciled = false
+    // timeline is repaired once rather than only new records benefiting. v4 no longer
+    // reads a walk inside an unbounded stay as leaving, so the walk is reabsorbed.
+    @AppStorage("location-policy-reconciled-v4") private var locationPolicyReconciled = false
+    // Undoes the stays v3 split in two before reconciliation runs again.
+    @AppStorage("stay-splits-rejoined-v1") private var staySplitsRejoined = false
     // Bump this marker whenever de-duplication rules become stronger so an
     // installed timeline receives the one-time repair as well as new callbacks.
     @AppStorage("automatic-location-deduplicated-v3") private var automaticLocationDeduplicated = false
@@ -61,10 +63,27 @@ struct TimelineView: View {
                     let otherEnd = other.departure ?? .now
                     let contains = other.arrival <= visit.arrival && otherEnd >= end
                     let strictlyBroader = other.arrival < visit.arrival || otherEnd > end
-                    return contains && strictlyBroader
+                    // Motion and Health can describe the same walk over exactly the
+                    // same interval, and whether the import guard caught it depends on
+                    // which batch arrived first. Neither record is broader, so prefer
+                    // the more specific source rather than showing the walk twice.
+                    let sameInterval = other.arrival == visit.arrival && otherEnd == end
+                    return contains && (strictlyBroader ||
+                                        (sameInterval && deviceDetail(other) > deviceDetail(visit)))
                 }
             }
     }
+    /// How much a source actually knows about a walk. A recorded workout carries the
+    /// person's own intent, Health's walking samples come from the watch, and Core
+    /// Motion is an inference from the phone alone.
+    private func deviceDetail(_ visit: Visit) -> Int {
+        switch visit.source {
+        case "health-workout": 3
+        case "health-walking": 2
+        default: 1
+        }
+    }
+
     private var reviewQueue: [Visit] {
         // The live unknown location has its own prominent card; the queue is for past stays.
         visits.filter { $0.needsReview && !$0.isIgnored && $0.departure != nil }
@@ -111,6 +130,21 @@ struct TimelineView: View {
                         let removed = try ActivityLocationPolicy.deduplicateAutomaticLocations(context: context)
                         if removed > 0 { try context.save() }
                         automaticLocationDeduplicated = true
+                    } catch {
+                        // Retry after a protected-store failure on the next appearance.
+                    }
+                }
+                if !staySplitsRejoined {
+                    do {
+                        // Must run before reconciliation, which then re-absorbs the
+                        // walk that had been sitting between the two halves.
+                        let rejoined = try ActivityLocationPolicy.rejoinStaysSplitByMovement(context: context)
+                        if rejoined > 0 {
+                            try context.save()
+                            Diagnostics.record(context, subsystem: "Core Location",
+                                               message: "Rejoined \(rejoined) stays split by movement.", severity: "info")
+                        }
+                        staySplitsRejoined = true
                     } catch {
                         // Retry after a protected-store failure on the next appearance.
                     }

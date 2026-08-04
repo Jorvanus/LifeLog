@@ -100,72 +100,90 @@ enum ActivityLocationPolicy {
         }?.visit
     }
 
-    /// Reads a movement record as the moment a stay ended, and returns the stay to
-    /// insert for the person's return, if there is one.
+    /// Reads a movement record as the moment a stay ended.
     ///
-    /// Two things make a stay look longer than it was. Core Location times a
-    /// departure from the *next* arrival, so a stay appears to cover the walk out
-    /// the door; and a stay with no departure at all is treated as running to now,
-    /// so it covers everything after it. Either way the movement sits inside a stay
-    /// and reconciliation does not merely hide it — it deletes it. A finished walk
-    /// or drive is the better evidence, so bound the stay where the movement began.
+    /// Core Location times a departure from the *next* arrival, so a stay looks like
+    /// it covered the walk out the door, and reconciliation then deletes that walk
+    /// rather than showing it. When a stay's departure falls at or before the end of
+    /// a walk or drive, the movement is how the person left: bound the stay where the
+    /// movement began, and the journey survives.
     ///
-    /// Movement that finishes well inside a closed stay is left alone: pacing at home
-    /// or a lap of the office is not a journey, and Timeline stays destination-first.
-    nonisolated static func boundStay(departedWith movement: DateInterval, isWalk: Bool,
-                                      stays: [Visit], now: Date = .now) -> Visit? {
-        guard movement.duration > 0 else { return nil }
+    /// A stay with no departure is never treated this way. LifeLog has not seen the
+    /// person leave, so movement inside it is movement *at* that place — pacing at
+    /// home, a lap of the office — and that is the only honest reading. Deciding that
+    /// a walk was a loop around the block instead needs to know where the walk went,
+    /// which is the route work on the roadmap; duration cannot stand in for it.
+    @discardableResult
+    nonisolated static func boundStay(departedWith movement: DateInterval, stays: [Visit]) -> Bool {
+        guard movement.duration > 0 else { return false }
         let containing = stays.filter { stay in
             // Only Core Location's own timing is adjusted. A manual entry states when
             // the person says they were somewhere, and no device sample overrides that.
-            guard stay.source == "automatic" else { return false }
-            return stay.arrival < movement.start && (stay.departure ?? now) > movement.start
+            guard stay.source == "automatic", let departure = stay.departure else { return false }
+            return stay.arrival < movement.start && departure > movement.start
         }
-        guard let stay = containing.max(by: { $0.arrival < $1.arrival }) else { return nil }
-        // A closed stay is only bounded when the movement runs to its end, which is
-        // what leaving looks like once the next arrival has supplied the departure.
-        if let departure = stay.departure, departure > movement.end { return nil }
-        let isOpen = stay.departure == nil
+        guard let stay = containing.max(by: { $0.arrival < $1.arrival }),
+              let departure = stay.departure, departure <= movement.end else { return false }
         stay.departure = movement.start
-        // An open stay has no following arrival yet, so bounding it alone would leave
-        // the day with no current location. A walk that started and finished inside
-        // one place is a loop — around the block — so carry the stay on afterwards.
-        // Vehicle travel is not carried on: it went somewhere, and where is unknown
-        // until the next callback arrives.
-        guard isOpen, isWalk, movement.duration >= minimumTimelineMovementDuration else { return nil }
-        return continuation(of: stay, from: movement.end)
-    }
-
-    /// The same stay, resumed. Confidence and candidates carry over because it is the
-    /// same place; the note does not, since it was written about the earlier stay.
-    private nonisolated static func continuation(of stay: Visit, from arrival: Date) -> Visit {
-        Visit(arrival: arrival, departure: nil,
-              latitude: stay.latitude, longitude: stay.longitude,
-              placeName: stay.placeName, inferredActivity: stay.inferredActivity,
-              userActivity: stay.userActivity, source: stay.source,
-              recognitionConfidence: stay.recognitionConfidence,
-              candidateData: stay.candidateData)
+        return true
     }
 
     /// Applies `boundStay` to every movement record in date order, so a day with
     /// several outings resolves against the stay each one actually left.
-    private static func boundStays(around activities: [Visit], stays: [Visit],
-                                   context: ModelContext, now: Date) -> [Visit] {
-        var stays = stays
-        var continuations: [Visit] = []
+    private static func boundStays(around activities: [Visit], stays: [Visit]) {
         let movement = activities
             .filter { isMovementActivity($0) && $0.departure != nil }
             .sorted { $0.arrival < $1.arrival }
         for record in movement {
             guard let end = record.departure, end > record.arrival else { continue }
-            let interval = DateInterval(start: record.arrival, end: end)
-            guard let resumed = boundStay(departedWith: interval, isWalk: isWalkingActivity(record),
-                                          stays: stays, now: now) else { continue }
-            context.insert(resumed)
-            stays.append(resumed)
-            continuations.append(resumed)
+            boundStay(departedWith: DateInterval(start: record.arrival, end: end), stays: stays)
         }
-        return continuations
+    }
+
+    /// Repairs stays an earlier build split in two. A walk inside an unbounded stay
+    /// was read as leaving and returning, which invented an arrival at a place the
+    /// person had never left: "Home, walking, Home" while they were home throughout.
+    /// Two consecutive stays describing the same place, with nothing between them but
+    /// a short stretch of walking, were one stay.
+    @discardableResult
+    static func rejoinStaysSplitByMovement(context: ModelContext) throws -> Int {
+        let visits = try fetchPolicyVisits(context: context)
+        let stays = visits.filter { isLocationVisit($0) && !isSupersededLocation($0) }
+            .sorted { $0.arrival < $1.arrival }
+        let walking = visits.filter(isWalkingActivity)
+        var rejoined = 0
+        var open: Visit?
+        for stay in stays {
+            guard let previous = open else { open = stay; continue }
+            guard canRejoin(previous, stay, walking: walking) else { open = stay; continue }
+            previous.departure = stay.departure
+            // Closed and marked the way de-duplication marks a merged callback, so the
+            // row is kept for inspection but never reaches Timeline or Insights again.
+            stay.departure = stay.arrival
+            stay.source = supersededLocationSource
+            rejoined += 1
+        }
+        return rejoined
+    }
+
+    private static func canRejoin(_ previous: Visit, _ stay: Visit, walking: [Visit]) -> Bool {
+        // Only LifeLog's own inference is undone; a manual entry is left as written.
+        guard previous.source == "automatic", stay.source == "automatic",
+              let departure = previous.departure, stay.arrival > departure else { return false }
+        let gap = DateInterval(start: departure, end: stay.arrival)
+        // A long absence is not repaired. Whatever happened in an hour away, claiming
+        // the person never left would be a bigger error than leaving the two rows.
+        guard gap.duration <= 60 * 60 else { return false }
+        guard normalized(previous.placeName) == normalized(stay.placeName),
+              !Visit.isPlaceholderName(stay.placeName) else { return false }
+        let distance = CLLocation(latitude: previous.latitude, longitude: previous.longitude)
+            .distance(from: CLLocation(latitude: stay.latitude, longitude: stay.longitude))
+        guard distance <= 150 else { return false }
+        // Only a split made by walking is undone. A gap containing a drive, or nothing
+        // at all, is a real absence LifeLog simply has no destination for.
+        return walking.contains { record in
+            record.arrival < gap.end && (record.departure ?? gap.end) > gap.start
+        }
     }
 
     /// Movement is useful as a travel segment only when it sits between two destinations.
@@ -322,16 +340,15 @@ enum ActivityLocationPolicy {
         guard isLocationVisit(locationVisit) else { return }
         let visits = try fetchPolicyVisits(context: context)
         let activities = visits.filter(isMovementActivity)
-        // The arriving visit can be the departure evidence for the stay before it, so
+        // The arriving visit is what supplies the previous stay's departure, so
         // bounding runs against every stay rather than just this one. It is scoped to
         // the last day because this runs inside a Core Location callback; repairing
         // older history is `reconcileAll`'s job, once per installation.
         let recent = activities.filter { ($0.departure ?? now) >= now.addingTimeInterval(-24 * 60 * 60) }
-        let continuations = boundStays(around: recent, stays: visits.filter(isLocationVisit),
-                                       context: context, now: now)
+        boundStays(around: recent, stays: visits.filter(isLocationVisit))
         try reconcile(
             activities: activities,
-            against: [locationVisit] + continuations,
+            against: [locationVisit],
             context: context,
             now: now
         )
@@ -342,10 +359,10 @@ enum ActivityLocationPolicy {
         let visits = try fetchPolicyVisits(context: context)
         let activities = visits.filter(isMovementActivity)
         let locations = visits.filter(isLocationVisit)
-        let continuations = boundStays(around: activities, stays: locations, context: context, now: now)
+        boundStays(around: activities, stays: locations)
         try reconcile(
             activities: activities,
-            against: locations + continuations,
+            against: locations,
             context: context,
             now: now
         )

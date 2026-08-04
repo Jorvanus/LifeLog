@@ -374,13 +374,10 @@ actor ActivityImportActor {
     /// Core Location has not closed yet covers the whole walk and it is never written
     /// at all — the import path's equivalent of the deletion `reconcile` performs.
     private func boundStay(departedWith interval: DateInterval, record: ActivityImportRecord) {
-        let isWalk = ActivityLocationPolicy.describesWalking(record.activity)
-        guard isWalk || ActivityLocationPolicy.describesTravel("\(record.activity) \(record.name)") else { return }
-        guard let resumed = ActivityLocationPolicy.boundStay(departedWith: interval, isWalk: isWalk,
-                                                            stays: locations) else { return }
-        modelContext.insert(resumed)
-        locations.append(resumed)
-        visitsBySource[resumed.source, default: []].append(resumed)
+        let text = "\(record.activity) \(record.name)"
+        guard ActivityLocationPolicy.describesWalking(record.activity) ||
+                ActivityLocationPolicy.describesTravel(text) else { return }
+        ActivityLocationPolicy.boundStay(departedWith: interval, stays: locations)
     }
 
     private func remainingSegments(for activity: DateInterval) -> [DateInterval] {
