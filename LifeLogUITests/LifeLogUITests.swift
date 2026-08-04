@@ -76,7 +76,7 @@ final class LifeLogUITests: XCTestCase {
         let addVisit = app.buttons["Add visit"]
         XCTAssertTrue(addVisit.waitForExistence(timeout: 5))
         addVisit.tap()
-        XCTAssertTrue(app.navigationBars["Add visit"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Add Visit"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.textFields["Search Apple Maps or enter a name"].exists)
         XCTAssertTrue(app.buttons["Search nearby places"].exists)
     }

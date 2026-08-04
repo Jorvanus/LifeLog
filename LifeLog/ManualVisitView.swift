@@ -120,7 +120,7 @@ struct ManualVisitView: View {
                     DatePicker("Left", selection: $departure)
                 }
             }
-            .navigationTitle("Add visit")
+            .navigationTitle("Add Visit")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {

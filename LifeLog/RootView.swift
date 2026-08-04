@@ -10,9 +10,15 @@ struct RootView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            TimelineView(recorder: recorder).tabItem { Label("Timeline", systemImage: "clock") }.tag(0)
-            TrendsView(activityData: activityData).tabItem { Label("Insights", systemImage: "chart.bar.xaxis") }.tag(1)
-            SettingsView(recorder: recorder, activityData: activityData).tabItem { Label("Settings", systemImage: "gear") }.tag(2)
+            Tab("Timeline", systemImage: "clock", value: 0) {
+                TimelineView(recorder: recorder)
+            }
+            Tab("Insights", systemImage: "chart.bar.xaxis", value: 1) {
+                TrendsView(activityData: activityData)
+            }
+            Tab("Settings", systemImage: "gear", value: 2) {
+                SettingsView(recorder: recorder, activityData: activityData)
+            }
         }
         .tint(.blue)
         .accessibilityIdentifier("root-tab-view")

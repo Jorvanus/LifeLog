@@ -2,6 +2,20 @@
 
 ## 2026-08-04
 
+### Headline text now respects the system text size
+
+- The Timeline greeting and "Today's Journey" heading, and the Insights time-away figure, used fixed point sizes that ignored the system text size setting entirely. They now scale, keeping their rounded display face, and the greeting wraps rather than truncating at the largest sizes. The add button grows with them so its icon cannot overflow.
+
+### Correctly sized activity icons
+
+- Activity icons were rendered at their default size and then visually shrunk, which left their layout and shadow at the original size — and in the weekday summary drew a 37pt icon inside a 30pt slot. Each icon is now asked for the size it should actually be.
+
+### Consistent titles, colours, and tab definitions
+
+- Screen titles now use consistent capitalisation ("Add Visit", "Choose Activity", "Journal Storage", "Nearby Apple Maps Places").
+- Saved place icons use the same activity colour as the rest of the app instead of always rendering blue.
+- The tab bar is declared with the current `Tab` API rather than the older item-and-tag form.
+
 ### Consistent card styling across Timeline and Insights
 
 - Timeline and Insights drew their cards through three near-identical private modifiers, two of which differed only by 2pt of corner radius yet were applied to neighbouring cards in the same scrolling stack. They now share one card style, so adjacent cards no longer render with mismatched corners.

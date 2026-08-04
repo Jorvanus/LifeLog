@@ -267,7 +267,8 @@ struct TrendsView: View {
     private var awayFromHomeSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Time away from Home").font(.title2.bold())
-            Text(formatHours(snapshot.awayFromHomeHours)).font(.system(size: 32, weight: .bold, design: .rounded))
+            Text(formatHours(snapshot.awayFromHomeHours))
+                .font(.system(.largeTitle, design: .rounded, weight: .bold))
             ProgressView(value: snapshot.awayFromHomeHours, total: max(snapshot.loggedHours, 0.01)).tint(.blue)
             Text("\(Int((snapshot.awayFromHomeHours / max(snapshot.loggedHours, 0.01) * 100).rounded()))% of logged time")
                 .font(.subheadline).foregroundStyle(.secondary)
@@ -337,8 +338,7 @@ struct TrendsView: View {
                         HStack(spacing: 9) {
                             ActivityIcon(activity: pattern.topActivity,
                                          category: pattern.topActivity,
-                                         color: activityColor(pattern.topActivity))
-                                .scaleEffect(0.68).frame(width: 30, height: 30)
+                                         color: activityColor(pattern.topActivity), size: 30)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(pattern.shortName).font(.caption.bold()).foregroundStyle(.secondary)
                                 if pattern.topHours > 0 {
@@ -371,7 +371,7 @@ struct TrendsView: View {
                         HStack(spacing: 13) {
                             Text("\(index + 1)").font(.headline.monospacedDigit()).foregroundStyle(.secondary).frame(width: 22)
                             ActivityIcon(activity: place.activity, category: place.category,
-                                         color: activityColor(place.activity)).scaleEffect(0.72).frame(width: 42, height: 42)
+                                         color: activityColor(place.activity), size: 42)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(place.name).font(.headline).lineLimit(1)
                                 Text(place.category).font(.caption).foregroundStyle(.secondary)
@@ -1195,8 +1195,7 @@ private struct InsightSliceEditor: View {
                                 NavigationLink { VisitEditor(visit: visit) } label: {
                                     HStack(spacing: 12) {
                                         ActivityIcon(activity: visit.activity, category: visit.placeCategory,
-                                                     color: activityColor(visit.activity))
-                                            .scaleEffect(0.72).frame(width: 42, height: 42)
+                                                     color: activityColor(visit.activity), size: 42)
                                         VStack(alignment: .leading, spacing: 3) {
                                             Text(visit.placeName).font(.headline).lineLimit(1)
                                             Text(entryTime(for: visit)).font(.caption).foregroundStyle(.secondary)

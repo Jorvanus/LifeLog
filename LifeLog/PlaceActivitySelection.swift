@@ -28,7 +28,7 @@ struct PlaceActivitySelection: View {
                 Text("Activities are shared with the Activities list in Settings and can be reused across Saved Places and visits.")
             }
         }
-        .navigationTitle("Choose activity")
+        .navigationTitle("Choose Activity")
         .task { ActivityCatalog.seed(); activities = ActivityCatalog.load() }
         .sheet(isPresented: $adding) {
             ActivityEditor { newActivity in

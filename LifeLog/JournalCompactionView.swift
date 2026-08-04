@@ -32,7 +32,7 @@ struct JournalCompactionView: View {
             Section { Button("Apply cleanup", role: .destructive) { confirming = true }.disabled(removable.isEmpty) } footer: { Text("Keeping all data makes no changes. Cleanup is reversible only through the backup created immediately beforehand.") }
             if let backupURL { Section("Backup created") { ShareLink(item: backupURL) { Label("Share backup", systemImage: "square.and.arrow.up") } } }
         }
-        .navigationTitle("Journal storage")
+        .navigationTitle("Journal Storage")
         .confirmationDialog("Back up before cleanup?", isPresented: $confirming) {
             Button("Create backup and remove \(removable.count) records", role: .destructive) { apply() }
             Button("Cancel", role: .cancel) { }

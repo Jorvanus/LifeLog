@@ -58,8 +58,7 @@ struct PlacesView: View {
                         NavigationLink { SavedPlaceEditor(place: place, recorder: recorder) } label: {
                             HStack(spacing: 12) {
                                 ActivityIcon(activity: place.defaultActivity, category: place.category,
-                                             color: .blue)
-                                    .scaleEffect(0.72).frame(width: 42, height: 42)
+                                             color: activityColor(place.defaultActivity), size: 42)
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(place.name).font(.headline)
                                     Text("\(place.category) · \(place.defaultActivity)")

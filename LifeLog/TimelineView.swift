@@ -12,6 +12,9 @@ struct TimelineView: View {
            sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
     @State private var adding = false
     @State private var clock = Date.now
+    // The add button's glyph and its circle have to grow together, otherwise a
+    // Dynamic Type glyph overflows a fixed-size circle at accessibility sizes.
+    @ScaledMetric(relativeTo: .title2) private var addButtonDiameter: CGFloat = 56
     @AppStorage("location-policy-reconciled-v2") private var locationPolicyReconciled = false
     // Bump this marker whenever de-duplication rules become stronger so an
     // installed timeline receives the one-time repair as well as new callbacks.
@@ -141,8 +144,11 @@ struct TimelineView: View {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(greeting)
-                        .font(.system(size: 38, weight: .bold, design: .rounded))
-                        .lineLimit(1).minimumScaleFactor(0.78)
+                        .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                        // Two lines with a lower floor: now that the greeting scales
+                        // with Dynamic Type, a single line would ellipsize at
+                        // accessibility sizes rather than wrap.
+                        .lineLimit(2).minimumScaleFactor(0.7)
                     Text(headerDate)
                         .font(.title3).foregroundStyle(.secondary)
                     if !reviewQueue.isEmpty {
@@ -154,8 +160,8 @@ struct TimelineView: View {
                 Spacer()
                 Button { adding = true } label: {
                     Image(systemName: "plus")
-                        .font(.system(size: 25, weight: .regular))
-                        .frame(width: 56, height: 56)
+                        .font(.title2)
+                        .frame(width: addButtonDiameter, height: addButtonDiameter)
                         .background(.regularMaterial, in: Circle())
                         .shadow(color: .black.opacity(0.04), radius: 12, y: 5)
                 }.accessibilityLabel("Add visit")
@@ -234,7 +240,7 @@ struct TimelineView: View {
 
     private var journey: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Today’s Journey").font(.system(size: 28, weight: .bold, design: .rounded))
+            Text("Today’s Journey").font(.system(.title, design: .rounded, weight: .bold))
             if today.isEmpty && current == nil && !isWaitingForVisitConfirmation {
                 VStack(spacing: 14) {
                     Image(systemName: "location.slash").font(.largeTitle).foregroundStyle(.secondary)
@@ -627,8 +633,7 @@ struct VisitEditor: View {
                         } label: {
                             HStack(spacing: 12) {
                                 ActivityIcon(activity: suggestion.suggestedActivity, category: suggestion.category,
-                                             color: activityColor(suggestion.suggestedActivity))
-                                    .scaleEffect(0.72).frame(width: 42, height: 42)
+                                             color: activityColor(suggestion.suggestedActivity), size: 42)
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(suggestion.name).foregroundStyle(.primary)
                                     Text("\(suggestion.category) · \(Int(suggestion.distance.rounded())) m away")
@@ -987,8 +992,7 @@ private struct NearbyPlacePicker: View {
                             HStack(spacing: 12) {
                                 ActivityIcon(activity: suggestion.suggestedActivity,
                                              category: suggestion.category,
-                                             color: activityColor(suggestion.suggestedActivity))
-                                    .scaleEffect(0.72).frame(width: 42, height: 42)
+                                             color: activityColor(suggestion.suggestedActivity), size: 42)
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(suggestion.name).foregroundStyle(.primary)
                                     Text("\(suggestion.category) · \(Int(suggestion.distance.rounded())) m away")
@@ -1001,7 +1005,7 @@ private struct NearbyPlacePicker: View {
                     }
                 }
             }
-            .navigationTitle("Nearby Apple Maps places")
+            .navigationTitle("Nearby Apple Maps Places")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
