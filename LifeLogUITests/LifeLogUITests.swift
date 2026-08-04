@@ -61,9 +61,11 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(activities.waitForExistence(timeout: 5))
         activities.tap()
 
-        let firstActivity = app.cells.firstMatch
-        XCTAssertTrue(firstActivity.waitForExistence(timeout: 5))
-        firstActivity.tap()
+        // Target a known activity rather than the first cell: the list is preceded by
+        // an "Add from your history" row, so firstMatch is not an activity.
+        let row = app.staticTexts["At home"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.tap()
 
         let bar = app.navigationBars["Edit Activity"]
         XCTAssertTrue(bar.waitForExistence(timeout: 5))

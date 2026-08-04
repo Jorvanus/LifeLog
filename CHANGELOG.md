@@ -2,6 +2,12 @@
 
 ## 2026-08-05
 
+### Deleting or renaming an activity no longer strands its history
+
+- Each activity now shows how many visits use it, so the cost of removing one is visible before you swipe.
+- Deleting an activity that is in use asks first. Visits keep their label either way, but Insights counts them as "Other" until the activity exists again, and changing its group instead keeps the history counted.
+- Renaming an activity offers to rename its visits too. Previously the visits kept the old wording and quietly fell out of their group.
+
 ### Stopped repeating fruitless place searches
 
 - When Apple Maps found no places near a coordinate, LifeLog forgot the answer immediately and searched again on the next location update — several seconds of network work, followed by a reverse-geocode fallback, to rediscover that there is nothing there. Empty results are now remembered for a few minutes, short enough that a newly listed business still turns up soon afterwards.

@@ -1,9 +1,28 @@
 import SwiftUI
+import SwiftData
 
 struct ActivitiesView: View {
+    @Environment(\.modelContext) private var context
     @State private var activities = ActivityCatalog.load()
     @State private var adding = false
     @State private var importingFromHistory = false
+    /// How many visits carry each activity. Deleting or renaming an entry that is
+    /// in use silently changes how its history is grouped, so the count has to be
+    /// visible before either action rather than discovered afterwards in Insights.
+    @State private var usage: [String: Int] = [:]
+    @State private var pendingDeletion: IndexSet?
+    @State private var renameRequest: RenameRequest?
+
+    struct RenameRequest: Identifiable {
+        let previousName: String
+        let updated: ActivityDefinition
+        let count: Int
+        var id: String { previousName }
+    }
+
+    private func usageCount(_ name: String) -> Int {
+        usage[name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()] ?? 0
+    }
 
     var body: some View {
         List {
@@ -27,7 +46,10 @@ struct ActivitiesView: View {
                         Label {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(activity.name).font(.headline)
-                                Text(activity.category).font(.caption).foregroundStyle(.secondary)
+                                Text(usageCount(activity.name) > 0
+                                     ? "\(activity.category) · \(usageCount(activity.name)) \(usageCount(activity.name) == 1 ? "visit" : "visits")"
+                                     : activity.category)
+                                    .font(.caption).foregroundStyle(.secondary)
                             }
                         } icon: {
                             Image(systemName: activity.symbol).foregroundStyle(activityColor(activity.name))
@@ -38,11 +60,14 @@ struct ActivitiesView: View {
                     .accessibilityValue("Category colour \(categoryColorHex(forCategory: activity.category))")
                 }
                 .onDelete { offsets in
-                    activities.remove(atOffsets: offsets)
-                    ActivityCatalog.save(activities)
+                    // Deleting an activity never edits a visit, but it does remove the
+                    // only thing telling Insights how to group that label, so history
+                    // quietly falls into "Other". Confirm when anything is using it.
+                    let inUse = offsets.contains { usageCount(activities[$0].name) > 0 }
+                    if inUse { pendingDeletion = offsets } else { delete(offsets) }
                 }
             } footer: {
-                Text("Activities are suggestions used when labeling visits, and their group decides where Insights counts the time. Changing a definition does not rewrite past visits; edit those visits when you want a historical correction.")
+                Text("The group decides where Insights counts the time, and changing it re-counts existing visits straight away. Deleting an activity leaves its visits labelled but ungrouped; renaming one offers to bring its visits with it.")
             }
         }
         .navigationTitle("Activities")
@@ -52,12 +77,47 @@ struct ActivitiesView: View {
                 Button { adding = true } label: { Label("Add activity", systemImage: "plus") }
             }
         }
-        .task { ActivityCatalog.seed(); activities = ActivityCatalog.load() }
+        .task {
+            ActivityCatalog.seed()
+            activities = ActivityCatalog.load()
+            refreshUsage()
+        }
+        .confirmationDialog("Delete activity?", isPresented: Binding(
+            get: { pendingDeletion != nil },
+            set: { if !$0 { pendingDeletion = nil } })
+        ) {
+            Button("Delete anyway", role: .destructive) {
+                if let offsets = pendingDeletion { delete(offsets) }
+                pendingDeletion = nil
+            }
+            Button("Cancel", role: .cancel) { pendingDeletion = nil }
+        } message: {
+            Text(deletionWarning)
+        }
+        .confirmationDialog("Rename its visits too?", isPresented: Binding(
+            get: { renameRequest != nil },
+            set: { if !$0 { renameRequest = nil } })
+        ) {
+            if let request = renameRequest {
+                Button("Rename \(request.count) \(request.count == 1 ? "visit" : "visits")") {
+                    applyRename(request, updatingVisits: true)
+                }
+                Button("Leave visits as they are") {
+                    applyRename(request, updatingVisits: false)
+                }
+                Button("Cancel", role: .cancel) { renameRequest = nil }
+            }
+        } message: {
+            if let request = renameRequest {
+                Text("\(request.count) \(request.count == 1 ? "visit is" : "visits are") labelled “\(request.previousName)”. Left alone they keep the old label and Insights counts them as Other.")
+            }
+        }
         .sheet(isPresented: $importingFromHistory) {
             ActivityImportView { added in
                 let known = Set(activities.map { $0.name.lowercased() })
                 activities.append(contentsOf: added.filter { !known.contains($0.name.lowercased()) })
                 ActivityCatalog.save(activities)
+                refreshUsage()
             }
         }
         .sheet(isPresented: $adding) {
@@ -67,6 +127,7 @@ struct ActivitiesView: View {
                 ActivityEditor { newActivity in
                     activities.append(newActivity)
                     ActivityCatalog.save(activities)
+                    refreshUsage()
                 }
             }
         }
@@ -74,8 +135,56 @@ struct ActivitiesView: View {
 
     private func replace(_ updated: ActivityDefinition) {
         guard let index = activities.firstIndex(where: { $0.id == updated.id }) else { return }
+        let previousName = activities[index].name
+        let renamed = previousName.caseInsensitiveCompare(updated.name) != .orderedSame
+        let affected = usageCount(previousName)
+        // A rename leaves every existing visit holding the old wording, orphaned from
+        // the catalogue. Offer to carry them across rather than silently stranding them.
+        if renamed, affected > 0 {
+            renameRequest = RenameRequest(previousName: previousName, updated: updated, count: affected)
+            return
+        }
         activities[index] = updated
         ActivityCatalog.save(activities)
+        InsightsInvalidation.invalidate(reason: "Activity definition changed", context: context)
+    }
+
+    private func applyRename(_ request: RenameRequest, updatingVisits: Bool) {
+        defer { renameRequest = nil }
+        guard let index = activities.firstIndex(where: { $0.id == request.updated.id }) else { return }
+        activities[index] = request.updated
+        ActivityCatalog.save(activities)
+        if updatingVisits {
+            try? ActivityCatalog.renameActivity(from: request.previousName,
+                                                to: request.updated.name, context: context)
+        }
+        refreshUsage()
+        InsightsInvalidation.invalidate(reason: "Activity renamed", context: context)
+    }
+
+    private func delete(_ offsets: IndexSet) {
+        activities.remove(atOffsets: offsets)
+        ActivityCatalog.save(activities)
+        InsightsInvalidation.invalidate(reason: "Activity deleted", context: context)
+    }
+
+    private var deletionWarning: String {
+        guard let offsets = pendingDeletion else { return "" }
+        let names = offsets.map { activities[$0].name }
+        let total = names.reduce(0) { $0 + usageCount($1) }
+        let subject = names.count == 1 ? "“\(names[0])” is" : "These activities are"
+        return "\(subject) used by \(total) \(total == 1 ? "visit" : "visits"). Deleting does not change those visits, but Insights will count them as Other until the activity exists again. Changing its group instead keeps the history counted."
+    }
+
+    private func refreshUsage() {
+        let visits = (try? context.fetch(FetchDescriptor<Visit>())) ?? []
+        var counts: [String: Int] = [:]
+        for visit in visits {
+            let key = visit.activity.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard !key.isEmpty else { continue }
+            counts[key, default: 0] += 1
+        }
+        usage = counts
     }
 }
 

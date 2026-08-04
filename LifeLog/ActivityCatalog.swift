@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 struct ActivityDefinition: Codable, Identifiable, Hashable {
     let id: UUID
@@ -142,6 +143,38 @@ enum ActivityCatalog {
         }
         if key.hasSuffix("e") && key.count > 3 { key.removeLast() }
         return key
+    }
+
+    /// Carries an activity rename across the timeline. Visits store the activity as
+    /// text, so without this a rename leaves every existing visit holding wording the
+    /// catalogue no longer knows, which Insights then counts as "Other". Matching is
+    /// case-insensitive because the label may have been typed by hand more than once.
+    @MainActor
+    @discardableResult
+    static func renameActivity(from previous: String, to updated: String,
+                               context: ModelContext) throws -> Int {
+        let from = previous.trimmingCharacters(in: .whitespacesAndNewlines)
+        let to = TextSafety.clean(updated, maximumLength: 80)
+        guard !from.isEmpty, !to.isEmpty,
+              from.caseInsensitiveCompare(to) != .orderedSame else { return 0 }
+        let visits = try context.fetch(FetchDescriptor<Visit>())
+        var changed = 0
+        for visit in visits {
+            var touched = false
+            if visit.userActivity?.caseInsensitiveCompare(from) == .orderedSame {
+                visit.userActivity = to
+                touched = true
+            }
+            // The inferred value matters too: it is what shows when no explicit
+            // activity was chosen, and what Insights groups in that case.
+            if visit.inferredActivity.caseInsensitiveCompare(from) == .orderedSame {
+                visit.inferredActivity = to
+                touched = true
+            }
+            if touched { changed += 1 }
+        }
+        if changed > 0 { try context.save() }
+        return changed
     }
 
     static func seed() {

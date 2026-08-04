@@ -160,6 +160,53 @@ struct SavedPlaceLearningTests {
         #expect(otherBand.activity == "Eating")
     }
 
+    @Test("Renaming an activity carries its visits across, matching case-insensitively")
+    func renamingAnActivityUpdatesItsVisits() throws {
+        let context = try makeContext()
+        let base = Date(timeIntervalSince1970: 1_800_000_000)
+        func visit(_ offset: Int, inferred: String, user: String?) -> Visit {
+            let arrival = base.addingTimeInterval(TimeInterval(offset))
+            let v = Visit(arrival: arrival, departure: arrival.addingTimeInterval(600),
+                          latitude: 0, longitude: 0, placeName: "Regional Office",
+                          inferredActivity: inferred, userActivity: user,
+                          source: "imported-journal", recognitionConfidence: "imported")
+            context.insert(v)
+            return v
+        }
+        let explicit = visit(0, inferred: "Visiting", user: "Work")
+        let inferredOnly = visit(700, inferred: "Work", user: nil)
+        let differentCase = visit(1_400, inferred: "Visiting", user: "wOrK")
+        let unrelated = visit(2_100, inferred: "Visiting", user: "Eating")
+        try context.save()
+
+        let changed = try ActivityCatalog.renameActivity(from: "Work", to: "Job", context: context)
+
+        #expect(changed == 3)
+        #expect(explicit.userActivity == "Job")
+        // The inferred value has to move too, or a visit with no explicit choice keeps
+        // wording the catalogue no longer knows and Insights counts it as Other.
+        #expect(inferredOnly.inferredActivity == "Job")
+        #expect(differentCase.userActivity == "Job")
+        #expect(unrelated.userActivity == "Eating")
+    }
+
+    @Test("A rename that changes nothing is a no-op")
+    func renamingToTheSameNameChangesNothing() throws {
+        let context = try makeContext()
+        let base = Date(timeIntervalSince1970: 1_800_000_000)
+        let v = Visit(arrival: base, departure: base.addingTimeInterval(600),
+                      latitude: 0, longitude: 0, placeName: "Regional Office",
+                      inferredActivity: "Visiting", userActivity: "Work",
+                      source: "imported-journal")
+        context.insert(v)
+        try context.save()
+
+        #expect(try ActivityCatalog.renameActivity(from: "Work", to: "work", context: context) == 0)
+        #expect(try ActivityCatalog.renameActivity(from: "Work", to: "   ", context: context) == 0)
+        #expect(try ActivityCatalog.renameActivity(from: "", to: "Job", context: context) == 0)
+        #expect(v.userActivity == "Work")
+    }
+
     private func makeContext() throws -> ModelContext {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(
