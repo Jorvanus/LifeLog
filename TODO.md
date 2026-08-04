@@ -95,9 +95,16 @@ not by effort.
 
 - [ ] Remove four functions nothing calls: `ActivitySampleReader.workoutRecords` (superseded by `anchoredWorkoutRecords`), `LocationRecorder.cancelPlaceLookup`, `PlacesView.locationRow`, and `saveCategoryColor(_:forCategory:)`. Removing `cancelPlaceLookup` should be done together with the `lookupIDs` fix above, since it is the only place that cleanup currently lives.
 
+### Activity vocabulary — follow-ups from the 2026-08-05 work
+
+- [ ] The seeded `Working` entry shadows an adopted `Work`. `preferredLabel` tries an exact match first, and `Working` matches the seed exactly, so it never reaches the stem rule that would find `Work`. Inference therefore still writes `Working` — the case the change was meant to fix — until the seeded entry is renamed or removed. Renaming it now offers to carry its 5 visits across, so that is the cheapest fix; longer term, consider reconciling seeded activities against real usage on first run, or preferring the label the timeline actually uses when both exist.
+- [ ] `ActivityCatalog.category(for:)` checks a hardcoded switch before the catalogue, so seeded names keep their group even after deletion while adopted ones lose theirs. That is why deleting `Eating` is harmless and deleting `Work` moves 2,732 visits to "Other". The asymmetry is invisible and arbitrary: either drop the switch and let the catalogue be the single source, or keep it and say so where it matters.
+- **Not worth building** — a merge tool for duplicate activity labels. Across 77 labels in a real archive there is exactly one near-duplicate pair (`Work` and `Working`), covered by the rename above.
+
 ### Repository process
 
 - [ ] `CURRENT_PROJECT_VERSION` and `MARKETING_VERSION` have not moved since build 6 / 1.1.0, across roughly seven commits. `AGENTS.md` asks for a build increment before each commit and a semantic marketing bump. Decide the version this run should land on and set it in `project.yml`, which is the source of truth.
+- [ ] Run the full UI suite before committing, not just the test being worked on. Scoping to a single test to save time let a broken editor test sit unnoticed for two commits: moving "Add from your history" to the top of the Activities list changed which row `cells.firstMatch` selects, and only the new test was re-run afterwards.
 - [ ] `project.yml` is the real project definition and recent files were added by hand-editing `project.pbxproj` instead. `sources: [LifeLog]` is a directory glob so nothing was lost, but the two can drift. XcodeGen is not installed on this Mac, so either install it or note explicitly that the checked-in `project.pbxproj` is now authoritative.
 
 ### Living with nine years of data
