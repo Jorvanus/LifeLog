@@ -268,11 +268,15 @@ enum ActivityLocationPolicy {
                 continue
             }
 
-            let sameLogicalPlace = previous.placeName.caseInsensitiveCompare(candidate.placeName) == .orderedSame
-            let sameArrival = sameLogicalPlace &&
-                abs(previous.arrival.timeIntervalSince(candidate.arrival)) <= 60 &&
-                CLLocation(latitude: previous.latitude, longitude: previous.longitude)
-                    .distance(from: CLLocation(latitude: candidate.latitude, longitude: candidate.longitude)) <= 250
+            let sameName = previous.placeName.caseInsensitiveCompare(candidate.placeName) == .orderedSame
+            let distance = CLLocation(latitude: previous.latitude, longitude: previous.longitude)
+                .distance(from: CLLocation(latitude: candidate.latitude, longitude: candidate.longitude))
+            // A named Saved Place and an earlier “Identifying…” callback can be
+            // the same Core Location arrival. Names need not match, but require a
+            // tighter coordinate tolerance in that case so nearby businesses are
+            // never folded together merely because their callbacks were close.
+            let sameArrival = abs(previous.arrival.timeIntervalSince(candidate.arrival)) <= 60 &&
+                distance <= (sameName ? 250 : 100)
             if sameArrival {
                 // Merge repeated callbacks that describe the same arrival.
                 previous.arrival = min(previous.arrival, candidate.arrival)
@@ -280,7 +284,7 @@ enum ActivityLocationPolicy {
                 case (nil, _), (_, nil): previous.departure = nil
                 case let (left?, right?): previous.departure = max(left, right)
                 }
-                if candidate.recognitionConfidence == "confirmed" {
+                if locationQuality(candidate) > locationQuality(previous) {
                     previous.placeName = candidate.placeName
                     previous.placeCategory = candidate.placeCategory
                     previous.inferredActivity = candidate.inferredActivity
@@ -300,6 +304,17 @@ enum ActivityLocationPolicy {
             }
         }
         return removed
+    }
+
+    /// Higher-quality recognition wins when Core Location supplies two views of
+    /// the same arrival. This prevents a placeholder from outliving a learned
+    /// Saved Place while never letting an uncertain Maps result replace a user
+    /// confirmation.
+    private static func locationQuality(_ visit: Visit) -> Int {
+        if visit.recognitionConfidence == "confirmed" { return 4 }
+        if !visit.needsCategorisation && visit.recognitionConfidence == "learned" { return 3 }
+        if !visit.needsCategorisation { return 2 }
+        return 1
     }
 
     /// Restores the core timeline invariant that only the newest location may be

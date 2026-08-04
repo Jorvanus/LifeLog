@@ -13,7 +13,9 @@ struct TimelineView: View {
     @State private var adding = false
     @State private var clock = Date.now
     @AppStorage("location-policy-reconciled-v2") private var locationPolicyReconciled = false
-    @AppStorage("automatic-location-deduplicated-v2") private var automaticLocationDeduplicated = false
+    // Bump this marker whenever de-duplication rules become stronger so an
+    // installed timeline receives the one-time repair as well as new callbacks.
+    @AppStorage("automatic-location-deduplicated-v3") private var automaticLocationDeduplicated = false
 
     private var today: [Visit] {
         let locationVisits = visits.filter(ActivityLocationPolicy.isLocationVisit)
@@ -29,7 +31,7 @@ struct TimelineView: View {
                 return !locationVisits.contains { other in
                     guard other.id != visit.id, !other.needsCategorisation else { return false }
                     let otherEnd = other.departure ?? .now
-                    return other.arrival < end && otherEnd > visit.arrival
+                    return other.arrival <= end && otherEnd > visit.arrival
                 }
             }
             .filter { visit in

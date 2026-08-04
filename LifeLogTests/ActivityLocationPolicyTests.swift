@@ -170,6 +170,29 @@ struct ActivityLocationPolicyTests {
         #expect(locations[1].departure == nil)
     }
 
+    @Test("A learned Home callback replaces a duplicate identifying arrival")
+    func mergesIdentifyingCallbackIntoLearnedHome() throws {
+        let context = try makeContext()
+        let identifying = Visit(arrival: base, latitude: -23.37, longitude: 150.51,
+                                placeName: "Identifying…", placeCategory: "Other",
+                                inferredActivity: "Visiting", source: "automatic")
+        let home = Visit(arrival: base.addingTimeInterval(20), latitude: -23.3702, longitude: 150.5101,
+                         placeName: "Home", placeCategory: "Home",
+                         inferredActivity: "At home", source: "automatic",
+                         recognitionConfidence: "learned")
+        context.insert(identifying)
+        context.insert(home)
+        try context.save()
+
+        let merged = try ActivityLocationPolicy.deduplicateAutomaticLocations(context: context)
+
+        #expect(merged == 1)
+        #expect(identifying.placeName == "Home")
+        #expect(identifying.placeCategory == "Home")
+        #expect(identifying.recognitionConfidence == "learned")
+        #expect(home.resolutionState == .superseded)
+    }
+
     @Test("Walking is only shown between two destinations")
     func walkingRequiresTwoDestinations() {
         let previous = Visit(

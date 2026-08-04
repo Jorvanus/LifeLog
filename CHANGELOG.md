@@ -1,5 +1,11 @@
 # Change log
 
+## 2026-08-04
+
+### Home arrival de-duplication
+
+- Core Location arrivals now merge a placeholder and a learned Saved Place when they represent the same time and coordinates, preferring the better recognised label and preventing a duplicate “Identifying…” Timeline card.
+
 ## 2026-08-03
 
 ### Commit versioning
