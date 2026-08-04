@@ -2,6 +2,10 @@
 
 ## 2026-08-04
 
+### Reliable background store access
+
+- Changed the timeline store to encrypted “available after first unlock” file protection so background location callbacks no longer fail while the iPhone screen is locked. Existing store files are upgraded after a successful open, and the app retries once automatically when brought to the foreground.
+
 ### Home arrival de-duplication
 
 - Core Location arrivals now merge a placeholder and a learned Saved Place when they represent the same time and coordinates, preferring the better recognised label and preventing a duplicate “Identifying…” Timeline card.

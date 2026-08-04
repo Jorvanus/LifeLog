@@ -3,8 +3,10 @@ import SwiftData
 
 @main
 struct LifeLogApp: App {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var modelContainer: ModelContainer?
     @State private var storeOpenError: StoreOpenError?
+    @State private var hasRetriedWhenActive = false
     private let storeConfiguration: ModelConfiguration
 
     init() {
@@ -41,16 +43,34 @@ struct LifeLogApp: App {
                     failure: storeOpenError,
                     retry: retryStoreOpening
                 )
+                .task {
+                    // If startup happened while locked, the view becomes visible
+                    // only once the owner is back in the foreground. Try once
+                    // without requiring an extra tap.
+                    guard !hasRetriedWhenActive else { return }
+                    hasRetriedWhenActive = true
+                    retryStoreOpening()
+                }
             }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // A background location launch may occur while the store is locked.
+            // Retry once when the owner actively opens LifeLog instead of leaving
+            // an otherwise healthy store on the recovery screen.
+            guard phase == .active, modelContainer == nil, !hasRetriedWhenActive else { return }
+            hasRetriedWhenActive = true
+            retryStoreOpening()
         }
     }
 
     private static func openContainer(configuration: ModelConfiguration, schema: Schema) throws -> ModelContainer {
-        try ModelContainer(
+        let container = try ModelContainer(
             for: schema,
             migrationPlan: LifeLogMigrationPlan.self,
             configurations: [configuration]
         )
+        StoreProtection.prepareForBackgroundAccess(storeURL: configuration.url)
+        return container
     }
 
     private func retryStoreOpening() {
