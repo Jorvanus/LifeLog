@@ -137,7 +137,7 @@ enum SavedPlaceLearning {
                 visit.longitude >= minLon && visit.longitude <= maxLon
             }
         ))
-        for visit in visits where ActivityLocationPolicy.isLocationVisit(visit) && visit.resolutionState == .resolved && isLocated(visit) {
+        for visit in visits where ActivityLocationPolicy.isLocationVisit(visit) && visit.resolutionState != .ignored && visit.resolutionState != .superseded && isLocated(visit) {
             let previous = VisitCorrectionSnapshot(
                 placeName: visit.placeName,
                 category: visit.placeCategory,
