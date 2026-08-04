@@ -12,6 +12,10 @@ struct ActivityImportRecord: Sendable {
     let source: String
     let start: Date
     let end: Date
+    /// The HealthKit sample(s) this record was built from, so a later anchored-query
+    /// deletion can be matched back to the visit it produced. Empty for non-HealthKit
+    /// sources (motion, walking).
+    var healthKitSampleIDs: [UUID] = []
 }
 
 struct ActivityImportProgress: Equatable, Sendable {
@@ -37,7 +41,10 @@ struct ActivityImportProgress: Equatable, Sendable {
 struct ActivityAnchorResult: Sendable {
     let records: [ActivityImportRecord]
     let anchorData: Data
-    let deletedObjectCount: Int
+    /// HealthKit sample UUIDs removed since the previous anchor. Matched against
+    /// each Visit's `healthKitSampleIDs` so a deleted Health record no longer
+    /// leaves a stale imported entry in the timeline.
+    let deletedSampleIDs: [UUID]
 }
 
 /// Health and Motion history is read away from the main actor and converted into
@@ -52,7 +59,7 @@ actor ActivitySampleReader {
 
     func anchoredSleepRecords(in interval: DateInterval, anchorData: Data?) async throws -> ActivityAnchorResult {
         guard let type = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else {
-            return ActivityAnchorResult(records: [], anchorData: Data(), deletedObjectCount: 0)
+            return ActivityAnchorResult(records: [], anchorData: Data(), deletedSampleIDs: [])
         }
         let predicate = HKQuery.predicateForSamples(
             withStart: interval.start, end: interval.end, options: .strictEndDate
@@ -63,20 +70,21 @@ actor ActivitySampleReader {
         let result = try await descriptor.result(for: healthStore)
         let samples = result.addedSamples
         try Task.checkCancellation()
-        let asleep = samples.compactMap { sample -> DateInterval? in
+        let asleep = samples.compactMap { sample -> (interval: DateInterval, id: UUID)? in
             guard let value = HKCategoryValueSleepAnalysis(rawValue: sample.value),
                   value == .asleepCore || value == .asleepDeep ||
                   value == .asleepREM || value == .asleepUnspecified else { return nil }
-            return DateInterval(start: sample.startDate, end: sample.endDate)
+            return (DateInterval(start: sample.startDate, end: sample.endDate), sample.uuid)
         }
-        let records = merge(asleep, maximumGap: 15 * 60)
-            .filter { $0.duration >= 20 * 60 }
+        let records = mergeWithIdentifiers(asleep, maximumGap: 15 * 60)
+            .filter { $0.interval.duration >= 20 * 60 }
             .map {
                 ActivityImportRecord(name: "Sleep", activity: "Sleeping", category: "Sleep",
-                                     source: "health-sleep", start: $0.start, end: $0.end)
+                                     source: "health-sleep", start: $0.interval.start, end: $0.interval.end,
+                                     healthKitSampleIDs: $0.ids)
             }
         return ActivityAnchorResult(records: records, anchorData: encodeAnchor(result.newAnchor),
-                                    deletedObjectCount: result.deletedObjects.count)
+                                    deletedSampleIDs: result.deletedObjects.map(\.uuid))
     }
 
     func workoutRecords(in interval: DateInterval) async throws -> [ActivityImportRecord] {
@@ -97,10 +105,11 @@ actor ActivitySampleReader {
             let activity = workoutActivity(workout.workoutActivityType)
             return ActivityImportRecord(name: "\(activity) workout", activity: activity,
                                         category: activity, source: "health-workout",
-                                        start: workout.startDate, end: workout.endDate)
+                                        start: workout.startDate, end: workout.endDate,
+                                        healthKitSampleIDs: [workout.uuid])
         }
         return ActivityAnchorResult(records: records, anchorData: encodeAnchor(result.newAnchor),
-                                    deletedObjectCount: result.deletedObjects.count)
+                                    deletedSampleIDs: result.deletedObjects.map(\.uuid))
     }
 
     private func encodeAnchor(_ anchor: HKQueryAnchor) -> Data {
@@ -198,6 +207,26 @@ actor ActivitySampleReader {
         return result
     }
 
+    /// Same merge as above, but keeps track of which sample UUIDs contributed to
+    /// each merged interval, so a merged sleep session can still be matched back
+    /// to every underlying HealthKit sample if one of them is later deleted.
+    private func mergeWithIdentifiers(
+        _ items: [(interval: DateInterval, id: UUID)], maximumGap: TimeInterval
+    ) -> [(interval: DateInterval, ids: [UUID])] {
+        let sorted = items.sorted { $0.interval.start < $1.interval.start }
+        var result: [(interval: DateInterval, ids: [UUID])] = []
+        for item in sorted {
+            if let last = result.last, item.interval.start.timeIntervalSince(last.interval.end) <= maximumGap {
+                let merged = DateInterval(start: last.interval.start,
+                                          end: max(last.interval.end, item.interval.end))
+                result[result.count - 1] = (merged, last.ids + [item.id])
+            } else {
+                result.append((item.interval, [item.id]))
+            }
+        }
+        return result
+    }
+
     private nonisolated static func motionActivity(_ activity: CMMotionActivity) -> String? {
         if activity.automotive { return "Travelling" }
         if activity.cycling { return "Cycling" }
@@ -258,6 +287,9 @@ actor ActivityImportActor {
                     existing.placeName = record.name
                     existing.placeCategory = record.category
                     existing.inferredActivity = record.activity
+                    if !record.healthKitSampleIDs.isEmpty {
+                        existing.healthKitSampleIDs = record.healthKitSampleIDs
+                    }
                     // Only refresh `userActivity` from the device sample if the person
                     // hasn't explicitly confirmed a label on this visit. Without this
                     // guard, a later replay of the same HealthKit/Motion anchor would
@@ -278,7 +310,8 @@ actor ActivityImportActor {
                     latitude: 0, longitude: 0,
                     placeName: record.name, placeCategory: record.category,
                     inferredActivity: record.activity, userActivity: record.activity,
-                    source: record.source, recognitionConfidence: "device"
+                    source: record.source, recognitionConfidence: "device",
+                    healthKitSampleIDs: record.healthKitSampleIDs.isEmpty ? nil : record.healthKitSampleIDs
                 )
                 modelContext.insert(visit)
                 visitsBySource[record.source, default: []].append(visit)
@@ -288,6 +321,29 @@ actor ActivityImportActor {
         }
         if modelContext.hasChanges { try modelContext.save() }
         return inserted
+    }
+
+    /// Removes imported visits whose originating HealthKit sample was deleted in the
+    /// Health app, so a stale entry does not linger in the timeline forever. A visit
+    /// the person has manually confirmed is left in place rather than removed, since
+    /// their correction stands on its own regardless of the source sample's fate.
+    func deleteRemovedRecords(sampleIDs: [UUID]) throws -> Int {
+        guard !sampleIDs.isEmpty else { return 0 }
+        let deleted = Set(sampleIDs)
+        func matches(_ visit: Visit) -> Bool {
+            guard visit.recognitionConfidence != "confirmed", let ids = visit.healthKitSampleIDs else { return false }
+            return !Set(ids).isDisjoint(with: deleted)
+        }
+        let toRemove = healthVisits.filter(matches)
+        guard !toRemove.isEmpty else { return 0 }
+        let removedIDs = Set(toRemove.map(\.persistentModelID))
+        for visit in toRemove { modelContext.delete(visit) }
+        healthVisits.removeAll { removedIDs.contains($0.persistentModelID) }
+        for key in visitsBySource.keys {
+            visitsBySource[key]?.removeAll { removedIDs.contains($0.persistentModelID) }
+        }
+        if modelContext.hasChanges { try modelContext.save() }
+        return toRemove.count
     }
 
     func finish() throws {

@@ -252,6 +252,7 @@ final class ActivityDataService {
                 var records: [ActivityImportRecord] = []
                 var sleepResultAnchor = Data()
                 var workoutResultAnchor = Data()
+                var deletedSampleIDs: [UUID] = []
                 let end = Date.now
 
                 if let healthDays {
@@ -262,12 +263,14 @@ final class ActivityDataService {
                         in: interval, anchorData: UserDefaults.standard.data(forKey: sleepAnchorKey))
                     records += sleepResult.records
                     sleepResultAnchor = sleepResult.anchorData
+                    deletedSampleIDs += sleepResult.deletedSampleIDs
                     try Task.checkCancellation()
                     updateProgress(id: id, state: .reading, title: "Reading workouts…", completed: 0, total: 0)
                     let workoutResult = try await sampleReader.anchoredWorkoutRecords(
                         in: interval, anchorData: UserDefaults.standard.data(forKey: workoutAnchorKey))
                     records += workoutResult.records
                     workoutResultAnchor = workoutResult.anchorData
+                    deletedSampleIDs += workoutResult.deletedSampleIDs
                     try Task.checkCancellation()
                     updateProgress(id: id, state: .reading, title: "Reading walking…", completed: 0, total: 0)
                     records += try await sampleReader.walkingRecords(in: interval)
@@ -280,6 +283,10 @@ final class ActivityDataService {
                     records += try await sampleReader.motionRecords(in: DateInterval(start: start, end: end))
                 }
 
+                try Task.checkCancellation()
+                if !deletedSampleIDs.isEmpty {
+                    _ = try await importWriter.deleteRemovedRecords(sampleIDs: deletedSampleIDs)
+                }
                 try Task.checkCancellation()
                 // Larger background batches reduce SwiftData transaction overhead;
                 // the actor remains off the interaction path and cancellation is

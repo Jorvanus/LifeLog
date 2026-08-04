@@ -77,4 +77,48 @@ struct ActivityImportActorTests {
         #expect(first == 1)
         #expect(second == 0)
     }
+
+    @Test("Deleted HealthKit samples remove unconfirmed imported visits but preserve confirmed ones")
+    func removesVisitsForDeletedSamples() async throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(
+            for: Visit.self, SavedPlace.self, VisitCorrection.self,
+            configurations: configuration
+        )
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let removedID = UUID()
+        let keptID = UUID()
+
+        let writer = ActivityImportActor(modelContainer: container)
+        try await writer.prepare()
+        _ = try await writer.insertBatch([
+            ActivityImportRecord(
+                name: "Run workout", activity: "Running", category: "Running", source: "health-workout",
+                start: start, end: start.addingTimeInterval(30 * 60), healthKitSampleIDs: [removedID]
+            ),
+            ActivityImportRecord(
+                name: "Sleep", activity: "Sleeping", category: "Sleep", source: "health-sleep",
+                start: start.addingTimeInterval(3 * 60 * 60), end: start.addingTimeInterval(11 * 60 * 60),
+                healthKitSampleIDs: [keptID]
+            )
+        ])
+        try await writer.finish()
+
+        // Simulate the sleep visit having since been manually confirmed.
+        let editContext = ModelContext(container)
+        let sleepVisit = try #require(try editContext.fetch(FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.source == "health-sleep" }
+        )).first)
+        sleepVisit.recognitionConfidence = "confirmed"
+        try editContext.save()
+
+        try await writer.prepare()
+        let removed = try await writer.deleteRemovedRecords(sampleIDs: [removedID, keptID])
+        try await writer.finish()
+
+        #expect(removed == 1)
+        let remaining = try editContext.fetch(FetchDescriptor<Visit>())
+        #expect(remaining.count == 1)
+        #expect(remaining.first?.source == "health-sleep")
+    }
 }

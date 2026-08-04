@@ -44,12 +44,17 @@ final class Visit {
     var source: String
     var recognitionConfidence: String?
     var candidateData: Data?
+    /// The originating HealthKit sample UUID(s) for a health-imported visit (a merged
+    /// sleep session can span several samples). Lets a later anchored-query deletion
+    /// be matched back to the local visit it produced. Nil for non-HealthKit sources.
+    var healthKitSampleIDs: [UUID]?
 
     init(arrival: Date, departure: Date? = nil, latitude: Double, longitude: Double,
          placeName: String = "Identifying…", placeCategory: String = "Other",
          inferredActivity: String = "Visiting", userActivity: String? = nil,
          note: String = "", source: String = "automatic",
-         recognitionConfidence: String? = nil, candidateData: Data? = nil) {
+         recognitionConfidence: String? = nil, candidateData: Data? = nil,
+         healthKitSampleIDs: [UUID]? = nil) {
         self.arrival = arrival; self.departure = departure
         self.latitude = latitude; self.longitude = longitude
         self.placeName = TextSafety.clean(placeName, maximumLength: 120)
@@ -60,6 +65,7 @@ final class Visit {
         self.source = TextSafety.clean(source, maximumLength: 40)
         self.recognitionConfidence = recognitionConfidence.map { TextSafety.clean($0, maximumLength: 20) }
         self.candidateData = candidateData
+        self.healthKitSampleIDs = healthKitSampleIDs
     }
 
     var activity: String {
