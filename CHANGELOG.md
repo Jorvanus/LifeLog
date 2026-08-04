@@ -2,6 +2,11 @@
 
 ## 2026-08-05
 
+### Diagnostics actions moved above the event list
+
+- "Create performance report" and "Clear diagnostics" now sit at the top of the Diagnostics screen. They were below the events, which meant scrolling past hundreds of entries to reach either.
+- Clearing now asks first and reports failure. It previously relied on autosave, so a clear could appear to work and the events return on the next launch.
+
 ### Deleting or renaming an activity no longer strands its history
 
 - Each activity now shows how many visits use it, so the cost of removing one is visible before you swipe.

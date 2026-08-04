@@ -106,6 +106,32 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Add From History"].exists)
     }
 
+    /// Diagnostics can hold hundreds of events, so the actions have to sit above the
+    /// list rather than after it.
+    func testDiagnosticsActionsAreReachableWithoutScrolling() {
+        app.tabBars.buttons["Settings"].tap()
+        XCTAssertTrue(element("settings-screen").waitForExistence(timeout: 5))
+        // Settings is a long form and rows render lazily, so the link near the bottom
+        // does not exist until it is scrolled into view.
+        let diagnostics = element("diagnostics-link")
+        var attempts = 0
+        while !diagnostics.exists && attempts < 8 {
+            app.swipeUp()
+            attempts += 1
+        }
+        XCTAssertTrue(diagnostics.waitForExistence(timeout: 5))
+        diagnostics.tap()
+
+        XCTAssertTrue(element("diagnostics-screen").waitForExistence(timeout: 5))
+        let report = app.buttons["Create performance report"]
+        let clear = element("clear-diagnostics")
+        XCTAssertTrue(report.waitForExistence(timeout: 5))
+        XCTAssertTrue(clear.exists)
+        // Reachable means on screen, not merely present in the hierarchy.
+        XCTAssertTrue(report.isHittable)
+        XCTAssertTrue(clear.isHittable)
+    }
+
     func testManualEntryIsAccessibleFromTimeline() {
         let addVisit = app.buttons["Add visit"]
         XCTAssertTrue(addVisit.waitForExistence(timeout: 5))

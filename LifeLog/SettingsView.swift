@@ -166,6 +166,7 @@ struct SettingsView: View {
                     NavigationLink { DiagnosticsView() } label: {
                         Label("Diagnostics", systemImage: "stethoscope")
                     }
+                    .accessibilityIdentifier("diagnostics-link")
                 } footer: {
                     Text("View service timing and failure diagnostics in a separate screen.")
                 }
