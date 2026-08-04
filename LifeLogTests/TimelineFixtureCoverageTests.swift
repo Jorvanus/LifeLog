@@ -168,6 +168,28 @@ struct TimelineFixtureCoverageTests {
         #expect(unknown.needsReview)
     }
 
+    @Test("Time bands scope a bulk change to the right entries")
+    func timeBandsScopeCorrectly() {
+        let calendar = Calendar.current
+        func at(_ hour: Int) -> Date {
+            calendar.date(bySettingHour: hour, minute: 30, second: 0, of: base)!
+        }
+        #expect(PlaceTimeBand.night.contains(at(3)))
+        #expect(PlaceTimeBand.night.contains(at(7)) == false)
+        #expect(PlaceTimeBand.morning.contains(at(7)))
+        #expect(PlaceTimeBand.day.contains(at(13)))
+        #expect(PlaceTimeBand.evening.contains(at(19)))
+        #expect(PlaceTimeBand.lateNight.contains(at(23)))
+        // "Any time" must cover every hour, or a bulk change would silently skip rows.
+        for hour in 0..<24 { #expect(PlaceTimeBand.allDay.contains(at(hour))) }
+        // The bands must not overlap, so an entry is only ever changed once.
+        for hour in 0..<24 {
+            let matches = PlaceTimeBand.allCases
+                .filter { $0 != .allDay && $0.contains(at(hour)) }
+            #expect(matches.count == 1, "hour \(hour) matched \(matches.count) bands")
+        }
+    }
+
     @Test("Life Cycle journal CSV maps activities and tolerates malformed rows")
     func journalImportParsing() {
         let csv = """

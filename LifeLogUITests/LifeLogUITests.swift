@@ -72,6 +72,22 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertFalse(bar.buttons["Cancel"].exists, "Cancel is only for the modal add flow")
     }
 
+    /// Place History is the only route to correcting imported entries in bulk, so
+    /// it has to be reachable and has to render its summary without crashing.
+    func testPlaceHistoryIsReachableFromLocations() {
+        app.tabBars.buttons["Settings"].tap()
+        let places = element("saved-places-link")
+        XCTAssertTrue(places.waitForExistence(timeout: 5))
+        places.tap()
+
+        let historyLink = element("place-history-link")
+        XCTAssertTrue(historyLink.waitForExistence(timeout: 5))
+        historyLink.tap()
+
+        XCTAssertTrue(element("place-history-screen").waitForExistence(timeout: 10))
+        XCTAssertTrue(app.navigationBars["Place History"].exists)
+    }
+
     func testManualEntryIsAccessibleFromTimeline() {
         let addVisit = app.buttons["Add visit"]
         XCTAssertTrue(addVisit.waitForExistence(timeout: 5))

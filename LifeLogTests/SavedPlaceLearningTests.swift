@@ -1,3 +1,4 @@
+import Foundation
 import SwiftData
 import Testing
 @testable import LifeLog
@@ -115,6 +116,48 @@ struct SavedPlaceLearningTests {
         let corrections = try context.fetch(FetchDescriptor<VisitCorrection>())
         #expect(corrections.count == 1)
         #expect(corrections.first?.reason == "Saved Place learned")
+    }
+
+    @Test("A bulk activity change skips entries the person confirmed themselves")
+    func bulkChangeKeepsConfirmedEntries() throws {
+        let context = try makeContext()
+        let calendar = Calendar.current
+        let day = calendar.startOfDay(for: Date(timeIntervalSince1970: 1_800_000_000))
+        func entry(hour: Int, activity: String, confidence: String) -> Visit {
+            let arrival = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: day)!
+            let visit = Visit(arrival: arrival, departure: arrival.addingTimeInterval(1_800),
+                              latitude: 0, longitude: 0, placeName: "Gracemere Shopping World",
+                              inferredActivity: activity, userActivity: activity,
+                              source: "imported-journal", recognitionConfidence: confidence)
+            context.insert(visit)
+            return visit
+        }
+        let importedA = entry(hour: 13, activity: "Eating", confidence: "imported")
+        let importedB = entry(hour: 14, activity: "Eating", confidence: "imported")
+        let confirmed = entry(hour: 15, activity: "Eating", confidence: "confirmed")
+        let otherBand = entry(hour: 3, activity: "Eating", confidence: "imported")
+        try context.save()
+
+        // Mirrors PlaceHistoryDetail.apply: scope by band, never touch "confirmed".
+        let name = "Gracemere Shopping World"
+        let matching = try context.fetch(FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.placeName == name }
+        ))
+        var changed = 0
+        for visit in matching where PlaceTimeBand.day.contains(visit.arrival)
+            && visit.recognitionConfidence != "confirmed" {
+            visit.userActivity = "Shopping"
+            changed += 1
+        }
+        try context.save()
+
+        #expect(changed == 2)
+        #expect(importedA.activity == "Shopping")
+        #expect(importedB.activity == "Shopping")
+        // The person's own choice survives.
+        #expect(confirmed.activity == "Eating")
+        // A different time of day is untouched.
+        #expect(otherBand.activity == "Eating")
     }
 
     private func makeContext() throws -> ModelContext {

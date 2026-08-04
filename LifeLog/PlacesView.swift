@@ -51,6 +51,19 @@ struct PlacesView: View {
                     }
                 }
                 .accessibilityIdentifier("ignored-locations-link")
+                NavigationLink { PlaceHistoryView() } label: {
+                    Label {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Place History").font(.headline)
+                            Text("Correct an activity across every entry for a place")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "clock.arrow.trianglehead.counterclockwise.rotate.90")
+                            .foregroundStyle(.blue)
+                    }
+                }
+                .accessibilityIdentifier("place-history-link")
             }
             Section {
                 if places.isEmpty {

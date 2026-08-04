@@ -2,6 +2,12 @@
 
 ## 2026-08-05
 
+### Correct a place across its whole history
+
+- Settings → Locations → Place History lists every place name in your timeline, however it was recorded, with how often it appears and what it is usually logged as. Opening one shows what that place looks like at each time of day and lets you correct the activity across every entry at once.
+- Imported journal entries have no coordinates, so Saved Place learning could never reach them and they could only be fixed one at a time. This is the first route to correcting them in bulk.
+- A change never touches an entry you confirmed yourself, and can be scoped to a time of day, so a home address keeps "Sleeping" overnight while the rest of the day is corrected. Bulk changes are only reversible from a backup, so take one first.
+
 ### Uncertain place matches ask before being accepted
 
 - Apple Maps sometimes returns a nearby business for a coordinate it is not confident about — a workplace matched onto a home address, for example. LifeLog was writing that name in as though it were settled. An uncertain match now appears in the review queue asking "Is this right?", showing the guessed name, with a "Yes, this is right" button that confirms it and remembers the place for future visits. Correcting the name instead teaches it the same way as before.
