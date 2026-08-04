@@ -180,9 +180,9 @@ struct ManualVisitView: View {
         let coordinate = resolution.coordinate
         let latitude = coordinate?.latitude ?? 0
         let longitude = coordinate?.longitude ?? 0
-        let inferred = InferenceEngine.activity(placeName: safePlace, category: "Other", arrival: arrival)
+        let inferred = InferenceEngine.activity(placeName: safePlace, arrival: arrival)
         context.insert(Visit(arrival: arrival, departure: safeDeparture, latitude: latitude, longitude: longitude,
-                             placeName: safePlace, placeCategory: "Other",
+                             placeName: safePlace,
                              inferredActivity: safeActivity.isEmpty ? inferred : safeActivity,
                              userActivity: safeActivity.isEmpty ? nil : safeActivity, source: "manual",
                              recognitionConfidence: resolution.confidence))

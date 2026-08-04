@@ -49,7 +49,6 @@ enum SavedPlaceLearning {
         guard isLocated(visit) else { return nil }
 
         let name = TextSafety.clean(visit.placeName, maximumLength: 100)
-        let category = TextSafety.clean(visit.placeCategory, maximumLength: 40)
         let activity = TextSafety.clean(visit.activity, maximumLength: 80)
         guard isReusableName(name), !activity.isEmpty else { return nil }
 
@@ -88,7 +87,6 @@ enum SavedPlaceLearning {
         let change: Change
         if let existing {
             existing.name = name
-            existing.category = category
             existing.defaultActivity = activity
             existing.radius = min(max(max(existing.radius, radius), 25), 500)
             place = existing
@@ -99,7 +97,6 @@ enum SavedPlaceLearning {
                 latitude: visit.latitude,
                 longitude: visit.longitude,
                 radius: radius,
-                category: category,
                 defaultActivity: activity
             )
             context.insert(created)
@@ -117,13 +114,12 @@ enum SavedPlaceLearning {
     /// immediately in both the timeline and historical insights.
     static func apply(_ place: SavedPlace, context: ModelContext) throws {
         place.name = TextSafety.clean(place.name, maximumLength: 100)
-        place.category = TextSafety.clean(place.category, maximumLength: 40)
         place.defaultActivity = TextSafety.clean(place.defaultActivity, maximumLength: 80)
         place.radius = min(max(place.radius, 25), 500)
 
         let savedLocation = CLLocation(latitude: place.latitude, longitude: place.longitude)
         let activity = place.defaultActivity.isEmpty
-            ? InferenceEngine.activity(placeName: place.name, category: place.category)
+            ? InferenceEngine.activity(placeName: place.name)
             : place.defaultActivity
         // Bounds the fetch to a box around this place instead of loading every
         // located Visit in the archive just to find the handful within radius.
@@ -140,14 +136,12 @@ enum SavedPlaceLearning {
         for visit in visits where ActivityLocationPolicy.isLocationVisit(visit) && visit.resolutionState != .ignored && visit.resolutionState != .superseded && isLocated(visit) {
             let previous = VisitCorrectionSnapshot(
                 placeName: visit.placeName,
-                category: visit.placeCategory,
                 activity: visit.activity,
                 confidence: visit.recognitionConfidence ?? "pending"
             )
             let visitLocation = CLLocation(latitude: visit.latitude, longitude: visit.longitude)
             guard savedLocation.distance(from: visitLocation) <= place.radius else { continue }
             visit.placeName = place.name
-            visit.placeCategory = place.category
             // A saved-place default is a future suggestion, not a permanent label —
             // the same location can be Breakfast one day and Lunch the next — so
             // only the inferred activity is refreshed here. Any manual
@@ -180,10 +174,9 @@ enum SavedPlaceLearning {
             guard nameMatch || (activityMatch && timeDistance <= 90 * 60) else { continue }
             visit.latitude = coreVisit.latitude
             visit.longitude = coreVisit.longitude
-            if coreVisit.placeName != "Identifying…" && coreVisit.placeName != "Unknown place" {
+            if !coreVisit.hasPlaceholderName {
                 visit.placeName = coreVisit.placeName
             }
-            visit.placeCategory = coreVisit.placeCategory
             visit.recognitionConfidence = "enriched"
         }
     }

@@ -337,7 +337,6 @@ struct TrendsView: View {
                     ForEach(snapshot.weekdayPatterns) { pattern in
                         HStack(spacing: 9) {
                             ActivityIcon(activity: pattern.topActivity,
-                                         category: pattern.topActivity,
                                          color: activityColor(pattern.topActivity), size: 30)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(pattern.shortName).font(.caption.bold()).foregroundStyle(.secondary)
@@ -370,7 +369,7 @@ struct TrendsView: View {
                     Button { selectedPlace = place } label: {
                         HStack(spacing: 13) {
                             Text("\(index + 1)").font(.headline.monospacedDigit()).foregroundStyle(.secondary).frame(width: 22)
-                            ActivityIcon(activity: place.activity, category: place.category,
+                            ActivityIcon(activity: place.activity, context: place.name,
                                          color: activityColor(place.activity), size: 42)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(place.name).font(.headline).lineLimit(1)
@@ -1194,7 +1193,7 @@ private struct InsightSliceEditor: View {
                             ForEach(visits) { visit in
                                 NavigationLink { VisitEditor(visit: visit) } label: {
                                     HStack(spacing: 12) {
-                                        ActivityIcon(activity: visit.activity, category: visit.placeCategory,
+                                        ActivityIcon(activity: visit.activity, context: visit.displayPlaceName,
                                                      color: activityColor(visit.activity), size: 42)
                                         VStack(alignment: .leading, spacing: 3) {
                                             Text(visit.placeName).font(.headline).lineLimit(1)

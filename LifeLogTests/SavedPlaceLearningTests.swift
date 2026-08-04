@@ -13,7 +13,6 @@ struct SavedPlaceLearningTests {
             latitude: -27.4698,
             longitude: 153.0251,
             placeName: "Corner Café",
-            placeCategory: "Food & Drink",
             inferredActivity: "Visiting",
             userActivity: "Eating"
         )
@@ -46,7 +45,6 @@ struct SavedPlaceLearningTests {
             latitude: -27.4698,
             longitude: 153.0251,
             radius: 90,
-            category: "Work",
             defaultActivity: "Working"
         )
         context.insert(saved)
@@ -57,7 +55,6 @@ struct SavedPlaceLearningTests {
             latitude: -27.4697,
             longitude: 153.0252,
             placeName: "Design Studio",
-            placeCategory: "Work",
             inferredActivity: "Working",
             userActivity: "Collaborating"
         )
@@ -85,7 +82,6 @@ struct SavedPlaceLearningTests {
             latitude: -27.4698,
             longitude: 153.0251,
             radius: 125,
-            category: "Home",
             defaultActivity: "At home"
         )
         let current = Visit(
@@ -93,7 +89,6 @@ struct SavedPlaceLearningTests {
             latitude: -27.4697,
             longitude: 153.0252,
             placeName: "Unknown place",
-            placeCategory: "Other",
             inferredActivity: "Visiting",
             source: "automatic"
         )
@@ -103,7 +98,6 @@ struct SavedPlaceLearningTests {
             latitude: -27.5,
             longitude: 153.1,
             placeName: "Another place",
-            placeCategory: "Other",
             inferredActivity: "Visiting",
             source: "automatic"
         )
@@ -115,7 +109,6 @@ struct SavedPlaceLearningTests {
         try context.save()
 
         #expect(current.placeName == "Home")
-        #expect(current.placeCategory == "Home")
         #expect(current.activity == "At home")
         #expect(current.needsCategorisation == false)
         #expect(distant.placeName == "Another place")

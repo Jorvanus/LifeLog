@@ -123,7 +123,7 @@ struct JournalCSVImporter {
             if !importedKeys.insert(key).inserted { skipped += 1; continue }
             context.insert(Visit(
                 arrival: row.start, departure: row.end, latitude: 0, longitude: 0,
-                placeName: place, placeCategory: category(for: activity),
+                placeName: place,
                 inferredActivity: activity, userActivity: activity, note: row.note,
                 source: "imported-journal", recognitionConfidence: "imported"
             ))
@@ -163,14 +163,4 @@ struct JournalCSVImporter {
         return TextSafety.clean(raw.isEmpty ? "Visiting" : raw, maximumLength: 80)
     }
 
-    private static func category(for activity: String) -> String {
-        switch activity {
-        case "Sleeping": "Sleep"
-        case "Walking": "Walking"
-        case "Travelling": "Travel"
-        case "Eating": "Food & Drink"
-        case "At home": "Home"
-        default: "Other"
-        }
-    }
 }

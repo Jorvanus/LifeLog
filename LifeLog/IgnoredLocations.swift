@@ -55,7 +55,7 @@ extension Visit {
     var resolutionState: VisitResolutionState {
         if isIgnored { return .ignored }
         if ActivityLocationPolicy.isSupersededLocation(self) { return .superseded }
-        if source == "automatic" && (placeCategory == "Other" || recognitionConfidence == nil) {
+        if source == "automatic" && (hasPlaceholderName || recognitionConfidence == nil) {
             return .provisional
         }
         return .resolved

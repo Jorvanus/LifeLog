@@ -54,6 +54,48 @@ struct SchemaMigrationTests {
         #expect(diagnostics[0].subsystem == "Migration test")
     }
 
+    @Test("A V1 store carrying place types migrates to V2 without losing visits or places")
+    func migratesV1StoreDroppingPlaceType() throws {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LifeLog-v1-\(UUID().uuidString).store")
+        defer { try? FileManager.default.removeItem(at: storeURL) }
+
+        let arrival = Date(timeIntervalSince1970: 1_800_000_000)
+        // Seed with the frozen V1 shape, which still has placeCategory/category.
+        let v1Schema = Schema(versionedSchema: LifeLogSchemaV1.self)
+        let v1Configuration = ModelConfiguration(
+            "LifeLogMigrationFixture", schema: v1Schema, url: storeURL,
+            allowsSave: true, cloudKitDatabase: .none
+        )
+        let v1Container = try ModelContainer(for: v1Schema, configurations: [v1Configuration])
+        let v1Context = ModelContext(v1Container)
+        v1Context.insert(LifeLogSchemaV1.Visit(
+            arrival: arrival, latitude: -27.47, longitude: 153.03,
+            placeName: "Gracemere Shopping World", placeCategory: "Shopping",
+            inferredActivity: "Shopping", note: "V1 fixture", source: "automatic"
+        ))
+        v1Context.insert(LifeLogSchemaV1.SavedPlace(
+            name: "Home", latitude: -27.47, longitude: 153.03,
+            radius: 120, category: "Home", defaultActivity: "At home"
+        ))
+        try v1Context.save()
+
+        // Reopen the same file through the plan; V2 has no place type at all.
+        let migrated = try openVersionedStore(at: storeURL)
+        let context = ModelContext(migrated)
+        let visits = try context.fetch(FetchDescriptor<Visit>())
+        let places = try context.fetch(FetchDescriptor<SavedPlace>())
+
+        #expect(visits.count == 1)
+        #expect(visits.first?.placeName == "Gracemere Shopping World")
+        #expect(visits.first?.inferredActivity == "Shopping")
+        #expect(visits.first?.note == "V1 fixture")
+        #expect(places.count == 1)
+        #expect(places.first?.name == "Home")
+        #expect(places.first?.radius == 120)
+        #expect(places.first?.defaultActivity == "At home")
+    }
+
     private func seedCurrentStore(at url: URL) throws {
         let schema = Schema([Visit.self, SavedPlace.self, VisitCorrection.self, DiagnosticEvent.self])
         let configuration = ModelConfiguration(
@@ -66,14 +108,14 @@ struct SchemaMigrationTests {
         context.insert(Visit(
             arrival: arrival, departure: arrival.addingTimeInterval(3600),
             latitude: -27.47, longitude: 153.03,
-            placeName: "Home", placeCategory: "Home",
+            placeName: "Home",
             inferredActivity: "At home", userActivity: "At home",
             note: "Current store fixture", source: "automatic",
             recognitionConfidence: "confirmed", candidateData: Data([1, 2, 3])
         ))
         context.insert(SavedPlace(
             name: "Home", latitude: -27.47, longitude: 153.03,
-            category: "Home", defaultActivity: "At home"
+            defaultActivity: "At home"
         ))
         context.insert(VisitCorrection(
             visitArrival: arrival, latitude: -27.47, longitude: 153.03,
@@ -85,7 +127,7 @@ struct SchemaMigrationTests {
     }
 
     private func openVersionedStore(at url: URL) throws -> ModelContainer {
-        let schema = Schema(versionedSchema: LifeLogSchemaV1.self)
+        let schema = Schema(versionedSchema: LifeLogSchemaV2.self)
         let configuration = ModelConfiguration(
             "LifeLogMigrationFixture", schema: schema, url: url,
             allowsSave: true, cloudKitDatabase: .none

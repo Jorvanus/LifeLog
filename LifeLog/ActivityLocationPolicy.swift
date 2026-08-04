@@ -34,13 +34,12 @@ enum ActivityLocationPolicy {
 
     static func isWalkingActivity(_ visit: Visit) -> Bool {
         guard isDeviceActivity(visit) else { return false }
-        let text = "\(visit.activity) \(visit.placeCategory)".lowercased()
-        return text.contains("walk")
+        return visit.activity.lowercased().contains("walk")
     }
 
     static func isTravelActivity(_ visit: Visit) -> Bool {
         guard isDeviceActivity(visit) else { return false }
-        let text = "\(visit.activity) \(visit.placeCategory) \(visit.placeName)".lowercased()
+        let text = "\(visit.activity) \(visit.placeName)".lowercased()
         return ["travel", "transit", "automotive", "vehicle", "driv", "car", "plane", "flight"]
             .contains { text.contains($0) }
     }
@@ -165,7 +164,6 @@ enum ActivityLocationPolicy {
                 activity.userActivity == activity.inferredActivity ||
                 activity.userActivity == "Travelling" ||
                 activity.userActivity == "In transit"
-            activity.placeCategory = "Travel"
             activity.inferredActivity = description
             activity.recognitionConfidence = destinationConfidence(for: destination, locations: locations)
             if isGeneratedActivity {
@@ -175,17 +173,16 @@ enum ActivityLocationPolicy {
     }
 
     private static func destinationLabel(for destination: Visit, locations: [Visit]) -> String? {
-        let destinationText = "\(destination.placeName) \(destination.placeCategory)".lowercased()
-        if destination.placeCategory.localizedCaseInsensitiveContains("work") ||
-            InferenceEngine.activity(placeName: destination.placeName, category: destination.placeCategory) == "Working" {
+        let destinationText = destination.placeName.lowercased()
+        if InferenceEngine.activity(placeName: destination.placeName) == "Working" {
             return "Work"
         }
-        if destination.placeCategory.localizedCaseInsensitiveContains("home") || destinationText.contains("home") {
+        if destinationText.contains("home") {
             return "Home"
         }
 
         let key = normalized(destination.placeName)
-        guard !key.isEmpty, key != "identifying…", key != "unknown place" else { return nil }
+        guard !key.isEmpty, !Visit.isPlaceholderName(destination.placeName) else { return nil }
         let matches = locations.filter { normalized($0.placeName) == key }
         let distinctDays = Set(matches.map { Calendar.current.startOfDay(for: $0.arrival) }).count
         // Avoid learning a destination name from a one-off or same-day GPS duplicate.
@@ -194,10 +191,8 @@ enum ActivityLocationPolicy {
     }
 
     private static func destinationConfidence(for destination: Visit, locations: [Visit]) -> String {
-        let text = "\(destination.placeName) \(destination.placeCategory)".lowercased()
-        if destination.placeCategory.localizedCaseInsensitiveContains("work") ||
-            InferenceEngine.activity(placeName: destination.placeName, category: destination.placeCategory) == "Working" ||
-            destination.placeCategory.localizedCaseInsensitiveContains("home") || text.contains("home") {
+        let text = destination.placeName.lowercased()
+        if InferenceEngine.activity(placeName: destination.placeName) == "Working" || text.contains("home") {
             return "learned"
         }
         let key = normalized(destination.placeName)
@@ -286,7 +281,6 @@ enum ActivityLocationPolicy {
                 }
                 if locationQuality(candidate) > locationQuality(previous) {
                     previous.placeName = candidate.placeName
-                    previous.placeCategory = candidate.placeCategory
                     previous.inferredActivity = candidate.inferredActivity
                     previous.userActivity = candidate.userActivity
                     previous.recognitionConfidence = candidate.recognitionConfidence
@@ -397,7 +391,6 @@ enum ActivityLocationPolicy {
             latitude: activity.latitude,
             longitude: activity.longitude,
             placeName: activity.placeName,
-            placeCategory: activity.placeCategory,
             inferredActivity: activity.inferredActivity,
             userActivity: activity.userActivity,
             note: activity.note,

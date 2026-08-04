@@ -1,10 +1,14 @@
 import Foundation
 
 enum InferenceEngine {
-    static func activity(placeName: String, category: String, defaultActivity: String? = nil,
-                         arrival: Date = .now) -> String {
+    /// Infers an activity from the place name. `mapsHint` carries the Apple Maps
+    /// point-of-interest wording during a lookup so a business whose name has no
+    /// keyword ("Kōhi") can still be classified. It is a transient signal only —
+    /// LifeLog does not store or display a place type.
+    static func activity(placeName: String, defaultActivity: String? = nil,
+                         arrival: Date = .now, mapsHint: String = "") -> String {
         if let defaultActivity, !defaultActivity.isEmpty { return defaultActivity }
-        let text = "\(placeName) \(category)".lowercased()
+        let text = "\(placeName) \(mapsHint)".lowercased()
         let rules: [(String, [String])] = [
             ("Watching a movie", ["cinema", "movie theater", "movie theatre", "film theatre", "event cinemas", "reading cinemas"]),
             ("Working", ["work", "office", "cowork"]),

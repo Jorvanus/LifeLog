@@ -175,7 +175,7 @@ struct TimelineView: View {
                 Label("Review Queue", systemImage: "exclamationmark.triangle.fill")
                     .font(.headline).foregroundStyle(.orange)
                 HStack(spacing: 14) {
-                    ActivityIcon(activity: visit.activity, category: visit.placeCategory, color: .orange)
+                    ActivityIcon(activity: visit.activity, context: visit.displayPlaceName, color: .orange)
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Uncategorised location").font(.headline).foregroundStyle(.primary)
                         if visit.placeName != "Identifying…" && visit.placeName != "Unknown place" {
@@ -228,7 +228,7 @@ struct TimelineView: View {
                             .minimumScaleFactor(0.8)
                     }
                     Spacer()
-                    ActivityScene(activity: visit.suspectedActivity, category: visit.insightCategory)
+                    ActivityScene(activity: visit.suspectedActivity, context: visit.displayPlaceName)
                 }
             }
             .padding(20)
@@ -343,7 +343,7 @@ private struct JourneyRow: View {
                         .overlay(Circle().fill(color).frame(width: 8, height: 8))
                 }.frame(width: 38, height: 108)
                 HStack(spacing: 14) {
-                    ActivityIcon(activity: visit.suspectedActivity, category: visit.insightCategory,
+                    ActivityIcon(activity: visit.suspectedActivity, context: visit.displayPlaceName,
                                  color: color, size: 58)
                     VStack(alignment: .leading, spacing: 4) {
                         if visit.needsCategorisation {
@@ -407,7 +407,9 @@ private struct JourneyRow: View {
 
 struct ActivityIcon: View {
     let activity: String
-    let category: String
+    /// Extra wording used only to pick a symbol — the place name now that LifeLog
+    /// does not model a place type.
+    var context: String = ""
     let color: Color
     var size: CGFloat = 54
     var body: some View {
@@ -422,7 +424,7 @@ struct ActivityIcon: View {
         .shadow(color: color.opacity(0.16), radius: 7, y: 4)
     }
     private var symbol: String {
-        let text = "\(activity) \(category)".lowercased()
+        let text = "\(activity) \(context)".lowercased()
         if text.contains("travel") || text.contains("transit") { return "car.fill" }
         if text.contains("home") { return "house.fill" }
         if text.contains("work") || text.contains("office") { return "building.2.fill" }
@@ -438,7 +440,7 @@ struct ActivityIcon: View {
     }
 
     fileprivate var resolvedAssetName: String? {
-        let text = "\(activity) \(category)".lowercased()
+        let text = "\(activity) \(context)".lowercased()
         if text.contains("home") { return "ActivityHome" }
         if text.contains("beer") { return "ActivityBeers" }
         if text.contains("exercise") || text.contains("fitness") || text.contains("gym") { return "ActivityExercise" }
@@ -464,7 +466,7 @@ struct ActivityIcon: View {
 /// compact timeline cards keep their readable circular activity icons.
 private struct ActivityScene: View {
     let activity: String
-    let category: String
+    var context: String = ""
 
     var body: some View {
         if let assetName {
@@ -483,7 +485,7 @@ private struct ActivityScene: View {
     }
 
     private var assetName: String? {
-        ActivityIcon(activity: activity, category: category, color: .clear).resolvedAssetName
+        ActivityIcon(activity: activity, context: context, color: .clear).resolvedAssetName
     }
 }
 
@@ -593,7 +595,6 @@ struct VisitEditor: View {
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var adjustingLocation = false
     @State private var showingNearbyPlaces = false
-    private let categories = ["Home", "Work", "Food & Drink", "Shopping", "Fitness", "Healthcare", "Education", "Travel", "Entertainment", "Social", "Other"]
     private let activities = ["At home", "Working", "Eating", "Shopping", "Exercising", "Healthcare", "Studying", "Travelling", "Socialising", "Visiting"]
 
     private var availableActivities: [String] {
@@ -613,12 +614,12 @@ struct VisitEditor: View {
                 if canLearnPlace {
                     Section("Quick labels") {
                         Button {
-                            applyQuickLabel(name: "Home", category: "Home", activity: "At home")
+                            applyQuickLabel(name: "Home", activity: "At home")
                         } label: {
                             Label("Set as Home", systemImage: "house.fill")
                         }
                         Button {
-                            applyQuickLabel(name: "Work", category: "Work", activity: "Working")
+                            applyQuickLabel(name: "Work", activity: "Working")
                         } label: {
                             Label("Set as Work", systemImage: "building.2.fill")
                         }
@@ -632,11 +633,11 @@ struct VisitEditor: View {
                             select(suggestion)
                         } label: {
                             HStack(spacing: 12) {
-                                ActivityIcon(activity: suggestion.suggestedActivity, category: suggestion.category,
+                                ActivityIcon(activity: suggestion.suggestedActivity, context: suggestion.name,
                                              color: activityColor(suggestion.suggestedActivity), size: 42)
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(suggestion.name).foregroundStyle(.primary)
-                                    Text("\(suggestion.category) · \(Int(suggestion.distance.rounded())) m away")
+                                    Text("\(suggestion.suggestedActivity) · \(Int(suggestion.distance.rounded())) m away")
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
@@ -699,9 +700,6 @@ struct VisitEditor: View {
                     } label: {
                         Label("Choose nearby Apple Maps place", systemImage: "mappin.and.ellipse")
                     }
-                }
-                Picker("Place type", selection: $visit.placeCategory) {
-                    ForEach(categories, id: \.self) { Text($0).tag($0) }
                 }
             }
             Section("What were you doing?") {
@@ -851,14 +849,12 @@ struct VisitEditor: View {
 
     private func select(_ suggestion: PlaceSuggestion) {
         visit.placeName = suggestion.name
-        visit.placeCategory = suggestion.category
         visit.userActivity = suggestion.suggestedActivity
         visit.recognitionConfidence = "confirmed"
     }
 
-    private func applyQuickLabel(name: String, category: String, activity: String) {
+    private func applyQuickLabel(name: String, activity: String) {
         visit.placeName = name
-        visit.placeCategory = category
         visit.userActivity = activity
         visit.recognitionConfidence = "confirmed"
         learnPlace()
@@ -902,7 +898,6 @@ struct VisitEditor: View {
     private func sanitizeVisit() {
         PlaceLookupService.cancelAllLookups()
         visit.placeName = TextSafety.clean(visit.placeName, maximumLength: 120)
-        visit.placeCategory = TextSafety.clean(visit.placeCategory, maximumLength: 40)
         visit.userActivity = visit.userActivity.map { TextSafety.clean($0, maximumLength: 80) }
         visit.note = TextSafety.clean(visit.note, maximumLength: 2_000)
         if let departure = visit.departure, departure < visit.arrival {
@@ -931,7 +926,6 @@ struct VisitEditor: View {
     private var currentSnapshot: VisitCorrectionSnapshot {
         VisitCorrectionSnapshot(
             placeName: visit.placeName,
-            category: visit.placeCategory,
             activity: visit.userActivity ?? visit.inferredActivity,
             confidence: visit.recognitionConfidence ?? "pending"
         )
@@ -991,11 +985,11 @@ private struct NearbyPlacePicker: View {
                         } label: {
                             HStack(spacing: 12) {
                                 ActivityIcon(activity: suggestion.suggestedActivity,
-                                             category: suggestion.category,
+                                             context: suggestion.name,
                                              color: activityColor(suggestion.suggestedActivity), size: 42)
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(suggestion.name).foregroundStyle(.primary)
-                                    Text("\(suggestion.category) · \(Int(suggestion.distance.rounded())) m away")
+                                    Text("\(suggestion.suggestedActivity) · \(Int(suggestion.distance.rounded())) m away")
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()

@@ -57,11 +57,11 @@ struct PlacesView: View {
                     ForEach(places) { place in
                         NavigationLink { SavedPlaceEditor(place: place, recorder: recorder) } label: {
                             HStack(spacing: 12) {
-                                ActivityIcon(activity: place.defaultActivity, category: place.category,
+                                ActivityIcon(activity: place.defaultActivity, context: place.name,
                                              color: activityColor(place.defaultActivity), size: 42)
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(place.name).font(.headline)
-                                    Text("\(place.category) · \(place.defaultActivity)")
+                                    Text(place.defaultActivity.isEmpty ? "No default activity" : place.defaultActivity)
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
                             }
@@ -160,17 +160,10 @@ private struct SavedPlaceEditor: View {
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var adjustingLocation = false
 
-    private let categories = [
-        "Home", "Work", "Food & Drink", "Shopping", "Fitness", "Healthcare",
-        "Education", "Travel", "Entertainment", "Social", "Other"
-    ]
     var body: some View {
         Form {
             Section("Place") {
                 TextField("Name", text: $place.name)
-                Picker("Place type", selection: $place.category) {
-                    ForEach(categories, id: \.self) { Text($0).tag($0) }
-                }
             }
             Section("Map location") {
                 let coordinate = CLLocationCoordinate2D(latitude: place.latitude, longitude: place.longitude)

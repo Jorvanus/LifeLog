@@ -17,7 +17,6 @@ struct TimelineFixtureCoverageTests {
                 latitude: -27.47 + Double(index) * 0.0001,
                 longitude: 153.03,
                 placeName: "Destination \(index)",
-                placeCategory: "Other",
                 inferredActivity: "Visiting",
                 source: "automatic"
             )
@@ -26,7 +25,7 @@ struct TimelineFixtureCoverageTests {
             arrival: base.addingTimeInterval(10 * 3_600 + 1_200),
             departure: base.addingTimeInterval(10 * 3_600 + 3_000),
             latitude: 0, longitude: 0, placeName: "Walking",
-            placeCategory: "Walking", inferredActivity: "Walking",
+            inferredActivity: "Walking",
             userActivity: "Walking", source: "health-walking"
         )
 
@@ -39,13 +38,12 @@ struct TimelineFixtureCoverageTests {
             arrival: base, departure: base.addingTimeInterval(-60),
             latitude: .nan, longitude: .infinity,
             placeName: "  \u{0000}\nUnknown place  ",
-            placeCategory: "\u{0007}Other", inferredActivity: "\u{000B}Visiting",
+            inferredActivity: "\u{000B}Visiting",
             userActivity: "\u{000D}Visiting", note: "\u{0000}note",
             source: "automatic"
         )
 
         #expect(malformed.placeName == "Unknown place")
-        #expect(malformed.placeCategory == "Other")
         #expect(malformed.note == "note")
         #expect(malformed.duration == 0)
 
@@ -65,7 +63,6 @@ struct TimelineFixtureCoverageTests {
                 return Visit(arrival: start, departure: start.addingTimeInterval(45 * 60),
                              latitude: -27.47, longitude: 153.03,
                              placeName: slot.isMultiple(of: 2) ? "Home" : "Work",
-                             placeCategory: slot.isMultiple(of: 2) ? "Home" : "Work",
                              inferredActivity: slot.isMultiple(of: 2) ? "At home" : "Working",
                              source: "automatic")
             }
@@ -97,7 +94,7 @@ struct TimelineFixtureCoverageTests {
     func trendExportFormats() throws {
         let visit = Visit(arrival: base, departure: base.addingTimeInterval(90 * 60),
                           latitude: -27.47, longitude: 153.03, placeName: "Corner, Cafe",
-                          placeCategory: "Food & Drink", inferredActivity: "Eating",
+                          inferredActivity: "Eating",
                           source: "automatic", recognitionConfidence: "confirmed")
         let interval = DateInterval(start: base.addingTimeInterval(-60), end: base.addingTimeInterval(2 * 3_600))
         let csv = try #require(TrendExport.makeFile(format: "csv", visits: [visit], interval: interval, now: base.addingTimeInterval(2 * 3_600)))

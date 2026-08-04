@@ -219,13 +219,12 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             Diagnostics.locationMetric(context, operation: "saved_place_match",
                                        distanceMeters: Int(distance.rounded()))
         }
-        let name = saved?.name ?? "Identifying…"
-        let category = saved?.category ?? "Other"
-        let activity = InferenceEngine.activity(placeName: name, category: category,
+        let name = saved?.name ?? Visit.identifyingPlaceName
+        let activity = InferenceEngine.activity(placeName: name,
                                                 defaultActivity: saved?.defaultActivity, arrival: safeArrival)
         let item = Visit(arrival: safeArrival, departure: inferredDeparture,
                          latitude: coordinate.latitude, longitude: coordinate.longitude,
-                         placeName: name, placeCategory: category, inferredActivity: activity,
+                         placeName: name, inferredActivity: activity,
                          recognitionConfidence: saved == nil ? nil : "learned")
         context.insert(item)
         reconcileActivity(with: item, context: context)
@@ -354,9 +353,9 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 visit.placeSuggestions = result.suggestions
                 visit.recognitionConfidence = result.confidence.rawValue
 
-                if result.confidence == .high, let match = result.suggestions.first, match.category != "Other" {
+                if result.confidence == .high, let match = result.suggestions.first,
+                   !Visit.isPlaceholderName(match.name) {
                     visit.placeName = match.name
-                    visit.placeCategory = match.category
                     visit.inferredActivity = match.suggestedActivity
                     cache(match, context: context)
                 } else if let likely = result.suggestions.first {
@@ -396,7 +395,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         guard !existing else { return }
         context.insert(SavedPlace(name: TextSafety.clean(match.name, maximumLength: 100),
                                   latitude: match.latitude, longitude: match.longitude,
-                                  radius: 85, category: match.category, defaultActivity: match.suggestedActivity))
+                                  radius: 85, defaultActivity: match.suggestedActivity))
         loadSavedPlaceCache()
     }
 
@@ -412,11 +411,10 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                     markUnknown(visit, context: context)
                     return
                 }
-                let resolvedName = item.name ?? item.address?.shortAddress ?? item.address?.fullAddress ?? "Unknown place"
+                let resolvedName = item.name ?? item.address?.shortAddress ?? item.address?.fullAddress ?? Visit.unknownPlaceName
                 visit.placeName = TextSafety.clean(resolvedName, maximumLength: 120)
-                visit.placeCategory = "Other"
                 visit.recognitionConfidence = "low"
-                visit.inferredActivity = InferenceEngine.activity(placeName: visit.placeName, category: visit.placeCategory,
+                visit.inferredActivity = InferenceEngine.activity(placeName: visit.placeName,
                                                                    arrival: visit.arrival)
                 try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
                 save(context)
@@ -430,8 +428,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
 
     private func markUnknown(_ visit: Visit, context: ModelContext) {
         guard visit.needsCategorisation else { return }
-        visit.placeName = "Unknown place"
-        visit.placeCategory = "Other"
+        visit.placeName = Visit.unknownPlaceName
         visit.recognitionConfidence = "low"
         visit.inferredActivity = "Visiting"
         try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
@@ -440,8 +437,14 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
 
     private func identifyRecentUnknown(near location: CLLocation) {
         guard let context else { return }
+        // Placeholder names are what marks a visit as still unidentified now that
+        // LifeLog no longer stores a place type.
+        let identifying = Visit.identifyingPlaceName
+        let unknown = Visit.unknownPlaceName
         var descriptor = FetchDescriptor<Visit>(
-            predicate: #Predicate { $0.source == "automatic" && $0.placeCategory == "Other" },
+            predicate: #Predicate {
+                $0.source == "automatic" && ($0.placeName == identifying || $0.placeName == unknown)
+            },
             sortBy: [SortDescriptor(\.arrival, order: .reverse)]
         )
         descriptor.fetchLimit = 5

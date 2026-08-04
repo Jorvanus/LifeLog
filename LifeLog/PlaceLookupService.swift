@@ -7,9 +7,14 @@ struct PlaceSuggestion: Codable, Identifiable, Hashable {
     let name: String
     let latitude: Double
     let longitude: Double
-    let category: String
     let suggestedActivity: String
     let distance: Double
+
+    // Older stored suggestions carried a place-type string. It is ignored on
+    // decode so previously saved candidate payloads still read cleanly.
+    private enum CodingKeys: String, CodingKey {
+        case name, latitude, longitude, suggestedActivity, distance
+    }
 }
 
 struct PlaceLookupResult {
@@ -81,13 +86,14 @@ enum PlaceLookupService {
             let name = TextSafety.clean(rawName, maximumLength: 100)
             guard !name.isEmpty else { return nil }
             let location = item.location
-            let category = placeCategory(from: item.pointOfInterestCategory)
+            // The Maps point-of-interest wording only feeds inference here; it is
+            // never stored on the suggestion or the visit.
+            let mapsHint = mapsHint(from: item.pointOfInterestCategory)
             return PlaceSuggestion(
                 name: name,
                 latitude: location.coordinate.latitude,
                 longitude: location.coordinate.longitude,
-                category: category,
-                suggestedActivity: InferenceEngine.activity(placeName: name, category: category),
+                suggestedActivity: InferenceEngine.activity(placeName: name, mapsHint: mapsHint),
                 distance: origin.distance(from: location)
             )
         }
@@ -99,14 +105,13 @@ enum PlaceLookupService {
         if let first = suggestions.first,
            let smart = await SmartActivityClassifier.classify(
                placeName: first.name,
-               mapCategory: first.category,
+               mapCategory: mapsHint(from: response.mapItems.first { $0.name == first.name }?.pointOfInterestCategory),
                arrival: arrival
            ), smart.confidence >= 60 {
             suggestions[0] = PlaceSuggestion(
                 name: first.name,
                 latitude: first.latitude,
                 longitude: first.longitude,
-                category: first.category == "Other" ? smart.category : first.category,
                 suggestedActivity: smart.activity,
                 distance: first.distance
             )
@@ -149,7 +154,7 @@ enum PlaceLookupService {
         cache = cache.filter { now.timeIntervalSince($0.value.createdAt) < cacheLifetime }
     }
 
-    private static func placeCategory(from category: MKPointOfInterestCategory?) -> String {
+    private static func mapsHint(from category: MKPointOfInterestCategory?) -> String {
         let value = category?.rawValue.lowercased() ?? ""
         if value.contains("cinema") || value.contains("movie") || value.contains("theater") || value.contains("theatre") {
             return "Entertainment"

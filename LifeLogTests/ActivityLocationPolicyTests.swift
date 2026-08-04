@@ -15,7 +15,6 @@ struct ActivityLocationPolicyTests {
             latitude: -27.47,
             longitude: 153.03,
             placeName: "Identifying…",
-            placeCategory: "Other",
             inferredActivity: "Visiting",
             source: "automatic"
         )
@@ -46,7 +45,6 @@ struct ActivityLocationPolicyTests {
             latitude: -27.47,
             longitude: 153.03,
             placeName: "Home",
-            placeCategory: "Home",
             inferredActivity: "At home",
             source: "automatic"
         )
@@ -75,7 +73,6 @@ struct ActivityLocationPolicyTests {
             latitude: 0,
             longitude: 0,
             placeName: "Walking",
-            placeCategory: "Walking",
             inferredActivity: "Walking",
             userActivity: "Walking",
             source: "health-walking"
@@ -86,7 +83,6 @@ struct ActivityLocationPolicyTests {
             latitude: -27.47,
             longitude: 153.03,
             placeName: "Home",
-            placeCategory: "Home",
             inferredActivity: "At home",
             source: "automatic"
         )
@@ -111,7 +107,6 @@ struct ActivityLocationPolicyTests {
             latitude: 0,
             longitude: 0,
             placeName: "Sleep",
-            placeCategory: "Sleep",
             inferredActivity: "Sleeping",
             userActivity: "Sleeping",
             source: "health-sleep"
@@ -122,7 +117,6 @@ struct ActivityLocationPolicyTests {
             latitude: -27.47,
             longitude: 153.03,
             placeName: "Home",
-            placeCategory: "Home",
             inferredActivity: "At home",
             source: "automatic"
         )
@@ -147,15 +141,13 @@ struct ActivityLocationPolicyTests {
             context.insert(Visit(
                 arrival: base.addingTimeInterval(offset), departure: nil,
                 latitude: -27.47, longitude: 153.03,
-                placeName: "Home", placeCategory: "Home",
-                inferredActivity: "At home", source: "automatic"
+                placeName: "Home", inferredActivity: "At home", source: "automatic"
             ))
         }
         context.insert(Visit(
             arrival: base.addingTimeInterval(1_800), departure: nil,
             latitude: -27.471, longitude: 153.031,
-            placeName: "Shopping", placeCategory: "Shopping",
-            inferredActivity: "Shopping", source: "automatic"
+            placeName: "Shopping", inferredActivity: "Shopping", source: "automatic"
         ))
         try context.save()
 
@@ -174,11 +166,9 @@ struct ActivityLocationPolicyTests {
     func mergesIdentifyingCallbackIntoLearnedHome() throws {
         let context = try makeContext()
         let identifying = Visit(arrival: base, latitude: -23.37, longitude: 150.51,
-                                placeName: "Identifying…", placeCategory: "Other",
-                                inferredActivity: "Visiting", source: "automatic")
+                                placeName: "Identifying…", inferredActivity: "Visiting", source: "automatic")
         let home = Visit(arrival: base.addingTimeInterval(20), latitude: -23.3702, longitude: 150.5101,
-                         placeName: "Home", placeCategory: "Home",
-                         inferredActivity: "At home", source: "automatic",
+                         placeName: "Home", inferredActivity: "At home", source: "automatic",
                          recognitionConfidence: "learned")
         context.insert(identifying)
         context.insert(home)
@@ -188,7 +178,6 @@ struct ActivityLocationPolicyTests {
 
         #expect(merged == 1)
         #expect(identifying.placeName == "Home")
-        #expect(identifying.placeCategory == "Home")
         #expect(identifying.recognitionConfidence == "learned")
         #expect(home.resolutionState == .superseded)
     }
@@ -201,7 +190,6 @@ struct ActivityLocationPolicyTests {
             latitude: -27.47,
             longitude: 153.03,
             placeName: "Work",
-            placeCategory: "Work",
             inferredActivity: "Working",
             source: "automatic"
         )
@@ -211,7 +199,6 @@ struct ActivityLocationPolicyTests {
             latitude: 0,
             longitude: 0,
             placeName: "Walking",
-            placeCategory: "Walking",
             inferredActivity: "Walking",
             userActivity: "Walking",
             source: "health-walking"
@@ -222,7 +209,6 @@ struct ActivityLocationPolicyTests {
             latitude: -27.46,
             longitude: 153.04,
             placeName: "Cafe",
-            placeCategory: "Food & Drink",
             inferredActivity: "Eating",
             source: "automatic"
         )
@@ -238,7 +224,6 @@ struct ActivityLocationPolicyTests {
             latitude: 0,
             longitude: 0,
             placeName: "Walking",
-            placeCategory: "Walking",
             inferredActivity: "Walking",
             userActivity: "Walking",
             source: "health-walking"
@@ -251,7 +236,6 @@ struct ActivityLocationPolicyTests {
             latitude: 0,
             longitude: 0,
             placeName: "In transit",
-            placeCategory: "Travel",
             inferredActivity: "Travelling",
             userActivity: "Travelling",
             source: "motion"
@@ -284,7 +268,6 @@ struct ActivityLocationPolicyTests {
             latitude: -27.46,
             longitude: 153.04,
             placeName: "Office",
-            placeCategory: "Work",
             inferredActivity: "Working",
             source: "automatic"
         )
@@ -294,7 +277,6 @@ struct ActivityLocationPolicyTests {
             latitude: 0,
             longitude: 0,
             placeName: "In transit",
-            placeCategory: "Travelling",
             inferredActivity: "Travelling",
             userActivity: "Travelling",
             source: "motion"
@@ -305,7 +287,6 @@ struct ActivityLocationPolicyTests {
 
         try ActivityLocationPolicy.updateTravelDescriptions(context: context)
 
-        #expect(travel.placeCategory == "Travel")
         #expect(travel.activity == "Travelling to Work")
         #expect(travel.recognitionConfidence == "learned")
     }
@@ -319,7 +300,6 @@ struct ActivityLocationPolicyTests {
             latitude: -27.46,
             longitude: 153.04,
             placeName: "Office",
-            placeCategory: "Work",
             inferredActivity: "Working",
             source: "automatic"
         )
@@ -329,7 +309,6 @@ struct ActivityLocationPolicyTests {
             latitude: 0,
             longitude: 0,
             placeName: "In transit",
-            placeCategory: "Travelling",
             inferredActivity: "Travelling",
             userActivity: "Commuting",
             source: "motion"
@@ -340,7 +319,6 @@ struct ActivityLocationPolicyTests {
 
         try ActivityLocationPolicy.updateTravelDescriptions(context: context)
 
-        #expect(travel.placeCategory == "Travel")
         #expect(travel.activity == "Commuting")
         #expect(travel.inferredActivity == "Travelling to Work")
     }
@@ -349,16 +327,13 @@ struct ActivityLocationPolicyTests {
     func resolvesHomeDestinationHomeSequence() throws {
         let context = try makeContext()
         let firstHome = Visit(arrival: base, latitude: -23.37, longitude: 150.51,
-                              placeName: "Home", placeCategory: "Home",
-                              inferredActivity: "At home", source: "automatic")
+                              placeName: "Home", inferredActivity: "At home", source: "automatic")
         let destination = Visit(arrival: base.addingTimeInterval(60 * 60),
                                 latitude: -23.43, longitude: 150.45,
-                                placeName: "Shops", placeCategory: "Shopping",
-                                inferredActivity: "Shopping", source: "automatic")
+                                placeName: "Shops", inferredActivity: "Shopping", source: "automatic")
         let secondHome = Visit(arrival: base.addingTimeInterval(2 * 60 * 60),
                                latitude: -23.37, longitude: 150.51,
-                               placeName: "Home", placeCategory: "Home",
-                               inferredActivity: "At home", source: "automatic")
+                               placeName: "Home", inferredActivity: "At home", source: "automatic")
         [firstHome, destination, secondHome].forEach(context.insert)
         try context.save()
 
@@ -375,13 +350,11 @@ struct ActivityLocationPolicyTests {
         let context = try makeContext()
         let learned = Visit(arrival: base, departure: base.addingTimeInterval(20 * 60),
                             latitude: -23.40, longitude: 150.50,
-                            placeName: "Park", placeCategory: "Fitness",
-                            inferredActivity: "Exercising", source: "automatic",
+                            placeName: "Park", inferredActivity: "Exercising", source: "automatic",
                             recognitionConfidence: "learned")
         let corrected = Visit(arrival: base.addingTimeInterval(30), departure: base.addingTimeInterval(25 * 60),
                               latitude: -23.399, longitude: 150.50,
-                              placeName: "Park", placeCategory: "Fitness",
-                              inferredActivity: "Exercising", userActivity: "Exercising",
+                              placeName: "Park", inferredActivity: "Exercising", userActivity: "Exercising",
                               source: "automatic", recognitionConfidence: "confirmed")
         context.insert(learned); context.insert(corrected); try context.save()
 
@@ -398,12 +371,10 @@ struct ActivityLocationPolicyTests {
     func delayedDepartureMatchesCorrectVisit() {
         let park = Visit(arrival: base,
                          latitude: -23.40, longitude: 150.50,
-                         placeName: "Park", placeCategory: "Fitness",
-                         inferredActivity: "Exercising", source: "automatic")
+                         placeName: "Park", inferredActivity: "Exercising", source: "automatic")
         let home = Visit(arrival: base.addingTimeInterval(30 * 60),
                          latitude: -23.37, longitude: 150.51,
-                         placeName: "Home", placeCategory: "Home",
-                         inferredActivity: "At home", source: "automatic")
+                         placeName: "Home", inferredActivity: "At home", source: "automatic")
 
         let matched = ActivityLocationPolicy.matchDeparture(
             coordinate: CLLocationCoordinate2D(latitude: -23.4002, longitude: 150.5001),
@@ -419,12 +390,10 @@ struct ActivityLocationPolicyTests {
     func departureCoordinateDistinguishesOverlappingArrivals() {
         let cafe = Visit(arrival: base,
                          latitude: -23.38, longitude: 150.52,
-                         placeName: "Cafe", placeCategory: "Food & Drink",
-                         inferredActivity: "Coffee", source: "automatic")
+                         placeName: "Cafe", inferredActivity: "Coffee", source: "automatic")
         let shops = Visit(arrival: base.addingTimeInterval(60),
                           latitude: -23.44, longitude: 150.46,
-                          placeName: "Shops", placeCategory: "Shopping",
-                          inferredActivity: "Shopping", source: "automatic")
+                          placeName: "Shops", inferredActivity: "Shopping", source: "automatic")
 
         let matched = ActivityLocationPolicy.matchDeparture(
             coordinate: CLLocationCoordinate2D(latitude: -23.4401, longitude: 150.4601),
@@ -440,8 +409,7 @@ struct ActivityLocationPolicyTests {
     func unmatchedDepartureDoesNotCloseNewestVisit() {
         let home = Visit(arrival: base,
                          latitude: -23.37, longitude: 150.51,
-                         placeName: "Home", placeCategory: "Home",
-                         inferredActivity: "At home", source: "automatic")
+                         placeName: "Home", inferredActivity: "At home", source: "automatic")
 
         let matched = ActivityLocationPolicy.matchDeparture(
             coordinate: CLLocationCoordinate2D(latitude: -27.47, longitude: 153.03),
@@ -459,12 +427,10 @@ struct ActivityLocationPolicyTests {
         let original = Visit(arrival: base,
                              departure: base.addingTimeInterval(20 * 60),
                              latitude: -23.40, longitude: 150.50,
-                             placeName: "Park", placeCategory: "Fitness",
-                             inferredActivity: "Exercising", source: "automatic")
+                             placeName: "Park", inferredActivity: "Exercising", source: "automatic")
         let overlapping = Visit(arrival: base.addingTimeInterval(10 * 60),
                                 latitude: -23.4001, longitude: 150.5001,
-                                placeName: "Park", placeCategory: "Fitness",
-                                inferredActivity: "Exercising", source: "automatic")
+                                placeName: "Park", inferredActivity: "Exercising", source: "automatic")
 
         let matched = ActivityLocationPolicy.matchDeparture(
             coordinate: CLLocationCoordinate2D(latitude: -23.40, longitude: 150.50),

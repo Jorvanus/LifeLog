@@ -3,7 +3,6 @@ import SwiftData
 
 struct VisitCorrectionSnapshot: Equatable {
     let placeName: String
-    let category: String
     let activity: String
     let confidence: String
 }
@@ -14,7 +13,6 @@ enum CorrectionHistory {
                        context: ModelContext, reason: String) {
         let current = VisitCorrectionSnapshot(
             placeName: visit.placeName,
-            category: visit.placeCategory,
             activity: visit.activity,
             confidence: visit.recognitionConfidence ?? "pending"
         )

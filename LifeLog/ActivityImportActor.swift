@@ -8,7 +8,6 @@ import SwiftData
 struct ActivityImportRecord: Sendable {
     let name: String
     let activity: String
-    let category: String
     let source: String
     let start: Date
     let end: Date
@@ -79,7 +78,7 @@ actor ActivitySampleReader {
         let records = mergeWithIdentifiers(asleep, maximumGap: 15 * 60)
             .filter { $0.interval.duration >= 20 * 60 }
             .map {
-                ActivityImportRecord(name: "Sleep", activity: "Sleeping", category: "Sleep",
+                ActivityImportRecord(name: "Sleep", activity: "Sleeping",
                                      source: "health-sleep", start: $0.interval.start, end: $0.interval.end,
                                      healthKitSampleIDs: $0.ids)
             }
@@ -104,7 +103,7 @@ actor ActivitySampleReader {
         let records = workouts.map { workout in
             let activity = workoutActivity(workout.workoutActivityType)
             return ActivityImportRecord(name: "\(activity) workout", activity: activity,
-                                        category: activity, source: "health-workout",
+                                        source: "health-workout",
                                         start: workout.startDate, end: workout.endDate,
                                         healthKitSampleIDs: [workout.uuid])
         }
@@ -145,7 +144,7 @@ actor ActivitySampleReader {
         return merge(intervals, maximumGap: 5 * 60)
             .filter { $0.duration >= 2 * 60 }
             .map {
-                ActivityImportRecord(name: "Walking", activity: "Walking", category: "Walking",
+                ActivityImportRecord(name: "Walking", activity: "Walking",
                                      source: "health-walking", start: $0.start, end: $0.end)
             }
     }
@@ -188,7 +187,6 @@ actor ActivitySampleReader {
             return ActivityImportRecord(
                 name: isTravel ? "In transit" : segment.activity,
                 activity: segment.activity,
-                category: isTravel ? "Travel" : segment.activity,
                 source: "motion", start: segment.start, end: segment.end
             )
         }
@@ -285,7 +283,6 @@ actor ActivityImportActor {
                     // existing visit instead of creating a second timeline row.
                     existing.departure = segment.end
                     existing.placeName = record.name
-                    existing.placeCategory = record.category
                     existing.inferredActivity = record.activity
                     if !record.healthKitSampleIDs.isEmpty {
                         existing.healthKitSampleIDs = record.healthKitSampleIDs
@@ -308,7 +305,7 @@ actor ActivityImportActor {
                 let visit = Visit(
                     arrival: segment.start, departure: segment.end,
                     latitude: 0, longitude: 0,
-                    placeName: record.name, placeCategory: record.category,
+                    placeName: record.name,
                     inferredActivity: record.activity, userActivity: record.activity,
                     source: record.source, recognitionConfidence: "device",
                     healthKitSampleIDs: record.healthKitSampleIDs.isEmpty ? nil : record.healthKitSampleIDs
@@ -410,13 +407,12 @@ actor ActivityImportActor {
 
     private func updateTravelDescriptions() {
         let travel = visitsBySource["motion", default: []].filter {
-            "\($0.activity) \($0.placeCategory)".localizedCaseInsensitiveContains("travel")
+            $0.activity.localizedCaseInsensitiveContains("travel")
         }
         for visit in travel {
             let end = visit.departure ?? .now
             guard let destination = locations.filter({ $0.arrival >= end }).min(by: { $0.arrival < $1.arrival }),
                   let label = destinationLabel(destination) else { continue }
-            visit.placeCategory = "Travel"
             visit.inferredActivity = "Travelling to \(label)"
             if visit.userActivity == nil || visit.userActivity == "Travelling" || visit.userActivity == "In transit" {
                 visit.userActivity = "Travelling to \(label)"
@@ -426,11 +422,11 @@ actor ActivityImportActor {
     }
 
     private func destinationLabel(_ destination: Visit) -> String? {
-        let text = "\(destination.placeName) \(destination.placeCategory)".lowercased()
-        if destination.placeCategory.localizedCaseInsensitiveContains("work") || text.contains("office") { return "Work" }
-        if destination.placeCategory.localizedCaseInsensitiveContains("home") || text.contains("home") { return "Home" }
+        let text = destination.placeName.lowercased()
+        if text.contains("work") || text.contains("office") { return "Work" }
+        if text.contains("home") { return "Home" }
         let name = destination.placeName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, name != "Identifying…", name != "Unknown place" else { return nil }
+        guard !Visit.isPlaceholderName(name) else { return nil }
         let matching = locations.filter { $0.placeName.localizedCaseInsensitiveCompare(name) == .orderedSame }
         let days = Set(matching.map { Calendar.current.startOfDay(for: $0.arrival) }).count
         return matching.count >= 3 && days >= 2 ? name : nil

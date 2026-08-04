@@ -28,8 +28,7 @@ struct ActivityImportActorTests {
         setupContext.insert(Visit(
             arrival: start, departure: start.addingTimeInterval(9 * 60 * 60),
             latitude: -27.47, longitude: 153.03,
-            placeName: "Home", placeCategory: "Home",
-            inferredActivity: "At home", source: "automatic"
+            placeName: "Home", inferredActivity: "At home", source: "automatic"
         ))
         try setupContext.save()
 
@@ -37,11 +36,11 @@ struct ActivityImportActorTests {
         try await writer.prepare()
         let inserted = try await writer.insertBatch([
             ActivityImportRecord(
-                name: "Sleep", activity: "Sleeping", category: "Sleep", source: "health-sleep",
+                name: "Sleep", activity: "Sleeping", source: "health-sleep",
                 start: start, end: start.addingTimeInterval(8 * 60 * 60)
             ),
             ActivityImportRecord(
-                name: "Walking", activity: "Walking", category: "Walking", source: "health-walking",
+                name: "Walking", activity: "Walking", source: "health-walking",
                 start: start.addingTimeInterval(60 * 60), end: start.addingTimeInterval(90 * 60)
             )
         ])
@@ -65,7 +64,7 @@ struct ActivityImportActorTests {
         let writer = ActivityImportActor(modelContainer: container)
         let start = Date(timeIntervalSince1970: 1_800_000_000)
         let record = ActivityImportRecord(
-            name: "Run workout", activity: "Running", category: "Running", source: "health-workout",
+            name: "Run workout", activity: "Running", source: "health-workout",
             start: start, end: start.addingTimeInterval(30 * 60)
         )
 
@@ -93,11 +92,11 @@ struct ActivityImportActorTests {
         try await writer.prepare()
         _ = try await writer.insertBatch([
             ActivityImportRecord(
-                name: "Run workout", activity: "Running", category: "Running", source: "health-workout",
+                name: "Run workout", activity: "Running", source: "health-workout",
                 start: start, end: start.addingTimeInterval(30 * 60), healthKitSampleIDs: [removedID]
             ),
             ActivityImportRecord(
-                name: "Sleep", activity: "Sleeping", category: "Sleep", source: "health-sleep",
+                name: "Sleep", activity: "Sleeping", source: "health-sleep",
                 start: start.addingTimeInterval(3 * 60 * 60), end: start.addingTimeInterval(11 * 60 * 60),
                 healthKitSampleIDs: [keptID]
             )

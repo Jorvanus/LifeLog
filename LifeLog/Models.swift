@@ -15,15 +15,13 @@ final class SavedPlace {
     var latitude: Double
     var longitude: Double
     var radius: Double
-    var category: String
     var defaultActivity: String
 
     init(name: String, latitude: Double, longitude: Double, radius: Double = 100,
-         category: String = "Other", defaultActivity: String = "") {
+         defaultActivity: String = "") {
         self.name = TextSafety.clean(name, maximumLength: 100)
         self.latitude = latitude; self.longitude = longitude
         self.radius = min(max(radius, 25), 500)
-        self.category = TextSafety.clean(category, maximumLength: 40)
         self.defaultActivity = TextSafety.clean(defaultActivity, maximumLength: 80)
     }
 
@@ -37,7 +35,6 @@ final class Visit {
     var latitude: Double
     var longitude: Double
     var placeName: String
-    var placeCategory: String
     var inferredActivity: String
     var userActivity: String?
     var note: String
@@ -50,7 +47,7 @@ final class Visit {
     var healthKitSampleIDs: [UUID]?
 
     init(arrival: Date, departure: Date? = nil, latitude: Double, longitude: Double,
-         placeName: String = "Identifying…", placeCategory: String = "Other",
+         placeName: String = Visit.identifyingPlaceName,
          inferredActivity: String = "Visiting", userActivity: String? = nil,
          note: String = "", source: String = "automatic",
          recognitionConfidence: String? = nil, candidateData: Data? = nil,
@@ -58,7 +55,6 @@ final class Visit {
         self.arrival = arrival; self.departure = departure
         self.latitude = latitude; self.longitude = longitude
         self.placeName = TextSafety.clean(placeName, maximumLength: 120)
-        self.placeCategory = TextSafety.clean(placeCategory, maximumLength: 40)
         self.inferredActivity = TextSafety.clean(inferredActivity, maximumLength: 80)
         self.userActivity = userActivity.map { TextSafety.clean($0, maximumLength: 80) }
         self.note = TextSafety.clean(note, maximumLength: 2_000)
@@ -73,8 +69,22 @@ final class Visit {
         return userActivity
     }
     var duration: TimeInterval { max(0, (departure ?? Date()).timeIntervalSince(arrival)) }
+
+    /// Names LifeLog assigns before a place is known. They are not real labels, so
+    /// a visit still carrying one has nothing recorded about where it happened.
+    static let identifyingPlaceName = "Identifying…"
+    static let unknownPlaceName = "Unknown place"
+    static func isPlaceholderName(_ name: String) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty || trimmed == identifyingPlaceName || trimmed == unknownPlaceName
+    }
+    var hasPlaceholderName: Bool { Visit.isPlaceholderName(placeName) }
+
+    /// A visit needs review when it was recorded automatically, LifeLog never
+    /// resolved a place name for it, and the person has not said what they were
+    /// doing. Place name is the signal here — LifeLog no longer models a place type.
     var needsCategorisation: Bool {
-        source == "automatic" && placeCategory == "Other" && userActivity?.isEmpty != false
+        source == "automatic" && hasPlaceholderName && userActivity?.isEmpty != false
     }
     /// Presentation values keep a recorded-but-unknown place visibly logged without
     /// exposing placeholder names such as “Identifying…” in Timeline and Insights.
@@ -84,8 +94,8 @@ final class Visit {
     var suspectedActivity: String {
         needsCategorisation ? inferredActivity : activity
     }
-    /// Groups time by what the person did, independent of the place type.
-    /// The persisted placeCategory remains available for map/place recognition.
+    /// Groups time by what the person did, so repeated visits bundle by activity
+    /// while "Top places" bundles by place name.
     var activityCategory: String {
         ActivityCatalog.category(for: suspectedActivity)
     }
@@ -118,9 +128,7 @@ final class Visit {
     var inferenceEvidence: [String] {
         var evidence: [String] = []
         if recognitionConfidence == "learned" { evidence.append("Saved place") }
-        if placeCategory != "Other" && !placeCategory.isEmpty {
-            evidence.append("Maps/place type: \(placeCategory)")
-        }
+        if !hasPlaceholderName { evidence.append("Place name: \(placeName)") }
         let hour = Calendar.current.component(.hour, from: arrival)
         if hour < 11 { evidence.append("Morning time") }
         else if hour < 17 { evidence.append("Afternoon time") }
