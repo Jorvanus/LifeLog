@@ -9,18 +9,33 @@ final class DiagnosticEvent {
     var subsystem: String
     var severity: String
     var message: String
+    /// Which retention bucket this event competes in. Existing rows created before
+    /// this field was added default to "general" via lightweight migration.
+    var category: String = Diagnostics.Category.general
 
-    init(createdAt: Date = .now, subsystem: String, severity: String = "warning", message: String) {
+    init(createdAt: Date = .now, subsystem: String, severity: String = "warning", message: String,
+         category: String = Diagnostics.Category.general) {
         self.createdAt = createdAt
         self.subsystem = TextSafety.clean(subsystem, maximumLength: 30)
         self.severity = TextSafety.clean(severity, maximumLength: 12)
         self.message = TextSafety.clean(message, maximumLength: 200)
+        self.category = category
     }
 }
 
 @MainActor
 enum Diagnostics {
-    static let retentionLimit = 500
+    enum Category {
+        static let performance = "performance"
+        static let general = "general"
+    }
+
+    /// Performance/budget samples are rare (roughly one per launch or Insights view)
+    /// but high-value, while location callbacks log far more often. Retaining them
+    /// in separate buckets keeps chatty location logging from evicting the timing
+    /// data a performance report actually needs.
+    static let performanceRetentionLimit = 150
+    static let generalRetentionLimit = 350
     /// Product-level performance budgets. These are intentionally centralized so
     /// device checks and diagnostic records use the same limits.
     enum PerformanceBudget {
@@ -41,10 +56,10 @@ enum Diagnostics {
     }
 
     static func record(_ context: ModelContext?, subsystem: String, message: String,
-                       severity: String = "warning") {
+                       severity: String = "warning", category: String = Category.general) {
         guard let context else { return }
-        context.insert(DiagnosticEvent(subsystem: subsystem, severity: severity, message: message))
-        trimToRetentionLimit(context)
+        context.insert(DiagnosticEvent(subsystem: subsystem, severity: severity, message: message, category: category))
+        trimToRetentionLimit(context, category: category)
         try? context.save()
     }
 
@@ -52,13 +67,17 @@ enum Diagnostics {
     /// `record(...)` runs on the hot path (every HealthKit/MapKit/location callback
     /// can log one), so this uses a lightweight count fetch first and only pulls the
     /// specific overflow rows that need deleting, instead of fetching the full table
-    /// each time just to check its size.
-    private static func trimToRetentionLimit(_ context: ModelContext) {
-        guard let count = try? context.fetchCount(FetchDescriptor<DiagnosticEvent>()),
-              count > retentionLimit else { return }
+    /// each time just to check its size. Trimming is scoped to the event's own
+    /// category so a burst of location logging can't evict performance samples.
+    private static func trimToRetentionLimit(_ context: ModelContext, category: String) {
+        let limit = category == Category.performance ? performanceRetentionLimit : generalRetentionLimit
+        let predicate = #Predicate<DiagnosticEvent> { $0.category == category }
+        guard let count = try? context.fetchCount(FetchDescriptor<DiagnosticEvent>(predicate: predicate)),
+              count > limit else { return }
         var descriptor = FetchDescriptor<DiagnosticEvent>(
+            predicate: predicate,
             sortBy: [SortDescriptor(\DiagnosticEvent.createdAt, order: .forward)])
-        descriptor.fetchLimit = count - retentionLimit
+        descriptor.fetchLimit = count - limit
         if let stale = try? context.fetch(descriptor) {
             for event in stale { context.delete(event) }
         }
@@ -73,16 +92,33 @@ enum Diagnostics {
         struct Sample: Codable { let createdAt: Date; let subsystem: String; let durationMs: Int?; let itemCount: Int?; let severity: String }
     }
 
+    /// The real hardware identifier (e.g. "iPhone16,2"), not a friendly marketing
+    /// name. `SIMULATOR_MODEL_IDENTIFIER` only exists in the simulator, so on a
+    /// real device this previously always fell back to the generic string "iPhone",
+    /// making it impossible to correlate performance samples with hardware.
+    private static func deviceIdentifier() -> String {
+        if let simulatorModel = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] {
+            return simulatorModel
+        }
+        var systemInfo = utsname()
+        uname(&systemInfo)
+        return withUnsafePointer(to: &systemInfo.machine) {
+            $0.withMemoryRebound(to: CChar.self, capacity: 1) { String(cString: $0) }
+        }
+    }
+
     static func makePerformanceReport(events: [DiagnosticEvent]) -> Data {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
-        let device = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] ?? "iPhone"
+        let device = deviceIdentifier()
         let os = ProcessInfo.processInfo.operatingSystemVersion
         let osClass = "iOS \(os.majorVersion).\(os.minorVersion)"
-        let samples = events.map { event -> PerformanceReport.Sample in
-            let duration = event.message.range(of: #"(\d+) ms"#, options: .regularExpression).flatMap { Int(event.message[$0].split(separator: " ").first ?? "") }
-            let count = event.message.range(of: #"(\d+) items"#, options: .regularExpression).flatMap { Int(event.message[$0].split(separator: " ").first ?? "") }
-            return .init(createdAt: event.createdAt, subsystem: event.subsystem, durationMs: duration, itemCount: count, severity: event.severity)
-        }
+        let samples = events
+            .filter { $0.category == Category.performance }
+            .map { event -> PerformanceReport.Sample in
+                let duration = event.message.range(of: #"(\d+) ms"#, options: .regularExpression).flatMap { Int(event.message[$0].split(separator: " ").first ?? "") }
+                let count = event.message.range(of: #"(\d+) items"#, options: .regularExpression).flatMap { Int(event.message[$0].split(separator: " ").first ?? "") }
+                return .init(createdAt: event.createdAt, subsystem: event.subsystem, durationMs: duration, itemCount: count, severity: event.severity)
+            }
         return (try? JSONEncoder().encode(PerformanceReport(generatedAt: .now, appVersion: version, deviceClass: device, osClass: osClass, samples: samples))) ?? Data()
     }
 
@@ -96,7 +132,7 @@ enum Diagnostics {
         let countText = itemCount.map { " (\($0) items)" } ?? ""
         record(context, subsystem: subsystem,
                message: "Slow \(operation): \(Int((elapsed * 1000).rounded())) ms\(countText)",
-               severity: "info")
+               severity: "info", category: Category.performance)
     }
 
     /// Retains one privacy-safe timing sample for a budgeted operation. The
@@ -109,7 +145,7 @@ enum Diagnostics {
         let countText = itemCount.map { ", \($0) items" } ?? ""
         record(context, subsystem: subsystem,
                message: "Budget \(status): \(operation), \(Int((elapsed * 1000).rounded())) ms / \(Int((budget * 1000).rounded())) ms\(countText)",
-               severity: elapsed <= budget ? "info" : "warning")
+               severity: elapsed <= budget ? "info" : "warning", category: Category.performance)
     }
 
     /// Stores structured-but-human-readable location metrics in the existing
