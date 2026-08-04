@@ -70,6 +70,7 @@ struct SettingsView: View {
                         .disabled(activityData.isImporting)
                     Button("Import Recent Activity") { activityData.importAll() }
                         .disabled(activityData.isImporting)
+                    #if DEBUG
                     Toggle("HealthKit background delivery (validated testing only)", isOn: $backgroundDeliveryValidated)
                         .onChange(of: backgroundDeliveryValidated) { _, enabled in
                             activityData.setBackgroundDeliveryValidated(enabled)
@@ -77,6 +78,7 @@ struct SettingsView: View {
                     Text("Leave this off until the anchored importer has been tested on-device without Timeline or Insights stalls.")
                         .font(.caption).foregroundStyle(.secondary)
                         .accessibilityIdentifier("import-recent-activity")
+                    #endif
                     if let progress = activityData.importProgress {
                         VStack(alignment: .leading, spacing: 9) {
                             HStack {
@@ -130,14 +132,6 @@ struct SettingsView: View {
                     Text("To identify an unfamiliar public place, LifeLog sends the nearby coordinate to Apple Maps and stores only the returned suggestions on this device.")
                     Text("Health and Motion access is read-only. LifeLog never writes to Apple Health.")
                 }
-                if let error = recorder.lastError ?? activityData.lastError { Section("Last issue") { Text(error) } }
-                Section {
-                    NavigationLink { DiagnosticsView() } label: {
-                        Label("Diagnostics", systemImage: "stethoscope")
-                    }
-                } footer: {
-                    Text("View service timing and failure diagnostics in a separate screen.")
-                }
                 Section {
                     Button {
                         importingJournal = true
@@ -166,6 +160,14 @@ struct SettingsView: View {
                     Button { importingBackup = true } label: { Label("Restore backup", systemImage: "arrow.clockwise.icloud") }
                     Text("Backups include visits, Saved Places, corrections, ignored state, activities, category colours, and LifeLog preferences. Restore into an empty store for a complete replacement.")
                         .font(.footnote).foregroundStyle(.secondary)
+                }
+                if let error = recorder.lastError ?? activityData.lastError { Section("Last issue") { Text(error) } }
+                Section {
+                    NavigationLink { DiagnosticsView() } label: {
+                        Label("Diagnostics", systemImage: "stethoscope")
+                    }
+                } footer: {
+                    Text("View service timing and failure diagnostics in a separate screen.")
                 }
                 Section("About") {
                     LabeledContent("Version", value: appVersion)
@@ -221,11 +223,6 @@ struct SettingsView: View {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
         return build.map { "\(version) (\($0))" } ?? version
-    }
-
-    private func clearDiagnostics() {
-        for event in diagnostics { context.delete(event) }
-        try? context.save()
     }
 
     private func importJournal(_ result: Result<[URL], Error>) {
