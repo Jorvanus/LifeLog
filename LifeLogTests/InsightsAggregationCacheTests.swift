@@ -6,7 +6,7 @@ struct InsightsAggregationCacheTests {
     func invalidationAdvancesGeneration() async {
         let cache = InsightsAggregationActor()
         let initial = await cache.currentGeneration()
-        await cache.invalidate(reason: "test edit")
+        await cache.invalidate()
         #expect(await cache.currentGeneration() == initial + 1)
     }
 }

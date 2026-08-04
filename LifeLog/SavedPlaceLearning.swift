@@ -55,7 +55,17 @@ enum SavedPlaceLearning {
 
         let radius = min(max(defaultRadius, 25), 500)
         let location = CLLocation(latitude: visit.latitude, longitude: visit.longitude)
-        let places = try context.fetch(FetchDescriptor<SavedPlace>())
+        // Bounds the fetch to a box around the visit instead of loading every
+        // SavedPlace; 200 m matches the widest distance `nearby` considers below.
+        let coordinate = CLLocationCoordinate2D(latitude: visit.latitude, longitude: visit.longitude)
+        let box = SpatialBounds.box(around: coordinate, radius: 200)
+        let minLat = box.minLatitude, maxLat = box.maxLatitude, minLon = box.minLongitude, maxLon = box.maxLongitude
+        let places = try context.fetch(FetchDescriptor<SavedPlace>(
+            predicate: #Predicate<SavedPlace> { place in
+                place.latitude >= minLat && place.latitude <= maxLat &&
+                place.longitude >= minLon && place.longitude <= maxLon
+            }
+        ))
         let nearby = places.compactMap { place -> (place: SavedPlace, distance: CLLocationDistance)? in
             let savedLocation = CLLocation(latitude: place.latitude, longitude: place.longitude)
             let distance = location.distance(from: savedLocation)
@@ -115,8 +125,17 @@ enum SavedPlaceLearning {
         let activity = place.defaultActivity.isEmpty
             ? InferenceEngine.activity(placeName: place.name, category: place.category)
             : place.defaultActivity
+        // Bounds the fetch to a box around this place instead of loading every
+        // located Visit in the archive just to find the handful within radius.
+        let placeCoordinate = CLLocationCoordinate2D(latitude: place.latitude, longitude: place.longitude)
+        let box = SpatialBounds.box(around: placeCoordinate, radius: place.radius)
+        let minLat = box.minLatitude, maxLat = box.maxLatitude, minLon = box.minLongitude, maxLon = box.maxLongitude
         let visits = try context.fetch(FetchDescriptor<Visit>(
-            predicate: #Predicate { $0.latitude != 0 || $0.longitude != 0 }
+            predicate: #Predicate { visit in
+                (visit.latitude != 0 || visit.longitude != 0) &&
+                visit.latitude >= minLat && visit.latitude <= maxLat &&
+                visit.longitude >= minLon && visit.longitude <= maxLon
+            }
         ))
         for visit in visits where ActivityLocationPolicy.isLocationVisit(visit) && visit.resolutionState == .resolved && isLocated(visit) {
             let previous = VisitCorrectionSnapshot(

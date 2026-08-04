@@ -51,6 +51,7 @@
 		E8F8E81D0736610AC61C887B /* LocationRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BB7EE63315EC7CC0A511303 /* LocationRecorder.swift */; };
 		E9B89A4B8DD841BF6BE226B6 /* LifeLogUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20F66D93CEC288FCC9E45F8C /* LifeLogUITests.swift */; };
 		EE018FBC1119FF49D463B185 /* SavedPlaceLearning.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF719128067426A354FA8F08 /* SavedPlaceLearning.swift */; };
+		F4720F0709560024ADC50277 /* SpatialBounds.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30F57D08CA67F2A6700D4C1 /* SpatialBounds.swift */; };
 		F2ADEFB0210575F3459AEF29 /* CorrectionHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65FE8C413DBE943F6F12FC6A /* CorrectionHistory.swift */; };
 /* End PBXBuildFile section */
 
@@ -122,6 +123,7 @@
 		F00A33A60B150AFDBD347BC6 /* SchemaMigrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemaMigrationTests.swift; sourceTree = "<group>"; };
 		F0F429A366891C4A81D89BCD /* TrendsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendsView.swift; sourceTree = "<group>"; };
 		FF719128067426A354FA8F08 /* SavedPlaceLearning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedPlaceLearning.swift; sourceTree = "<group>"; };
+		C30F57D08CA67F2A6700D4C1 /* SpatialBounds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialBounds.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -175,6 +177,7 @@
 				FF719128067426A354FA8F08 /* SavedPlaceLearning.swift */,
 				8BE5AD5AA637543CED7D6187 /* SettingsView.swift */,
 				0903FE944E9BA6818CEF632B /* SmartActivityClassifier.swift */,
+				C30F57D08CA67F2A6700D4C1 /* SpatialBounds.swift */,
 				E2F991CF4250D5644B49D57C /* StoreProtection.swift */,
 				271AF1BFC48D13EC51FC5AB1 /* StoreRecoveryView.swift */,
 				0B61B476B89FDE373D60B43C /* TimelineView.swift */,
@@ -354,6 +357,7 @@
 				EE018FBC1119FF49D463B185 /* SavedPlaceLearning.swift in Sources */,
 				8BDC88D2FBBE6FCC74D9F36A /* SettingsView.swift in Sources */,
 				7495363AE868ECAAC60FA966 /* SmartActivityClassifier.swift in Sources */,
+				F4720F0709560024ADC50277 /* SpatialBounds.swift in Sources */,
 				1375485E8B74F1CB6254FBDD /* StoreProtection.swift in Sources */,
 				534AE157C408505A6008A906 /* StoreRecoveryView.swift in Sources */,
 				99537CABDF7CF250FB9DD892 /* TimelineView.swift in Sources */,

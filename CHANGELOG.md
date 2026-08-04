@@ -2,6 +2,10 @@
 
 ## 2026-08-04
 
+### Bounded Saved Place fetches
+
+- Saved Place upsert and the visit-matching pass it triggers no longer load every SavedPlace or every located Visit in the archive. Both now fetch only rows within a bounding box around the coordinate in question, letting SwiftData filter before rows are loaded instead of after.
+
 ### Bounded place lookup cache
 
 - Place lookup results are now swept for expired entries on every new lookup instead of only being checked on read, so a long-running background session no longer accumulates one permanent in-memory entry per distinct location ever visited.
