@@ -11,6 +11,7 @@ struct TrendsView: View {
     @State private var anchorDate = Date.now
     @State private var choosingDate = false
     @State private var selectedSlice: TimeSlice?
+    @State private var selectedPlace: PlaceTotal?
     @State private var now = Date.now
     @State private var snapshot = InsightsSnapshot.empty
     @State private var exportFile: TrendExportFile?
@@ -62,6 +63,24 @@ struct TrendsView: View {
                 } else {
                     InsightSliceEditor(slice: slice, visits: entries, interval: snapshot.analysisInterval)
                         .presentationDetents([.medium, .large])
+                }
+            }
+            .sheet(item: $selectedPlace, onDismiss: reloadInsights) { place in
+                let entries = visits(for: place)
+                if entries.count == 1, let visit = entries.first {
+                    NavigationStack { VisitEditor(visit: visit) }
+                        .presentationDetents([.large])
+                } else {
+                    // Reuse the category slice editor for a single place: it already
+                    // handles "one visit -> edit directly" vs "many visits -> pick one".
+                    InsightSliceEditor(
+                        slice: TimeSlice(name: place.name, hours: place.hours,
+                                         color: activityColor(place.activity),
+                                         symbol: insightSymbol(for: place.category), isUnlogged: false),
+                        visits: entries,
+                        interval: snapshot.analysisInterval
+                    )
+                    .presentationDetents([.medium, .large])
                 }
             }
             .sheet(item: $exportFile) { file in
@@ -154,7 +173,8 @@ struct TrendsView: View {
                 segments: snapshot.segments,
                 loggedHours: snapshot.loggedHours,
                 totalHours: snapshot.totalHours,
-                analysisInterval: snapshot.analysisInterval
+                analysisInterval: snapshot.analysisInterval,
+                onSelectEntry: { selectedSlice = $0 }
             )
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 12) {
@@ -331,17 +351,23 @@ struct TrendsView: View {
                 InsightEmptyRow(icon: "mappin.slash", title: "No places in this period", detail: "Choose another date or time window.")
             } else {
                 ForEach(Array(snapshot.placeTotals.prefix(8).enumerated()), id: \.element.id) { index, place in
-                    HStack(spacing: 13) {
-                        Text("\(index + 1)").font(.headline.monospacedDigit()).foregroundStyle(.secondary).frame(width: 22)
-                        ActivityIcon(activity: place.activity, category: place.category,
-                                     color: activityColor(place.activity)).scaleEffect(0.72).frame(width: 42, height: 42)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(place.name).font(.headline).lineLimit(1)
-                            Text(place.category).font(.caption).foregroundStyle(.secondary)
+                    Button { selectedPlace = place } label: {
+                        HStack(spacing: 13) {
+                            Text("\(index + 1)").font(.headline.monospacedDigit()).foregroundStyle(.secondary).frame(width: 22)
+                            ActivityIcon(activity: place.activity, category: place.category,
+                                         color: activityColor(place.activity)).scaleEffect(0.72).frame(width: 42, height: 42)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(place.name).font(.headline).lineLimit(1)
+                                Text(place.category).font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text(formatHours(place.hours)).font(.subheadline.bold().monospacedDigit())
+                            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
                         }
-                        Spacer()
-                        Text(formatHours(place.hours)).font(.subheadline.bold().monospacedDigit())
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Review and edit visits to \(place.name)")
                     if index < min(snapshot.placeTotals.count, 8) - 1 { Divider().padding(.leading, 76) }
                 }
             }
@@ -440,6 +466,16 @@ struct TrendsView: View {
 
     private func sliceName(for visit: Visit) -> String {
         visit.insightCategory
+    }
+
+    private func visits(for place: PlaceTotal) -> [Visit] {
+        // Mirrors the same filters InsightsSnapshot.makePlaceTotals used to build
+        // `place`, so the entries shown here match the hours displayed in the row.
+        visits
+            .filter { $0.overlaps(snapshot.analysisInterval, now: snapshot.generatedAt) }
+            .filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
+            .filter { $0.displayPlaceName == place.name }
+            .sorted { $0.arrival > $1.arrival }
     }
 
     private func move(_ amount: Int) {
@@ -755,6 +791,9 @@ private struct InsightsDonutChart: View {
     let loggedHours: Double
     let totalHours: Double
     let analysisInterval: DateInterval
+    /// Called when the focused slice's centre detail is tapped again, so the
+    /// parent can open that entry the same way the legend rows below do.
+    let onSelectEntry: (TimeSlice) -> Void
     @State private var selectedAngle: Double?
     @State private var focusedSliceID: String?
     @State private var sleepSummary: SleepSummary?
@@ -857,7 +896,7 @@ private struct InsightsDonutChart: View {
                     selectedAngle = nil
                 }
             }
-            .accessibilityHint("Highlight this entry and show its check-in, check-out, and duration")
+            .accessibilityHint("Highlight this entry and show its check-in, check-out, and duration. Tap the centre card again to open it.")
             .task(id: sleepSummaryKey) {
                 sleepSummary = nil
                 guard let segment = focusedSegment, segment.isSleep else { return }
@@ -866,16 +905,23 @@ private struct InsightsDonutChart: View {
                 )
             }
 
-            if let focusedSegment {
-                Group {
+            if let focusedSegment, let focusedSlice {
+                // The centre card sits over the donut's empty hole, not over any
+                // wedge, so re-enabling hit testing here can't steal a wedge tap:
+                // wedge taps still reach the chartOverlay gesture below. Tapping
+                // the card itself opens the underlying visit(s), matching the
+                // legend rows' tap-to-navigate behaviour.
+                Button {
+                    onSelectEntry(focusedSlice)
+                } label: {
                     if focusedSegment.isSleep {
                         sleepCenter(for: focusedSegment)
                     } else {
                         focusedCenter(for: focusedSegment)
                     }
                 }
-                    // The centre label is visual output; it must never intercept chart taps.
-                    .allowsHitTesting(false)
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens this entry to review or edit")
             } else {
                 VStack(spacing: 2) {
                     if let stepCount {
@@ -940,6 +986,7 @@ private struct InsightsDonutChart: View {
                 Text("Loading sleep data…").font(.caption)
             }
             Text("Apple Health sleep stages").font(.caption2).foregroundStyle(.secondary)
+            entryAffordance(hasVisit: true)
         }
         .font(.caption2.monospacedDigit())
         .foregroundStyle(.primary)
@@ -975,12 +1022,25 @@ private struct InsightsDonutChart: View {
             Text("Out  \(segment.isLive ? "Now" : timeLabel(segment.end))")
             Text(formatHours(segment.end.timeIntervalSince(segment.start) / 3600))
                 .font(.subheadline.bold().monospacedDigit()).padding(.top, 2)
+            entryAffordance(hasVisit: segment.visit != nil)
         }
         .font(.caption2.monospacedDigit())
         .foregroundStyle(.primary)
         .frame(width: 176)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(segment.activity), \(segment.placeName ?? ""), \(segment.visit?.confidenceLabel ?? "not inferred"), evidence \(segment.visit.map(evidenceText) ?? "none"), in \(timeLabel(segment.start)), out \(segment.isLive ? "now" : timeLabel(segment.end)), duration \(formatHours(segment.end.timeIntervalSince(segment.start) / 3600))")
+    }
+
+    /// Small tappable-looking cue so the centre card reads as a button, not just
+    /// a readout, once a wedge is focused.
+    private func entryAffordance(hasVisit: Bool) -> some View {
+        HStack(spacing: 3) {
+            Text(hasVisit ? "View entry" : "Add visit")
+            Image(systemName: "chevron.right")
+        }
+        .font(.caption2.bold())
+        .foregroundStyle(.blue)
+        .padding(.top, 3)
     }
 
     private func evidenceText(for visit: Visit) -> String {
