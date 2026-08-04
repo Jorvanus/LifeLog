@@ -16,6 +16,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     private var diagnosticTask: Task<Void, Never>?
     private var identifyingVisits: Set<ObjectIdentifier> = []
     private var lookupIDs: [ObjectIdentifier: UUID] = [:]
+    private var savedPlaceCache: [SavedPlace] = []
     /// Limits immediate-place creation to samples explicitly requested by LifeLog.
     /// Significant-change callbacks can arrive while travelling and must not become visits.
     private var shouldSeedCurrentLocation = false
@@ -40,6 +41,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
 
     func connect(_ context: ModelContext) {
         self.context = context
+        loadSavedPlaceCache()
         if isBackgroundLoggingEnabled, authorization != .notDetermined {
             startBackgroundWorkflow()
         }
@@ -109,7 +111,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             } catch is CancellationError {
                 return
             } catch {
-                self?.lastError = "Location permission status couldn’t be refreshed."
+                self?.lastError = "Location permission status couldn't be refreshed."
             }
         }
     }
@@ -210,7 +212,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             }
         }
 
-        let saved = nearestSavedPlace(to: coordinate, context: context)
+        let saved = nearestSavedPlace(to: coordinate)
         if let saved {
             let distance = CLLocation(latitude: saved.latitude, longitude: saved.longitude)
                 .distance(from: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude))
@@ -307,14 +309,22 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         return try? context.fetch(descriptor).first
     }
 
-    private func nearestSavedPlace(to coordinate: CLLocationCoordinate2D, context: ModelContext) -> SavedPlace? {
+    private func loadSavedPlaceCache() {
+        guard let context else { return }
         let startedAt = Date.now
-        let current = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
-        let places = try? context.fetch(FetchDescriptor<SavedPlace>())
+        savedPlaceCache = (try? context.fetch(FetchDescriptor<SavedPlace>())) ?? []
         Diagnostics.locationMetric(context, operation: "saved_place_index_refresh",
                                    durationMs: Int((Date.now.timeIntervalSince(startedAt) * 1000).rounded()),
-                                   candidateCount: places?.count ?? 0)
-        return places?
+                                   candidateCount: savedPlaceCache.count)
+    }
+
+    func invalidateSavedPlaceCache() {
+        loadSavedPlaceCache()
+    }
+
+    private func nearestSavedPlace(to coordinate: CLLocationCoordinate2D) -> SavedPlace? {
+        let current = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        return savedPlaceCache
             .compactMap { place -> (SavedPlace, CLLocationDistance)? in
                 let distance = current.distance(from: CLLocation(latitude: place.latitude, longitude: place.longitude))
                 return distance <= min(max(place.radius, 25), 500) ? (place, distance) : nil
@@ -369,7 +379,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     }
 
     /// Corrections and superseded callbacks invalidate pending public-place
-    /// lookups so a late Maps response cannot overwrite the user’s choice.
+    /// lookups so a late Maps response cannot overwrite the user's choice.
     func cancelPlaceLookup(for visit: Visit) {
         let identity = ObjectIdentifier(visit)
         if let id = lookupIDs.removeValue(forKey: identity) {
@@ -380,13 +390,14 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
 
     private func cache(_ match: PlaceSuggestion, context: ModelContext) {
         let coordinate = CLLocation(latitude: match.latitude, longitude: match.longitude)
-        let existing = (try? context.fetch(FetchDescriptor<SavedPlace>()))?.contains { place in
+        let existing = savedPlaceCache.contains { place in
             coordinate.distance(from: CLLocation(latitude: place.latitude, longitude: place.longitude)) <= 50
-        } ?? false
+        }
         guard !existing else { return }
         context.insert(SavedPlace(name: TextSafety.clean(match.name, maximumLength: 100),
                                   latitude: match.latitude, longitude: match.longitude,
                                   radius: 85, category: match.category, defaultActivity: match.suggestedActivity))
+        loadSavedPlaceCache()
     }
 
     private func reverseGeocode(_ visit: Visit) {
@@ -448,7 +459,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         do {
             try context.save()
         } catch {
-            lastError = "LifeLog couldn’t securely save this update. Your existing timeline is unchanged."
+            lastError = "LifeLog couldn't securely save this update. Your existing timeline is unchanged."
         }
     }
 
@@ -456,7 +467,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         do {
             try ActivityLocationPolicy.reconcile(locationVisit: locationVisit, context: context)
         } catch {
-            lastError = "LifeLog couldn’t reconcile activity with this location visit."
+            lastError = "LifeLog couldn't reconcile activity with this location visit."
         }
     }
 }

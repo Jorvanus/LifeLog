@@ -9,6 +9,7 @@ struct PlacesView: View {
     // journal and HealthKit rows do not belong in the Settings list.
     @Query(filter: #Predicate<Visit> { $0.source == "automatic" || $0.source == "manual" },
            sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
+    let recorder: LocationRecorder
 
     private var uncategorised: [Visit] {
         visits.filter { $0.needsCategorisation && !$0.isIgnored }
@@ -54,7 +55,7 @@ struct PlacesView: View {
                     Text("No saved places yet.").foregroundStyle(.secondary)
                 } else {
                     ForEach(places) { place in
-                        NavigationLink { SavedPlaceEditor(place: place) } label: {
+                        NavigationLink { SavedPlaceEditor(place: place, recorder: recorder) } label: {
                             HStack(spacing: 12) {
                                 ActivityIcon(activity: place.defaultActivity, category: place.category,
                                              color: .blue)
@@ -83,6 +84,7 @@ struct PlacesView: View {
     private func delete(at offsets: IndexSet) {
         for index in offsets { context.delete(places[index]) }
         try? context.save()
+        recorder.invalidateSavedPlaceCache()
     }
 
     @ViewBuilder
@@ -152,6 +154,7 @@ private struct SavedPlaceEditor: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Bindable var place: SavedPlace
+    let recorder: LocationRecorder
     @State private var saveFailed = false
     @State private var backfillPreview: SavedPlaceLearning.BackfillPreview?
     @State private var confirmingIgnore = false
@@ -238,7 +241,7 @@ private struct SavedPlaceEditor: View {
                     .disabled(TextSafety.clean(place.name, maximumLength: 100).isEmpty)
             }
         }
-        .alert("Couldn’t save place", isPresented: $saveFailed) {
+        .alert("Couldn't save place", isPresented: $saveFailed) {
             Button("OK", role: .cancel) { }
         } message: {
             Text("LifeLog left the existing place and timeline unchanged.")
@@ -247,6 +250,7 @@ private struct SavedPlaceEditor: View {
             Button("Ignore \(backfillPreview?.matchingVisits ?? 0) visits", role: .destructive) {
                 do {
                     _ = try SavedPlaceLearning.applyIgnored(true, to: place, context: context)
+                    recorder.invalidateSavedPlaceCache()
                     backfillPreview = try SavedPlaceLearning.preview(place, context: context)
                 } catch {
                     saveFailed = true
@@ -262,6 +266,7 @@ private struct SavedPlaceEditor: View {
         do {
             try SavedPlaceLearning.apply(place, context: context)
             try context.save()
+            recorder.invalidateSavedPlaceCache()
             dismiss()
         } catch {
             saveFailed = true

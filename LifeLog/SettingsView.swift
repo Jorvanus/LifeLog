@@ -46,7 +46,7 @@ struct SettingsView: View {
                             }
                         }.accessibilityIdentifier("current-location-label")
                     }
-                    NavigationLink { PlacesView() } label: {
+                    NavigationLink { PlacesView(recorder: recorder) } label: {
                         LabeledContent {
                             Text("\(savedPlaces.count)")
                         } label: {
