@@ -268,6 +268,7 @@ actor ActivityImportActor {
         var inserted = 0
         for record in records where record.end > record.start {
             let original = DateInterval(start: record.start, end: record.end)
+            if record.source != "health-sleep" { boundStay(departedWith: original, record: record) }
             let segments = record.source == "health-sleep"
                 ? [original]
                 : remainingSegments(for: original).filter {
@@ -366,6 +367,20 @@ actor ActivityImportActor {
         visitsBySource.removeAll(keepingCapacity: false)
         locations.removeAll(keepingCapacity: false)
         healthVisits.removeAll(keepingCapacity: false)
+    }
+
+    /// A walk or drive is how the person left the place they were in, so it bounds
+    /// that stay before the stay is subtracted from the record. Without this, a stay
+    /// Core Location has not closed yet covers the whole walk and it is never written
+    /// at all — the import path's equivalent of the deletion `reconcile` performs.
+    private func boundStay(departedWith interval: DateInterval, record: ActivityImportRecord) {
+        let isWalk = ActivityLocationPolicy.describesWalking(record.activity)
+        guard isWalk || ActivityLocationPolicy.describesTravel("\(record.activity) \(record.name)") else { return }
+        guard let resumed = ActivityLocationPolicy.boundStay(departedWith: interval, isWalk: isWalk,
+                                                            stays: locations) else { return }
+        modelContext.insert(resumed)
+        locations.append(resumed)
+        visitsBySource[resumed.source, default: []].append(resumed)
     }
 
     private func remainingSegments(for activity: DateInterval) -> [DateInterval] {

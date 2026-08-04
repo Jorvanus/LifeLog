@@ -292,6 +292,158 @@ struct ActivityLocationPolicyTests {
         #expect(ActivityLocationPolicy.shouldShow(driving, alongside: [previous, driving, next]) == true)
     }
 
+    @Test("A day's timeline covers the stay it woke up in")
+    func dayIncludesOvernightStay() {
+        let calendar = Calendar.current
+        let dayStart = calendar.startOfDay(for: base)
+        let day = DateInterval(start: dayStart, end: calendar.date(byAdding: .day, value: 1, to: dayStart)!)
+        let overnight = Visit(arrival: dayStart.addingTimeInterval(-6 * 60 * 60),
+                              departure: dayStart.addingTimeInterval(7 * 60 * 60),
+                              latitude: -23.37, longitude: 150.51,
+                              placeName: "Home", inferredActivity: "At home", source: "automatic")
+        let yesterday = Visit(arrival: dayStart.addingTimeInterval(-10 * 60 * 60),
+                              departure: dayStart.addingTimeInterval(-8 * 60 * 60),
+                              latitude: -23.43, longitude: 150.45,
+                              placeName: "Shops", inferredActivity: "Shopping", source: "automatic")
+        let open = Visit(arrival: dayStart.addingTimeInterval(-2 * 60 * 60),
+                         latitude: -23.37, longitude: 150.51,
+                         placeName: "Home", inferredActivity: "At home", source: "automatic")
+
+        #expect(ActivityLocationPolicy.covers(overnight, day: day))
+        // A stay that finished before midnight belongs to the previous day only.
+        #expect(ActivityLocationPolicy.covers(yesterday, day: day) == false)
+        #expect(ActivityLocationPolicy.covers(open, day: day, now: dayStart.addingTimeInterval(8 * 60 * 60)))
+    }
+
+    @Test("A short walk between two places earns a timeline entry")
+    func shortWalkBetweenDestinationsIsShown() {
+        let home = Visit(arrival: base, departure: base.addingTimeInterval(60 * 60),
+                         latitude: -23.37, longitude: 150.51,
+                         placeName: "Home", inferredActivity: "At home", source: "automatic")
+        let park = Visit(arrival: base.addingTimeInterval(72 * 60),
+                         departure: base.addingTimeInterval(2 * 60 * 60),
+                         latitude: -23.40, longitude: 150.50,
+                         placeName: "Park", inferredActivity: "Exercising", source: "automatic")
+        func walk(minutes: Double) -> Visit {
+            Visit(arrival: base.addingTimeInterval(60 * 60),
+                  departure: base.addingTimeInterval(60 * 60 + minutes * 60),
+                  latitude: 0, longitude: 0, placeName: "Walking",
+                  inferredActivity: "Walking", userActivity: "Walking", source: "health-walking")
+        }
+        let now = base.addingTimeInterval(3 * 60 * 60)
+
+        // Twelve minutes to the park is a journey; it used to need a full hour.
+        #expect(ActivityLocationPolicy.shouldShowInTimeline(walk(minutes: 12),
+                                                           locationVisits: [home, park], now: now))
+        // A stray sample either side of a stay still stays out of the card list.
+        #expect(ActivityLocationPolicy.shouldShowInTimeline(walk(minutes: 3),
+                                                           locationVisits: [home, park], now: now) == false)
+    }
+
+    @Test("A walk out the door bounds the stay instead of being deleted")
+    func walkBoundsTheStayItLeft() throws {
+        let context = try makeContext()
+        // Core Location timed Home's departure from the park arrival, so Home looks
+        // like it covered the walk out the door.
+        let home = Visit(arrival: base, departure: base.addingTimeInterval(60 * 60),
+                         latitude: -23.37, longitude: 150.51,
+                         placeName: "Home", inferredActivity: "At home", source: "automatic")
+        let walk = Visit(arrival: base.addingTimeInterval(50 * 60),
+                         departure: base.addingTimeInterval(60 * 60),
+                         latitude: 0, longitude: 0, placeName: "Walking",
+                         inferredActivity: "Walking", userActivity: "Walking", source: "health-walking")
+        let park = Visit(arrival: base.addingTimeInterval(60 * 60),
+                         departure: base.addingTimeInterval(90 * 60),
+                         latitude: -23.40, longitude: 150.50,
+                         placeName: "Park", inferredActivity: "Exercising", source: "automatic")
+        [home, walk, park].forEach(context.insert)
+        try context.save()
+
+        let now = base.addingTimeInterval(3 * 60 * 60)
+        try ActivityLocationPolicy.reconcileAll(context: context, now: now)
+        try context.save()
+
+        let walks = try context.fetch(FetchDescriptor<Visit>()).filter { $0.source == "health-walking" }
+        #expect(walks.count == 1)
+        #expect(home.departure == base.addingTimeInterval(50 * 60))
+        #expect(walks[0].arrival == base.addingTimeInterval(50 * 60))
+        #expect(ActivityLocationPolicy.shouldShowInTimeline(walks[0], locationVisits: [home, park], now: now))
+    }
+
+    @Test("A walk around the block resumes the stay it started from")
+    func walkFromOpenStayResumesIt() throws {
+        let context = try makeContext()
+        let home = Visit(arrival: base, latitude: -23.37, longitude: 150.51,
+                         placeName: "Home", inferredActivity: "At home", source: "automatic",
+                         recognitionConfidence: "learned")
+        let walk = Visit(arrival: base.addingTimeInterval(60 * 60),
+                         departure: base.addingTimeInterval(75 * 60),
+                         latitude: 0, longitude: 0, placeName: "Walking",
+                         inferredActivity: "Walking", userActivity: "Walking", source: "health-walking")
+        [home, walk].forEach(context.insert)
+        try context.save()
+
+        let now = base.addingTimeInterval(2 * 60 * 60)
+        try ActivityLocationPolicy.reconcileAll(context: context, now: now)
+        try context.save()
+
+        let stays = try context.fetch(FetchDescriptor<Visit>(sortBy: [SortDescriptor(\.arrival)]))
+            .filter(ActivityLocationPolicy.isLocationVisit)
+        let walks = try context.fetch(FetchDescriptor<Visit>()).filter { $0.source == "health-walking" }
+
+        #expect(walks.count == 1, "An unbounded stay must not swallow the walk inside it")
+        #expect(stays.count == 2)
+        #expect(stays[0].departure == base.addingTimeInterval(60 * 60))
+        // The person came back, so Home resumes and remains the current stay.
+        #expect(stays[1].arrival == base.addingTimeInterval(75 * 60))
+        #expect(stays[1].departure == nil)
+        #expect(stays[1].placeName == "Home")
+        #expect(stays[1].recognitionConfidence == "learned")
+        #expect(ActivityLocationPolicy.shouldShowInTimeline(walks[0], locationVisits: stays, now: now))
+    }
+
+    @Test("A hand-entered visit keeps the times the person gave it")
+    func manualStayIsNeverBoundedByMovement() throws {
+        let context = try makeContext()
+        let entered = Visit(arrival: base, departure: base.addingTimeInterval(2 * 60 * 60),
+                            latitude: -23.37, longitude: 150.51,
+                            placeName: "Friend's house", inferredActivity: "Visiting", source: "manual")
+        let walk = Visit(arrival: base.addingTimeInterval(60 * 60),
+                         departure: base.addingTimeInterval(75 * 60),
+                         latitude: 0, longitude: 0, placeName: "Walking",
+                         inferredActivity: "Walking", userActivity: "Walking", source: "health-walking")
+        [entered, walk].forEach(context.insert)
+        try context.save()
+
+        try ActivityLocationPolicy.reconcileAll(context: context, now: base.addingTimeInterval(3 * 60 * 60))
+        try context.save()
+
+        #expect(entered.departure == base.addingTimeInterval(2 * 60 * 60))
+        #expect(try context.fetch(FetchDescriptor<Visit>()).filter(ActivityLocationPolicy.isLocationVisit).count == 1)
+    }
+
+    @Test("Vehicle travel bounds an open stay without inventing a return")
+    func travelFromOpenStayDoesNotResumeIt() throws {
+        let context = try makeContext()
+        let home = Visit(arrival: base, latitude: -23.37, longitude: 150.51,
+                         placeName: "Home", inferredActivity: "At home", source: "automatic")
+        let drive = Visit(arrival: base.addingTimeInterval(60 * 60),
+                          departure: base.addingTimeInterval(85 * 60),
+                          latitude: 0, longitude: 0, placeName: "In transit",
+                          inferredActivity: "Travelling", userActivity: "Travelling", source: "motion")
+        [home, drive].forEach(context.insert)
+        try context.save()
+
+        try ActivityLocationPolicy.reconcileAll(context: context, now: base.addingTimeInterval(2 * 60 * 60))
+        try context.save()
+
+        let stays = try context.fetch(FetchDescriptor<Visit>()).filter(ActivityLocationPolicy.isLocationVisit)
+        #expect(stays.count == 1)
+        #expect(home.departure == base.addingTimeInterval(60 * 60))
+        // Where the drive ended is unknown until the next callback, so nothing is guessed.
+        #expect(try context.fetch(FetchDescriptor<Visit>()).filter { $0.source == "motion" }.count == 1)
+    }
+
     @Test("LifeLog sleep estimate reflects duration, stages, and interruptions")
     func estimatesSleepQuality() {
         let summary = SleepSummary(

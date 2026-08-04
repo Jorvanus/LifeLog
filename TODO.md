@@ -13,6 +13,7 @@ This plan prioritises a dependable private diary on a physical iPhone before exp
 - [ ] Test Health permission denial, partial permission, no data, Apple Watch disconnected, duplicate samples, deleted samples, daylight-saving transitions, and unusual time zones.
 - [ ] Expand movement classification for walking, running, cycling, automotive travel, and possible flights while preserving the location-first rule: movement inside Home, Work, or another destination must not become a separate timeline entry.
 - [ ] Add recurring-trip tests for “Travelling to Work/Home,” including incomplete destinations and corrected place labels.
+- [ ] Give movement records a route rather than a single coordinate. A walk around the block passes through many places and currently stores `latitude: 0, longitude: 0`, so nothing about where it went can be shown, mapped, or used to name it. Needs a schema migration (polyline or child points on `Visit`), a decision on sampling density and retention for a route's precise coordinates, and map/detail presentation for a journey rather than a pin.
 
 ## Week 3 — improve correction and learning
 

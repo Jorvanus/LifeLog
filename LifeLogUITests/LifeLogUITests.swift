@@ -161,6 +161,23 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(app.textFields["Place name"].waitForExistence(timeout: 5))
     }
 
+    /// The day begins with the stay it woke up in, and the walk between two places
+    /// is an entry of its own. Both were previously missing: an overnight stay was
+    /// filtered out for arriving yesterday, and movement needed an hour to be shown.
+    func testTimelineShowsTheOvernightStayAndTheWalkBetweenPlaces() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+
+        XCTAssertTrue(element("todays-journey").waitForExistence(timeout: 10))
+        let walk = app.staticTexts["Walking"]
+        XCTAssertTrue(walk.waitForExistence(timeout: 5))
+        // The overnight stay is labelled with the day it began, so a stay of many
+        // hours cannot read as a few minutes this morning.
+        let overnight = app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'Yesterday'")).firstMatch
+        XCTAssertTrue(overnight.waitForExistence(timeout: 5))
+    }
+
     func testManualEntryIsAccessibleFromTimeline() {
         let addVisit = app.buttons["Add visit"]
         XCTAssertTrue(addVisit.waitForExistence(timeout: 5))

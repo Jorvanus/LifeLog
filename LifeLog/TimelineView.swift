@@ -15,14 +15,23 @@ struct TimelineView: View {
     // The add button's glyph and its circle have to grow together, otherwise a
     // Dynamic Type glyph overflows a fixed-size circle at accessibility sizes.
     @ScaledMetric(relativeTo: .title2) private var addButtonDiameter: CGFloat = 56
-    @AppStorage("location-policy-reconciled-v2") private var locationPolicyReconciled = false
+    // Bump this marker whenever reconciliation learns a new rule, so an installed
+    // timeline is repaired once rather than only new records benefiting. v3 bounds a
+    // stay at the walk or drive that left it.
+    @AppStorage("location-policy-reconciled-v3") private var locationPolicyReconciled = false
     // Bump this marker whenever de-duplication rules become stronger so an
     // installed timeline receives the one-time repair as well as new callbacks.
     @AppStorage("automatic-location-deduplicated-v3") private var automaticLocationDeduplicated = false
 
     private var today: [Visit] {
         let locationVisits = visits.filter(ActivityLocationPolicy.isLocationVisit)
-        return visits.filter { Calendar.current.isDateInToday($0.arrival) }
+        // Today is what the day covered, not what began in it. Selecting by arrival
+        // date dropped the overnight stay, so the day appeared to start at the first
+        // outing rather than at home.
+        let dayStart = Calendar.current.startOfDay(for: clock)
+        let dayEnd = Calendar.current.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart
+        let day = DateInterval(start: dayStart, end: max(dayStart, dayEnd))
+        return visits.filter { ActivityLocationPolicy.covers($0, day: day) }
             .filter { $0.resolutionState != .ignored && $0.resolutionState != .superseded }
             .filter { ActivityLocationPolicy.shouldShowInTimeline($0, locationVisits: locationVisits) }
             // Core Location can replay an older unknown callback after a later
@@ -230,7 +239,7 @@ struct TimelineView: View {
                         } else {
                             Text(visit.activity).foregroundStyle(.secondary)
                         }
-                        Text("Since \(visit.arrival.formatted(date: .omitted, time: .shortened)) · \(elapsedVisitDuration(visit))")
+                        Text("Since \(dayQualifiedTime(visit.arrival)) · \(elapsedVisitDuration(visit))")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -330,6 +339,17 @@ struct TimelineView: View {
     }
 }
 
+/// Names the day a time fell on when it was not today. A night at home belongs to
+/// this morning's timeline but began yesterday evening, and "6:12 pm – 7:20 am"
+/// with no day would read as a stay of a few minutes.
+private func dayQualifiedTime(_ date: Date) -> String {
+    let time = date.formatted(date: .omitted, time: .shortened)
+    let calendar = Calendar.current
+    if calendar.isDateInToday(date) { return time }
+    if calendar.isDateInYesterday(date) { return "Yesterday \(time)" }
+    return "\(date.formatted(.dateTime.day().month(.abbreviated))) \(time)"
+}
+
 private struct JourneyRow: View {
     let visit: Visit
     let isCurrent: Bool
@@ -398,7 +418,7 @@ private struct JourneyRow: View {
     }
 
     private var timeDescription: String {
-        let start = visit.arrival.formatted(date: .omitted, time: .shortened)
+        let start = dayQualifiedTime(visit.arrival)
         if isCurrent { return "Since \(start)" }
         let end = (visit.departure ?? .now).formatted(date: .omitted, time: .shortened)
         return "\(start) – \(end)"

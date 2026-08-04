@@ -2,6 +2,17 @@
 
 ## 2026-08-05
 
+### The day starts where you woke up
+
+- Today's Journey now shows the stay you were already in. Core Location records one arrival per stay, so a night at home arrives the evening before; Timeline selected entries by their arrival date and dropped it, and the day appeared to begin at the first time you went out. Stays that began earlier now show their start time with the day it fell on, so "Yesterday 6:12 pm – 7:20 am" cannot read as a few minutes.
+
+### Walks and drives between places are journeys
+
+- A walk to the park and back is now a timeline entry. Movement previously needed to last an hour to earn a card, which hid every ordinary walk. Anything over five minutes between two places is shown; shorter samples are still counted in Insights only.
+- Leaving somewhere is now recorded as leaving. A departure is timed from the next arrival, so a stay looked like it covered the walk out the door — and a stay LifeLog has not closed yet looked like it covered everything after it. Either way the walk sat inside a stay and was deleted rather than shown. A finished walk or drive now ends the stay where it began.
+- A walk that starts and finishes at the same place is treated as a loop: the stay resumes when you get back, so leaving for a walk and returning reads as home, walk, home. Vehicle travel does not resume a stay, because where it went is unknown until the next location arrives.
+- Movement that finishes inside a place is still absorbed, so pacing at home or a lap of the office does not become an entry of its own.
+
 ### See and correct the visits behind an activity
 
 - Opening an activity now shows how many visits use it and lets you open the list. Each visit opens in the ordinary editor, so one can be corrected without touching the rest.

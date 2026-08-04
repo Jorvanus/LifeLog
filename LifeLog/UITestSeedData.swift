@@ -19,7 +19,11 @@ enum UITestSeedData {
             let userActivity = confidence == "low" ? nil : activity
             context.insert(Visit(arrival: arrival, departure: departure, latitude: place == "Home" ? home.latitude : shops.latitude, longitude: place == "Home" ? home.longitude : shops.longitude, placeName: place, inferredActivity: activity, userActivity: userActivity, source: source, recognitionConfidence: confidence))
         }
-        visit(0, 390, "Home", "At home")
+        // The night before, so the day opens with the stay it woke up in rather than
+        // with the first time the person went out.
+        visit(-360, 390, "Home", "At home")
+        // Ten minutes on foot from one place to the next: a journey in its own right.
+        visit(390, 400, "Walking", "Walking", "health-walking", "device")
         visit(400, 470, "Gracemere Shopping World", "Shopping")
         visit(480, nil, "Home", "At home")
         visit(120, 390, Visit.unknownPlaceName, "Visiting", "automatic", nil)

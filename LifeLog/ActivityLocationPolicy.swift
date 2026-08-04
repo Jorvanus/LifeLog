@@ -7,12 +7,27 @@ import CoreLocation
 enum ActivityLocationPolicy {
     static let supersededLocationSource = "automatic-superseded"
 
-    static func isLocationVisit(_ visit: Visit) -> Bool {
+    /// Movement shorter than this stays out of the daily card list, though Insights
+    /// still counts it. Motion segments are already filtered at two to three minutes
+    /// when they are recorded, so this mainly suppresses a stray sample either side
+    /// of a stay rather than a real outing: a walk to the park and back is a journey
+    /// worth seeing, and requiring an hour of it hid every one of them.
+    nonisolated static let minimumTimelineMovementDuration: TimeInterval = 5 * 60
+
+    nonisolated static func isLocationVisit(_ visit: Visit) -> Bool {
         visit.source == "automatic" || visit.source == "manual"
     }
 
     nonisolated static func isSupersededLocation(_ visit: Visit) -> Bool {
         visit.source == "automatic-superseded"
+    }
+
+    /// Whether a visit belongs on a given day's timeline. A stay counts for every day
+    /// it covers rather than the day it began: Core Location records one arrival per
+    /// stay, so a night at home arrives the evening before and is the only record of
+    /// the following morning until the person next goes out.
+    nonisolated static func covers(_ visit: Visit, day: DateInterval, now: Date = .now) -> Bool {
+        visit.arrival < day.end && (visit.departure ?? now) > day.start
     }
 
     /// Single resolver for callback order and overlap. Raw callbacks remain
@@ -28,23 +43,33 @@ enum ActivityLocationPolicy {
         return total
     }
 
-    static func isDeviceActivity(_ visit: Visit) -> Bool {
+    nonisolated static func isDeviceActivity(_ visit: Visit) -> Bool {
         visit.source == "motion" || visit.source.hasPrefix("health-")
     }
 
-    static func isWalkingActivity(_ visit: Visit) -> Bool {
-        guard isDeviceActivity(visit) else { return false }
-        return visit.activity.lowercased().contains("walk")
+    /// Text-only tests so the import actor can classify a record before it becomes
+    /// a `Visit`, and so both paths agree on what counts as walking or travel.
+    nonisolated static func describesWalking(_ text: String) -> Bool {
+        text.lowercased().contains("walk")
     }
 
-    static func isTravelActivity(_ visit: Visit) -> Bool {
-        guard isDeviceActivity(visit) else { return false }
-        let text = "\(visit.activity) \(visit.placeName)".lowercased()
+    nonisolated static func describesTravel(_ text: String) -> Bool {
+        let text = text.lowercased()
         return ["travel", "transit", "automotive", "vehicle", "driv", "car", "plane", "flight"]
             .contains { text.contains($0) }
     }
 
-    static func isMovementActivity(_ visit: Visit) -> Bool {
+    nonisolated static func isWalkingActivity(_ visit: Visit) -> Bool {
+        guard isDeviceActivity(visit) else { return false }
+        return describesWalking(visit.activity)
+    }
+
+    nonisolated static func isTravelActivity(_ visit: Visit) -> Bool {
+        guard isDeviceActivity(visit) else { return false }
+        return describesTravel("\(visit.activity) \(visit.placeName)")
+    }
+
+    nonisolated static func isMovementActivity(_ visit: Visit) -> Bool {
         isWalkingActivity(visit) || isTravelActivity(visit)
     }
 
@@ -73,6 +98,74 @@ enum ActivityLocationPolicy {
             if $0.distance != $1.distance { return $0.distance < $1.distance }
             return !$0.isClosed && $1.isClosed
         }?.visit
+    }
+
+    /// Reads a movement record as the moment a stay ended, and returns the stay to
+    /// insert for the person's return, if there is one.
+    ///
+    /// Two things make a stay look longer than it was. Core Location times a
+    /// departure from the *next* arrival, so a stay appears to cover the walk out
+    /// the door; and a stay with no departure at all is treated as running to now,
+    /// so it covers everything after it. Either way the movement sits inside a stay
+    /// and reconciliation does not merely hide it — it deletes it. A finished walk
+    /// or drive is the better evidence, so bound the stay where the movement began.
+    ///
+    /// Movement that finishes well inside a closed stay is left alone: pacing at home
+    /// or a lap of the office is not a journey, and Timeline stays destination-first.
+    nonisolated static func boundStay(departedWith movement: DateInterval, isWalk: Bool,
+                                      stays: [Visit], now: Date = .now) -> Visit? {
+        guard movement.duration > 0 else { return nil }
+        let containing = stays.filter { stay in
+            // Only Core Location's own timing is adjusted. A manual entry states when
+            // the person says they were somewhere, and no device sample overrides that.
+            guard stay.source == "automatic" else { return false }
+            return stay.arrival < movement.start && (stay.departure ?? now) > movement.start
+        }
+        guard let stay = containing.max(by: { $0.arrival < $1.arrival }) else { return nil }
+        // A closed stay is only bounded when the movement runs to its end, which is
+        // what leaving looks like once the next arrival has supplied the departure.
+        if let departure = stay.departure, departure > movement.end { return nil }
+        let isOpen = stay.departure == nil
+        stay.departure = movement.start
+        // An open stay has no following arrival yet, so bounding it alone would leave
+        // the day with no current location. A walk that started and finished inside
+        // one place is a loop — around the block — so carry the stay on afterwards.
+        // Vehicle travel is not carried on: it went somewhere, and where is unknown
+        // until the next callback arrives.
+        guard isOpen, isWalk, movement.duration >= minimumTimelineMovementDuration else { return nil }
+        return continuation(of: stay, from: movement.end)
+    }
+
+    /// The same stay, resumed. Confidence and candidates carry over because it is the
+    /// same place; the note does not, since it was written about the earlier stay.
+    private nonisolated static func continuation(of stay: Visit, from arrival: Date) -> Visit {
+        Visit(arrival: arrival, departure: nil,
+              latitude: stay.latitude, longitude: stay.longitude,
+              placeName: stay.placeName, inferredActivity: stay.inferredActivity,
+              userActivity: stay.userActivity, source: stay.source,
+              recognitionConfidence: stay.recognitionConfidence,
+              candidateData: stay.candidateData)
+    }
+
+    /// Applies `boundStay` to every movement record in date order, so a day with
+    /// several outings resolves against the stay each one actually left.
+    private static func boundStays(around activities: [Visit], stays: [Visit],
+                                   context: ModelContext, now: Date) -> [Visit] {
+        var stays = stays
+        var continuations: [Visit] = []
+        let movement = activities
+            .filter { isMovementActivity($0) && $0.departure != nil }
+            .sorted { $0.arrival < $1.arrival }
+        for record in movement {
+            guard let end = record.departure, end > record.arrival else { continue }
+            let interval = DateInterval(start: record.arrival, end: end)
+            guard let resumed = boundStay(departedWith: interval, isWalk: isWalkingActivity(record),
+                                          stays: stays, now: now) else { continue }
+            context.insert(resumed)
+            stays.append(resumed)
+            continuations.append(resumed)
+        }
+        return continuations
     }
 
     /// Movement is useful as a travel segment only when it sits between two destinations.
@@ -114,9 +207,9 @@ enum ActivityLocationPolicy {
         )
     }
 
-    /// Timeline stays location-first: short movement between destinations is
-    /// retained for Insights but omitted from the daily card list. Long trips
-    /// remain visible because they are meaningful events in their own right.
+    /// Timeline stays location-first: momentary movement between destinations is
+    /// retained for Insights but omitted from the daily card list. A real journey
+    /// — the walk to the park, the drive to work — is an event in its own right.
     static func shouldShowInTimeline(_ visit: Visit, locationVisits: [Visit], now: Date = .now) -> Bool {
         guard !isSupersededLocation(visit) else { return false }
         // Timeline is destination-first: device activity that occurs inside a
@@ -132,7 +225,8 @@ enum ActivityLocationPolicy {
         }
         guard isMovementActivity(visit) else { return true }
         let duration = (visit.departure ?? now).timeIntervalSince(visit.arrival)
-        return duration >= 60 * 60 && isBetweenDestinations(visit, locationVisits: locationVisits, now: now)
+        return duration >= minimumTimelineMovementDuration &&
+            isBetweenDestinations(visit, locationVisits: locationVisits, now: now)
     }
 
     /// Insights retains every valid between-destination travel segment, including
@@ -227,9 +321,17 @@ enum ActivityLocationPolicy {
     static func reconcile(locationVisit: Visit, context: ModelContext, now: Date = .now) throws {
         guard isLocationVisit(locationVisit) else { return }
         let visits = try fetchPolicyVisits(context: context)
+        let activities = visits.filter(isMovementActivity)
+        // The arriving visit can be the departure evidence for the stay before it, so
+        // bounding runs against every stay rather than just this one. It is scoped to
+        // the last day because this runs inside a Core Location callback; repairing
+        // older history is `reconcileAll`'s job, once per installation.
+        let recent = activities.filter { ($0.departure ?? now) >= now.addingTimeInterval(-24 * 60 * 60) }
+        let continuations = boundStays(around: recent, stays: visits.filter(isLocationVisit),
+                                       context: context, now: now)
         try reconcile(
-            activities: visits.filter(isMovementActivity),
-            against: [locationVisit],
+            activities: activities,
+            against: [locationVisit] + continuations,
             context: context,
             now: now
         )
@@ -238,9 +340,12 @@ enum ActivityLocationPolicy {
     /// Cleans timelines created by earlier app versions when the model container opens.
     static func reconcileAll(context: ModelContext, now: Date = .now) throws {
         let visits = try fetchPolicyVisits(context: context)
+        let activities = visits.filter(isMovementActivity)
+        let locations = visits.filter(isLocationVisit)
+        let continuations = boundStays(around: activities, stays: locations, context: context, now: now)
         try reconcile(
-            activities: visits.filter(isMovementActivity),
-            against: visits.filter(isLocationVisit),
+            activities: activities,
+            against: locations + continuations,
             context: context,
             now: now
         )
