@@ -3,9 +3,20 @@ import SwiftUI
 struct ActivitiesView: View {
     @State private var activities = ActivityCatalog.load()
     @State private var adding = false
+    @State private var importingFromHistory = false
 
     var body: some View {
         List {
+            Section {
+                Button {
+                    importingFromHistory = true
+                } label: {
+                    Label("Add from your history", systemImage: "clock.arrow.trianglehead.counterclockwise.rotate.90")
+                }
+                .accessibilityIdentifier("add-from-history")
+            } footer: {
+                Text("Activities you have recorded but never added here are counted as “Other” in Insights.")
+            }
             Section {
                 ForEach(activities) { activity in
                     NavigationLink {
@@ -14,7 +25,10 @@ struct ActivitiesView: View {
                         }
                     } label: {
                         Label {
-                            Text(activity.name).font(.headline)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(activity.name).font(.headline)
+                                Text(activity.category).font(.caption).foregroundStyle(.secondary)
+                            }
                         } icon: {
                             Image(systemName: activity.symbol).foregroundStyle(activityColor(activity.name))
                         }
@@ -28,7 +42,7 @@ struct ActivitiesView: View {
                     ActivityCatalog.save(activities)
                 }
             } footer: {
-                Text("Activities are suggestions used when labeling visits. Changing a definition does not rewrite past visits; edit those visits when you want a historical correction.")
+                Text("Activities are suggestions used when labeling visits, and their group decides where Insights counts the time. Changing a definition does not rewrite past visits; edit those visits when you want a historical correction.")
             }
         }
         .navigationTitle("Activities")
@@ -39,6 +53,13 @@ struct ActivitiesView: View {
             }
         }
         .task { ActivityCatalog.seed(); activities = ActivityCatalog.load() }
+        .sheet(isPresented: $importingFromHistory) {
+            ActivityImportView { added in
+                let known = Set(activities.map { $0.name.lowercased() })
+                activities.append(contentsOf: added.filter { !known.contains($0.name.lowercased()) })
+                ActivityCatalog.save(activities)
+            }
+        }
         .sheet(isPresented: $adding) {
             // Modal presentation supplies the navigation container, matching how
             // VisitEditor and SavedPlaceEditor are presented elsewhere.
@@ -93,6 +114,9 @@ struct ActivityEditor: View {
         Form {
             TextField("Activity name", text: $name)
             ColorPicker("Activity colour", selection: $categoryColorValue, supportsOpacity: false)
+            Picker("Group under", selection: $category) {
+                ForEach(ActivityCatalog.categories, id: \.self) { Text($0).tag($0) }
+            }
             Picker("Icon", selection: $symbol) {
                 ForEach(iconOptions, id: \.1) { option in
                     Label(option.0, systemImage: option.1).tag(option.1)

@@ -88,6 +88,22 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Place History"].exists)
     }
 
+    /// Adopting activities from history is what moves them out of the Insights
+    /// "Other" bucket, so the screen has to be reachable and has to render.
+    func testAddFromHistoryIsReachableFromActivities() {
+        app.tabBars.buttons["Settings"].tap()
+        let activities = element("activities-link")
+        XCTAssertTrue(activities.waitForExistence(timeout: 5))
+        activities.tap()
+
+        let addFromHistory = element("add-from-history")
+        XCTAssertTrue(addFromHistory.waitForExistence(timeout: 5))
+        addFromHistory.tap()
+
+        XCTAssertTrue(element("activity-import-screen").waitForExistence(timeout: 10))
+        XCTAssertTrue(app.navigationBars["Add From History"].exists)
+    }
+
     func testManualEntryIsAccessibleFromTimeline() {
         let addVisit = app.buttons["Add visit"]
         XCTAssertTrue(addVisit.waitForExistence(timeout: 5))

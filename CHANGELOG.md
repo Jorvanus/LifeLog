@@ -2,6 +2,11 @@
 
 ## 2026-08-05
 
+### Activities you actually use, counted properly
+
+- Insights was filing 17% of an imported archive under "Other" — including 2,732 entries labelled "Work", which showed up as 5 visits. Anything the Activities list has never heard of has no group, so it fell through. Activities now show their group, the group is editable, and "Add from your history" offers the activities already in your timeline with a suggested group for each.
+- Inferred activities now use the wording from your Activities list. A recognised workplace is labelled the way you label it rather than always "Working". Only unambiguous matches are adopted — a shared word stem, or a group with a single activity in it — so LifeLog never guesses between two labels that mean different things.
+
 ### Correct a place across its whole history
 
 - Settings → Locations → Place History lists every place name in your timeline, however it was recorded, with how often it appears and what it is usually logged as. Opening one shows what that place looks like at each time of day and lets you correct the activity across every entry at once.

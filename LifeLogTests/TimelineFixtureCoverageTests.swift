@@ -190,6 +190,46 @@ struct TimelineFixtureCoverageTests {
         }
     }
 
+    @Test("Inference speaks the vocabulary in the catalogue")
+    func inferenceUsesCatalogueWording() {
+        // A catalogue that says "Work", the way a real timeline usually does.
+        let catalogue = [
+            ActivityDefinition(name: "Work", category: "Work", symbol: "briefcase.fill"),
+            ActivityDefinition(name: "Seeing Doctor", category: "Healthcare", symbol: "cross.case.fill"),
+            ActivityDefinition(name: "Eating", category: "Food & Drink", symbol: "fork.knife"),
+            ActivityDefinition(name: "Beers", category: "Food & Drink", symbol: "mug.fill")
+        ]
+        // Shared stem: "Working" resolves to "Work".
+        #expect(ActivityCatalog.preferredLabel(for: "Working", in: catalogue) == "Work")
+        // Sole activity in its category resolves even without a shared stem.
+        #expect(ActivityCatalog.preferredLabel(for: "Healthcare", in: catalogue) == "Seeing Doctor")
+        // Two candidates in one category is ambiguous, so the original wording stands
+        // rather than guessing between "Eating" and "Beers".
+        #expect(ActivityCatalog.preferredLabel(for: "Eating", in: catalogue) == "Eating")
+        // Nothing to map to leaves the label untouched.
+        #expect(ActivityCatalog.preferredLabel(for: "Studying", in: catalogue) == "Studying")
+    }
+
+    @Test("Adopted activities are grouped, not dumped into Other")
+    func suggestedCategoriesCoverRealVocabulary() {
+        #expect(ActivityCatalog.suggestedCategory(for: "Work") == "Work")
+        #expect(ActivityCatalog.suggestedCategory(for: "Work Trip") == "Work")
+        #expect(ActivityCatalog.suggestedCategory(for: "Groceries") == "Shopping")
+        #expect(ActivityCatalog.suggestedCategory(for: "CrossFit") == "Fitness")
+        #expect(ActivityCatalog.suggestedCategory(for: "Seeing Doctor") == "Healthcare")
+        #expect(ActivityCatalog.suggestedCategory(for: "Donate Blood") == "Healthcare")
+        #expect(ActivityCatalog.suggestedCategory(for: "Sleeping") == "Sleep")
+        #expect(ActivityCatalog.suggestedCategory(for: "Flight") == "Travel")
+        #expect(ActivityCatalog.suggestedCategory(for: "Holiday") == "Travel")
+        #expect(ActivityCatalog.suggestedCategory(for: "Visit. Friends") == "Social")
+        #expect(ActivityCatalog.suggestedCategory(for: "Beers") == "Food & Drink")
+        // Every suggestion must be a category the picker offers, or it cannot be
+        // corrected afterwards.
+        for label in ["Work", "Groceries", "CrossFit", "Flight", "Nonsense xyzzy"] {
+            #expect(ActivityCatalog.categories.contains(ActivityCatalog.suggestedCategory(for: label)))
+        }
+    }
+
     @Test("Life Cycle journal CSV maps activities and tolerates malformed rows")
     func journalImportParsing() {
         let csv = """

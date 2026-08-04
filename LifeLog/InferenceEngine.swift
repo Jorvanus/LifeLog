@@ -19,9 +19,17 @@ enum InferenceEngine {
             ("Travelling", ["airport", "station", "transit", "hotel"]),
             ("Studying", ["school", "university", "library"])
         ]
-        if let match = rules.first(where: { rule in rule.1.contains { text.contains($0) } }) { return match.0 }
+        // The rules describe a concept; the catalogue decides the wording. Without
+        // this a recognised workplace is written up as "Working" when the person's
+        // own timeline says "Work" — correct, but a label they would have to fix,
+        // and one Insights groups under "Other" rather than Work.
+        if let match = rules.first(where: { rule in rule.1.contains { text.contains($0) } }) {
+            return ActivityCatalog.preferredLabel(for: match.0)
+        }
         let hour = Calendar.current.component(.hour, from: arrival)
-        if text.contains("home") { return hour < 8 || hour >= 18 ? "At home" : "Home time" }
-        return "Visiting"
+        if text.contains("home") {
+            return ActivityCatalog.preferredLabel(for: hour < 8 || hour >= 18 ? "At home" : "Home time")
+        }
+        return ActivityCatalog.preferredLabel(for: "Visiting")
     }
 }
