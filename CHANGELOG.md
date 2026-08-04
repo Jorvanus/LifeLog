@@ -2,6 +2,11 @@
 
 ## 2026-08-04
 
+### Tap to navigate from Insights
+
+- Tapping a donut wedge on the Insights tab now highlights it as before, and tapping the centre card that appears opens the underlying visit (or the "Add Visit" flow for unlogged time), matching the legend rows below the chart.
+- Rows in "Top places by time" are now tappable and open that place's visits for the current period, editing directly when there's only one.
+
 ### Preserved manual activity corrections on re-import
 
 - Replayed HealthKit/Motion anchored samples no longer overwrite an activity a person has explicitly confirmed on a visit; only the inferred activity refreshes when the same sample is imported again.
