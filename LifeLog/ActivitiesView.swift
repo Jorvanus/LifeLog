@@ -17,6 +17,11 @@ struct ActivitiesView: View {
         let previousName: String
         let updated: ActivityDefinition
         let count: Int
+        /// Set when the new name already belongs to another activity. Renaming into
+        /// an existing name is a merge, not a rename: without this the list would
+        /// hold two entries with the same name, and grouping would then depend on
+        /// which happened to come first in the array.
+        let mergesInto: ActivityDefinition?
         var id: String { previousName }
     }
 
@@ -94,22 +99,32 @@ struct ActivitiesView: View {
         } message: {
             Text(deletionWarning)
         }
-        .confirmationDialog("Rename its visits too?", isPresented: Binding(
+        .confirmationDialog(renameTitle, isPresented: Binding(
             get: { renameRequest != nil },
             set: { if !$0 { renameRequest = nil } })
         ) {
             if let request = renameRequest {
-                Button("Rename \(request.count) \(request.count == 1 ? "visit" : "visits")") {
-                    applyRename(request, updatingVisits: true)
-                }
-                Button("Leave visits as they are") {
-                    applyRename(request, updatingVisits: false)
+                if request.mergesInto != nil {
+                    Button("Merge into “\(request.updated.name)”") {
+                        applyRename(request, updatingVisits: true)
+                    }
+                } else {
+                    Button("Rename \(request.count) \(request.count == 1 ? "visit" : "visits")") {
+                        applyRename(request, updatingVisits: true)
+                    }
+                    Button("Leave visits as they are") {
+                        applyRename(request, updatingVisits: false)
+                    }
                 }
                 Button("Cancel", role: .cancel) { renameRequest = nil }
             }
         } message: {
             if let request = renameRequest {
-                Text("\(request.count) \(request.count == 1 ? "visit is" : "visits are") labelled “\(request.previousName)”. Left alone they keep the old label and Insights counts them as Other.")
+                if request.mergesInto != nil {
+                    Text("“\(request.updated.name)” already exists. Merging moves \(request.count) \(request.count == 1 ? "visit" : "visits") onto it and removes the duplicate, so the list keeps one entry per activity.")
+                } else {
+                    Text("\(request.count) \(request.count == 1 ? "visit is" : "visits are") labelled “\(request.previousName)”. Left alone they keep the old label and Insights counts them as Other.")
+                }
             }
         }
         .sheet(isPresented: $importingFromHistory) {
@@ -140,8 +155,12 @@ struct ActivitiesView: View {
         let affected = usageCount(previousName)
         // A rename leaves every existing visit holding the old wording, orphaned from
         // the catalogue. Offer to carry them across rather than silently stranding them.
-        if renamed, affected > 0 {
-            renameRequest = RenameRequest(previousName: previousName, updated: updated, count: affected)
+        let collision = activities.first {
+            $0.id != updated.id && $0.name.caseInsensitiveCompare(updated.name) == .orderedSame
+        }
+        if renamed, affected > 0 || collision != nil {
+            renameRequest = RenameRequest(previousName: previousName, updated: updated,
+                                          count: affected, mergesInto: collision)
             return
         }
         activities[index] = updated
@@ -152,7 +171,14 @@ struct ActivitiesView: View {
     private func applyRename(_ request: RenameRequest, updatingVisits: Bool) {
         defer { renameRequest = nil }
         guard let index = activities.firstIndex(where: { $0.id == request.updated.id }) else { return }
-        activities[index] = request.updated
+        if let target = request.mergesInto {
+            // Keep the entry that was already there, with its group and colour, and
+            // drop the one being renamed onto it.
+            activities.remove(at: index)
+            _ = target
+        } else {
+            activities[index] = request.updated
+        }
         ActivityCatalog.save(activities)
         if updatingVisits {
             try? ActivityCatalog.renameActivity(from: request.previousName,
@@ -166,6 +192,10 @@ struct ActivitiesView: View {
         activities.remove(atOffsets: offsets)
         ActivityCatalog.save(activities)
         InsightsInvalidation.invalidate(reason: "Activity deleted", context: context)
+    }
+
+    private var renameTitle: String {
+        renameRequest?.mergesInto == nil ? "Rename its visits too?" : "Merge these activities?"
     }
 
     private var deletionWarning: String {

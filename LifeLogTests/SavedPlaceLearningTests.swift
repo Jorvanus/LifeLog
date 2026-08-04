@@ -207,6 +207,39 @@ struct SavedPlaceLearningTests {
         #expect(v.userActivity == "Work")
     }
 
+    @Test("Merging Work into Working leaves one entry and one label")
+    func mergingIntoAnExistingActivityLeavesNoDuplicate() throws {
+        let context = try makeContext()
+        let base = Date(timeIntervalSince1970: 1_800_000_000)
+        for offset in 0..<3 {
+            let arrival = base.addingTimeInterval(TimeInterval(offset * 600))
+            context.insert(Visit(arrival: arrival, departure: arrival.addingTimeInterval(300),
+                                 latitude: 0, longitude: 0, placeName: "Regional Office",
+                                 inferredActivity: "Visiting", userActivity: "Work",
+                                 source: "imported-journal"))
+        }
+        try context.save()
+
+        // The catalogue state after adopting "Work" while the seeded "Working" remains.
+        var catalogue = [
+            ActivityDefinition(name: "Working", category: "Work", symbol: "briefcase.fill"),
+            ActivityDefinition(name: "Work", category: "Work", symbol: "briefcase.fill")
+        ]
+        let renamed = catalogue[1]
+
+        // Merging is the rename plus dropping the entry that was renamed away.
+        let moved = try ActivityCatalog.renameActivity(from: renamed.name, to: "Working", context: context)
+        catalogue.removeAll { $0.id == renamed.id }
+
+        #expect(moved == 3)
+        #expect(catalogue.count == 1, "A merge must not leave two entries with the same name")
+        #expect(catalogue.first?.name == "Working")
+        let visits = try context.fetch(FetchDescriptor<Visit>())
+        #expect(visits.allSatisfy { $0.activity == "Working" })
+        // Grouping survives because the surviving entry still carries the category.
+        #expect(ActivityCatalog.preferredLabel(for: "Working", in: catalogue) == "Working")
+    }
+
     private func makeContext() throws -> ModelContext {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(

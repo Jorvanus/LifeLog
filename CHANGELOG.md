@@ -2,6 +2,10 @@
 
 ## 2026-08-05
 
+### Renaming an activity onto an existing one merges them
+
+- Renaming an activity to a name already in the list now offers to merge: its visits move onto the existing activity and the duplicate entry is removed. Previously the list would keep two entries with the same name, and which one decided the Insights group depended on their order.
+
 ### Diagnostics actions moved above the event list
 
 - "Create performance report" and "Clear diagnostics" now sit at the top of the Diagnostics screen. They were below the events, which meant scrolling past hundreds of entries to reach either.
