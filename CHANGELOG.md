@@ -2,6 +2,10 @@
 
 ## 2026-08-05
 
+### Stopped repeating fruitless place searches
+
+- When Apple Maps found no places near a coordinate, LifeLog forgot the answer immediately and searched again on the next location update — several seconds of network work, followed by a reverse-geocode fallback, to rediscover that there is nothing there. Empty results are now remembered for a few minutes, short enough that a newly listed business still turns up soon afterwards.
+
 ### Activities you actually use, counted properly
 
 - Insights was filing 17% of an imported archive under "Other" — including 2,732 entries labelled "Work", which showed up as 5 visits. Anything the Activities list has never heard of has no group, so it fell through. Activities now show their group, the group is editable, and "Add from your history" offers the activities already in your timeline with a suggested group for each.

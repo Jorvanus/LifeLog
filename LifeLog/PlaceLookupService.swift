@@ -44,6 +44,11 @@ enum PlaceLookupService {
     private static var cancelledLookups: Set<UUID> = []
     private static var lookupGeneration = 0
     private static let cacheLifetime: TimeInterval = 15 * 60
+    /// A coordinate with no nearby points of interest is worth remembering, but not
+    /// for as long as a real match: a new business should become findable without
+    /// waiting out the full expiry. Somewhere genuinely empty stays empty, and this
+    /// keeps LifeLog from repeating a multi-second search on every callback there.
+    private static let emptyResultLifetime: TimeInterval = 5 * 60
 
     static func cancelLookup(id: UUID) {
         cancelledLookups.insert(id)
@@ -64,7 +69,9 @@ enum PlaceLookupService {
         // A roughly 100 m cell avoids retaining exact user coordinates while
         // still reusing nearby results during repeated callback retries.
         let cell = "\(Int((coordinate.latitude * 900).rounded())):\(Int((coordinate.longitude * 900).rounded())):\(Int(boundedRadius)):\(category ?? "all")"
-        if let cached = cache[cell], Date.now.timeIntervalSince(cached.createdAt) < cacheLifetime {
+        let cachedLifetime = (cache[cell]?.result.suggestions.isEmpty ?? false)
+            ? emptyResultLifetime : cacheLifetime
+        if let cached = cache[cell], Date.now.timeIntervalSince(cached.createdAt) < cachedLifetime {
             return PlaceLookupResult(confidence: cached.result.confidence,
                                      suggestions: cached.result.suggestions,
                                      cacheHit: true,
@@ -119,10 +126,18 @@ enum PlaceLookupService {
         suggestions = Array(suggestions.prefix(3))
 
         guard let first = suggestions.first else {
-            return PlaceLookupResult(confidence: .low, suggestions: [],
-                                     latencyMs: Int((Date.now.timeIntervalSince(startedAt) * 1000).rounded()),
-                                     candidateCount: response.mapItems.count,
-                                     candidatePayloadBytes: 0)
+            // Previously this returned before the cache write below, so "no places
+            // here" was never remembered and every later callback at the same
+            // coordinate repeated the whole search — seconds of network work, then a
+            // reverse-geocode fallback, for a result already known to be empty.
+            let empty = PlaceLookupResult(confidence: .low, suggestions: [],
+                                          latencyMs: Int((Date.now.timeIntervalSince(startedAt) * 1000).rounded()),
+                                          candidateCount: response.mapItems.count,
+                                          candidatePayloadBytes: 0)
+            evictExpired()
+            cache[cell] = CachedResult(createdAt: .now, result: empty)
+            if let lookupID { cancelledLookups.remove(lookupID) }
+            return empty
         }
 
         let secondDistance = suggestions.dropFirst().first?.distance
@@ -151,7 +166,10 @@ enum PlaceLookupService {
     /// memory to whatever was looked up within the last `cacheLifetime`.
     private static func evictExpired() {
         let now = Date.now
-        cache = cache.filter { now.timeIntervalSince($0.value.createdAt) < cacheLifetime }
+        cache = cache.filter { entry in
+            let lifetime = entry.value.result.suggestions.isEmpty ? emptyResultLifetime : cacheLifetime
+            return now.timeIntervalSince(entry.value.createdAt) < lifetime
+        }
     }
 
     private static func mapsHint(from category: MKPointOfInterestCategory?) -> String {

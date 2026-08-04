@@ -115,6 +115,8 @@ The archive is 25,558 visits spanning 2017-05-06 to 2026-08-04, and grows by rou
 - [ ] `CLMonitor` with `CLCircularGeographicCondition` is available and unused. Saved Places are currently recognised by measuring distance from a `CLVisit` after the fact, which is why Home arrivals wait for a delayed callback and can be misidentified by Maps in the meantime. Real geofence entry and exit would identify known places immediately and without a Maps request. iOS caps monitored regions at 20, so prioritise by recency or frequency if Saved Places ever outgrow that.
 - [ ] `MKMapItem.identifier` exists from iOS 18 and is unused. Places are matched by normalised name, which cannot distinguish two businesses with the same name and breaks on a spelling change. Storing the Maps identifier alongside the name would give stable identity, and directly serves the existing "remember the selected Apple Maps identifier" item.
 
+- [ ] `PlaceLookupService` cannot be tested without a live `MKLocalSearch`, and its cache is private, so the negative-result caching fix above landed without a test. Injecting the search (a closure or small protocol, defaulted to the real one) would make the cache, the expiry split, and the cancellation paths testable.
+
 ### Backup and export safety
 
 - [ ] A backup is complete personal history — every coordinate, note, and place name — written as plain JSON to the temporary directory and then shared wherever the person chooses. The current backup is sitting unencrypted in iCloud Drive. Offer an optional passphrase, or at least warn plainly at the moment of sharing what the file contains.
