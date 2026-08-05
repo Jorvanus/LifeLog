@@ -2,6 +2,12 @@
 
 ## 2026-08-05
 
+### Group colours you can tell apart
+
+- Work and Entertainment were both plain purple. Side by side in the Insights donut there was no telling which was which.
+- The groups most of a day is made of — Home, Work, Sleep, Commute, Food & Drink and Fitness — now have widely separated colours, so the chart reads at a glance. The rest are deliberately variations on their neighbours: they appear in small slices, and giving each a completely distinct colour would only blur the ones that matter.
+- The colour drawn and the colour reported are now the same. They came from two separate lists that had already drifted, so Entertainment was purple in the chart and grey in exports and in what VoiceOver announced. One list also matched group names exactly while the other ignored case, so the two could disagree on the same group.
+
 ### Delete moved away from the back button
 
 - Deleting a visit was a small trash icon in the top-left corner, right beside the back arrow — a destructive action exactly where you reach to leave the screen. It is now at the bottom of the visit, and still asks first.

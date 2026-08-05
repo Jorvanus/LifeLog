@@ -66,6 +66,7 @@
 		EE018FBC1119FF49D463B185 /* SavedPlaceLearning.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF719128067426A354FA8F08 /* SavedPlaceLearning.swift */; };
 		EE85BAEA5B29FC3C6D232AC1 /* CardStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA87AF724DDCBA3C927E135B /* CardStyle.swift */; };
 		F2ADEFB0210575F3459AEF29 /* CorrectionHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65FE8C413DBE943F6F12FC6A /* CorrectionHistory.swift */; };
+		FEDA91A4C8131936026B1FEE /* CategoryPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59F8088620203FBEB387B921 /* CategoryPalette.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -110,6 +111,7 @@
 		4EE15F0F10705EC8163D24F5 /* IgnoredLocations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IgnoredLocations.swift; sourceTree = "<group>"; };
 		563B516B0ECFE52EC704419E /* ActivityGroupsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityGroupsView.swift; sourceTree = "<group>"; };
 		5977B19648754DE23F384F3F /* ActivitiesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivitiesView.swift; sourceTree = "<group>"; };
+		59F8088620203FBEB387B921 /* CategoryPalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoryPalette.swift; sourceTree = "<group>"; };
 		5A17176ECCC4A895C898A69A /* ActivityIcons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityIcons.swift; sourceTree = "<group>"; };
 		5B966AABF4CCD0CC5F1BF97B /* TrendExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendExport.swift; sourceTree = "<group>"; };
 		6294C9453F547F8901070384 /* RouteSimplification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteSimplification.swift; sourceTree = "<group>"; };
@@ -186,6 +188,7 @@
 				2E4CDBCF30CCF7BA500750F9 /* ActivityUsageSummary.swift */,
 				D936E236D5176123EE3DAD91 /* Assets.xcassets */,
 				DA87AF724DDCBA3C927E135B /* CardStyle.swift */,
+				59F8088620203FBEB387B921 /* CategoryPalette.swift */,
 				D36CE7AD7F053ECBDB527B98 /* CommuteDetection.swift */,
 				65FE8C413DBE943F6F12FC6A /* CorrectionHistory.swift */,
 				EFCE5913178C6E80B80E1DE3 /* Diagnostics.swift */,
@@ -382,6 +385,7 @@
 				0DB87440BF2561988ADDDD16 /* ActivityStatistics.swift in Sources */,
 				DC26117AF102E75671630744 /* ActivityUsageSummary.swift in Sources */,
 				EE85BAEA5B29FC3C6D232AC1 /* CardStyle.swift in Sources */,
+				FEDA91A4C8131936026B1FEE /* CategoryPalette.swift in Sources */,
 				29621199950E578ACE4B5E75 /* CommuteDetection.swift in Sources */,
 				F2ADEFB0210575F3459AEF29 /* CorrectionHistory.swift in Sources */,
 				8F996AD3E6B7C5A76AAEFEE2 /* Diagnostics.swift in Sources */,
@@ -569,7 +573,7 @@
 				CODE_SIGN_ENTITLEMENTS = LifeLog/LifeLog.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 33;
+				CURRENT_PROJECT_VERSION = 34;
 				DEVELOPMENT_TEAM = 337KNRL5L8;
 				INFOPLIST_FILE = LifeLog/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
@@ -577,7 +581,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.12.0;
+				MARKETING_VERSION = 1.13.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aaronbaxter.LifeLog;
 				SDKROOT = iphoneos;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -689,7 +693,7 @@
 				CODE_SIGN_ENTITLEMENTS = LifeLog/LifeLog.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 33;
+				CURRENT_PROJECT_VERSION = 34;
 				DEVELOPMENT_TEAM = 337KNRL5L8;
 				INFOPLIST_FILE = LifeLog/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
@@ -697,7 +701,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.12.0;
+				MARKETING_VERSION = 1.13.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aaronbaxter.LifeLog;
 				SDKROOT = iphoneos;
 				SWIFT_EMIT_LOC_STRINGS = YES;

@@ -49,6 +49,36 @@ struct ActivityArtworkBoundsTests {
         }
     }
 
+    @Test("Every group has a colour of its own")
+    func groupColoursAreDistinct() {
+        // Work and Entertainment were both plain purple, which is indistinguishable
+        // in a donut where they sit beside each other.
+        var seen: [String: String] = [:]
+        for group in ActivityCatalog.defaultCategories {
+            let hex = CategoryPalette.hex(for: group)
+            #expect(hex != CategoryPalette.fallbackHex || group == "Other",
+                    "\(group) falls back to grey")
+            if let owner = seen[hex] {
+                Issue.record("\(group) and \(owner) share \(hex)")
+            }
+            seen[hex] = group
+        }
+    }
+
+    @Test("The colour drawn is the colour reported")
+    func colourSourcesAgree() {
+        // These were two separate lists, and had already drifted: Entertainment was
+        // purple on screen and grey in exports, because one list simply lacked it.
+        for group in ActivityCatalog.defaultCategories {
+            #expect(categoryColorHex(forCategory: group) == "#\(CategoryPalette.hex(for: group))")
+        }
+        // Case and padding must not change the answer; the old pair disagreed on that.
+        #expect(CategoryPalette.hex(for: "food & drink") == CategoryPalette.hex(for: "Food & Drink"))
+        #expect(CategoryPalette.hex(for: "  Work  ") == CategoryPalette.hex(for: "Work"))
+        // A group the person invented has no colour of its own, and says so.
+        #expect(CategoryPalette.hex(for: "Volunteering") == CategoryPalette.fallbackHex)
+    }
+
     @Test("No icon is offered twice")
     func iconsAreUnique() {
         let all = ActivityIcons.all

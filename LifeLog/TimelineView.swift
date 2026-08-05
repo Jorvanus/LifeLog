@@ -613,35 +613,17 @@ func activityColorHex(_ color: Color) -> String {
 }
 
 func categoryColor(forCategory category: String) -> Color {
-    let key = category.trimmingCharacters(in: .whitespacesAndNewlines)
-    if let stored = UserDefaults.standard.string(forKey: "LifeLog.CategoryColor.\(key)"),
-       let color = Color(hex: stored) { return color }
-    switch key.lowercased() {
-    case "commute": return .mint
-    case "home": return .green
-    case "work": return .purple
-    case "food & drink": return .orange
-    case "shopping": return .indigo
-    case "fitness": return .pink
-    case "healthcare": return .red
-    case "education": return .yellow
-    case "travel": return .blue
-    case "entertainment": return .purple
-    case "social": return .teal
-    case "sleep": return Color(red: 0.22, green: 0.40, blue: 0.52)
-    default: return .gray
-    }
+    Color(hex: categoryColorHex(forCategory: category)) ?? .gray
 }
 
+/// Both the colour drawn and the value exported come from here, so a group cannot
+/// look like one colour on screen and report as another.
 func categoryColorHex(forCategory category: String) -> String {
-    if let stored = UserDefaults.standard.string(forKey: "LifeLog.CategoryColor.\(category.trimmingCharacters(in: .whitespacesAndNewlines))") {
+    let key = category.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let stored = UserDefaults.standard.string(forKey: "LifeLog.CategoryColor.\(key)") {
         return "#\(stored)"
     }
-    let defaults: [String: String] = ["Home": "#34C759", "Work": "#AF52DE", "Food & Drink": "#FF9500",
-                                      "Shopping": "#5856D6", "Fitness": "#FF2D55", "Healthcare": "#FF3B30",
-                                      "Education": "#FFCC00", "Travel": "#007AFF", "Social": "#30B0C7", "Sleep": "#386680",
-                                      "Commute": "#00C7BE"]
-    return defaults[category] ?? "#8E8E93"
+    return "#\(CategoryPalette.hex(for: key))"
 }
 
 extension Color {
