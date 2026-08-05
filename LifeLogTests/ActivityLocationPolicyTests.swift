@@ -489,6 +489,101 @@ struct ActivityLocationPolicyTests {
         #expect(walks.isEmpty)
     }
 
+    /// The distinction the app could not make before: both of these are "walking,
+    /// no departure recorded, no new arrival". Only the path separates them.
+    @Test("A route decides whether a walk left the place or stayed in it")
+    func routeSeparatesALoopFromPacing() throws {
+        let context = try makeContext()
+        let home = Visit(arrival: base, latitude: -23.3700, longitude: 150.5100,
+                         placeName: "Home", inferredActivity: "At home", source: "automatic",
+                         recognitionConfidence: "learned")
+        // Out about a kilometre and back to the doorstep.
+        let loop = walk(from: 60, to: 80, path: [
+            (-23.3700, 150.5100), (-23.3740, 150.5140), (-23.3790, 150.5190),
+            (-23.3740, 150.5140), (-23.3701, 150.5101)
+        ])
+        [home, loop].forEach(context.insert)
+        try context.save()
+
+        let now = base.addingTimeInterval(3 * 60 * 60)
+        try ActivityLocationPolicy.reconcileAll(context: context, now: now)
+        try context.save()
+
+        let stays = try context.fetch(FetchDescriptor<Visit>(sortBy: [SortDescriptor(\.arrival)]))
+            .filter(ActivityLocationPolicy.isLocationVisit)
+        let walks = try context.fetch(FetchDescriptor<Visit>()).filter { $0.source == "health-workout" }
+
+        #expect(walks.count == 1, "A journey with a route must survive reconciliation")
+        #expect(stays.count == 2, "Home ends at the walk and resumes when it returns")
+        #expect(stays[0].departure == base.addingTimeInterval(60 * 60))
+        #expect(stays[1].arrival == base.addingTimeInterval(80 * 60))
+        #expect(stays[1].departure == nil)
+        #expect(stays[1].placeName == "Home")
+        #expect(ActivityLocationPolicy.shouldShowInTimeline(walks[0], locationVisits: stays, now: now))
+    }
+
+    @Test("Walking about at home keeps its route and stays absorbed")
+    func routeShowsPacingIsNotAJourney() throws {
+        let context = try makeContext()
+        let home = Visit(arrival: base, latitude: -23.3700, longitude: 150.5100,
+                         placeName: "Home", inferredActivity: "At home", source: "automatic")
+        // Never more than a few dozen metres from the house.
+        let pacing = walk(from: 60, to: 80, path: [
+            (-23.3700, 150.5100), (-23.3701, 150.5102), (-23.3699, 150.5101), (-23.3700, 150.5100)
+        ])
+        [home, pacing].forEach(context.insert)
+        try context.save()
+
+        try ActivityLocationPolicy.reconcileAll(context: context, now: base.addingTimeInterval(3 * 60 * 60))
+        try context.save()
+
+        let stays = try context.fetch(FetchDescriptor<Visit>()).filter(ActivityLocationPolicy.isLocationVisit)
+        let walks = try context.fetch(FetchDescriptor<Visit>()).filter { $0.source == "health-workout" }
+
+        #expect(stays.count == 1, "The person never left, so the stay is not split")
+        #expect(home.departure == nil)
+        #expect(walks.isEmpty, "Movement inside a place is absorbed, as it always was")
+    }
+
+    @Test("A recorded path is simplified without losing the shape of the walk")
+    func simplifiesARecordedPath() {
+        // A straight kilometre sampled every second, as Health delivers it.
+        let straight = (0..<600).map { index in
+            RoutePoint(latitude: -23.37 + Double(index) * 0.000015, longitude: 150.51,
+                       time: base.addingTimeInterval(Double(index)))
+        }
+        let simplified = RouteSimplification.simplify(straight)
+        #expect(simplified.count == 2, "A straight line needs only its ends")
+        #expect(simplified.first == straight.first)
+        #expect(simplified.last == straight.last)
+
+        // A right-angle turn must survive.
+        let corner = straight + (1..<300).map { index in
+            RoutePoint(latitude: -23.37 + 599 * 0.000015, longitude: 150.51 + Double(index) * 0.000015,
+                       time: base.addingTimeInterval(Double(599 + index)))
+        }
+        let keptCorner = RouteSimplification.simplify(corner)
+        #expect(keptCorner.count == 3)
+        #expect(keptCorner[1].latitude == -23.37 + 599 * 0.000015)
+    }
+
+    /// A workout-backed walk carrying a recorded path.
+    private func walk(from startMinutes: Double, to endMinutes: Double,
+                      path: [(Double, Double)]) -> Visit {
+        let start = base.addingTimeInterval(startMinutes * 60)
+        let end = base.addingTimeInterval(endMinutes * 60)
+        let visit = Visit(arrival: start, departure: end,
+                          latitude: 0, longitude: 0, placeName: "Walking workout",
+                          inferredActivity: "Walking", userActivity: "Walking",
+                          source: "health-workout", recognitionConfidence: "device")
+        let step = end.timeIntervalSince(start) / Double(max(1, path.count - 1))
+        visit.route = path.enumerated().map { index, point in
+            RoutePoint(latitude: point.0, longitude: point.1,
+                       time: start.addingTimeInterval(Double(index) * step))
+        }
+        return visit
+    }
+
     @Test("Stays split by a walk at the same place are rejoined")
     func rejoinsStaysSplitByMovement() throws {
         let context = try makeContext()

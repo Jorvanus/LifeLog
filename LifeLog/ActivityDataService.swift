@@ -232,6 +232,10 @@ final class ActivityDataService {
         var types: Set<HKSampleType> = [HKWorkoutType.workoutType()]
         if let sleep = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) { types.insert(sleep) }
         if let steps = HKObjectType.quantityType(forIdentifier: .stepCount) { types.insert(steps) }
+        // Workout routes are a separate permission from the workout itself. Without
+        // it a walk is only a start and an end time, and LifeLog cannot tell a loop
+        // around the block from walking about indoors.
+        types.insert(HKSeriesType.workoutRoute())
         return types
     }
 

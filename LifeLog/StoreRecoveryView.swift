@@ -127,7 +127,7 @@ enum StoreRecoverySupport {
         let report = """
         LifeLog protected store recovery report
         Created: \((failure?.occurredAt ?? .now).ISO8601Format())
-        Schema: LifeLogSchemaV2 (2.0.0)
+        Schema: LifeLogSchemaV3 (3.0.0)
         Error: \(failure?.summary ?? "Unknown store-opening failure")
         Store copy attempted: no
 
@@ -153,7 +153,7 @@ enum StoreRecoverySupport {
         guard copied else { throw CocoaError(.fileNoSuchFile) }
         let manifest = """
         LifeLog protected store recovery copy
-        Schema: LifeLogSchemaV2 (2.0.0)
+        Schema: LifeLogSchemaV3 (3.0.0)
         Opening diagnostic: \(failure.summary)
         Original store was copied without deletion or modification.
         """

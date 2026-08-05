@@ -2,6 +2,14 @@
 
 ## 2026-08-05
 
+### Walks keep the path they took
+
+- A walk now records where it went. Apple Health already stores the GPS track for a recorded workout, and LifeLog simply never asked for it; walks imported from a workout now keep that path. Nothing new is recorded and no extra battery is used — the walk had already been tracked.
+- The walk is no longer tied to a place. It shows the distance covered rather than a meaningless "Walking workout" label, and opening it draws the route on a map, saying whether the walk returned to where it started.
+- This settles the question the app could not answer. A loop around the block and walking about at home are identical to Core Location: movement, no departure, no new arrival. With a path, LifeLog measures how far the walk actually got. A walk that stays within 250 m of the place is movement at that place and is absorbed as before; one that genuinely leaves ends the stay where it began and resumes it on return. What used to be a guess — and briefly invented a "Home" arrival that never happened — is now a measurement.
+- Walks Health recorded only as step counts, and movement inferred from the phone alone, carry no coordinates and behave exactly as before. This makes the timeline better where a route exists, not everywhere.
+- Route points are precise and are kept indefinitely, alongside the existing location controls. They are the most detailed location data LifeLog holds, and the journey screen says so.
+
 ### One place, one entry
 
 - A day at work was being listed three times. Core Location records a fresh arrival as the phone moves around a large site, and a delayed departure can stretch the first arrival across all of them, leaving stays that overlap each other at the same place. Overlapping stays at one place are now collapsed into the single stay they describe. A person cannot be somewhere twice over the same minutes, so nothing is guessed here — and it runs every time the timeline resolves, rather than as a one-time repair, so a store that drifts is corrected again.
@@ -24,7 +32,7 @@
 
 ### Walking at home is not leaving home
 
-- A walk recorded while you were at a place LifeLog had never seen you leave was briefly read as leaving and coming back, which split one stay in two and invented an arrival you never made: "Home, walking, Home" while you were home the whole time. It no longer does. Without a departure, movement inside a place is movement at that place. Telling a loop around the block apart from pacing at home needs to know where the walk went, and LifeLog does not record that yet.
+- A walk recorded while you were at a place LifeLog had never seen you leave was briefly read as leaving and coming back, which split one stay in two and invented an arrival you never made: "Home, walking, Home" while you were home the whole time. It no longer does. Without a departure, movement inside a place is movement at that place. Telling a loop around the block apart from pacing at home needs to know where the walk went — which LifeLog now does, later the same day; see "Walks keep the path they took" above.
 - Stays that were split this way are rejoined on the next launch, and the walk between the two halves goes back to being counted in Insights only. Only a split at the same place, with nothing but a short walk between the halves, is repaired — a real outing between two places is left alone.
 - A walk described by both the iPhone's motion history and Apple Health over exactly the same minutes is now shown once, using whichever source knows more. Whether the duplicate appeared depended on which import arrived first.
 

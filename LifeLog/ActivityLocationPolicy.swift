@@ -163,6 +163,23 @@ enum ActivityLocationPolicy {
         }?.visit
     }
 
+    /// How far a journey must get from a place before it counts as having left it.
+    /// Wide enough that a large site, a garden, or GPS drift at a doorway is still
+    /// "here", short enough that a walk to the end of the street is not.
+    nonisolated static let departureRadius: CLLocationDistance = 250
+
+    /// Whether a movement record's own path shows it leaving the stay it sits inside.
+    ///
+    /// This is the question Core Location cannot answer. It reports a departure only
+    /// when a region is finally left, so a walk that starts and ends at home — a loop
+    /// around the block — looks exactly like walking about indoors: movement, no
+    /// departure, no new arrival. The path separates them, and nothing else does.
+    /// Without a route this stays `nil`: unknown, not "no".
+    nonisolated static func leftStay(_ movement: Visit, stay: Visit) -> Bool? {
+        guard let farthest = movement.routeDistance(from: stay.coordinate) else { return nil }
+        return farthest > departureRadius
+    }
+
     /// Reads a movement record as the moment a stay ended.
     ///
     /// Core Location times a departure from the *next* arrival, so a stay looks like
@@ -178,29 +195,89 @@ enum ActivityLocationPolicy {
     /// which is the route work on the roadmap; duration cannot stand in for it.
     @discardableResult
     nonisolated static func boundStay(departedWith movement: DateInterval, stays: [Visit]) -> Bool {
-        guard movement.duration > 0 else { return false }
-        let containing = stays.filter { stay in
-            // Only Core Location's own timing is adjusted. A manual entry states when
-            // the person says they were somewhere, and no device sample overrides that.
-            guard stay.source == "automatic", let departure = stay.departure else { return false }
-            return stay.arrival < movement.start && departure > movement.start
-        }
-        guard let stay = containing.max(by: { $0.arrival < $1.arrival }),
+        guard movement.duration > 0,
+              let stay = containingStay(at: movement.start, stays: stays, requiringDeparture: true),
               let departure = stay.departure, departure <= movement.end else { return false }
         stay.departure = movement.start
         return true
     }
 
+    /// The stay a movement record began inside. Only Core Location's own timing is
+    /// ever adjusted: a manual entry states when the person says they were somewhere,
+    /// and no device sample overrides that.
+    private nonisolated static func containingStay(at moment: Date, stays: [Visit],
+                                                   requiringDeparture: Bool,
+                                                   now: Date = .now) -> Visit? {
+        stays.filter { stay in
+            guard stay.source == "automatic", stay.arrival < moment else { return false }
+            guard let departure = stay.departure else { return !requiringDeparture }
+            return departure > moment
+        }.max { $0.arrival < $1.arrival }
+    }
+
+    /// Splits a stay around a journey that its own path proves left the place.
+    ///
+    /// This is the case Core Location cannot report: leave home on foot, walk a
+    /// kilometre, come back, and no region was ever exited, so there is no departure
+    /// and no new arrival. Reading that as leaving used to be a guess — it invented a
+    /// return that never happened for anyone who simply walked about indoors. With a
+    /// route it is a measurement, so the stay is bounded at the walk, and resumed
+    /// afterwards only when the path came back to it.
+    /// Returns the resumed stay, for the caller to insert.
+    private static func separateStay(around movement: Visit, stays: [Visit], now: Date) -> Visit? {
+        guard let end = movement.departure, end > movement.arrival,
+              let stay = containingStay(at: movement.arrival, stays: stays, requiringDeparture: false, now: now),
+              leftStay(movement, stay: stay) == true else { return nil }
+        let wasOpen = stay.departure == nil
+        let stayEnd = stay.departure ?? now
+        stay.departure = movement.arrival
+        // The walk ends back inside the place, so the person returned to it. A walk
+        // that ends elsewhere is left alone: the next arrival says where they went.
+        guard let last = movement.route.last,
+              last.location.distance(from: CLLocation(latitude: stay.latitude, longitude: stay.longitude))
+                <= departureRadius else { return nil }
+        // A closed stay that outlived the walk resumes to its recorded end; an open
+        // one resumes as the current stay.
+        let resumedEnd: Date? = wasOpen ? nil : (stayEnd > end ? stayEnd : nil)
+        guard resumedEnd == nil || resumedEnd! > end else { return nil }
+        return continuation(of: stay, from: end, until: resumedEnd)
+    }
+
+    /// The same stay, resumed. Confidence and candidates carry over because it is the
+    /// same place; the note does not, since it was written about the earlier stay.
+    private nonisolated static func continuation(of stay: Visit, from arrival: Date,
+                                                 until departure: Date?) -> Visit {
+        Visit(arrival: arrival, departure: departure,
+              latitude: stay.latitude, longitude: stay.longitude,
+              placeName: stay.placeName, inferredActivity: stay.inferredActivity,
+              userActivity: stay.userActivity, source: stay.source,
+              recognitionConfidence: stay.recognitionConfidence,
+              candidateData: stay.candidateData)
+    }
+
     /// Applies `boundStay` to every movement record in date order, so a day with
     /// several outings resolves against the stay each one actually left.
-    private static func boundStays(around activities: [Visit], stays: [Visit]) {
+    @discardableResult
+    private static func boundStays(around activities: [Visit], stays: [Visit],
+                                   context: ModelContext? = nil, now: Date = .now) -> [Visit] {
+        var stays = stays
+        var resumed: [Visit] = []
         let movement = activities
             .filter { isMovementActivity($0) && $0.departure != nil }
             .sorted { $0.arrival < $1.arrival }
         for record in movement {
             guard let end = record.departure, end > record.arrival else { continue }
+            // A recorded path is the stronger evidence, so it is asked first; the
+            // timing rule only decides journeys with no route to consult.
+            if let context, let stay = separateStay(around: record, stays: stays, now: now) {
+                context.insert(stay)
+                stays.append(stay)
+                resumed.append(stay)
+                continue
+            }
             boundStay(departedWith: DateInterval(start: record.arrival, end: end), stays: stays)
         }
+        return resumed
     }
 
     /// Repairs stays an earlier build split in two. A walk inside an unbounded stay
@@ -300,14 +377,20 @@ enum ActivityLocationPolicy {
             let end = visit.departure ?? now
             let overlapsDestination = locationVisits.contains { location in
                 let locationEnd = location.departure ?? now
-                return location.arrival < end && locationEnd > visit.arrival
+                guard location.arrival < end && locationEnd > visit.arrival else { return false }
+                // A journey whose own path left the place is not activity inside it,
+                // however the surrounding stay happens to be timed.
+                return leftStay(visit, stay: location) != true
             }
             if overlapsDestination { return false }
         }
         guard isMovementActivity(visit) else { return true }
         let duration = (visit.departure ?? now).timeIntervalSince(visit.arrival)
-        return duration >= minimumTimelineMovementDuration &&
-            isBetweenDestinations(visit, locationVisits: locationVisits, now: now)
+        guard duration >= minimumTimelineMovementDuration else { return false }
+        // A recorded route is its own evidence of a journey: it shows where the walk
+        // went, so it does not also need a destination on either side to be believed.
+        if visit.hasRoute { return true }
+        return isBetweenDestinations(visit, locationVisits: locationVisits, now: now)
     }
 
     /// Insights retains every valid between-destination travel segment, including
@@ -408,10 +491,11 @@ enum ActivityLocationPolicy {
         // the last day because this runs inside a Core Location callback; repairing
         // older history is `reconcileAll`'s job, once per installation.
         let recent = activities.filter { ($0.departure ?? now) >= now.addingTimeInterval(-24 * 60 * 60) }
-        boundStays(around: recent, stays: visits.filter(isLocationVisit))
+        let resumed = boundStays(around: recent, stays: visits.filter(isLocationVisit),
+                                 context: context, now: now)
         try reconcile(
             activities: activities,
-            against: [locationVisit],
+            against: [locationVisit] + resumed,
             context: context,
             now: now
         )
@@ -422,10 +506,10 @@ enum ActivityLocationPolicy {
         let visits = try fetchPolicyVisits(context: context)
         let activities = visits.filter(isMovementActivity)
         let locations = visits.filter(isLocationVisit)
-        boundStays(around: activities, stays: locations)
+        let resumed = boundStays(around: activities, stays: locations, context: context, now: now)
         try reconcile(
             activities: activities,
-            against: locations,
+            against: locations + resumed,
             context: context,
             now: now
         )
@@ -548,7 +632,10 @@ enum ActivityLocationPolicy {
             guard activityEnd > activity.arrival else { continue }
             let interval = DateInterval(start: activity.arrival, end: activityEnd)
             let minimumDuration = minimumRetainedDuration(for: activity.source)
-            let remaining = remainingSegments(for: interval, locationVisits: locations, now: now)
+            // A stay the journey's own path shows it left cannot also have occupied
+            // that time. Subtracting it would delete the walk that proves the point.
+            let occupying = locations.filter { leftStay(activity, stay: $0) != true }
+            let remaining = remainingSegments(for: interval, locationVisits: occupying, now: now)
                 .filter { $0.duration >= minimumDuration }
 
             switch remaining.count {

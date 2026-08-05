@@ -15,6 +15,9 @@ struct ActivityImportRecord: Sendable {
     /// deletion can be matched back to the visit it produced. Empty for non-HealthKit
     /// sources (motion, walking).
     var healthKitSampleIDs: [UUID] = []
+    /// The path this movement followed, where the source recorded one. Only workouts
+    /// carry a route; step counts and Core Motion inferences have no coordinates at all.
+    var route: [RoutePoint] = []
 }
 
 struct ActivityImportProgress: Equatable, Sendable {
@@ -100,15 +103,59 @@ actor ActivitySampleReader {
         let result = try await descriptor.result(for: healthStore)
         let workouts = result.addedSamples
         try Task.checkCancellation()
-        let records = workouts.map { workout in
+        var records: [ActivityImportRecord] = []
+        for workout in workouts {
             let activity = workoutActivity(workout.workoutActivityType)
-            return ActivityImportRecord(name: "\(activity) workout", activity: activity,
-                                        source: "health-workout",
-                                        start: workout.startDate, end: workout.endDate,
-                                        healthKitSampleIDs: [workout.uuid])
+            records.append(ActivityImportRecord(name: "\(activity) workout", activity: activity,
+                                               source: "health-workout",
+                                               start: workout.startDate, end: workout.endDate,
+                                               healthKitSampleIDs: [workout.uuid],
+                                               route: try await route(for: workout)))
+            try Task.checkCancellation()
         }
         return ActivityAnchorResult(records: records, anchorData: encodeAnchor(result.newAnchor),
                                     deletedSampleIDs: result.deletedObjects.map(\.uuid))
+    }
+
+    /// The path a workout followed, if one was recorded. A watch or phone workout
+    /// stores its GPS track alongside the sample, so this is a walk LifeLog already
+    /// has the route for — no extra recording, and no battery cost, only the asking.
+    /// Workouts done indoors, or on a device without GPS, simply have no route.
+    private func route(for workout: HKWorkout) async throws -> [RoutePoint] {
+        let descriptor = HKAnchoredObjectQueryDescriptor(
+            predicates: [.workoutRoute(HKQuery.predicateForObjects(from: workout))],
+            anchor: nil
+        )
+        let routes = try await descriptor.result(for: healthStore).addedSamples
+        var points: [RoutePoint] = []
+        for route in routes {
+            points += try await locations(in: route)
+        }
+        guard points.count > 1 else { return [] }
+        return RouteSimplification.simplify(points.sorted { $0.time < $1.time })
+    }
+
+    /// `HKWorkoutRouteQuery` predates async/await and delivers a route in batches, so
+    /// the locations are accumulated across callbacks and returned once it reports done.
+    private func locations(in route: HKWorkoutRoute) async throws -> [RoutePoint] {
+        try await withCheckedThrowingContinuation { continuation in
+            var collected: [RoutePoint] = []
+            var hasResumed = false
+            let query = HKWorkoutRouteQuery(route: route) { query, locations, done, error in
+                if let error {
+                    guard !hasResumed else { return }
+                    hasResumed = true
+                    self.healthStore.stop(query)
+                    continuation.resume(throwing: error)
+                    return
+                }
+                collected += (locations ?? []).map(RoutePoint.init)
+                guard done, !hasResumed else { return }
+                hasResumed = true
+                continuation.resume(returning: collected)
+            }
+            healthStore.execute(query)
+        }
     }
 
     private func encodeAnchor(_ anchor: HKQueryAnchor) -> Data {
@@ -297,6 +344,9 @@ actor ActivityImportActor {
                     if existing.recognitionConfidence != "confirmed" {
                         existing.userActivity = record.activity
                     }
+                    // A replayed workout can carry a route the first import did not
+                    // have, but an absent route never erases one already recorded.
+                    if !record.route.isEmpty { existing.route = record.route }
                     continue
                 }
                 if record.source == "motion", overlaps(segment, visits: healthVisits) { continue }
@@ -311,6 +361,9 @@ actor ActivityImportActor {
                     source: record.source, recognitionConfidence: "device",
                     healthKitSampleIDs: record.healthKitSampleIDs.isEmpty ? nil : record.healthKitSampleIDs
                 )
+                // Clipped to the segment, so a record split around a stay keeps only
+                // the part of the path it actually covers.
+                visit.route = record.route.filter { $0.time >= segment.start && $0.time <= segment.end }
                 modelContext.insert(visit)
                 visitsBySource[record.source, default: []].append(visit)
                 if record.source.hasPrefix("health-") { healthVisits.append(visit) }

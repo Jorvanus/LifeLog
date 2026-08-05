@@ -373,6 +373,14 @@ struct TimelineView: View {
     }
 }
 
+/// Distance as a person would say it: whole metres up to a kilometre, then one
+/// decimal place, because "1.4 km" is a walk and "1,428 m" is a measurement.
+func formattedDistance(_ metres: CLLocationDistance) -> String {
+    metres < 1_000
+        ? "\(Int(metres.rounded())) m"
+        : String(format: "%.1f km", metres / 1_000)
+}
+
 /// Names the day a time fell on when it was not today. A night at home belongs to
 /// this morning's timeline but began yesterday evening, and "6:12 pm – 7:20 am"
 /// with no day would read as a stay of a few minutes.
@@ -415,7 +423,10 @@ private struct JourneyRow: View {
                                 .font(.subheadline).foregroundStyle(.secondary)
                         } else {
                             Text(visit.activity).font(.headline.weight(.semibold)).foregroundStyle(.primary)
-                            Text(visit.placeName).font(.subheadline).foregroundStyle(.secondary)
+                            // A journey is described by how far it went. Its place name
+                            // is only ever "Walking workout", which says nothing.
+                            Text(visit.hasRoute ? formattedDistance(visit.routeDistance) : visit.placeName)
+                                .font(.subheadline).foregroundStyle(.secondary)
                         }
                         Text(timeDescription).font(.subheadline).foregroundStyle(.secondary)
                     }
@@ -714,6 +725,26 @@ struct VisitEditor: View {
                     Text("Suggestions are nearby public places from Apple Maps.")
                 }
             }
+            if visit.hasRoute {
+                Section {
+                    Map(position: $mapPosition) {
+                        MapPolyline(coordinates: visit.route.map(\.coordinate))
+                            .stroke(activityColor(visit.activity), lineWidth: 4)
+                    }
+                    .frame(height: 240)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .mapControls { MapCompass() }
+                    .accessibilityIdentifier("visit-route-map")
+                    Text(routeSummary)
+                        .font(.footnote).foregroundStyle(.secondary)
+                } header: {
+                    Text("Journey")
+                } footer: {
+                    // Said plainly, because this is the most precise location data
+                    // LifeLog holds and the person should know it is here.
+                    Text("The path this walk followed, recorded by Apple Health.")
+                }
+            }
             if visit.latitude != 0 || visit.longitude != 0 {
                 Section {
                     if let coordinate = recordedCoordinate {
@@ -898,6 +929,16 @@ struct VisitEditor: View {
             .map(\.activity)
         values.append(contentsOf: ActivityCatalog.load().map(\.name))
         return Array(Set(values)).filter { !$0.isEmpty }.sorted()
+    }
+
+    /// Whether the walk came back to where it started is the thing a person actually
+    /// recognises about it — a loop from home reads differently from a walk somewhere.
+    private var routeSummary: String {
+        let points = visit.route
+        guard let first = points.first, let last = points.last else { return "No path recorded" }
+        let distance = formattedDistance(visit.routeDistance)
+        let returned = last.location.distance(from: first.location) <= ActivityLocationPolicy.departureRadius
+        return returned ? "\(distance) · returned to the start" : "\(distance) · ended elsewhere"
     }
 
     private var inferenceEvidenceText: String {

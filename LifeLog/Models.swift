@@ -28,6 +28,30 @@ final class SavedPlace {
     var coordinate: CLLocationCoordinate2D { .init(latitude: latitude, longitude: longitude) }
 }
 
+/// One fix along a movement record's path. A journey is a sequence of these rather
+/// than a single coordinate: a walk passes through many places and belongs to none
+/// of them, which is why a movement `Visit` has always stored latitude 0, longitude 0.
+struct RoutePoint: Codable, Sendable, Equatable {
+    let latitude: Double
+    let longitude: Double
+    let time: Date
+
+    var coordinate: CLLocationCoordinate2D { .init(latitude: latitude, longitude: longitude) }
+    var location: CLLocation { CLLocation(latitude: latitude, longitude: longitude) }
+
+    init(latitude: Double, longitude: Double, time: Date) {
+        self.latitude = latitude
+        self.longitude = longitude
+        self.time = time
+    }
+
+    init(_ location: CLLocation) {
+        self.init(latitude: location.coordinate.latitude,
+                  longitude: location.coordinate.longitude,
+                  time: location.timestamp)
+    }
+}
+
 @Model
 final class Visit {
     var arrival: Date
@@ -45,13 +69,17 @@ final class Visit {
     /// sleep session can span several samples). Lets a later anchored-query deletion
     /// be matched back to the local visit it produced. Nil for non-HealthKit sources.
     var healthKitSampleIDs: [UUID]?
+    /// The path a movement record followed, as JSON — the same storage approach as
+    /// place candidates, so a journey needs no relationship and no cascade rules.
+    /// Nil for stays, and for movement whose source recorded no coordinates.
+    var routeData: Data?
 
     init(arrival: Date, departure: Date? = nil, latitude: Double, longitude: Double,
          placeName: String = Visit.identifyingPlaceName,
          inferredActivity: String = "Visiting", userActivity: String? = nil,
          note: String = "", source: String = "automatic",
          recognitionConfidence: String? = nil, candidateData: Data? = nil,
-         healthKitSampleIDs: [UUID]? = nil) {
+         healthKitSampleIDs: [UUID]? = nil, routeData: Data? = nil) {
         self.arrival = arrival; self.departure = departure
         self.latitude = latitude; self.longitude = longitude
         self.placeName = TextSafety.clean(placeName, maximumLength: 120)
@@ -62,6 +90,7 @@ final class Visit {
         self.recognitionConfidence = recognitionConfidence.map { TextSafety.clean($0, maximumLength: 20) }
         self.candidateData = candidateData
         self.healthKitSampleIDs = healthKitSampleIDs
+        self.routeData = routeData
     }
 
     var activity: String {
@@ -121,6 +150,37 @@ final class Visit {
         if needsCategorisation { return "Uncategorised" }
         return activityCategory
     }
+    var coordinate: CLLocationCoordinate2D { .init(latitude: latitude, longitude: longitude) }
+
+    var route: [RoutePoint] {
+        get {
+            guard let routeData else { return [] }
+            return (try? JSONDecoder().decode([RoutePoint].self, from: routeData)) ?? []
+        }
+        set { routeData = newValue.isEmpty ? nil : try? JSONEncoder().encode(newValue) }
+    }
+    var hasRoute: Bool { routeData != nil }
+
+    /// Ground covered along the path, which is what a person means by how far they
+    /// walked — not the distance between where they started and where they stopped.
+    var routeDistance: CLLocationDistance {
+        let points = route
+        guard points.count > 1 else { return 0 }
+        return zip(points, points.dropFirst()).reduce(0) { total, pair in
+            total + pair.1.location.distance(from: pair.0.location)
+        }
+    }
+
+    /// How far the journey got from a place. This is the question a stay cannot
+    /// answer on its own: a loop around the block and pacing at home are both
+    /// "walking with no departure recorded", and only the path separates them.
+    func routeDistance(from coordinate: CLLocationCoordinate2D) -> CLLocationDistance? {
+        let points = route
+        guard !points.isEmpty else { return nil }
+        let origin = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        return points.map { $0.location.distance(from: origin) }.max()
+    }
+
     var placeSuggestions: [PlaceSuggestion] {
         get {
             guard let candidateData else { return [] }

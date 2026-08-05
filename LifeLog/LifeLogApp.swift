@@ -13,7 +13,7 @@ struct LifeLogApp: App {
         // Keep the SwiftData schema limited to the timeline models. User-editable
         // activities live in a versioned UserDefaults payload, avoiding a risky
         // model migration for existing protected timeline stores.
-        let schema = Schema(versionedSchema: LifeLogSchemaV2.self)
+        let schema = Schema(versionedSchema: LifeLogSchemaV3.self)
         storeConfiguration = ModelConfiguration(
             "LifeLog",
             schema: schema,
@@ -75,7 +75,7 @@ struct LifeLogApp: App {
 
     private func retryStoreOpening() {
         do {
-            let schema = Schema(versionedSchema: LifeLogSchemaV2.self)
+            let schema = Schema(versionedSchema: LifeLogSchemaV3.self)
             modelContainer = try Self.openContainer(configuration: storeConfiguration, schema: schema)
             storeOpenError = nil
         } catch {

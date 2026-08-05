@@ -52,6 +52,69 @@ struct SchemaMigrationTests {
         #expect(corrections[0].newActivity == "At home")
         #expect(diagnostics.count == 1)
         #expect(diagnostics[0].subsystem == "Migration test")
+        // Nothing recorded before V3 has a path to restore, so the new field must
+        // arrive empty rather than as an empty-but-present route.
+        #expect(visits[0].routeData == nil)
+        #expect(visits[0].route.isEmpty)
+        #expect(visits[0].hasRoute == false)
+    }
+
+    @Test("A V2 store gains routes without losing anything it already held")
+    func migratesV2StoreAddingRoutes() throws {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LifeLog-v2-\(UUID().uuidString).store")
+        defer { try? FileManager.default.removeItem(at: storeURL) }
+
+        // Written exactly as the shipped V2 build writes it.
+        let v2Schema = Schema(versionedSchema: LifeLogSchemaV2.self)
+        let v2Configuration = ModelConfiguration(
+            "LifeLogMigrationFixture", schema: v2Schema, url: storeURL,
+            allowsSave: true, cloudKitDatabase: .none
+        )
+        let arrival = Date(timeIntervalSince1970: 1_800_000_000)
+        do {
+            let container = try ModelContainer(for: v2Schema, configurations: [v2Configuration])
+            let context = ModelContext(container)
+            let visit = LifeLogSchemaV2.Visit(
+                arrival: arrival, latitude: -27.47, longitude: 153.03, placeName: "Home",
+                inferredActivity: "At home", note: "V2 fixture", source: "automatic"
+            )
+            visit.departure = arrival.addingTimeInterval(3_600)
+            visit.userActivity = "At home"
+            visit.recognitionConfidence = "confirmed"
+            visit.healthKitSampleIDs = [UUID(uuidString: "00000000-0000-0000-0000-0000000000AA")!]
+            context.insert(visit)
+            context.insert(LifeLogSchemaV2.SavedPlace(
+                name: "Home", latitude: -27.47, longitude: 153.03, radius: 100,
+                defaultActivity: "At home"
+            ))
+            try context.save()
+        }
+
+        let container = try openVersionedStore(at: storeURL)
+        let context = ModelContext(container)
+        let visits = try context.fetch(FetchDescriptor<Visit>())
+        let places = try context.fetch(FetchDescriptor<SavedPlace>())
+
+        #expect(visits.count == 1)
+        #expect(visits[0].placeName == "Home")
+        #expect(visits[0].note == "V2 fixture")
+        #expect(visits[0].departure == arrival.addingTimeInterval(3_600))
+        #expect(visits[0].healthKitSampleIDs?.count == 1)
+        #expect(visits[0].routeData == nil, "An existing visit has no path to restore")
+        #expect(places.count == 1)
+        #expect(places[0].radius == 100)
+
+        // And the new field round-trips once something writes one.
+        visits[0].route = [
+            RoutePoint(latitude: -27.470, longitude: 153.030, time: arrival),
+            RoutePoint(latitude: -27.471, longitude: 153.031, time: arrival.addingTimeInterval(60))
+        ]
+        try context.save()
+        let reread = try context.fetch(FetchDescriptor<Visit>())
+        #expect(reread[0].route.count == 2)
+        #expect(reread[0].hasRoute)
+        #expect(reread[0].routeDistance > 0)
     }
 
     @Test("A V1 store carrying place types migrates to V2 without losing visits or places")
@@ -127,7 +190,7 @@ struct SchemaMigrationTests {
     }
 
     private func openVersionedStore(at url: URL) throws -> ModelContainer {
-        let schema = Schema(versionedSchema: LifeLogSchemaV2.self)
+        let schema = Schema(versionedSchema: LifeLogSchemaV3.self)
         let configuration = ModelConfiguration(
             "LifeLogMigrationFixture", schema: schema, url: url,
             allowsSave: true, cloudKitDatabase: .none
