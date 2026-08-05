@@ -310,6 +310,56 @@ struct TimelineFixtureCoverageTests {
         #expect(stats.lastUsed == visits[0].arrival)
     }
 
+    /// The Activities tab was slow to open because it walked the whole timeline once
+    /// per activity. At archive size that is the difference between one pass and
+    /// twenty, so this fixture is deliberately the size of a real import.
+    @Test("Every activity's figures come from one pass over a full archive")
+    func summarisesEveryActivityInOnePass() {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let labels = ["Beers", "Coffee", "Working", "At home", "Shopping"]
+        let visits = (0..<32_000).map { index -> Visit in
+            let start = now.addingTimeInterval(-Double(index) * 900)
+            return Visit(arrival: start, departure: start.addingTimeInterval(600),
+                         latitude: -23.37, longitude: 150.51,
+                         placeName: "Place \(index % 40)",
+                         inferredActivity: labels[index % labels.count],
+                         source: "imported-journal")
+        }
+
+        let names = labels + ["Bowling"]
+        let all = ActivityStatistics.makeAll(named: names, visits: visits, now: now, calendar: calendar)
+
+        #expect(all.count == names.count)
+        // Identical to computing one at a time, which is what this replaced.
+        for name in labels {
+            let bulk = all.first { $0.activity == name }
+            let single = ActivityStatistics.make(activity: name, visits: visits,
+                                                 now: now, calendar: calendar)
+            #expect(bulk?.occasions == single.occasions)
+            #expect(bulk?.totalTime == single.totalTime)
+            #expect(bulk?.places.first?.occasions == single.places.first?.occasions)
+        }
+        // An activity in the catalogue that the archive never uses is still listed,
+        // and still carries its own name rather than an empty one.
+        let unused = all.first { $0.activity == "Bowling" }
+        #expect(unused?.isEmpty == true)
+        #expect(unused?.activity == "Bowling")
+    }
+
+    @Test("A label the catalogue has never heard of is still counted")
+    func includesLabelsMissingFromTheCatalogue() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let visit = Visit(arrival: now, departure: now.addingTimeInterval(3_600),
+                          latitude: -23.37, longitude: 150.51, placeName: "O'Dowds",
+                          inferredActivity: "Trivia night", source: "manual")
+
+        let all = ActivityStatistics.makeAll(named: ["Beers"], visits: [visit], now: now)
+
+        #expect(all.count == 2)
+        #expect(all.contains { $0.activity == "Trivia night" && $0.occasions == 1 })
+    }
+
     @Test("An activity nothing uses reports nothing rather than zeroes")
     func summarisesAnUnusedActivity() {
         let stats = ActivityStatistics.make(activity: "Bowling", visits: [])

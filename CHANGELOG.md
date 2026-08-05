@@ -2,6 +2,11 @@
 
 ## 2026-08-05
 
+### The Activities tab opens quickly
+
+- Opening Activities lagged. It worked out each activity's figures by walking your entire timeline separately for that activity, so with an imported archive it read hundreds of thousands of entries to draw one screen — and then did it again on every redraw. Every activity now comes from a single pass, worked out once when the screen appears and again only when something changes.
+- The screen also reports its own timing to Diagnostics now. It was slow and left no trace there, which is its own kind of failure.
+
 ### A rename that could not reach your visits now says so
 
 - Renaming an activity offers to bring its visits with it. If that write failed — a locked device, a protected store — the failure was discarded: the activity was renamed, the visits silently kept the old label, and Insights counted them as "Other" with nothing said. It now tells you, so you can rename again and bring them across.

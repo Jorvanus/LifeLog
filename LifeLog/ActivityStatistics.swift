@@ -53,12 +53,62 @@ struct ActivityStatistics: Sendable {
         currentPeriodTime: 0, previousPeriodTime: 0
     )
 
+    /// Every activity from one pass over the timeline.
+    ///
+    /// Computing them one at a time meant normalising every visit once per activity:
+    /// with a large imported archive that is hundreds of thousands of string
+    /// operations to draw a single screen, which is exactly what made the Activities
+    /// tab slow to open. Grouping first makes it one pass regardless of how many
+    /// activities exist.
+    ///
+    /// Labels the timeline uses that `names` does not contain are included, because
+    /// an activity nobody has added to the catalogue is the one worth seeing.
+    static func makeAll(named names: [String], visits: [Visit], days: Int = 7,
+                        now: Date = .now, calendar: Calendar = .current) -> [ActivityStatistics] {
+        var grouped: [String: [Visit]] = [:]
+        var spelling: [String: String] = [:]
+        for visit in visits {
+            let raw = visit.activity.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !raw.isEmpty else { continue }
+            let key = raw.lowercased()
+            grouped[key, default: []].append(visit)
+            if spelling[key] == nil { spelling[key] = raw }
+        }
+
+        var result: [ActivityStatistics] = []
+        var seen = Set<String>()
+        for name in names {
+            let key = normalised(name)
+            guard seen.insert(key).inserted else { continue }
+            result.append(make(activity: name, matching: grouped[key] ?? [],
+                               days: days, now: now, calendar: calendar))
+        }
+        for (key, group) in grouped where !seen.contains(key) {
+            result.append(make(activity: spelling[key] ?? key, matching: group,
+                               days: days, now: now, calendar: calendar))
+        }
+        return result
+    }
+
     /// - Parameter days: how far back the sparkline and the period comparison reach.
     static func make(activity: String, visits: [Visit], days: Int = 7,
                      now: Date = .now, calendar: Calendar = .current) -> ActivityStatistics {
         let key = normalised(activity)
-        let matching = visits.filter { normalised($0.activity) == key }
-        guard !matching.isEmpty else { return empty }
+        return make(activity: activity, matching: visits.filter { normalised($0.activity) == key },
+                    days: days, now: now, calendar: calendar)
+    }
+
+    private static func make(activity: String, matching: [Visit], days: Int,
+                             now: Date, calendar: Calendar) -> ActivityStatistics {
+        // Named even when nothing uses it, so a never-recorded activity can still be
+        // listed and say so rather than being dropped from the screen.
+        guard !matching.isEmpty else {
+            return ActivityStatistics(
+                activity: activity, occasions: 0, totalTime: 0, averageTime: 0,
+                shortestTime: 0, longestTime: 0, firstUsed: nil, lastUsed: nil,
+                recentDays: [], places: [], currentPeriodTime: 0, previousPeriodTime: 0
+            )
+        }
 
         let durations = matching.map(\.duration)
         let total = durations.reduce(0, +)

@@ -8,38 +8,37 @@ import Charts
 /// Insights answers "where did my time go" by group. This answers "what about this
 /// one thing" — how often, how long, where, and whether it is going up or down.
 struct ActivitiesTabView: View {
+    @Environment(\.modelContext) private var context
     @Query(sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
-    @State private var definitions = ActivityCatalog.load()
-    @State private var now = Date.now
+    /// Held rather than computed in `body`. As a computed property this was rebuilt on
+    /// every render, and each rebuild walked the whole timeline once per activity.
+    @State private var rows: [Row] = []
 
-    /// Every activity in the catalogue, plus any label the timeline uses that the
-    /// catalogue has never heard of — otherwise the screen would quietly omit the
-    /// activities most in need of attention.
-    private var rows: [Row] {
-        var seen = Set<String>()
-        var result: [Row] = []
-        for definition in definitions {
-            let key = definition.name.lowercased()
-            guard seen.insert(key).inserted else { continue }
-            result.append(Row(name: definition.name, symbol: definition.symbol,
-                              statistics: ActivityStatistics.make(activity: definition.name,
-                                                                  visits: visits, now: now)))
-        }
-        for visit in visits {
-            let name = visit.activity.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !name.isEmpty, seen.insert(name.lowercased()).inserted else { continue }
-            result.append(Row(name: name, symbol: "circle.fill",
-                              statistics: ActivityStatistics.make(activity: name,
-                                                                  visits: visits, now: now)))
+    private func reload() {
+        let startedAt = Date.now
+        let definitions = ActivityCatalog.load()
+        var symbols: [String: String] = [:]
+        for definition in definitions { symbols[definition.name.lowercased()] = definition.symbol }
+
+        let statistics = ActivityStatistics.makeAll(named: definitions.map(\.name), visits: visits)
+        var built = statistics.map { entry in
+            Row(name: entry.activity,
+                symbol: symbols[entry.activity.lowercased()] ?? "circle.fill",
+                statistics: entry)
         }
         // Used first, unused last, each alphabetical: a list of labels is scanned by
         // name, but a label you have never recorded is not what you came here for.
-        return result.sorted { left, right in
+        built.sort { left, right in
             let leftUsed = left.statistics.occasions > 0
             let rightUsed = right.statistics.occasions > 0
             if leftUsed != rightUsed { return leftUsed }
             return left.name.localizedStandardCompare(right.name) == .orderedAscending
         }
+        rows = built
+        // Instrumented because the first version of this screen was slow and left no
+        // trace in Diagnostics to say so.
+        Diagnostics.performance(context, subsystem: "Activities", operation: "activity statistics",
+                                startedAt: startedAt, itemCount: visits.count)
     }
 
     private struct Row: Identifiable {
@@ -81,9 +80,9 @@ struct ActivitiesTabView: View {
             }
             .navigationTitle("Activities")
             .accessibilityIdentifier("activities-tab-screen")
-            .onAppear {
-                definitions = ActivityCatalog.load()
-                now = .now
+            .task { reload() }
+            .onReceive(NotificationCenter.default.publisher(for: InsightsInvalidation.notification)) { _ in
+                reload()
             }
         }
     }
