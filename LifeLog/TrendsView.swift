@@ -656,6 +656,8 @@ private struct InsightsSnapshot {
         // implementation was O(boundaries × visits), which made a year with
         // 6,000 rows take several seconds. Keep only visits active at the
         // current boundary while walking the already sorted timeline.
+        // Derived once for the window rather than per boundary slice.
+        let commutes = CommuteDetection.commutes(in: visits, now: now)
         let arrivalSorted = orderedVisits.sorted { $0.arrival < $1.arrival }
         var nextArrival = 0
         var activeVisits: [Visit] = []
@@ -674,6 +676,13 @@ private struct InsightsSnapshot {
             let midpoint = start.addingTimeInterval(end.timeIntervalSince(start) / 2)
             let matching = activeVisits.filter {
                 $0.arrival <= midpoint && ($0.departure ?? now) > midpoint
+            }
+            // A gap between home and work is not missing data — it is the journey
+            // between them, so it is counted as commuting rather than reported as
+            // time the person failed to log.
+            if matching.isEmpty, let commute = CommuteDetection.commute(covering: midpoint, in: commutes) {
+                result.append(.commute(commute, from: start, to: end))
+                continue
             }
             if let visit = matching.min(by: { left, right in
                 let leftCompleted = left.departure != nil
@@ -1108,6 +1117,7 @@ private struct TimeSlice: Identifiable {
 private enum InsightSegmentID: Hashable {
     case visit(ObjectIdentifier)
     case unlogged(Int)
+    case commute(Date)
 }
 
 private struct InsightSegment: Identifiable {
@@ -1137,6 +1147,20 @@ private struct InsightSegment: Identifiable {
             hours: visibleTo.timeIntervalSince(visibleFrom) / 3600,
             color: insightColor(for: category), symbol: insightSymbol(for: category),
             isUnlogged: false, isLive: visit.departure == nil && visibleTo >= now
+        )
+    }
+
+    /// The journey between home and work. It has no visit behind it because nothing
+    /// is stored: this is the interval between two real arrivals, counted rather than
+    /// recorded, so it cannot outlive the stays that define it.
+    static func commute(_ commute: Commute, from start: Date, to end: Date) -> InsightSegment {
+        InsightSegment(
+            id: .commute(commute.start), visit: nil, category: CommuteDetection.categoryName,
+            activity: commute.direction.label, placeName: nil, start: start, end: end,
+            hours: end.timeIntervalSince(start) / 3600,
+            color: insightColor(for: CommuteDetection.categoryName),
+            symbol: insightSymbol(for: CommuteDetection.categoryName),
+            isUnlogged: false, isLive: false
         )
     }
 
@@ -1319,6 +1343,7 @@ private func insightColor(for value: String) -> Color {
 private func insightSymbol(for value: String) -> String {
     let text = value.lowercased()
     if text.contains("uncategor") { return "flag.fill" }
+    if text.contains("commut") { return "car.fill" }
     if text.contains("home") { return "house.fill" }
     if text.contains("work") { return "building.2.fill" }
     if text.contains("food") || text.contains("eat") { return "fork.knife" }

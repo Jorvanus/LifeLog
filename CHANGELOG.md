@@ -2,6 +2,14 @@
 
 ## 2026-08-05
 
+### Commuting is counted as its own thing
+
+- The journey between home and work is now recognised as a commute, and only that journey: a drive to work from the gym is not one. Previously LifeLog looked only at where a journey ended, so anything finishing at work read the same way, and commuting could never be totalled.
+- Commutes have their own group in Insights, separate from holidays and flights, so "how much of my life goes to commuting" is a question the app can answer.
+- A stop of under ten minutes on the way does not end the commute. That tolerance also absorbs the brief matches Apple Maps returns for businesses passed at speed, which otherwise interrupt almost every real journey.
+- Time between leaving home and arriving at work was previously reported as unlogged. It is now counted as the commute it was.
+- Nothing is written to your timeline for this. A commute is the interval between two arrivals you actually made, worked out fresh each time, so it corrects itself when the stays around it change and can never linger as a record of a journey you did not take.
+
 ### Locations to Review now has something to say
 
 - The review queue only ever asked how confident Apple Maps was, and Maps reports how sure it is about which business sits at a coordinate — not whether you went inside. A captured day held two "high confidence" stays of 3m46s and 5m46s, both on a commute and both almost certainly traffic, which nothing could ever queue. A brief stay at a place you have not been back to is now reviewable however confident the match was, and it asks the right question: "Did you stop here?"

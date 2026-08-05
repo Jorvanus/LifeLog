@@ -768,6 +768,70 @@ struct ActivityLocationPolicyTests {
         #expect(unsaved.isIgnored == false)
     }
 
+    /// Shaped like a captured day: work to home with a six-minute Apple Maps match in
+    /// the middle, which is a business passed at speed rather than a destination.
+    @Test("A commute survives a brief stop on the way")
+    func detectsCommuteAcrossAShortStop() {
+        let work = stay("Work", from: 0, to: 60, latitude: -23.42, longitude: 150.55)
+        let drivePast = stay("Metal Recovery Industries", from: 72, to: 78,
+                             latitude: -23.40, longitude: 150.52)
+        let home = stay("Home", from: 81, to: 200, latitude: -23.37, longitude: 150.51)
+
+        let commutes = CommuteDetection.commutes(in: [work, drivePast, home],
+                                                 now: base.addingTimeInterval(300 * 60))
+
+        #expect(commutes.count == 1)
+        #expect(commutes.first?.direction == .toHome)
+        // Measured from leaving work to arriving home, stop included: that time was
+        // spent getting home either way.
+        #expect(commutes.first?.start == base.addingTimeInterval(60 * 60))
+        #expect(commutes.first?.end == base.addingTimeInterval(81 * 60))
+    }
+
+    @Test("Only home and work make a commute")
+    func commutesRequireBothEnds() {
+        let now = base.addingTimeInterval(600 * 60)
+        let home = stay("Home", from: 0, to: 60, latitude: -23.37, longitude: 150.51)
+        let work = stay("Work", from: 90, to: 400, latitude: -23.42, longitude: 150.55)
+        #expect(CommuteDetection.commutes(in: [home, work], now: now).first?.direction == .toWork)
+
+        // The gym to work is a journey, but it is not a commute.
+        let gym = stay("Gracemere Gym", from: 0, to: 60, latitude: -23.44, longitude: 150.46)
+        #expect(CommuteDetection.commutes(in: [gym, work], now: now).isEmpty)
+
+        // Leaving home and coming back to it is not a commute either.
+        let homeAgain = stay("Home", from: 90, to: 200, latitude: -23.37, longitude: 150.51)
+        #expect(CommuteDetection.commutes(in: [home, homeAgain], now: now).isEmpty)
+
+        // A real errand between the two ends breaks the journey in half.
+        let shops = stay("Gracemere Shopping World", from: 65, to: 85,
+                         latitude: -23.44, longitude: 150.46)
+        #expect(CommuteDetection.commutes(in: [home, shops, work], now: now).isEmpty)
+    }
+
+    @Test("A commute is counted rather than reported as unlogged time")
+    func commuteFillsTheGapBetweenHomeAndWork() {
+        let home = stay("Home", from: 0, to: 60, latitude: -23.37, longitude: 150.51)
+        let work = stay("Work", from: 85, to: 400, latitude: -23.42, longitude: 150.55)
+        let commutes = CommuteDetection.commutes(in: [home, work], now: base.addingTimeInterval(600 * 60))
+
+        // The interval between the two arrivals, and nothing outside it.
+        #expect(CommuteDetection.commute(covering: base.addingTimeInterval(70 * 60), in: commutes) != nil)
+        #expect(CommuteDetection.commute(covering: base.addingTimeInterval(30 * 60), in: commutes) == nil)
+        #expect(CommuteDetection.commute(covering: base.addingTimeInterval(200 * 60), in: commutes) == nil)
+        #expect(commutes.first?.duration == TimeInterval(25 * 60))
+        #expect(ActivityCatalog.suggestedCategory(for: "Commuting") == "Commute")
+    }
+
+    private func stay(_ name: String, from startMinutes: Double, to endMinutes: Double,
+                      latitude: Double, longitude: Double) -> Visit {
+        Visit(arrival: base.addingTimeInterval(startMinutes * 60),
+              departure: base.addingTimeInterval(endMinutes * 60),
+              latitude: latitude, longitude: longitude,
+              placeName: name, inferredActivity: "Visiting",
+              source: "automatic", recognitionConfidence: "learned")
+    }
+
     @Test("LifeLog sleep estimate reflects duration, stages, and interruptions")
     func estimatesSleepQuality() {
         let summary = SleepSummary(

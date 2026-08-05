@@ -617,6 +617,7 @@ func categoryColor(forCategory category: String) -> Color {
     if let stored = UserDefaults.standard.string(forKey: "LifeLog.CategoryColor.\(key)"),
        let color = Color(hex: stored) { return color }
     switch key.lowercased() {
+    case "commute": return .mint
     case "home": return .green
     case "work": return .purple
     case "food & drink": return .orange
@@ -638,7 +639,8 @@ func categoryColorHex(forCategory category: String) -> String {
     }
     let defaults: [String: String] = ["Home": "#34C759", "Work": "#AF52DE", "Food & Drink": "#FF9500",
                                       "Shopping": "#5856D6", "Fitness": "#FF2D55", "Healthcare": "#FF3B30",
-                                      "Education": "#FFCC00", "Travel": "#007AFF", "Social": "#30B0C7", "Sleep": "#386680"]
+                                      "Education": "#FFCC00", "Travel": "#007AFF", "Social": "#30B0C7", "Sleep": "#386680",
+                                      "Commute": "#00C7BE"]
     return defaults[category] ?? "#8E8E93"
 }
 

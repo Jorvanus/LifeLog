@@ -1,0 +1,103 @@
+import Foundation
+
+/// The journey between home and work, and only that journey.
+///
+/// A commute is defined by both of its ends. The existing travel labelling looks only
+/// at where a journey finished, so a drive to work from the gym reads as the same
+/// thing as the drive from home — which is why "Travelling to Work" could never be
+/// totalled as a commute.
+///
+/// Nothing here is written to the store. A commute is the interval between two real
+/// arrivals, recomputed whenever the timeline is read, so it corrects itself when the
+/// stays either side are merged or re-timed, and it can never survive as a record of
+/// something that did not happen.
+struct Commute: Identifiable, Sendable {
+    enum Direction: String, Sendable {
+        case toWork, toHome
+
+        var label: String {
+            switch self {
+            case .toWork: "Commute to work"
+            case .toHome: "Commute home"
+            }
+        }
+    }
+
+    let start: Date
+    let end: Date
+    let direction: Direction
+    var duration: TimeInterval { max(0, end.timeIntervalSince(start)) }
+    var id: Date { start }
+}
+
+enum CommuteDetection {
+    /// The activity and group commuting is counted under. Its own group rather than
+    /// Travel: the question "how much of my life goes to commuting" is a different
+    /// one from how much time went on holidays and flights.
+    static let activityName = "Commuting"
+    static let categoryName = "Commute"
+
+    /// A stop this brief on the way does not end the journey. It also absorbs the
+    /// spurious three-to-six minute matches Apple Maps returns for businesses passed
+    /// at speed, which otherwise interrupt every commute a person makes.
+    static let stopTolerance: TimeInterval = 10 * 60
+
+    /// Beyond this the interval is not a journey between two places; something else
+    /// happened that LifeLog has no record of, and calling it commuting would be a
+    /// guess dressed up as a measurement.
+    static let longestPlausible: TimeInterval = 4 * 60 * 60
+
+    static func commutes(in visits: [Visit], now: Date = .now) -> [Commute] {
+        let stays = visits
+            .filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
+            .filter { $0.resolutionState != .superseded }
+            .sorted { $0.arrival < $1.arrival }
+
+        var commutes: [Commute] = []
+        for (index, origin) in stays.enumerated() {
+            guard let kind = endpoint(origin), let departure = origin.departure else { continue }
+            // Everything between the two ends must be brief enough to be a stop on the
+            // way rather than a destination of its own.
+            var cursor = index + 1
+            while cursor < stays.count {
+                let candidate = stays[cursor]
+                if let candidateKind = endpoint(candidate) {
+                    // Home to home, or work to work, is not a commute — the person
+                    // returned to where they started.
+                    guard candidateKind != kind else { break }
+                    let interval = DateInterval(start: departure, end: candidate.arrival)
+                    guard interval.duration > 0, interval.duration <= longestPlausible else { break }
+                    commutes.append(Commute(start: interval.start, end: interval.end,
+                                            direction: kind == .home ? .toWork : .toHome))
+                    break
+                }
+                guard duration(of: candidate, now: now) <= stopTolerance else { break }
+                cursor += 1
+            }
+        }
+        return commutes
+    }
+
+    /// Whether a commute covers a moment, used to relabel time Insights would
+    /// otherwise report as unlogged.
+    static func commute(covering moment: Date, in commutes: [Commute]) -> Commute? {
+        commutes.first { $0.start <= moment && $0.end > moment }
+    }
+
+    private enum Endpoint { case home, work }
+
+    /// Recognised the same way the travel labelling already recognises them, by the
+    /// place's own name. A person whose office is not named for work would need to
+    /// say so explicitly; marking a Saved Place as home or work is the better answer
+    /// and is on the roadmap.
+    private static func endpoint(_ visit: Visit) -> Endpoint? {
+        guard !visit.hasPlaceholderName else { return nil }
+        if InferenceEngine.activity(placeName: visit.placeName) == "Working" { return .work }
+        if visit.placeName.localizedCaseInsensitiveContains("home") { return .home }
+        return nil
+    }
+
+    private static func duration(of visit: Visit, now: Date) -> TimeInterval {
+        max(0, (visit.departure ?? now).timeIntervalSince(visit.arrival))
+    }
+}

@@ -101,9 +101,9 @@ enum ActivityCatalog {
 
     /// The groups LifeLog ships with. A starting point, not the whole list: the
     /// person can add their own, so read `categories` rather than this.
-    static let defaultCategories = ["Home", "Work", "Food & Drink", "Shopping", "Fitness",
-                                    "Healthcare", "Education", "Travel", "Entertainment",
-                                    "Social", "Sleep", "Other"]
+    static let defaultCategories = ["Home", "Work", "Commute", "Food & Drink", "Shopping",
+                                    "Fitness", "Healthcare", "Education", "Travel",
+                                    "Entertainment", "Social", "Sleep", "Other"]
 
     /// The group every activity falls back to. It can never be removed, because
     /// deleting a group has to leave its activities somewhere.
@@ -208,8 +208,9 @@ enum ActivityCatalog {
             ("Healthcare", ["doctor", "medical", "dentist", "hospital", "physio",
                             "blood", "health", "appointment"]),
             ("Education", ["study", "school", "class", "course", "library", "uni"]),
+            ("Commute", ["commut"]),
             ("Travel", ["travel", "transit", "flight", "fly", "drive", "driving",
-                        "holiday", "trip", "airport", "fuel", "commut"]),
+                        "holiday", "trip", "airport", "fuel"]),
             ("Entertainment", ["movie", "cinema", "concert", "football", "game",
                                "show", "gig", "theatre", "theater"]),
             ("Social", ["friend", "family", "social", "visit", "party", "catch"])
