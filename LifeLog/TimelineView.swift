@@ -871,6 +871,15 @@ struct VisitEditor: View {
                     Text("LifeLog will update a nearby saved geofence or create a new 100-metre geofence, then reuse this place and activity automatically.")
                 }
             }
+            Section {
+                Button("Delete Visit", role: .destructive) { confirmingDelete = true }
+                    .accessibilityIdentifier("delete-visit")
+            } footer: {
+                // Was a trash glyph in the top-left corner, a thumb's width from the
+                // back button. A destructive action does not belong where a person
+                // reaches to leave the screen.
+                Text("Removes this entry from your timeline. This cannot be undone.")
+            }
         }
         .navigationTitle(visit.needsCategorisation ? "Categorise Place" : "Visit")
         .navigationBarTitleDisplayMode(.inline)
@@ -885,12 +894,6 @@ struct VisitEditor: View {
             }
         }
         .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button(role: .destructive) { confirmingDelete = true } label: {
-                    Image(systemName: "trash")
-                }
-                .accessibilityLabel("Delete visit")
-            }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Done") { saveAndDismiss() }
             }
@@ -1071,6 +1074,13 @@ struct VisitEditor: View {
 
     private func persistChanges(forceLearning: Bool) throws {
         let corrected = correctionBaseline.map { $0 != currentSnapshot } ?? false
+        // A walk or workout carries no coordinate, so Saved Place learning cannot
+        // reach it and its confidence would stay "device" — which is exactly what the
+        // importer overwrites when Health or Motion replays the same sample. Relabel
+        // a walk as "Dog walk" and the next import would quietly undo it.
+        if corrected, ActivityLocationPolicy.isDeviceActivity(visit) {
+            visit.recognitionConfidence = "confirmed"
+        }
         if forceLearning || corrected {
             let result = try SavedPlaceLearning.upsert(
                 from: visit,

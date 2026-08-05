@@ -223,8 +223,9 @@ struct ActivitiesView: View {
 
     private func requestDeletion(of definition: ActivityDefinition) {
         guard let index = activities.firstIndex(where: { $0.id == definition.id }) else { return }
-        let offsets = IndexSet(integer: index)
-        if usageCount(definition.name) > 0 { pendingDeletion = offsets } else { delete(offsets) }
+        // Always asks, unlike the swipe, which deletes an unused activity outright.
+        // Deleting from a screen you opened to edit something should never be one tap.
+        pendingDeletion = IndexSet(integer: index)
     }
 
     private func delete(_ offsets: IndexSet) {

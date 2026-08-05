@@ -2,6 +2,17 @@
 
 ## 2026-08-05
 
+### Delete moved away from the back button
+
+- Deleting a visit was a small trash icon in the top-left corner, right beside the back arrow — a destructive action exactly where you reach to leave the screen. It is now at the bottom of the visit, and still asks first.
+- Saved places can be deleted from the place itself, at the bottom and behind a question, rather than only by swiping a list where a stray scroll could do it.
+- Deleting an activity from its own screen now always asks, instead of going ahead silently when nothing was using it.
+
+### Relabelling a walk survives
+
+- Calling a recorded walk "Dog walk" would have been undone. Apple Health and the iPhone's motion history replay their samples, and a replay overwrote the label unless the entry had been confirmed — which only happened for entries with a location, and a walk has none. Your own labels on walks, workouts and sleep now stand.
+- "Dog walk" is in the Activities list, grouped under Fitness.
+
 ### The activities LifeLog creates now exist in your list
 
 - Sleeping, Walking, Running, Cycling, Swimming, Yoga, Strength training, Commuting, In transit and Home time are all things LifeLog records for you, and none of them were in the Activities list. Each arrived as a grey dot with no colour and no group of its own, and could not be given one without you typing the name yourself — while the Sleep and Commute groups sat empty despite the timeline being full of both. They are now proper activities, added once to a list that predates them, and anything you delete afterwards stays deleted.

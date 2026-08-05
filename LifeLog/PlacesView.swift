@@ -154,6 +154,7 @@ private struct SavedPlaceEditor: View {
     @State private var saveFailed = false
     @State private var backfillPreview: SavedPlaceLearning.BackfillPreview?
     @State private var confirmingIgnore = false
+    @State private var confirmingDelete = false
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var adjustingLocation = false
 
@@ -215,6 +216,14 @@ private struct SavedPlaceEditor: View {
             } footer: {
                 Text("Use a larger radius for large properties and a smaller radius where nearby places overlap.")
             }
+            Section {
+                Button("Delete Place", role: .destructive) { confirmingDelete = true }
+                    .accessibilityIdentifier("delete-place")
+            } footer: {
+                // At the foot of the screen and behind a question, rather than a swipe
+                // on the list that a scroll can trigger by accident.
+                Text("Visits already recorded here keep their name. LifeLog stops recognising the place for future visits.")
+            }
         }
         .navigationTitle(place.name.isEmpty ? "Edit Place" : place.name)
         .navigationBarTitleDisplayMode(.inline)
@@ -234,6 +243,17 @@ private struct SavedPlaceEditor: View {
             Button("OK", role: .cancel) { }
         } message: {
             Text("LifeLog left the existing place and timeline unchanged.")
+        }
+        .confirmationDialog("Delete this place?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Delete Place", role: .destructive) {
+                context.delete(place)
+                try? context.save()
+                recorder.invalidateSavedPlaceCache()
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Your timeline keeps every visit recorded here.")
         }
         .confirmationDialog("Ignore matching visits?", isPresented: $confirmingIgnore) {
             Button("Ignore \(backfillPreview?.matchingVisits ?? 0) visits", role: .destructive) {

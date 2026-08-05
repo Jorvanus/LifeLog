@@ -59,7 +59,8 @@ enum ActivityCatalog {
         ("Strength training", "Fitness", "dumbbell.fill"),
         ("Commuting", "Commute", "car.fill"),
         ("In transit", "Travel", "bus.fill"),
-        ("Home time", "Home", "house.fill")
+        ("Home time", "Home", "house.fill"),
+        ("Dog walk", "Fitness", "pawprint.fill")
     ]
 
     private static let adoptedGeneratedKey = "LifeLog.ActivityCatalog.generatedAdopted.v1"
