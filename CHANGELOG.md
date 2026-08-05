@@ -2,6 +2,12 @@
 
 ## 2026-08-05
 
+### Places are remembered by identity, not by spelling
+
+- A place was recognised by its name and how close it sat to another. That cannot tell two businesses apart when they share a name, and it loses track of one the moment Apple rewords it or you rename it yourself. Places found through Apple Maps now keep Apple's own identifier for them, which survives both.
+- The first thing this fixes: deciding whether a place is already known used to mean "within fifty metres", so two different businesses on the same block could be treated as one. Where an identifier is known on both sides it now decides, and distance is only the fallback.
+- Places you pinned by hand, and everything saved before this, carry on working by name and location exactly as before.
+
 ### Your own places are recognised as you arrive
 
 - A saved place used to be worked out after the event, by measuring how far a delivered visit sat from each one. That waits on a callback which can arrive long afterwards, and in the meantime Apple Maps could write a neighbouring business over the top of somewhere you had named yourself. LifeLog now watches the boundary of each place, so arriving at Home is recorded as Home the moment you cross it — with no delay and no Maps request.

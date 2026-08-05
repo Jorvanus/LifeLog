@@ -479,13 +479,19 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
 
     private func cache(_ match: PlaceSuggestion, context: ModelContext) {
         let coordinate = CLLocation(latitude: match.latitude, longitude: match.longitude)
+        // Identity first: the same Maps place moves a little between fixes, and two
+        // different businesses can sit within fifty metres of each other.
         let existing = savedPlaceCache.contains { place in
-            coordinate.distance(from: CLLocation(latitude: place.latitude, longitude: place.longitude)) <= 50
+            if let identifier = match.mapsIdentifier, let known = place.mapsIdentifier {
+                return identifier == known
+            }
+            return coordinate.distance(from: CLLocation(latitude: place.latitude, longitude: place.longitude)) <= 50
         }
         guard !existing else { return }
         context.insert(SavedPlace(name: TextSafety.clean(match.name, maximumLength: 100),
                                   latitude: match.latitude, longitude: match.longitude,
-                                  radius: 85, defaultActivity: match.suggestedActivity))
+                                  radius: 85, defaultActivity: match.suggestedActivity,
+                                  mapsIdentifier: match.mapsIdentifier))
         loadSavedPlaceCache()
     }
 

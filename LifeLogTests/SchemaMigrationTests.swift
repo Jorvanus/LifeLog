@@ -117,6 +117,54 @@ struct SchemaMigrationTests {
         #expect(reread[0].routeDistance > 0)
     }
 
+    @Test("A V3 store gains Maps identity without losing its places")
+    func migratesV3StoreAddingMapsIdentifier() throws {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LifeLog-v3-\(UUID().uuidString).store")
+        defer { try? FileManager.default.removeItem(at: storeURL) }
+
+        let arrival = Date(timeIntervalSince1970: 1_800_000_000)
+        let v3Schema = Schema(versionedSchema: LifeLogSchemaV3.self)
+        let v3Configuration = ModelConfiguration(
+            "LifeLogMigrationFixture", schema: v3Schema, url: storeURL,
+            allowsSave: true, cloudKitDatabase: .none
+        )
+        do {
+            let container = try ModelContainer(for: v3Schema, configurations: [v3Configuration])
+            let context = ModelContext(container)
+            let visit = LifeLogSchemaV3.Visit(
+                arrival: arrival, latitude: -27.47, longitude: 153.03, placeName: "Corner Cafe",
+                inferredActivity: "Eating", note: "V3 fixture", source: "automatic"
+            )
+            visit.departure = arrival.addingTimeInterval(1_800)
+            visit.routeData = Data([9, 9])
+            context.insert(visit)
+            context.insert(LifeLogSchemaV3.SavedPlace(
+                name: "Corner Cafe", latitude: -27.47, longitude: 153.03, radius: 85,
+                defaultActivity: "Eating"
+            ))
+            try context.save()
+        }
+
+        let context = ModelContext(try openVersionedStore(at: storeURL))
+        let places = try context.fetch(FetchDescriptor<SavedPlace>())
+        let visits = try context.fetch(FetchDescriptor<Visit>())
+
+        #expect(places.count == 1)
+        #expect(places[0].name == "Corner Cafe")
+        #expect(places[0].radius == 85)
+        #expect(places[0].defaultActivity == "Eating")
+        // A place saved before this existed has no Maps identity to restore.
+        #expect(places[0].mapsIdentifier == nil)
+        #expect(visits.count == 1)
+        #expect(visits[0].note == "V3 fixture")
+        #expect(visits[0].routeData == Data([9, 9]))
+
+        places[0].mapsIdentifier = "I1234567890ABCDEF"
+        try context.save()
+        #expect(try context.fetch(FetchDescriptor<SavedPlace>())[0].mapsIdentifier == "I1234567890ABCDEF")
+    }
+
     @Test("A V1 store carrying place types migrates to V2 without losing visits or places")
     func migratesV1StoreDroppingPlaceType() throws {
         let storeURL = FileManager.default.temporaryDirectory
@@ -190,7 +238,7 @@ struct SchemaMigrationTests {
     }
 
     private func openVersionedStore(at url: URL) throws -> ModelContainer {
-        let schema = Schema(versionedSchema: LifeLogSchemaV3.self)
+        let schema = Schema(versionedSchema: LifeLogSchemaV4.self)
         let configuration = ModelConfiguration(
             "LifeLogMigrationFixture", schema: schema, url: url,
             allowsSave: true, cloudKitDatabase: .none

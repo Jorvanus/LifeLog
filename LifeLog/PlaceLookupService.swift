@@ -9,11 +9,15 @@ struct PlaceSuggestion: Codable, Identifiable, Hashable {
     let longitude: Double
     let suggestedActivity: String
     let distance: Double
+    /// Apple Maps' identifier for this result, where it supplies one. Names collide
+    /// and get reworded; this does not. Optional because suggestions stored before
+    /// this existed have none, and Maps does not identify every result.
+    var mapsIdentifier: String?
 
     // Older stored suggestions carried a place-type string. It is ignored on
     // decode so previously saved candidate payloads still read cleanly.
     private enum CodingKeys: String, CodingKey {
-        case name, latitude, longitude, suggestedActivity, distance
+        case name, latitude, longitude, suggestedActivity, distance, mapsIdentifier
     }
 }
 
@@ -101,7 +105,8 @@ enum PlaceLookupService {
                 latitude: location.coordinate.latitude,
                 longitude: location.coordinate.longitude,
                 suggestedActivity: InferenceEngine.activity(placeName: name, mapsHint: mapsHint),
-                distance: origin.distance(from: location)
+                distance: origin.distance(from: location),
+                mapsIdentifier: item.identifier?.rawValue
             )
         }
         .filter { $0.distance <= boundedRadius }
@@ -120,7 +125,8 @@ enum PlaceLookupService {
                 latitude: first.latitude,
                 longitude: first.longitude,
                 suggestedActivity: smart.activity,
-                distance: first.distance
+                distance: first.distance,
+                mapsIdentifier: first.mapsIdentifier
             )
         }
         suggestions = Array(suggestions.prefix(3))

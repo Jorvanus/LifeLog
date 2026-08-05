@@ -16,13 +16,20 @@ final class SavedPlace {
     var longitude: Double
     var radius: Double
     var defaultActivity: String
+    /// Apple Maps' own identifier for this place, when it came from a Maps result.
+    ///
+    /// Names are a poor identity: two businesses share one, and a place renamed by
+    /// Apple — or by the person — stops matching its own history. The identifier
+    /// survives both. Nil for places pinned by hand or learned from a coordinate.
+    var mapsIdentifier: String?
 
     init(name: String, latitude: Double, longitude: Double, radius: Double = 100,
-         defaultActivity: String = "") {
+         defaultActivity: String = "", mapsIdentifier: String? = nil) {
         self.name = TextSafety.clean(name, maximumLength: 100)
         self.latitude = latitude; self.longitude = longitude
         self.radius = min(max(radius, 25), 500)
         self.defaultActivity = TextSafety.clean(defaultActivity, maximumLength: 80)
+        self.mapsIdentifier = mapsIdentifier.map { TextSafety.clean($0, maximumLength: 120) }
     }
 
     var coordinate: CLLocationCoordinate2D { .init(latitude: latitude, longitude: longitude) }
