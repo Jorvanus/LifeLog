@@ -2,6 +2,13 @@
 
 ## 2026-08-05
 
+### Wi-Fi sharpens when you left
+
+- Leaving somewhere is rarely noticed at the time. Core Location reports a departure only once it sees the region was left, so LifeLog fell back to timing it from wherever you turned up next — which is why leaving home at 8:40 and reaching work at 9:09 was recorded as leaving at 9:05, and a twenty-five minute commute read as four.
+- Your home network drops when you walk out the door. If LifeLog sees the phone leave the network a stay began on, that moment is used as the departure instead of the next arrival.
+- Losing a network is never treated as leaving. A router restart, a band switch, or the phone preferring cellular would otherwise invent a departure that never happened; rejoining the same network erases the absence entirely. Nothing is written unless a departure was already being guessed at, and the corrected time can only ever sit inside the stay it belongs to.
+- Networks are stored as a digest, never as a name. LifeLog only needs to know "the same one as before" — which network it is says where you live, and is not recorded.
+
 ### Walking and travel are collected without being asked for
 
 - Your walks and drives were missing even though Motion Activity said "Connected". The iPhone keeps its motion history for about a week, and LifeLog only read it when you pressed "Connect Walking & Travel" in Settings — so every week you did not press it expired unread, permanently. Apple Health was never affected, because its samples persist and are read from where LifeLog last stopped, which is why sleep and workouts arrived normally while walking and driving did not.

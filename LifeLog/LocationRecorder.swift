@@ -152,6 +152,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        sampleWiFiAnchor()
         guard let location = locations.last,
               location.horizontalAccuracy >= 0,
               location.horizontalAccuracy <= 1_000,
@@ -207,7 +208,15 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 // not a new current stay, so bound it at the newer arrival.
                 inferredDeparture = latest.arrival
             } else {
-                latest.departure = max(latest.arrival, safeArrival)
+                // Core Location did not see the departure, so this timestamp is the
+                // next arrival standing in for it. If the phone was observed off the
+                // stay's own Wi-Fi before then, that moment is the better answer.
+                let anchored = WiFiAnchor.departure(for: WiFiAnchor.loadObservation(),
+                                                    arrival: latest.arrival,
+                                                    fallback: safeArrival)
+                latest.departure = max(latest.arrival, anchored ?? safeArrival)
+                // The stay is closed, so its network observation belongs to nothing now.
+                WiFiAnchor.save(nil)
             }
         }
 
@@ -226,6 +235,8 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                          placeName: name, inferredActivity: activity,
                          recognitionConfidence: saved == nil ? nil : "learned")
         context.insert(item)
+        WiFiAnchor.save(nil)
+        sampleWiFiAnchor()
         reconcileActivity(with: item, context: context)
         try? SavedPlaceLearning.enrichImportedVisits(with: item, context: context)
         try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
@@ -450,6 +461,18 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 identifyPlace(visit)
                 return
             }
+        }
+    }
+
+    /// Records whether the phone is still on the network the open stay began with.
+    ///
+    /// Sampled only when a location event has already woken LifeLog, so it costs
+    /// nothing extra — and means the observation is at its freshest exactly when a
+    /// departure is about to be timed.
+    private func sampleWiFiAnchor(now: Date = .now) {
+        Task { @MainActor in
+            let hash = await WiFiAnchor.currentNetworkHash()
+            WiFiAnchor.save(WiFiAnchor.update(WiFiAnchor.loadObservation(), sampled: hash, at: now))
         }
     }
 

@@ -386,6 +386,71 @@ struct TimelineFixtureCoverageTests {
                 "summaries \(Int(summaryElapsed * 1000))ms vs full \(Int(fullElapsed * 1000))ms")
     }
 
+    /// The anchor exists to sharpen a departure Core Location guessed, and must never
+    /// manufacture one. These cover both halves.
+    @Test("A network seen leaving sharpens the departure it was guessing at")
+    func wifiAnchorCorrectsADeparture() {
+        let arrival = Date(timeIntervalSince1970: 1_800_000_000)
+        let home = WiFiAnchor.hash(ssid: "Baxter", bssid: "aa:bb:cc:dd:ee:ff")
+
+        // Joined at arrival, still joined half an hour later, gone by 8:40.
+        var observation = WiFiAnchor.update(nil, sampled: home, at: arrival)
+        observation = WiFiAnchor.update(observation, sampled: home, at: arrival.addingTimeInterval(1_800))
+        observation = WiFiAnchor.update(observation, sampled: nil, at: arrival.addingTimeInterval(2_400))
+
+        // Core Location would have timed this from the next arrival, 52 minutes later.
+        let fallback = arrival.addingTimeInterval(3_120)
+        #expect(WiFiAnchor.departure(for: observation, arrival: arrival, fallback: fallback)
+                == arrival.addingTimeInterval(2_400))
+    }
+
+    @Test("A dropped network is not a departure")
+    func wifiAnchorIgnoresADrop() {
+        let arrival = Date(timeIntervalSince1970: 1_800_000_000)
+        let home = WiFiAnchor.hash(ssid: "Baxter", bssid: nil)
+        let fallback = arrival.addingTimeInterval(3_600)
+
+        // Off the network briefly — a reboot, a band switch — then back on it.
+        var observation = WiFiAnchor.update(nil, sampled: home, at: arrival)
+        observation = WiFiAnchor.update(observation, sampled: nil, at: arrival.addingTimeInterval(600))
+        observation = WiFiAnchor.update(observation, sampled: home, at: arrival.addingTimeInterval(900))
+
+        #expect(observation?.firstAbsent == nil, "Being back on the network unwrites the absence")
+        #expect(WiFiAnchor.departure(for: observation, arrival: arrival, fallback: fallback) == nil)
+
+        // Never on a network at all: nothing to say, so Core Location's timing stands.
+        let unanchored = WiFiAnchor.update(nil, sampled: nil, at: arrival)
+        #expect(unanchored == nil)
+        #expect(WiFiAnchor.departure(for: unanchored, arrival: arrival, fallback: fallback) == nil)
+    }
+
+    @Test("A departure is never moved outside the stay it belongs to")
+    func wifiAnchorStaysWithinBounds() {
+        let arrival = Date(timeIntervalSince1970: 1_800_000_000)
+        let home = WiFiAnchor.hash(ssid: "Baxter", bssid: nil)
+        let fallback = arrival.addingTimeInterval(3_600)
+
+        // An absence recorded before the stay began belongs to the previous one.
+        var stale = WiFiAnchor.update(nil, sampled: home, at: arrival.addingTimeInterval(-7_200))
+        stale = WiFiAnchor.update(stale, sampled: nil, at: arrival.addingTimeInterval(-3_600))
+        #expect(WiFiAnchor.departure(for: stale, arrival: arrival, fallback: fallback) == nil)
+
+        // An absence after the next arrival would lengthen the stay, not shorten it.
+        var late = WiFiAnchor.update(nil, sampled: home, at: arrival)
+        late = WiFiAnchor.update(late, sampled: nil, at: fallback.addingTimeInterval(600))
+        #expect(WiFiAnchor.departure(for: late, arrival: arrival, fallback: fallback) == nil)
+    }
+
+    @Test("A network is identified without being recorded")
+    func wifiAnchorDoesNotStoreTheNetworkName() {
+        let hash = WiFiAnchor.hash(ssid: "Baxter Home 5G", bssid: "aa:bb:cc:dd:ee:ff")
+        #expect(!hash.localizedCaseInsensitiveContains("baxter"))
+        #expect(hash.count == 16)
+        // Same network, same answer; different network, different answer.
+        #expect(hash == WiFiAnchor.hash(ssid: "baxter home 5g", bssid: "AA:BB:CC:DD:EE:FF"))
+        #expect(hash != WiFiAnchor.hash(ssid: "Baxter Home 5G", bssid: "aa:bb:cc:dd:ee:00"))
+    }
+
     @Test("A label the catalogue has never heard of is still counted")
     func includesLabelsMissingFromTheCatalogue() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
