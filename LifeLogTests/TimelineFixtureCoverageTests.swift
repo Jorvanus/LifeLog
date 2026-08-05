@@ -494,6 +494,70 @@ struct TimelineFixtureCoverageTests {
         #expect(suggestions.first?.activity == "At home")
     }
 
+    /// iOS watches a limited number of regions, so which places get a slot decides
+    /// which arrivals are recognised instantly and which wait for a delayed callback.
+    @Test("The places watched are the ones actually used")
+    func prioritisesMonitoredPlaces() {
+        func place(_ name: String, _ latitude: Double) -> SavedPlace {
+            SavedPlace(name: name, latitude: latitude, longitude: 150.51, radius: 100)
+        }
+        func visit(_ name: String, daysAgo: Double) -> Visit {
+            Visit(arrival: base.addingTimeInterval(-daysAgo * 86_400),
+                  departure: base.addingTimeInterval(-daysAgo * 86_400 + 3_600),
+                  latitude: -23.37, longitude: 150.51, placeName: name,
+                  inferredActivity: "Visiting", source: "automatic")
+        }
+        let home = place("Home", -23.37)
+        let work = place("Work", -23.38)
+        let cottage = place("Cottage", -23.39)
+        let never = place("Never been", -23.40)
+        let visits = (0..<20).map { visit("Home", daysAgo: Double($0)) }
+            + (0..<10).map { visit("Work", daysAgo: Double($0)) }
+            + [visit("Cottage", daysAgo: 0.5)]
+
+        let ranked = MonitoredPlaces.prioritised([never, cottage, work, home], visits: visits)
+
+        // Frequency first: the cottage was visited most recently but is used once.
+        #expect(ranked.map(\.name) == ["Home", "Work", "Cottage", "Never been"])
+        #expect(ranked.first?.visits == 20)
+        #expect(ranked.last?.lastVisit == nil)
+    }
+
+    @Test("Only as many places are watched as iOS will allow")
+    func limitsMonitoredPlaces() {
+        let places = (0..<30).map {
+            SavedPlace(name: "Place \($0)", latitude: -23.37 + Double($0) / 1_000,
+                       longitude: 150.51, radius: 100)
+        }
+        let ranked = MonitoredPlaces.prioritised(places, visits: [])
+
+        #expect(MonitoredPlaces.limit == 20)
+        #expect(ranked.count == 20)
+        // Each region needs an identifier that survives a relaunch and is its own.
+        #expect(Set(ranked.map(\.identifier)).count == ranked.count)
+        #expect(ranked.first?.identifier.hasPrefix("place|") == true)
+    }
+
+    @Test("A renamed place keeps the history that earned it a slot")
+    func matchesVisitsByNameAndGeofence() {
+        let place = SavedPlace(name: "Corner Cafe", latitude: -23.37, longitude: 150.51, radius: 100)
+        // One recorded under the name, one recorded only as a coordinate inside it.
+        let byName = Visit(arrival: base, departure: base.addingTimeInterval(600),
+                           latitude: 0, longitude: 0, placeName: "Corner Cafe",
+                           inferredActivity: "Eating", source: "manual")
+        let byLocation = Visit(arrival: base.addingTimeInterval(3_600),
+                               departure: base.addingTimeInterval(4_200),
+                               latitude: -23.3701, longitude: 150.5101, placeName: "Identifying…",
+                               inferredActivity: "Visiting", source: "automatic")
+        let faraway = Visit(arrival: base, departure: base.addingTimeInterval(600),
+                            latitude: -23.50, longitude: 150.90, placeName: "Elsewhere",
+                            inferredActivity: "Visiting", source: "automatic")
+
+        let ranked = MonitoredPlaces.prioritised([place], visits: [byName, byLocation, faraway])
+
+        #expect(ranked.first?.visits == 2)
+    }
+
     @Test("A label the catalogue has never heard of is still counted")
     func includesLabelsMissingFromTheCatalogue() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)

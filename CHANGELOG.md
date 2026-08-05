@@ -2,6 +2,12 @@
 
 ## 2026-08-05
 
+### Your own places are recognised as you arrive
+
+- A saved place used to be worked out after the event, by measuring how far a delivered visit sat from each one. That waits on a callback which can arrive long afterwards, and in the meantime Apple Maps could write a neighbouring business over the top of somewhere you had named yourself. LifeLog now watches the boundary of each place, so arriving at Home is recorded as Home the moment you cross it — with no delay and no Maps request.
+- Leaving is recorded the same way. A boundary crossing is the departure itself, seen as it happens, rather than worked back from wherever you turned up next.
+- iOS only watches a limited number of places at once, so LifeLog picks by how often each is used and then by how recently. Somewhere you go daily keeps its place over somewhere you visited once, however lately.
+
 ### Adding a visit asks where you were, not what to search for
 
 - Add Visit is now three questions: where, what you did, and when. Location and activity each open a page of their own instead of being fields to fill in.

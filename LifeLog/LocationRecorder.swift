@@ -16,6 +16,9 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     private var diagnosticTask: Task<Void, Never>?
     private var identifyingVisits: Set<ObjectIdentifier> = []
     private var savedPlaceCache: [SavedPlace] = []
+    private var placeMonitor: CLMonitor?
+    private var placeMonitorTask: Task<Void, Never>?
+    private var monitoredPlaces: [String: MonitoredPlaces.Ranked] = [:]
     /// Limits immediate-place creation to samples explicitly requested by LifeLog.
     /// Significant-change callbacks can arrive while travelling and must not become visits.
     private var shouldSeedCurrentLocation = false
@@ -74,6 +77,10 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         UserDefaults.standard.set(false, forKey: PreferenceKey.backgroundLoggingEnabled)
         manager.stopMonitoringVisits()
         manager.stopMonitoringSignificantLocationChanges()
+        placeMonitorTask?.cancel()
+        placeMonitorTask = nil
+        placeMonitor = nil
+        monitoredPlaces = [:]
         manager.allowsBackgroundLocationUpdates = false
         diagnosticTask?.cancel()
         diagnosticTask = nil
@@ -88,6 +95,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         manager.showsBackgroundLocationIndicator = true
         manager.startMonitoringVisits()
         manager.startMonitoringSignificantLocationChanges()
+        startPlaceMonitoring()
         if authorization == .authorizedAlways || authorization == .authorizedWhenInUse {
             refreshCurrentLocation()
         }
@@ -329,6 +337,82 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
 
     func invalidateSavedPlaceCache() {
         loadSavedPlaceCache()
+        Task { await refreshMonitoredRegions() }
+    }
+
+    /// Watches the Saved Places the system will actually tell us about.
+    ///
+    /// Until now a known place was recognised after the fact, by measuring how far a
+    /// delivered `CLVisit` sat from each Saved Place. That waits for a callback which
+    /// can arrive long afterwards, and in the meantime Apple Maps may have written a
+    /// neighbouring business over the top of somewhere the person named themselves.
+    /// A geofence says "this is Home" the moment the boundary is crossed, with no
+    /// Maps request and no delay — and, just as usefully, says when it was left.
+    private func startPlaceMonitoring() {
+        guard authorization == .authorizedAlways, placeMonitorTask == nil else { return }
+        placeMonitorTask = Task { [weak self] in
+            let monitor = await CLMonitor("LifeLogSavedPlaces")
+            guard let self else { return }
+            self.placeMonitor = monitor
+            await self.refreshMonitoredRegions()
+            do {
+                for try await event in await monitor.events {
+                    guard !Task.isCancelled else { return }
+                    await self.handle(event)
+                }
+            } catch {
+                self.lastError = "Place monitoring stopped unexpectedly."
+            }
+        }
+    }
+
+    /// Reconciles the watched set with the chosen places, adding and removing only
+    /// what changed. iOS caps how many regions an app may monitor, so the set is
+    /// ranked rather than truncated arbitrarily; see `MonitoredPlaces`.
+    private func refreshMonitoredRegions() async {
+        guard let placeMonitor, let context else { return }
+        let visits = (try? context.fetch(FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.source == "automatic" || $0.source == "manual" }
+        ))) ?? []
+        let wanted = MonitoredPlaces.prioritised(savedPlaceCache, visits: visits)
+        let wantedByID = Dictionary(uniqueKeysWithValues: wanted.map { ($0.identifier, $0) })
+
+        for identifier in await placeMonitor.identifiers where wantedByID[identifier] == nil {
+            await placeMonitor.remove(identifier)
+        }
+        let existing = Set(await placeMonitor.identifiers)
+        for place in wanted where !existing.contains(place.identifier) {
+            let condition = CLMonitor.CircularGeographicCondition(center: place.coordinate,
+                                                                  radius: place.radius)
+            await placeMonitor.add(condition, identifier: place.identifier)
+        }
+        monitoredPlaces = wantedByID
+        Diagnostics.locationMetric(context, operation: "geofences_monitored",
+                                   candidateCount: wanted.count)
+    }
+
+    private func handle(_ event: CLMonitor.Event) {
+        guard let place = monitoredPlaces[event.identifier] else { return }
+        switch event.state {
+        case .satisfied:
+            createVisit(at: place.coordinate, arrival: event.date)
+        case .unsatisfied:
+            closeMonitoredVisit(named: place.name, at: event.date)
+        default:
+            break
+        }
+    }
+
+    /// A geofence exit is the departure itself, observed as it happens rather than
+    /// inferred from wherever the person turned up next.
+    private func closeMonitoredVisit(named name: String, at departure: Date) {
+        guard let context, let open = latestLocationVisit(in: context), open.departure == nil,
+              open.placeName.caseInsensitiveCompare(name) == .orderedSame else { return }
+        open.departure = max(open.arrival, min(departure, .now))
+        WiFiAnchor.save(nil)
+        reconcileActivity(with: open, context: context)
+        _ = try? ActivityLocationPolicy.resolveLocationCallbacks(context: context)
+        save(context)
     }
 
     private func nearestSavedPlace(to coordinate: CLLocationCoordinate2D) -> SavedPlace? {
