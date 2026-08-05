@@ -153,10 +153,26 @@ struct InsightsDonutChart: View {
                         Text("Connect Apple Health").font(.caption).foregroundStyle(.tertiary)
                     }
                 }
+                // Bounded to the widest line that fits the hole. The ring's inner radius
+                // is a ratio of a fixed height, so the space here is about 185pt across
+                // and a square inside that circle is narrower still. Unbounded, "Connect
+                // Apple Health" set one line straight across the segments.
+                .frame(maxWidth: centreWidth)
+                .multilineTextAlignment(.center)
                 .allowsHitTesting(false)
             }
         }
         .frame(height: 330)
+        // The ring is fixed geometry: the hole is a ratio of its radius, so text sitting
+        // inside cannot grow without limit. At the largest accessibility sizes it was
+        // rendering several times the width of the hole — "1h 10m" lay across the
+        // segments, "steps" ran under the tab bar, and labels drew over one another
+        // into an unreadable smear.
+        //
+        // Only what is inside the ring is capped. Every other word on the page still
+        // scales the whole way; this is the one place the container genuinely cannot
+        // follow the text, and legible-but-capped beats overlapping.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
         .accessibilityIdentifier("insights-donut-chart")
         .task(id: stepCountKey) {
             // Let the chart render before asking HealthKit for samples. This keeps
@@ -166,6 +182,11 @@ struct InsightsDonutChart: View {
             stepCount = await activityData.stepCount(for: analysisInterval)
         }
     }
+
+    /// The usable width inside the ring. `chartHeight` × the 0.56 inner-radius ratio
+    /// gives a hole roughly 185pt across; text has to fit a square inside that circle,
+    /// not the circle itself, so this is deliberately narrower.
+    private var centreWidth: CGFloat { 150 }
 
     private var stepCountKey: String {
         "\(analysisInterval.start.timeIntervalSinceReferenceDate)-\(analysisInterval.end.timeIntervalSinceReferenceDate)"

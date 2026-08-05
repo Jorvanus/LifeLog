@@ -143,6 +143,12 @@ struct TrendsView: View {
                     .frame(minHeight: 44)
                     .contentShape(Rectangle())
                 }
+                // Without this the button tints its own label, and `.primary` and
+                // `.secondary` are read as shades of the accent colour rather than of
+                // the foreground. In dark mode that rendered the date as dark blue on
+                // black — the least readable thing on the screen, and the one telling
+                // you which day you are looking at.
+                .buttonStyle(.plain)
                 .accessibilityLabel("\(periodTitle), \(periodSubtitle)")
                 .accessibilityHint("Choose a different date")
                 Spacer()
@@ -172,6 +178,11 @@ struct TrendsView: View {
                          : "All \(formatHours(snapshot.totalHours)) in this \(window.title.lowercased())")
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
+                // A card heading naming the card it is on. At the largest accessibility
+                // sizes it and its subtitle took six lines and pushed the chart they
+                // introduce off the bottom of a 6.9" screen, so the person had to scroll
+                // past the label to reach the thing being labelled.
+                .dynamicTypeSize(...DynamicTypeSize.accessibility2)
                 Spacer()
                 Menu {
                     Button("Export CSV") { exportFile = TrendExport.makeFile(format: "csv", visits: visits, interval: snapshot.analysisInterval, now: snapshot.generatedAt) }

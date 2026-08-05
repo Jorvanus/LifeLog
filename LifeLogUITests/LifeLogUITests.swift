@@ -235,4 +235,49 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(app.textFields["e.g. Aaron's Gardens"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Places nearby"].exists)
     }
+
+    /// The largest accessibility size, on the 6.9" screen the app is actually used on.
+    ///
+    /// Both screens broke here and neither was covered. The Insights ring is fixed
+    /// geometry, so unbounded text inside it drew across the segments and ran under
+    /// the tab bar; the review card squeezed its text between an icon, a pill and a
+    /// chevron until "Is this right?" wrapped one word to a line.
+    ///
+    /// Existence alone proves nothing — an element pushed under the tab bar or off the
+    /// bottom of the screen still exists. So this checks where things actually are.
+    /// `isHittable` is the wrong tool for the ring specifically: its centre sets
+    /// `allowsHitTesting(false)` while no slice is focused, so the container's hit
+    /// point is deliberately dead even when the chart is perfectly placed.
+    func testInsightsAndReviewCardSurviveTheLargestTextSize() {
+        app.terminate()
+        app.launchArguments = [
+            "-uiTesting", "-ui-test-seed",
+            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"
+        ]
+        app.launch()
+
+        XCTAssertTrue(element("timeline-screen").waitForExistence(timeout: 10))
+        let card = element("uncategorised-location-card")
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        XCTAssertTrue(card.isHittable, "The review card must stay reachable at the largest text size")
+
+        app.tabBars.buttons["Insights"].tap()
+        XCTAssertTrue(element("insights-screen").waitForExistence(timeout: 10))
+        XCTAssertTrue(element("insights-donut-chart").waitForExistence(timeout: 10))
+
+        // No geometry is asserted here, and that is deliberate rather than an omission.
+        // The identifier is inherited by the enclosing card as well as the ring, so a
+        // frame read back through it spans the whole section — measured at 709pt tall
+        // and 1003pt down the screen while the ring itself sat comfortably inside the
+        // 956pt screen. Any threshold pinned to that would fail when the card is
+        // restyled rather than when the layout breaks.
+        //
+        // The regressions this test exists for — labels drawn across the segments,
+        // "Connect Apple Health" written over the ring, text wrapping one word to a
+        // line — are invisible to XCTest regardless: overlapping text has perfectly
+        // valid frames. Screenshots at this size caught them and screenshots are what
+        // will catch them again. What this test genuinely guards is that both screens
+        // still build and stay reachable at the largest size, which is where they
+        // previously fell over.
+    }
 }

@@ -5,6 +5,7 @@ import UIKit
 
 struct TimelineView: View {
     @Environment(\.modelContext) private var context
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let recorder: LocationRecorder
     // Imported journal rows are used by Insights, but are not automatic locations
     // or review items. Excluding them keeps the launch timeline query lightweight.
@@ -186,17 +187,31 @@ struct TimelineView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(greeting)
-                        .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                        // Two lines with a lower floor: now that the greeting scales
-                        // with Dynamic Type, a single line would ellipsize at
-                        // accessibility sizes rather than wrap.
-                        .lineLimit(2).minimumScaleFactor(0.7)
-                    Text(headerDate)
-                        .font(.title3).foregroundStyle(.secondary)
+                    Group {
+                        Text(greeting)
+                            .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                            // Two lines with a lower floor: now that the greeting scales
+                            // with Dynamic Type, a single line would ellipsize at
+                            // accessibility sizes rather than wrap.
+                            .lineLimit(2).minimumScaleFactor(0.7)
+                        Text(headerDate)
+                            .font(.title3).foregroundStyle(.secondary)
+                    }
+                    // The greeting and the date are decoration — they say nothing the
+                    // person does not already know. At the largest accessibility sizes
+                    // they filled a third of a 6.9" screen and pushed the day's journey
+                    // off the bottom, so they stop growing where the content starts to
+                    // suffer. The review count below is not capped: it is the one line
+                    // here worth acting on.
+                    .dynamicTypeSize(...DynamicTypeSize.accessibility2)
                     if !reviewQueue.isEmpty {
                         Text("\(reviewQueue.count) \(reviewQueue.count == 1 ? "place" : "places") to review")
                             .font(.subheadline.weight(.medium)).foregroundStyle(.orange)
+                            // Without this the row shares its width with the add button
+                            // and clips to a single line, so at accessibility sizes it
+                            // read "1 place to r…" — the count survived and the thing
+                            // being counted did not.
+                            .fixedSize(horizontal: false, vertical: true)
                             .padding(.top, 4)
                     }
                 }
@@ -218,31 +233,45 @@ struct TimelineView: View {
             VStack(alignment: .leading, spacing: 17) {
                 Label("Review Queue", systemImage: "exclamationmark.triangle.fill")
                     .font(.headline).foregroundStyle(.orange)
-                HStack(spacing: 14) {
-                    ActivityIcon(activity: visit.activity, context: visit.displayPlaceName, color: .orange)
-                    VStack(alignment: .leading, spacing: 4) {
-                        // Each reason asks a different question. Agreeing with a weak
-                        // guess, naming a place LifeLog knows nothing about, and saying
-                        // whether you stopped at all are not the same request.
-                        Text(entry.reason.prompt).font(.headline).foregroundStyle(.primary)
-                        if entry.reason == .unidentified {
-                            if !visit.hasPlaceholderName {
-                                Text("Likely: \(visit.placeName)").font(.subheadline).foregroundStyle(.secondary)
-                            }
-                        } else {
-                            Text(visit.placeName).font(.subheadline).foregroundStyle(.secondary)
+                // At accessibility sizes the icon, the action pill and the chevron left
+                // the text column so narrow that "Is this right?" wrapped one word to a
+                // line and ran off the bottom of the screen. The icon and chevron are
+                // decoration on a row that is already a link, so above the threshold
+                // they step aside and the action moves below the text at full width.
+                let stacked = dynamicTypeSize.isAccessibilitySize
+                let details = VStack(alignment: .leading, spacing: 4) {
+                    // Each reason asks a different question. Agreeing with a weak
+                    // guess, naming a place LifeLog knows nothing about, and saying
+                    // whether you stopped at all are not the same request.
+                    Text(entry.reason.prompt).font(.headline).foregroundStyle(.primary)
+                    if entry.reason == .unidentified {
+                        if !visit.hasPlaceholderName {
+                            Text("Likely: \(visit.placeName)").font(.subheadline).foregroundStyle(.secondary)
                         }
-                        Text(entry.reason == .passingStay
-                             ? "\(formattedDuration(visit.duration)) here, and you have not been back"
-                             : "Suspected activity: \(visit.inferredActivity)")
-                            .font(.subheadline).foregroundStyle(.secondary)
+                    } else {
+                        Text(visit.placeName).font(.subheadline).foregroundStyle(.secondary)
                     }
-                    Spacer()
-                    Text(entry.reason == .unidentified ? "Categorise" : "Check")
-                        .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
-                        .padding(.horizontal, 15).padding(.vertical, 8)
-                        .background(.orange.gradient, in: RoundedRectangle(cornerRadius: 9))
-                    Image(systemName: "chevron.right").foregroundStyle(.orange)
+                    Text(entry.reason == .passingStay
+                         ? "\(formattedDuration(visit.duration)) here, and you have not been back"
+                         : "Suspected activity: \(visit.inferredActivity)")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+                let action = Text(entry.reason == .unidentified ? "Categorise" : "Check")
+                    .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                    .padding(.horizontal, 15).padding(.vertical, 8)
+                    .background(.orange.gradient, in: RoundedRectangle(cornerRadius: 9))
+
+                if stacked {
+                    details.frame(maxWidth: .infinity, alignment: .leading)
+                    action.frame(maxWidth: .infinity)
+                } else {
+                    HStack(spacing: 14) {
+                        ActivityIcon(activity: visit.activity, context: visit.displayPlaceName, color: .orange)
+                        details
+                        Spacer()
+                        action
+                        Image(systemName: "chevron.right").foregroundStyle(.orange)
+                    }
                 }
             }
             .padding(18)

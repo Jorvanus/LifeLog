@@ -2,6 +2,18 @@
 
 ## 2026-08-06
 
+### The date was unreadable in dark mode
+
+- The day you are looking at, under "Today" on Insights, was drawn in dark blue on black. It sat inside a button, and a button tints its own label — so what was asked for as "secondary text" came out as a dim shade of the accent colour instead of a dim shade of the foreground. It now uses the colours it was always meant to. This was wrong at every text size, not only large ones.
+
+### Insights and Timeline at the largest text sizes
+
+- Checked on the 6.9" screen at the largest accessibility size, in dark mode, for the first time. Both screens were broken there.
+- The Insights ring is a fixed size and the writing inside it was not. At the largest sizes "1h 10m" lay across the segments, "steps" ran under the tab bar and "Connect Apple Health" was written straight over the ring. Text inside the ring now stops growing at the point it would leave the ring. Everywhere else on the page still scales the whole way.
+- Headings had begun crowding out what they introduce. "Good Morning" and the date filled a third of the screen; "How you spent your time" and its subtitle took six lines and pushed the chart below the bottom edge. Both stop growing before that happens. The count of places to review is not capped — it is the one line there worth acting on, and it now wraps instead of cutting off mid-word.
+- The review card squeezed its text between an icon, a button and an arrow until "Is this right?" wrapped one word to a line. At accessibility sizes the icon and arrow now step aside and the button moves below at full width.
+- Ordinary text sizes are unchanged.
+
 ### A walk you started is a walk, and it was being deleted
 
 - A morning walk from home, with a workout running on the Watch, appeared nowhere — not on the timeline, not in Insights. It had not been hidden. It had been deleted.
