@@ -11,10 +11,13 @@ struct PlacesView: View {
            sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
     let recorder: LocationRecorder
 
-    // Matches the Timeline review queue: places LifeLog could not identify, plus
-    // weak Apple Maps guesses still waiting for someone to agree with them.
+    // The same queue Timeline shows, in the same order, so the count here and the
+    // one on the Timeline header can never disagree.
+    private var reviewEntries: [ReviewQueue.Entry] {
+        ReviewQueue.entries(in: visits)
+    }
     private var needingReview: [Visit] {
-        visits.filter { $0.needsReview && !$0.isIgnored }
+        reviewEntries.map(\.visit)
     }
     private var ignored: [Visit] {
         visits.filter { $0.isIgnored && ActivityLocationPolicy.isLocationVisit($0) }

@@ -2,6 +2,16 @@
 
 ## 2026-08-05
 
+### Locations to Review now has something to say
+
+- The review queue only ever asked how confident Apple Maps was, and Maps reports how sure it is about which business sits at a coordinate — not whether you went inside. A captured day held two "high confidence" stays of 3m46s and 5m46s, both on a commute and both almost certainly traffic, which nothing could ever queue. A brief stay at a place you have not been back to is now reviewable however confident the match was, and it asks the right question: "Did you stop here?"
+- The queue is ordered by what is worth answering rather than by uncertainty. The place you are standing in right now leads, because it is the only one still answerable from memory. Then unidentified places, the ones accounting for the most time first — correcting a coordinate you keep returning to fixes every visit there at once. Then uncertain matches, and last the ones that merely look like passing traffic.
+- Timeline and Settings → Locations to Review now show the same queue in the same order, so their counts cannot disagree.
+
+### Hiding a location before it is saved
+
+- Ignoring a visit that had not been written to the timeline yet recorded it against a temporary identifier, which could then match a different unsaved visit and hide a record nobody hid. A visit that is not in the timeline yet now simply has no ignore state.
+
 ### Settings reports the build you are actually running
 
 - Settings → Version always said "1.0 (1)", whatever was installed. The version and build number were written into Info.plist as fixed text rather than taken from the build settings, so every release since the first reported the same thing and there was no way to tell which build was on the phone. It now reports the build it was made from.

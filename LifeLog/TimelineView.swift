@@ -84,9 +84,9 @@ struct TimelineView: View {
         }
     }
 
-    private var reviewQueue: [Visit] {
+    private var reviewQueue: [ReviewQueue.Entry] {
         // The live unknown location has its own prominent card; the queue is for past stays.
-        visits.filter { $0.needsReview && !$0.isIgnored && $0.departure != nil }
+        ReviewQueue.entries(in: visits, now: clock).filter { $0.visit.departure != nil }
     }
     private var current: Visit? {
         visits.first { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored && $0.departure == nil }
@@ -212,31 +212,33 @@ struct TimelineView: View {
         }.padding(.top, 20)
     }
 
-    private func reviewCard(_ visit: Visit) -> some View {
-        NavigationLink { VisitEditor(visit: visit) } label: {
+    private func reviewCard(_ entry: ReviewQueue.Entry) -> some View {
+        let visit = entry.visit
+        return NavigationLink { VisitEditor(visit: visit) } label: {
             VStack(alignment: .leading, spacing: 17) {
                 Label("Review Queue", systemImage: "exclamationmark.triangle.fill")
                     .font(.headline).foregroundStyle(.orange)
                 HStack(spacing: 14) {
                     ActivityIcon(activity: visit.activity, context: visit.displayPlaceName, color: .orange)
                     VStack(alignment: .leading, spacing: 4) {
-                        // A weak Apple Maps guess already has a name, so asking the
-                        // person to agree with it reads very differently from asking
-                        // them to identify a place LifeLog knows nothing about.
-                        if visit.needsConfirmation {
-                            Text("Is this right?").font(.headline).foregroundStyle(.primary)
-                            Text(visit.placeName).font(.subheadline).foregroundStyle(.secondary)
-                        } else {
-                            Text("Uncategorised location").font(.headline).foregroundStyle(.primary)
+                        // Each reason asks a different question. Agreeing with a weak
+                        // guess, naming a place LifeLog knows nothing about, and saying
+                        // whether you stopped at all are not the same request.
+                        Text(entry.reason.prompt).font(.headline).foregroundStyle(.primary)
+                        if entry.reason == .unidentified {
                             if !visit.hasPlaceholderName {
                                 Text("Likely: \(visit.placeName)").font(.subheadline).foregroundStyle(.secondary)
                             }
+                        } else {
+                            Text(visit.placeName).font(.subheadline).foregroundStyle(.secondary)
                         }
-                        Text("Suspected activity: \(visit.inferredActivity)")
+                        Text(entry.reason == .passingStay
+                             ? "\(formattedDuration(visit.duration)) here, and you have not been back"
+                             : "Suspected activity: \(visit.inferredActivity)")
                             .font(.subheadline).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Text(visit.needsConfirmation ? "Check" : "Categorise")
+                    Text(entry.reason == .unidentified ? "Categorise" : "Check")
                         .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
                         .padding(.horizontal, 15).padding(.vertical, 8)
                         .background(.orange.gradient, in: RoundedRectangle(cornerRadius: 9))
@@ -373,6 +375,16 @@ struct TimelineView: View {
     }
 }
 
+/// A span as a person would say it, rounded down to whole minutes.
+func formattedDuration(_ seconds: TimeInterval) -> String {
+    let totalMinutes = max(0, Int(seconds / 60))
+    let hours = totalMinutes / 60
+    let minutes = totalMinutes % 60
+    if hours == 0 { return "\(minutes)m" }
+    if minutes == 0 { return "\(hours)h" }
+    return "\(hours)h \(minutes)m"
+}
+
 /// Distance as a person would say it: whole metres up to a kilometre, then one
 /// decimal place, because "1.4 km" is a walk and "1,428 m" is a measurement.
 func formattedDistance(_ metres: CLLocationDistance) -> String {
@@ -469,14 +481,7 @@ private struct JourneyRow: View {
         return "\(start) – \(end)"
     }
 
-    private var durationDescription: String {
-        let totalMinutes = max(0, Int(visit.duration / 60))
-        let hours = totalMinutes / 60
-        let minutes = totalMinutes % 60
-        if hours == 0 { return "\(minutes)m" }
-        if minutes == 0 { return "\(hours)h" }
-        return "\(hours)h \(minutes)m"
-    }
+    private var durationDescription: String { formattedDuration(visit.duration) }
 }
 
 struct ActivityIcon: View {

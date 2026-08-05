@@ -7,6 +7,7 @@ enum IgnoredLocations {
     private static let storageKey = "LifeLog.IgnoredLocations.v1"
 
     static func contains(_ visit: Visit) -> Bool {
+        guard isPersisted(visit) else { return false }
         let stable = stableKey(for: visit)
         if storedKeys.contains(stable) { return true }
         // Preserve existing ignores while migrating from the old coordinate key.
@@ -20,6 +21,7 @@ enum IgnoredLocations {
     }
 
     static func setIgnored(_ ignored: Bool, for visit: Visit) {
+        guard isPersisted(visit) else { return }
         var keys = storedKeys
         let visitKey = stableKey(for: visit)
         if ignored { keys.insert(visitKey) } else { keys.remove(visitKey) }
@@ -32,6 +34,15 @@ enum IgnoredLocations {
 
     static func exportKeys() -> [String] { Array(storedKeys) }
     static func importKeys(_ keys: [String]) { UserDefaults.standard.set(keys, forKey: storageKey) }
+
+    /// A visit only has a durable identifier once it belongs to a store. Before that
+    /// `persistentModelID` is temporary, and recording an ignore against it would
+    /// write a key that matches whichever unsaved visit came next — hiding a record
+    /// nobody hid. Ignoring is a decision about something in the timeline, so a visit
+    /// that is not in the timeline yet simply has no ignore state.
+    private static func isPersisted(_ visit: Visit) -> Bool {
+        visit.modelContext != nil
+    }
 
     /// SwiftData assigns this identifier independently of mutable visit fields,
     /// so edits to arrival time or coordinates cannot orphan an ignore state.
