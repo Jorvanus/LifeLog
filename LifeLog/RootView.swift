@@ -6,17 +6,20 @@ struct RootView: View {
     let modelContainer: ModelContainer
     @State private var recorder = LocationRecorder()
     @State private var activityData = ActivityDataService()
-    @State private var selectedTab = ProcessInfo.processInfo.arguments.contains("-showInsights") ? 1 : 0
+    @State private var selectedTab = ProcessInfo.processInfo.arguments.contains("-showInsights") ? 2 : 0
 
     var body: some View {
         TabView(selection: $selectedTab) {
             Tab("Timeline", systemImage: "clock", value: 0) {
                 TimelineView(recorder: recorder)
             }
-            Tab("Insights", systemImage: "chart.bar.xaxis", value: 1) {
+            Tab("Activities", systemImage: "list.bullet.rectangle", value: 1) {
+                ActivitiesTabView()
+            }
+            Tab("Insights", systemImage: "chart.bar.xaxis", value: 2) {
                 TrendsView(activityData: activityData)
             }
-            Tab("Settings", systemImage: "gear", value: 2) {
+            Tab("Settings", systemImage: "gear", value: 3) {
                 SettingsView(recorder: recorder, activityData: activityData)
             }
         }

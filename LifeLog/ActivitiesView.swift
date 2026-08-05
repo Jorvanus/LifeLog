@@ -25,6 +25,40 @@ struct ActivitiesView: View {
         var id: String { previousName }
     }
 
+    /// Extracted whole rather than inlined in the `ForEach`: with the editor's extra
+    /// callback the row body grew past what the type-checker would solve.
+    @ViewBuilder
+    private func row(for activity: ActivityDefinition) -> some View {
+        let colourValue = categoryColorHex(forCategory: activity.category)
+        NavigationLink {
+            ActivityEditor(activity: activity,
+                           usageCount: usageCount(activity.name),
+                           onSave: { updated in replace(updated) },
+                           onDelete: { requestDeletion(of: $0) })
+        } label: {
+            Label {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(activity.name).font(.headline)
+                    Text(subtitle(for: activity))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            } icon: {
+                Image(systemName: activity.symbol).foregroundStyle(activityColor(activity.name))
+            }
+        }
+        // Belongs on the row, not the pushed destination, so the colour is announced
+        // while moving through the list.
+        .accessibilityValue("Category colour \(colourValue)")
+    }
+
+    /// Extracted from the row: inline, the interpolation plus its two ternaries was
+    /// enough for the type-checker to give up on the whole label expression.
+    private func subtitle(for activity: ActivityDefinition) -> String {
+        let count = usageCount(activity.name)
+        guard count > 0 else { return activity.category }
+        return "\(activity.category) · \(count) \(count == 1 ? "visit" : "visits")"
+    }
+
     private func usageCount(_ name: String) -> Int {
         usage[name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()] ?? 0
     }
@@ -43,27 +77,7 @@ struct ActivitiesView: View {
             }
             Section {
                 ForEach(activities) { activity in
-                    NavigationLink {
-                        ActivityEditor(activity: activity,
-                                       usageCount: usageCount(activity.name)) { updated in
-                            replace(updated)
-                        }
-                    } label: {
-                        Label {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(activity.name).font(.headline)
-                                Text(usageCount(activity.name) > 0
-                                     ? "\(activity.category) · \(usageCount(activity.name)) \(usageCount(activity.name) == 1 ? "visit" : "visits")"
-                                     : activity.category)
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                        } icon: {
-                            Image(systemName: activity.symbol).foregroundStyle(activityColor(activity.name))
-                        }
-                    }
-                    // Belongs on the row, not the pushed destination, so the colour
-                    // is announced while moving through the list.
-                    .accessibilityValue("Category colour \(categoryColorHex(forCategory: activity.category))")
+                    row(for: activity)
                 }
                 .onDelete { offsets in
                     // Deleting an activity never edits a visit, but it does remove the
@@ -194,6 +208,12 @@ struct ActivitiesView: View {
         InsightsInvalidation.invalidate(reason: "Activity renamed", context: context)
     }
 
+    private func requestDeletion(of definition: ActivityDefinition) {
+        guard let index = activities.firstIndex(where: { $0.id == definition.id }) else { return }
+        let offsets = IndexSet(integer: index)
+        if usageCount(definition.name) > 0 { pendingDeletion = offsets } else { delete(offsets) }
+    }
+
     private func delete(_ offsets: IndexSet) {
         activities.remove(atOffsets: offsets)
         ActivityCatalog.save(activities)
@@ -229,6 +249,9 @@ struct ActivityEditor: View {
     let existing: ActivityDefinition?
     let usageCount: Int
     let onSave: (ActivityDefinition) -> Void
+    /// Set only when editing, so an activity can be removed from the screen that
+    /// shows what removing it would cost rather than only by swiping the list.
+    let onDelete: ((ActivityDefinition) -> Void)?
     @State private var name: String
     @State private var category: String
     @State private var symbol: String
@@ -243,10 +266,12 @@ struct ActivityEditor: View {
     ]
 
     init(activity: ActivityDefinition? = nil, usageCount: Int = 0,
-         onSave: @escaping (ActivityDefinition) -> Void) {
+         onSave: @escaping (ActivityDefinition) -> Void,
+         onDelete: ((ActivityDefinition) -> Void)? = nil) {
         existing = activity
         self.usageCount = usageCount
         self.onSave = onSave
+        self.onDelete = onDelete
         _name = State(initialValue: activity?.name ?? "")
         _category = State(initialValue: activity?.category ?? "Other")
         _symbol = State(initialValue: activity?.symbol ?? "circle.fill")
@@ -257,6 +282,7 @@ struct ActivityEditor: View {
     // also decides whether an explicit Cancel button is needed alongside the
     // navigation stack's own back button.
     private var isModal: Bool { existing == nil }
+
 
     var body: some View {
         Form {
@@ -277,11 +303,25 @@ struct ActivityEditor: View {
                     NavigationLink {
                         ActivityVisitsView(activityName: existing.name)
                     } label: {
-                        LabeledContent("Visits using this", value: "\(usageCount)")
+                        LabeledContent("History", value: "\(usageCount) \(usageCount == 1 ? "visit" : "visits")")
                     }
                     .accessibilityIdentifier("activity-visits-link")
                 } footer: {
                     Text("Open to review them, or correct one on its own without changing the rest.")
+                }
+                ActivityUsageSummary(activityName: existing.name)
+            }
+            if let existing, let onDelete {
+                Section {
+                    Button("Delete Activity", role: .destructive) {
+                        dismiss()
+                        onDelete(existing)
+                    }
+                    .accessibilityIdentifier("delete-activity")
+                } footer: {
+                    Text(usageCount > 0
+                         ? "Its visits keep their label, but Insights counts them as “Other” until an activity with this name exists again."
+                         : "Nothing in your timeline uses this activity.")
                 }
             }
         }

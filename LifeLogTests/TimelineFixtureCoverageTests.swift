@@ -264,6 +264,61 @@ struct TimelineFixtureCoverageTests {
         }
     }
 
+    /// The figures the activity page reports, in the shape the sketch asked for:
+    /// occasions, total, average, shortest, longest, and where it happened.
+    @Test("An activity's totals, spread and top locations")
+    func summarisesOneActivity() {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        func beers(daysAgo: Int, hours: Double, place: String) -> Visit {
+            let start = calendar.date(byAdding: .day, value: -daysAgo, to: now)!
+            return Visit(arrival: start, departure: start.addingTimeInterval(hours * 3_600),
+                         latitude: -23.37, longitude: 150.51, placeName: place,
+                         inferredActivity: "Beers", userActivity: "Beers", source: "manual")
+        }
+        let visits = [
+            beers(daysAgo: 1, hours: 2, place: "O'Dowds"),
+            beers(daysAgo: 2, hours: 6, place: "O'Dowds"),
+            beers(daysAgo: 3, hours: 1, place: "Paddy's"),
+            beers(daysAgo: 20, hours: 3, place: "O'Leary's"),
+            // A different activity at the same place must not be counted.
+            Visit(arrival: now, departure: now.addingTimeInterval(3_600),
+                  latitude: -23.37, longitude: 150.51, placeName: "O'Dowds",
+                  inferredActivity: "Coffee", userActivity: "Coffee", source: "manual")
+        ]
+
+        let stats = ActivityStatistics.make(activity: "Beers", visits: visits,
+                                            days: 7, now: now, calendar: calendar)
+
+        #expect(stats.occasions == 4)
+        #expect(stats.totalTime == 12 * 3_600)
+        #expect(stats.averageTime == 3 * 3_600)
+        #expect(stats.shortestTime == 3_600)
+        #expect(stats.longestTime == 6 * 3_600)
+        // Ordered by how often, so the usual haunt leads.
+        #expect(stats.places.map(\.name) == ["O'Dowds", "O'Leary's", "Paddy's"])
+        #expect(stats.places.first?.occasions == 2)
+        // Seven columns ending today, whether or not anything happened in them.
+        #expect(stats.recentDays.count == 7)
+        #expect(stats.recentDays.map(\.occasions).reduce(0, +) == 3, "The 20-day-old night is outside the week")
+        // This week against the one before it: nothing in the previous week, so there
+        // is no change to report rather than a fabricated one.
+        #expect(stats.currentPeriodTime == 9 * 3_600)
+        #expect(stats.previousPeriodTime == 0)
+        #expect(stats.changeFraction == nil)
+        #expect(stats.firstUsed == visits[3].arrival)
+        #expect(stats.lastUsed == visits[0].arrival)
+    }
+
+    @Test("An activity nothing uses reports nothing rather than zeroes")
+    func summarisesAnUnusedActivity() {
+        let stats = ActivityStatistics.make(activity: "Bowling", visits: [])
+        #expect(stats.isEmpty)
+        #expect(stats.occasions == 0)
+        #expect(stats.firstUsed == nil)
+        #expect(stats.changeFraction == nil)
+    }
+
     @Test("Adopted activities are grouped, not dumped into Other")
     func suggestedCategoriesCoverRealVocabulary() {
         #expect(ActivityCatalog.suggestedCategory(for: "Work") == "Work")

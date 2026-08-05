@@ -197,6 +197,26 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["At home"].exists)
     }
 
+    /// The Activities tab sits between Timeline and Insights, and each activity opens
+    /// onto its own figures.
+    func testActivitiesTabOpensAnActivitysDetail() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+
+        app.tabBars.buttons["Activities"].tap()
+        XCTAssertTrue(element("activities-tab-screen").waitForExistence(timeout: 10))
+
+        // Seeded history uses "At home", so it is listed and has figures behind it.
+        let row = app.staticTexts["At home"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.tap()
+
+        XCTAssertTrue(element("activity-detail-screen").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Total occasions"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Top locations"].exists)
+    }
+
     func testManualEntryIsAccessibleFromTimeline() {
         let addVisit = app.buttons["Add visit"]
         XCTAssertTrue(addVisit.waitForExistence(timeout: 5))

@@ -2,6 +2,16 @@
 
 ## 2026-08-05
 
+### An Activities tab
+
+- A new tab between Timeline and Insights lists every activity you use, each with the shape of the last seven days beside it. Activities your timeline uses but the Activities list has never heard of appear too, rather than being quietly left out — those are usually the ones worth attention. Anything you have never recorded sorts to the bottom.
+- Opening one shows that activity on its own: how it moved over the last 7, 30 or 90 days, this period against the one before it with the change between them, averages per day and per week, the places it happens most, and the totals underneath — occasions, total time, average, shortest and longest.
+- When there is nothing in the previous period, no change is reported rather than a percentage invented from zero.
+
+### Activity settings say when a label was used
+
+- Editing an activity now shows when it was first and last used — "This activity was used once, on Thursday 18 August 2025" — which is usually how you spot a label created once and forgotten. Its History is one tap away, and it can be deleted from the same screen instead of only by swiping the list. Deleting still asks first when the activity is in use, and still leaves its visits labelled.
+
 ### Commuting is counted as its own thing
 
 - The journey between home and work is now recognised as a commute, and only that journey: a drive to work from the gym is not one. Previously LifeLog looked only at where a journey ended, so anything finishing at work read the same way, and commuting could never be totalled.
