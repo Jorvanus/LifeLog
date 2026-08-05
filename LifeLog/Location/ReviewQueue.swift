@@ -38,14 +38,6 @@ enum ReviewQueue {
             case .passingStay: "Did you stop here?"
             }
         }
-
-        var explanation: String {
-            switch self {
-            case .unidentified: "LifeLog could not identify this place."
-            case .uncertainMatch: "Apple Maps was not sure about this match."
-            case .passingStay: "A short stay somewhere you have not been since — this can happen while driving past."
-            }
-        }
     }
 
     struct Entry: Identifiable {
@@ -114,10 +106,7 @@ enum ReviewQueue {
     /// callbacks for one place can drift apart; coordinate when there is no name,
     /// which is exactly the "repeated unknown coordinates" case.
     private static func placeKey(for visit: Visit) -> String {
-        if !visit.hasPlaceholderName {
-            return visit.placeName.folding(options: [.caseInsensitive, .diacriticInsensitive],
-                                           locale: .current).lowercased()
-        }
+        if !visit.hasPlaceholderName { return NameKey.matching(visit.placeName) }
         let latitude = (visit.latitude * coordinatePrecision).rounded() / coordinatePrecision
         let longitude = (visit.longitude * coordinatePrecision).rounded() / coordinatePrecision
         return "\(latitude),\(longitude)"

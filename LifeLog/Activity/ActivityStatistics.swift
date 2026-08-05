@@ -129,7 +129,7 @@ struct ActivityStatistics: Sendable {
         var result: [Summary] = []
         var seen = Set<String>()
         for name in names {
-            let key = normalised(name)
+            let key = NameKey.matching(name)
             guard seen.insert(key).inserted else { continue }
             result.append(summary(for: name, key: key))
         }
@@ -164,7 +164,7 @@ struct ActivityStatistics: Sendable {
         var result: [ActivityStatistics] = []
         var seen = Set<String>()
         for name in names {
-            let key = normalised(name)
+            let key = NameKey.matching(name)
             guard seen.insert(key).inserted else { continue }
             result.append(make(activity: name, matching: grouped[key] ?? [],
                                days: days, now: now, calendar: calendar))
@@ -179,8 +179,8 @@ struct ActivityStatistics: Sendable {
     /// - Parameter days: how far back the sparkline and the period comparison reach.
     static func make(activity: String, visits: [Visit], days: Int = 7,
                      now: Date = .now, calendar: Calendar = .current) -> ActivityStatistics {
-        let key = normalised(activity)
-        return make(activity: activity, matching: visits.filter { normalised($0.activity) == key },
+        let key = NameKey.matching(activity)
+        return make(activity: activity, matching: visits.filter { NameKey.matching($0.activity) == key },
                     days: days, now: now, calendar: calendar)
     }
 
@@ -255,9 +255,5 @@ struct ActivityStatistics: Sendable {
             currentPeriodTime: current,
             previousPeriodTime: previous
         )
-    }
-
-    private static func normalised(_ value: String) -> String {
-        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 }

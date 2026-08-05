@@ -71,14 +71,14 @@ enum SavedPlaceLearning {
             return distance <= 200 ? (place, distance) : nil
         }
 
-        let previousKey = previousPlaceName.map(normalizedKey)
-        let currentKey = normalizedKey(name)
+        let previousKey = previousPlaceName.map(NameKey.matching)
+        let currentKey = NameKey.matching(name)
         let previousMatch = previousKey.flatMap { key in
-            nearby.filter { normalizedKey($0.place.name) == key }
+            nearby.filter { NameKey.matching($0.place.name) == key }
                 .min { $0.distance < $1.distance }?.place
         }
         let existing = previousMatch
-            ?? nearby.filter { normalizedKey($0.place.name) == currentKey }
+            ?? nearby.filter { NameKey.matching($0.place.name) == currentKey }
                 .min { $0.distance < $1.distance }?.place
             ?? nearby.filter { $0.distance <= 75 }
                 .min { $0.distance < $1.distance }?.place
@@ -164,13 +164,13 @@ enum SavedPlaceLearning {
         let imported = try context.fetch(FetchDescriptor<Visit>(
             predicate: #Predicate { $0.source == "imported-journal" }
         ))
-        let coreName = normalizedTokens(coreVisit.placeName)
-        let coreActivity = normalizedTokens(coreVisit.activity)
+        let coreName = NameKey.tokens(coreVisit.placeName)
+        let coreActivity = NameKey.tokens(coreVisit.activity)
         for visit in imported where visit.latitude == 0 && visit.longitude == 0 {
             let timeDistance = abs(visit.arrival.timeIntervalSince(coreVisit.arrival))
             guard timeDistance <= 6 * 60 * 60 else { continue }
-            let nameMatch = !coreName.isEmpty && !normalizedTokens(visit.placeName).isDisjoint(with: coreName)
-            let activityMatch = !coreActivity.isEmpty && !normalizedTokens(visit.activity).isDisjoint(with: coreActivity)
+            let nameMatch = !coreName.isEmpty && !NameKey.tokens(visit.placeName).isDisjoint(with: coreName)
+            let activityMatch = !coreActivity.isEmpty && !NameKey.tokens(visit.activity).isDisjoint(with: coreActivity)
             guard nameMatch || (activityMatch && timeDistance <= 90 * 60) else { continue }
             visit.latitude = coreVisit.latitude
             visit.longitude = coreVisit.longitude
@@ -187,20 +187,7 @@ enum SavedPlaceLearning {
     }
 
     private static func isReusableName(_ name: String) -> Bool {
-        let key = normalizedKey(name)
+        let key = NameKey.matching(name)
         return !key.isEmpty && key != "identifying…" && key != "unknown place"
-    }
-
-    private static func normalizedKey(_ value: String) -> String {
-        TextSafety.clean(value, maximumLength: 100)
-            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-            .lowercased()
-    }
-
-    private static func normalizedTokens(_ value: String) -> Set<String> {
-        Set(normalizedKey(value)
-            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
-            .map(String.init)
-            .filter { $0.count > 2 })
     }
 }

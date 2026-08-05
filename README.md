@@ -12,6 +12,26 @@ LifeLog can also import sleep, Apple Watch workouts, Watch walking, and iPhone m
 4. Select your Apple development team under Signing & Capabilities.
 5. Run on a physical iPhone; visit monitoring is not meaningfully testable in the simulator.
 
+## Source layout
+
+Sources are grouped by what they do, under `LifeLog/`. `project.yml` globs the
+whole directory, so adding a file to any of these folders needs no project edit —
+just regenerate.
+
+| Folder | What lives there |
+| --- | --- |
+| `App/` | Entry point, root tab view, store opening and recovery |
+| `Model/` | SwiftData models and the versioned schema/migration plan |
+| `Location/` | Core Location recording, stay resolution, geofences, Maps lookup, Saved Place learning, review queue |
+| `Activity/` | Activity vocabulary, icons, colours, statistics, inference, Health/Motion import |
+| `Journal/` | CSV journal import and compaction |
+| `Timeline/` | The day's journey, its visit editor and artwork, manual entry |
+| `Insights/` | Aggregation snapshot, the donut, the places map, export |
+| `Places/` | Saved Places and place history |
+| `Settings/` | Settings and the activity/group editors |
+| `Diagnostics/` | Diagnostic records and the screens that show them |
+| `Support/` | Text safety, name matching, backup, card styling, test seed data |
+
 ## Important behavior
 
 - iOS, not the app, decides when visit events arrive. They can be delayed.
@@ -24,6 +44,7 @@ LifeLog can also import sleep, Apple Watch workouts, Watch walking, and iPhone m
 
 ## Next milestones
 
-- Add MapKit local search for manual place selection.
-- Add weekly comparisons, weekday patterns, and CSV/JSON export.
-- Add an optional encrypted iCloud sync mode.
+See `TODO.md`, which is the live list. The near-term priorities are reading the
+archive as a journal (Timeline is still today-only, and there is no search),
+proving geofencing and the Wi-Fi anchor on the actual phone, and giving the
+Insights aggregation its first tests.

@@ -105,7 +105,7 @@ enum ActivityLocationPolicy {
         let candidateEnd = candidate.departure ?? now
         guard host.arrival < candidateEnd, hostEnd > candidate.arrival else { return false }
         guard !Visit.isPlaceholderName(host.placeName), !Visit.isPlaceholderName(candidate.placeName),
-              normalized(host.placeName) == normalized(candidate.placeName) else { return false }
+              NameKey.matching(host.placeName) == NameKey.matching(candidate.placeName) else { return false }
         return CLLocation(latitude: host.latitude, longitude: host.longitude)
             .distance(from: CLLocation(latitude: candidate.latitude, longitude: candidate.longitude)) <= 250
     }
@@ -318,7 +318,7 @@ enum ActivityLocationPolicy {
         // A long absence is not repaired. Whatever happened in an hour away, claiming
         // the person never left would be a bigger error than leaving the two rows.
         guard gap.duration <= 60 * 60 else { return false }
-        guard normalized(previous.placeName) == normalized(stay.placeName),
+        guard NameKey.matching(previous.placeName) == NameKey.matching(stay.placeName),
               !Visit.isPlaceholderName(stay.placeName) else { return false }
         let distance = CLLocation(latitude: previous.latitude, longitude: previous.longitude)
             .distance(from: CLLocation(latitude: stay.latitude, longitude: stay.longitude))
@@ -443,9 +443,9 @@ enum ActivityLocationPolicy {
             return "Home"
         }
 
-        let key = normalized(destination.placeName)
+        let key = NameKey.matching(destination.placeName)
         guard !key.isEmpty, !Visit.isPlaceholderName(destination.placeName) else { return nil }
-        let matches = locations.filter { normalized($0.placeName) == key }
+        let matches = locations.filter { NameKey.matching($0.placeName) == key }
         let distinctDays = Set(matches.map { Calendar.current.startOfDay(for: $0.arrival) }).count
         // Avoid learning a destination name from a one-off or same-day GPS duplicate.
         guard matches.count >= 3, distinctDays >= 2 else { return nil }
@@ -457,14 +457,10 @@ enum ActivityLocationPolicy {
         if InferenceEngine.activity(placeName: destination.placeName) == "Working" || text.contains("home") {
             return "learned"
         }
-        let key = normalized(destination.placeName)
-        let matches = locations.filter { normalized($0.placeName) == key }
+        let key = NameKey.matching(destination.placeName)
+        let matches = locations.filter { NameKey.matching($0.placeName) == key }
         let days = Set(matches.map { Calendar.current.startOfDay(for: $0.arrival) }).count
         return matches.count >= 3 && days >= 2 ? "learned" : "medium"
-    }
-
-    private static func normalized(_ value: String) -> String {
-        value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current).lowercased()
     }
 
     static func minimumRetainedDuration(for source: String) -> TimeInterval {

@@ -358,7 +358,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             do {
                 for try await event in await monitor.events {
                     guard !Task.isCancelled else { return }
-                    await self.handle(event)
+                    self.handle(event)
                 }
             } catch {
                 self.lastError = "Place monitoring stopped unexpectedly."
@@ -429,19 +429,16 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         let identity = ObjectIdentifier(visit)
         guard identifyingVisits.insert(identity).inserted else { return }
         let coordinate = CLLocationCoordinate2D(latitude: visit.latitude, longitude: visit.longitude)
-        // Identifies this lookup to the service for the life of the call. It used to
-        // be retained in a dictionary keyed by visit so a correction could cancel it,
-        // but nothing ever cancelled, and only the (uncalled) cancel path removed an
-        // entry — so the dictionary grew for the life of the process. `identifyingVisits`
-        // still guards against a second lookup for the same visit, and the `guard
-        // visit.needsCategorisation` below is what actually stops a late Maps result
-        // from overwriting a correction.
-        let lookupID = UUID()
+        // Lookups used to carry a per-visit identifier so a correction could cancel
+        // one, but nothing ever cancelled by identifier and the token was threaded
+        // through the service unused. `identifyingVisits` guards against a second
+        // lookup for the same visit, and the `guard visit.needsCategorisation` below
+        // is what actually stops a late Maps result from overwriting a correction.
         Task { @MainActor [weak self] in
             guard let self, let context = self.context else { return }
             defer { self.identifyingVisits.remove(identity) }
             do {
-                let result = try await PlaceLookupService.nearbyPlaces(at: coordinate, arrival: visit.arrival, lookupID: lookupID)
+                let result = try await PlaceLookupService.nearbyPlaces(at: coordinate, arrival: visit.arrival)
                 Diagnostics.locationMetric(context, operation: "maps_lookup",
                                            durationMs: result.latencyMs,
                                            candidateCount: result.candidateCount,

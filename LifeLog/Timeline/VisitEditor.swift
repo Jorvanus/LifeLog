@@ -1,0 +1,505 @@
+import SwiftUI
+import SwiftData
+import MapKit
+import CoreLocation
+
+/// Editing one visit: its place, activity, times and note, the nearby Apple Maps
+/// alternatives, and the correction history behind it.
+
+struct VisitEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
+    @Bindable var visit: Visit
+    @Query(sort: \VisitCorrection.changedAt, order: .reverse) private var corrections: [VisitCorrection]
+    @Query(sort: \Visit.arrival, order: .reverse) private var history: [Visit]
+    @State private var saveFailed = false
+    @State private var confirmingDelete = false
+    @State private var correctionBaseline: VisitCorrectionSnapshot?
+    @State private var mapPosition: MapCameraPosition = .automatic
+    @State private var adjustingLocation = false
+    @State private var showingNearbyPlaces = false
+    private let activities = ["At home", "Working", "Eating", "Shopping", "Exercising", "Healthcare", "Studying", "Travelling", "Socialising", "Visiting"]
+
+    private var availableActivities: [String] {
+        let names = ActivityCatalog.load().map(\.name)
+        return names.isEmpty ? activities : names
+    }
+
+    var body: some View {
+        Form {
+            if visit.needsCategorisation {
+                Section {
+                    Label("This place isn’t recognised yet", systemImage: "questionmark.circle.fill")
+                        .foregroundStyle(.orange)
+                    Text("Categorise it once and LifeLog will recognise this location next time.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                if canLearnPlace {
+                    Section("Quick labels") {
+                        Button {
+                            applyQuickLabel(name: "Home", activity: "At home")
+                        } label: {
+                            Label("Set as Home", systemImage: "house.fill")
+                        }
+                        Button {
+                            applyQuickLabel(name: "Work", activity: "Working")
+                        } label: {
+                            Label("Set as Work", systemImage: "building.2.fill")
+                        }
+                    }
+                }
+            }
+            if visit.needsCategorisation && !visit.placeSuggestions.isEmpty {
+                Section {
+                    ForEach(visit.placeSuggestions) { suggestion in
+                        Button {
+                            select(suggestion)
+                        } label: {
+                            HStack(spacing: 12) {
+                                ActivityIcon(activity: suggestion.suggestedActivity, context: suggestion.name,
+                                             color: activityColor(suggestion.suggestedActivity), size: 42)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(suggestion.name).foregroundStyle(.primary)
+                                    Text("\(suggestion.suggestedActivity) · \(Int(suggestion.distance.rounded())) m away")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Nearby places")
+                } footer: {
+                    Text("Suggestions are nearby public places from Apple Maps.")
+                }
+            }
+            if visit.hasRoute {
+                Section {
+                    Map(position: $mapPosition) {
+                        MapPolyline(coordinates: visit.route.map(\.coordinate))
+                            .stroke(activityColor(visit.activity), lineWidth: 4)
+                    }
+                    .frame(height: 240)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .mapControls { MapCompass() }
+                    .accessibilityIdentifier("visit-route-map")
+                    Text(routeSummary)
+                        .font(.footnote).foregroundStyle(.secondary)
+                } header: {
+                    Text("Journey")
+                } footer: {
+                    // Said plainly, because this is the most precise location data
+                    // LifeLog holds and the person should know it is here.
+                    Text("The path this walk followed, recorded by Apple Health.")
+                }
+            }
+            if visit.latitude != 0 || visit.longitude != 0 {
+                Section {
+                    if let coordinate = recordedCoordinate {
+                        MapReader { proxy in
+                            Map(position: $mapPosition) {
+                                Marker("Recorded location", coordinate: coordinate)
+                                    .tint(adjustingLocation ? .orange : .blue)
+                            }
+                            .frame(height: 240)
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                            .mapControls { MapCompass(); MapUserLocationButton() }
+                            .onTapGesture(coordinateSpace: .local) { point in
+                                guard adjustingLocation,
+                                      let updated = proxy.convert(point, from: .local),
+                                      CLLocationCoordinate2DIsValid(updated) else { return }
+                                visit.latitude = updated.latitude
+                                visit.longitude = updated.longitude
+                                mapPosition = .region(region(centeredOn: updated))
+                            }
+                        }
+                        .accessibilityIdentifier("visit-location-map-picker")
+                        Text(adjustingLocation
+                             ? "Tap the map to move the pin, then tap Done to save it."
+                             : "Recorded at the location shown above.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                        Button {
+                            adjustingLocation.toggle()
+                        } label: {
+                            Label(adjustingLocation ? "Finish adjusting pin" : "Adjust pin location",
+                                  systemImage: adjustingLocation ? "checkmark.circle" : "mappin.and.ellipse")
+                        }
+                    } else {
+                        Label("No map coordinate was recorded for this visit.", systemImage: "mappin.slash")
+                            .foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("Map location")
+                } footer: {
+                    Text("Adjusting the pin changes this visit’s stored coordinate. It does not contact Apple Maps until you choose a place suggestion or save a place.")
+                }
+            }
+            Section {
+                TextField("Place name", text: $visit.placeName)
+                if recordedCoordinate != nil {
+                    Button {
+                        showingNearbyPlaces = true
+                    } label: {
+                        Label("Choose nearby Apple Maps place", systemImage: "mappin.and.ellipse")
+                    }
+                }
+                if visit.needsConfirmation {
+                    // Without this there is no way to agree with a weak guess:
+                    // dismissing the editor leaves the confidence untouched, so the
+                    // visit would return to the review queue forever.
+                    Button { confirmPlace() } label: {
+                        Label("Yes, this is right", systemImage: "checkmark.circle.fill")
+                    }
+                    .accessibilityIdentifier("confirm-place")
+                }
+            } header: {
+                Text("Place")
+            } footer: {
+                if visit.needsConfirmation {
+                    Text("LifeLog matched this from Apple Maps but isn\u{2019}t confident. Confirming remembers it for future visits here; correcting the name teaches it instead.")
+                }
+            }
+            Section("What were you doing?") {
+                if !historicalActivities.isEmpty {
+                    Menu {
+                        ForEach(historicalActivities, id: \.self) { activity in
+                            Button(activity) { visit.userActivity = activity }
+                        }
+                    } label: {
+                        Label("Use a previous activity here", systemImage: "clock.arrow.circlepath")
+                    }
+                }
+                Picker("Activity", selection: activityBinding) {
+                    Text("Choose an activity").tag("")
+                    ForEach(availableActivities, id: \.self) { Text($0).tag($0) }
+                }
+                TextField("Or enter your own", text: activityBinding)
+                TextField("Notes", text: $visit.note, axis: .vertical)
+            }
+            Text("Changing the activity or place type updates this visit. For a recognised location, saving also learns the choice for future check-ins; you can edit it again at any time.")
+                .font(.footnote).foregroundStyle(.secondary)
+            Section("Recognition") {
+                LabeledContent("Confidence", value: visit.confidenceLabel)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Inferred activity evidence")
+                        .font(.subheadline.weight(.semibold))
+                    Text(inferenceEvidenceText)
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Text("This is an inference, not a confirmed fact. You can edit the activity above.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if !matchingCorrections.isEmpty {
+                    ForEach(matchingCorrections.prefix(5)) { correction in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(correction.reason).font(.caption.bold())
+                            Text("\(correction.previousPlaceName) → \(correction.newPlaceName)")
+                            Text("\(correction.previousActivity) → \(correction.newActivity)")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                } else {
+                    Text("No corrections recorded for this visit yet.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+            Section("Time") {
+                DatePicker("Arrived", selection: $visit.arrival)
+                DatePicker("Left", selection: Binding(get: { visit.departure ?? .now }, set: { visit.departure = $0 }))
+            }
+            if visit.latitude != 0 || visit.longitude != 0 {
+                Section {
+                    Button {
+                        learnPlace()
+                    } label: {
+                        Label("Save & Learn Place", systemImage: "brain.head.profile")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .disabled(!canLearnPlace)
+                } footer: {
+                    Text("LifeLog will update a nearby saved geofence or create a new 100-metre geofence, then reuse this place and activity automatically.")
+                }
+            }
+            Section {
+                Button("Delete Visit", role: .destructive) { confirmingDelete = true }
+                    .accessibilityIdentifier("delete-visit")
+            } footer: {
+                // Was a trash glyph in the top-left corner, a thumb's width from the
+                // back button. A destructive action does not belong where a person
+                // reaches to leave the screen.
+                Text("Removes this entry from your timeline. This cannot be undone.")
+            }
+        }
+        .navigationTitle(visit.needsCategorisation ? "Categorise Place" : "Visit")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showingNearbyPlaces) {
+            if let coordinate = recordedCoordinate {
+                NearbyPlacePicker(coordinate: coordinate, arrival: visit.arrival) { suggestion in
+                    select(suggestion)
+                    visit.latitude = suggestion.latitude
+                    visit.longitude = suggestion.longitude
+                    showingNearbyPlaces = false
+                }
+            }
+        }
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Done") { saveAndDismiss() }
+            }
+        }
+        .alert("Couldn’t save changes", isPresented: $saveFailed) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("LifeLog left your existing timeline unchanged.")
+        }
+        .confirmationDialog("Delete this visit?", isPresented: $confirmingDelete) {
+            Button("Delete visit", role: .destructive) { deleteVisit() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("If the visits before and after it are the same place and activity, their time will be merged. Otherwise no surrounding visit will be guessed.")
+        }
+        .onAppear {
+            if correctionBaseline == nil { correctionBaseline = currentSnapshot }
+            if let coordinate = recordedCoordinate {
+                mapPosition = .region(region(centeredOn: coordinate))
+            }
+        }
+        .onDisappear {
+            guard !saveFailed else { return }
+            sanitizeVisit()
+            try? persistChanges(forceLearning: false)
+        }
+    }
+
+    private var activityBinding: Binding<String> {
+        Binding(get: { visit.userActivity ?? "" }, set: { visit.userActivity = $0 })
+    }
+
+    private var historicalActivities: [String] {
+        var values = history
+            .filter { $0.id != visit.id && $0.placeName.caseInsensitiveCompare(visit.placeName) == .orderedSame }
+            .map(\.activity)
+        values.append(contentsOf: ActivityCatalog.load().map(\.name))
+        return Array(Set(values)).filter { !$0.isEmpty }.sorted()
+    }
+
+    /// Whether the walk came back to where it started is the thing a person actually
+    /// recognises about it — a loop from home reads differently from a walk somewhere.
+    private var routeSummary: String {
+        let points = visit.route
+        guard let first = points.first, let last = points.last else { return "No path recorded" }
+        let distance = formattedDistance(visit.routeDistance)
+        let returned = last.location.distance(from: first.location) <= ActivityLocationPolicy.departureRadius
+        return returned ? "\(distance) · returned to the start" : "\(distance) · ended elsewhere"
+    }
+
+    private var inferenceEvidenceText: String {
+        var evidence = visit.inferenceEvidence
+        let key = visit.placeName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !key.isEmpty, key != "identifying…", key != "unknown place" {
+            let recurrence = history.reduce(into: 0) { count, candidate in
+                if candidate.id != visit.id,
+                   candidate.placeName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == key {
+                    count += 1
+                }
+            }
+            if recurrence > 0 { evidence.append("Recurring place (\(recurrence) prior check-in\(recurrence == 1 ? "" : "s"))") }
+        }
+        return evidence.isEmpty ? "No inference evidence recorded" : evidence.joined(separator: " · ")
+    }
+
+    /// Accepts a weak Apple Maps guess as correct. The inferred activity becomes an
+    /// explicit choice so the visit stops reading as a guess, and learning it saves
+    /// the place for future arrivals.
+    private func confirmPlace() {
+        if visit.userActivity?.isEmpty != false {
+            visit.userActivity = visit.inferredActivity
+        }
+        visit.recognitionConfidence = "confirmed"
+        learnPlace()
+    }
+
+    private func learnPlace() {
+        sanitizeVisit()
+        do {
+            try persistChanges(forceLearning: true)
+            dismiss()
+        } catch {
+            saveFailed = true
+        }
+    }
+
+    private func select(_ suggestion: PlaceSuggestion) {
+        visit.placeName = suggestion.name
+        visit.userActivity = suggestion.suggestedActivity
+        visit.recognitionConfidence = "confirmed"
+    }
+
+    private func applyQuickLabel(name: String, activity: String) {
+        visit.placeName = name
+        visit.userActivity = activity
+        visit.recognitionConfidence = "confirmed"
+        learnPlace()
+    }
+
+    private func saveAndDismiss() {
+        sanitizeVisit()
+        do {
+            try persistChanges(forceLearning: false)
+            dismiss()
+        } catch {
+            saveFailed = true
+        }
+    }
+
+    private func deleteVisit() {
+        do {
+            let all = try context.fetch(FetchDescriptor<Visit>(sortBy: [SortDescriptor(\.arrival)]))
+            let previous = all.filter { $0.id != visit.id && ($0.departure ?? .now) <= visit.arrival }
+                .max { $0.arrival < $1.arrival }
+            let end = visit.departure ?? visit.arrival
+            let next = all.filter { $0.id != visit.id && $0.arrival >= end }
+                .min { $0.arrival < $1.arrival }
+            if let previous, let next, sameActivityLocation(previous, next) {
+                previous.departure = next.departure ?? next.arrival
+            }
+            context.delete(visit)
+            try context.save()
+            dismiss()
+        } catch {
+            saveFailed = true
+        }
+    }
+
+    private func sameActivityLocation(_ lhs: Visit, _ rhs: Visit) -> Bool {
+        NameKey.same(lhs.placeName, rhs.placeName) && NameKey.same(lhs.activity, rhs.activity)
+    }
+
+    private func sanitizeVisit() {
+        PlaceLookupService.cancelAllLookups()
+        visit.placeName = TextSafety.clean(visit.placeName, maximumLength: 120)
+        visit.userActivity = visit.userActivity.map { TextSafety.clean($0, maximumLength: 80) }
+        visit.note = TextSafety.clean(visit.note, maximumLength: 2_000)
+        if let departure = visit.departure, departure < visit.arrival {
+            visit.departure = visit.arrival
+        }
+    }
+
+    private var canLearnPlace: Bool {
+        (visit.latitude != 0 || visit.longitude != 0) &&
+        !TextSafety.clean(visit.placeName, maximumLength: 100).isEmpty &&
+        !TextSafety.clean(visit.activity, maximumLength: 80).isEmpty
+    }
+
+    private var recordedCoordinate: CLLocationCoordinate2D? {
+        let coordinate = CLLocationCoordinate2D(latitude: visit.latitude, longitude: visit.longitude)
+        guard CLLocationCoordinate2DIsValid(coordinate),
+              coordinate.latitude != 0 || coordinate.longitude != 0 else { return nil }
+        return coordinate
+    }
+
+    private func region(centeredOn coordinate: CLLocationCoordinate2D) -> MKCoordinateRegion {
+        MKCoordinateRegion(center: coordinate,
+                           span: MKCoordinateSpan(latitudeDelta: 0.004, longitudeDelta: 0.004))
+    }
+
+    private var currentSnapshot: VisitCorrectionSnapshot {
+        VisitCorrectionSnapshot(
+            placeName: visit.placeName,
+            activity: visit.userActivity ?? visit.inferredActivity,
+            confidence: visit.recognitionConfidence ?? "pending"
+        )
+    }
+
+    private var matchingCorrections: [VisitCorrection] {
+        corrections.filter {
+            abs($0.visitArrival.timeIntervalSince(visit.arrival)) < 1 &&
+            abs($0.latitude - visit.latitude) < 0.00001 &&
+            abs($0.longitude - visit.longitude) < 0.00001
+        }
+    }
+
+    private func persistChanges(forceLearning: Bool) throws {
+        let corrected = correctionBaseline.map { $0 != currentSnapshot } ?? false
+        // A walk or workout carries no coordinate, so Saved Place learning cannot
+        // reach it and its confidence would stay "device" — which is exactly what the
+        // importer overwrites when Health or Motion replays the same sample. Relabel
+        // a walk as "Dog walk" and the next import would quietly undo it.
+        if corrected, ActivityLocationPolicy.isDeviceActivity(visit) {
+            visit.recognitionConfidence = "confirmed"
+        }
+        if forceLearning || corrected {
+            let result = try SavedPlaceLearning.upsert(
+                from: visit,
+                previousPlaceName: correctionBaseline?.placeName,
+                context: context
+            )
+            if result == nil {
+                CorrectionHistory.record(visit: visit, from: correctionBaseline ?? currentSnapshot,
+                                         context: context, reason: "Manual correction")
+                try context.save()
+            }
+        } else {
+            try context.save()
+        }
+        InsightsInvalidation.invalidate(reason: corrected ? "visit correction" : "visit edit", context: context)
+        correctionBaseline = currentSnapshot
+    }
+}
+
+private struct NearbyPlacePicker: View {
+    @Environment(\.dismiss) private var dismiss
+    let coordinate: CLLocationCoordinate2D
+    let arrival: Date
+    let onSelect: (PlaceSuggestion) -> Void
+    @State private var suggestions: [PlaceSuggestion] = []
+    @State private var isLoading = true
+    @State private var failed = false
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if isLoading {
+                    ProgressView("Searching Apple Maps…")
+                } else if failed || suggestions.isEmpty {
+                    ContentUnavailableView("No nearby places found", systemImage: "mappin.slash",
+                                           description: Text("Try adjusting the pin or enter the place name manually."))
+                } else {
+                    List(suggestions) { suggestion in
+                        Button {
+                            onSelect(suggestion)
+                            dismiss()
+                        } label: {
+                            HStack(spacing: 12) {
+                                ActivityIcon(activity: suggestion.suggestedActivity,
+                                             context: suggestion.name,
+                                             color: activityColor(suggestion.suggestedActivity), size: 42)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(suggestion.name).foregroundStyle(.primary)
+                                    Text("\(suggestion.suggestedActivity) · \(Int(suggestion.distance.rounded())) m away")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Nearby Apple Maps Places")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            }
+            .task {
+                do {
+                    let result = try await PlaceLookupService.nearbyPlaces(at: coordinate, radius: 250, arrival: arrival)
+                    suggestions = result.suggestions
+                } catch {
+                    failed = true
+                }
+                isLoading = false
+            }
+        }
+    }
+}

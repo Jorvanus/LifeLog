@@ -1,5 +1,24 @@
 # Change log
 
+## 2026-08-06
+
+### One answer to "is this the same place?"
+
+- Comparing two place or activity names was written out separately in five places, and they disagreed. Three ignored accents and two did not, so `Café` and `Cafe` were one place to the part of LifeLog that resolves a stay and two separate activities in Insights. Three trimmed stray spaces and two did not. All five now go through one rule, so a name means the same thing on every screen.
+- The visible effect is small and in one direction: totals that were split by an accent or a trailing space now add up together.
+
+### Code that was never running
+
+- A place lookup carried a token so a correction could cancel that one lookup. Nothing ever cancelled by token — the path had been dead since it was written, while the token was still being created and passed around on every lookup. Removed. Editing a visit still cancels lookups; it cancels all of them, which is what has actually been happening all along.
+- Health background delivery was still behind a validated/not-validated flag that was set to true unconditionally at launch, along with the disable path nothing called. Removed; the behaviour is unchanged.
+- Also removed: three Health and Motion import entry points left over from when Settings had buttons for them, an unused review-queue explanation string, an unused inference summary, an unused performance budget, and a diagnostic decision nothing ever recorded.
+
+### Files you can find things in
+
+- Every source file used to sit in one flat folder of fifty-three. They are now grouped by what they do: App, Model, Location, Activity, Journal, Timeline, Insights, Places, Settings, Diagnostics and Support.
+- The two largest files were doing several jobs each. The timeline no longer also contains the visit editor and the activity artwork; Insights no longer also contains the ring, the map and the whole aggregation. The largest file dropped from 1,360 lines to 506.
+- The Insights aggregation was private inside its own view, which is why it has never had a single test. It now lives on its own and can be reached from one.
+
 ## 2026-08-05
 
 ### Diagnostics say why a location was changed

@@ -86,12 +86,3 @@ private struct GeneratedPlaceClassification {
     @Guide(description: "Confidence from 0 to 100", .range(0...100))
     var confidence: Int
 }
-
-enum TextSafety {
-    static func clean(_ text: String, maximumLength: Int) -> String {
-        let withoutControls = String(text.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) })
-        let normalized = withoutControls.precomposedStringWithCanonicalMapping
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return String(normalized.prefix(maximumLength))
-    }
-}

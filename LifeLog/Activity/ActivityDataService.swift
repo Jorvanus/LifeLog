@@ -36,10 +36,6 @@ final class ActivityDataService {
     private var importID: UUID?
     private var stepCache: [String: Double] = [:]
     private var healthObserverQueries: [HKQuery] = []
-    /// Deliberately opt-in while the anchored importer is validated on a real
-    /// device. Background delivery must never be allowed to surprise the main
-    /// Timeline/Insights interaction path before that validation is complete.
-    private let backgroundDeliveryKey = "LifeLog.HealthKit.backgroundDeliveryValidated.v1"
     private let sleepAnchorKey = "LifeLog.HealthKit.sleepAnchor.v1"
     private let workoutAnchorKey = "LifeLog.HealthKit.workoutAnchor.v1"
 
@@ -55,30 +51,20 @@ final class ActivityDataService {
         self.context = context
         modelContainer = container
         refreshMotionStatus()
-        // Background delivery is on by default now. It was held behind a debug toggle
-        // while the anchored importer was proved out on-device; leaving it off means
-        // Health only arrives when the app is opened, which is the opposite of what a
-        // record of your life should need from you.
-        UserDefaults.standard.set(true, forKey: backgroundDeliveryKey)
-        configureBackgroundDeliveryIfValidated()
+        configureBackgroundDelivery()
         requestAccessIfNeeded()
         // History remains opt-in. When requested, its queries and writes use isolated
         // actors so navigation and touch handling stay on the main interaction path.
     }
 
-    /// Enables observer delivery only after the incremental importer has been
-    /// proven responsive on-device. The callback schedules the same isolated,
-    /// anchored import used by Settings; it does not query or write on the main
-    /// interaction path.
-    func setBackgroundDeliveryValidated(_ enabled: Bool) {
-        UserDefaults.standard.set(enabled, forKey: backgroundDeliveryKey)
-        if enabled { configureBackgroundDeliveryIfValidated() }
-        else { disableBackgroundDelivery() }
-    }
-
-    private func configureBackgroundDeliveryIfValidated() {
-        guard UserDefaults.standard.bool(forKey: backgroundDeliveryKey),
-              HKHealthStore.isHealthDataAvailable() else { return }
+    /// Background delivery is unconditional. It was held behind a debug toggle while
+    /// the anchored importer was proved out on-device; leaving it off means Health
+    /// only arrives when the app is opened, which is the opposite of what a record of
+    /// your life should need from you. The observer callback schedules the same
+    /// isolated, anchored import used by Settings; it does not query or write on the
+    /// main interaction path.
+    private func configureBackgroundDelivery() {
+        guard HKHealthStore.isHealthDataAvailable() else { return }
         guard healthObserverQueries.isEmpty else { return }
         guard let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return }
         let types: [HKSampleType] = [sleepType, HKWorkoutType.workoutType()]
@@ -94,15 +80,6 @@ final class ActivityDataService {
             healthObserverQueries.append(query)
             healthStore.enableBackgroundDelivery(for: type, frequency: .hourly) { _, _ in }
         }
-    }
-
-    private func disableBackgroundDelivery() {
-        for query in healthObserverQueries { healthStore.stop(query) }
-        healthObserverQueries.removeAll()
-        if let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) {
-            healthStore.disableBackgroundDelivery(for: sleepType) { _, _ in }
-        }
-        healthStore.disableBackgroundDelivery(for: HKWorkoutType.workoutType()) { _, _ in }
     }
 
     /// Asks for Health and Motion once, on first run.
@@ -144,14 +121,6 @@ final class ActivityDataService {
         }
     }
 
-    func requestMotionAccess() {
-        guard CMMotionActivityManager.isActivityAvailable() else {
-            motionStatus = "Unavailable on this device"
-            return
-        }
-        startImport(healthDays: nil, motionDays: 7)
-    }
-
     /// Core Motion keeps only about a week of history, and LifeLog imported it solely
     /// when the owner pressed a button in Settings. Miss a week and that week is gone
     /// for good — which is why a phone reporting "Connected" had no motion records at
@@ -178,13 +147,6 @@ final class ActivityDataService {
 
         UserDefaults.standard.set(now, forKey: motionRefreshKey)
         startImport(healthDays: healthDays, motionDays: motionDays)
-    }
-
-    func importAll() {
-        startImport(
-            healthDays: HKHealthStore.isHealthDataAvailable() ? 30 : nil,
-            motionDays: CMMotionActivityManager.authorizationStatus() == .authorized ? 7 : nil
-        )
     }
 
     func cancelImport() {

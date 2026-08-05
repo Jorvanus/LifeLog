@@ -50,7 +50,6 @@ struct PlaceLookupResult {
 enum PlaceLookupService {
     private struct CachedResult { let createdAt: Date; let result: PlaceLookupResult }
     private static var cache: [String: CachedResult] = [:]
-    private static var cancelledLookups: Set<UUID> = []
     private static var lookupGeneration = 0
     private static let cacheLifetime: TimeInterval = 15 * 60
     /// A coordinate with no nearby points of interest is worth remembering, but not
@@ -59,16 +58,18 @@ enum PlaceLookupService {
     /// keeps LifeLog from repeating a multi-second search on every callback there.
     private static let emptyResultLifetime: TimeInterval = 5 * 60
 
-    static func cancelLookup(id: UUID) {
-        cancelledLookups.insert(id)
-    }
-
+    /// Cancels every lookup in flight. This is deliberately all-or-nothing: it fires
+    /// when a visit is edited, and a lookup that finishes afterwards would write a
+    /// Maps name over the one the person just typed. Cancelling a single visit's
+    /// lookup would be kinder to unrelated background work, but a per-visit
+    /// mechanism existed here for a while without ever being called, so this is the
+    /// behaviour that has actually been running.
     static func cancelAllLookups() {
         lookupGeneration += 1
     }
 
     static func nearbyPlaces(at coordinate: CLLocationCoordinate2D, radius: CLLocationDistance = 150,
-                             arrival: Date = .now, category: String? = nil, lookupID: UUID? = nil) async throws -> PlaceLookupResult {
+                             arrival: Date = .now, category: String? = nil) async throws -> PlaceLookupResult {
         let startedAt = Date.now
         let boundedRadius = min(max(radius, 75), 500)
         guard CLLocationCoordinate2DIsValid(coordinate) else {
@@ -92,10 +93,7 @@ enum PlaceLookupService {
         try Task.checkCancellation()
         let request = MKLocalPointsOfInterestRequest(center: coordinate, radius: boundedRadius)
         let response = try await MKLocalSearch(request: request).start()
-        if generation != lookupGeneration || (lookupID.map({ cancelledLookups.contains($0) }) ?? false) {
-            if let lookupID { cancelledLookups.remove(lookupID) }
-            throw CancellationError()
-        }
+        if generation != lookupGeneration { throw CancellationError() }
         let origin = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
 
         var suggestions = response.mapItems.compactMap { item -> PlaceSuggestion? in
@@ -149,7 +147,6 @@ enum PlaceLookupService {
                                           searchRadius: boundedRadius)
             evictExpired()
             cache[cell] = CachedResult(createdAt: .now, result: empty)
-            if let lookupID { cancelledLookups.remove(lookupID) }
             return empty
         }
 
@@ -170,7 +167,6 @@ enum PlaceLookupService {
                                        searchRadius: boundedRadius)
         evictExpired()
         cache[cell] = CachedResult(createdAt: .now, result: result)
-        if let lookupID { cancelledLookups.remove(lookupID) }
         return result
     }
 

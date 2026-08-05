@@ -226,13 +226,7 @@ final class Visit {
         }
         return evidence
     }
-
-    var inferenceSummary: String {
-        let evidence = inferenceEvidence
-        return evidence.isEmpty ? "No inference evidence recorded" : evidence.joined(separator: " · ")
-    }
 }
-
 
 /// Immutable audit entry for a user correction or a learned Saved Place update.
 /// It stores labels and confidence only; precise coordinates remain in the visit.

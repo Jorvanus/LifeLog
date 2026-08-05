@@ -20,7 +20,6 @@ enum LocationDiagnostics {
         case superseded  // a duplicate was kept but taken out of the timeline
         case closed      // an open stay was given an end
         case promoted    // a place was named, or a name was upgraded
-        case rejected    // a candidate was declined and something else used
 
         var verb: String { rawValue }
     }

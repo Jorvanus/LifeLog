@@ -40,7 +40,6 @@ enum Diagnostics {
     /// device checks and diagnostic records use the same limits.
     enum PerformanceBudget {
         static let responsiveFirstScreen: TimeInterval = 0.25
-        static let normalInteraction: TimeInterval = 0.25
         static let insightsDay: TimeInterval = 0.25
         static let insightsMonth: TimeInterval = 0.75
         static let insightsYear: TimeInterval = 1.5
