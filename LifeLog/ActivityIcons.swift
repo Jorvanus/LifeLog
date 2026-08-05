@@ -43,12 +43,12 @@ enum ActivityIcons {
         ]),
         Group(name: "Health", symbols: [
             "cross.case.fill", "heart.fill", "stethoscope", "pills.fill",
-            "bandage.fill", "brain.head.profile", "drop.fill"
+            "bandage.fill", "brain.head.profile.fill", "drop.fill"
         ]),
         Group(name: "Travel", symbols: [
             "car.fill", "bus.fill", "tram.fill", "airplane", "ferry.fill",
-            "fuelpump.fill", "suitcase.fill", "map.fill", "mappin.and.ellipse",
-            "road.lanes", "globe"
+            "fuelpump.fill", "bolt.car.fill", "suitcase.fill", "map.fill",
+            "mappin.and.ellipse", "road.lanes", "globe.americas.fill"
         ]),
         Group(name: "Outdoors", symbols: [
             "mountain.2.fill", "tree.fill", "beach.umbrella.fill", "water.waves",
@@ -56,10 +56,11 @@ enum ActivityIcons {
         ]),
         Group(name: "Going out", symbols: [
             "film.fill", "music.mic", "music.note", "headphones", "theatermasks.fill",
-            "gamecontroller.fill", "party.popper.fill", "ticket.fill"
+            "gamecontroller.fill", "party.popper.fill", "balloon.fill", "ticket.fill"
         ]),
         Group(name: "People & pets", symbols: [
-            "person.2.fill", "person.3.fill", "figure.and.child.holdinghands",
+            "person.2.fill", "person.3.fill", "figure.2",
+            "figure.2.and.child.holdinghands", "figure.and.child.holdinghands",
             "pawprint.fill", "dog.fill", "cat.fill", "hand.wave.fill"
         ]),
         Group(name: "Other", symbols: [

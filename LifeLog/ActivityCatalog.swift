@@ -42,7 +42,43 @@ enum ActivityCatalog {
         ("Studying", "Education", "book.fill"), ("Travelling", "Travel", "car.fill"),
         ("Socialising", "Social", "person.2.fill"), ("Visiting", "Other", "mappin.and.ellipse"),
         ("Watching a movie", "Entertainment", "film.fill")
+    ] + generatedDefaults
+
+    /// Activities the app produces for itself, from Apple Health, the iPhone's motion
+    /// history, and its own journey detection. They were missing from the catalogue
+    /// entirely, so a walk, a night's sleep or a commute arrived with the fallback grey
+    /// dot, no colour of its own and no group — and the Sleep and Commute groups sat
+    /// empty while the timeline was full of both.
+    static let generatedDefaults: [(name: String, category: String, symbol: String)] = [
+        ("Sleeping", "Sleep", "bed.double.fill"),
+        ("Walking", "Fitness", "figure.walk"),
+        ("Running", "Fitness", "figure.run"),
+        ("Cycling", "Fitness", "bicycle"),
+        ("Swimming", "Fitness", "figure.pool.swim"),
+        ("Yoga", "Fitness", "figure.yoga"),
+        ("Strength training", "Fitness", "dumbbell.fill"),
+        ("Commuting", "Commute", "car.fill"),
+        ("In transit", "Travel", "bus.fill"),
+        ("Home time", "Home", "house.fill")
     ]
+
+    private static let adoptedGeneratedKey = "LifeLog.ActivityCatalog.generatedAdopted.v1"
+
+    /// Adds those to a catalogue written before they existed, once.
+    ///
+    /// Only ever adds what is absent, and only ever runs once — so an activity deleted
+    /// deliberately after this stays deleted, rather than reappearing at every launch.
+    static func adoptGeneratedActivities() {
+        guard !storage.bool(forKey: adoptedGeneratedKey) else { return }
+        var activities = load()
+        let existing = Set(activities.map { $0.name.lowercased() })
+        for entry in generatedDefaults where !existing.contains(entry.name.lowercased()) {
+            activities.append(ActivityDefinition(name: entry.name, category: entry.category,
+                                                 symbol: entry.symbol))
+        }
+        save(activities)
+        storage.set(true, forKey: adoptedGeneratedKey)
+    }
 
     /// Alphabetical, ignoring case and accents. A list of labels is scanned by name
     /// and nothing else, and storage order put each newly added entry wherever it
@@ -288,7 +324,7 @@ enum ActivityCatalog {
     }
 
     static func seed() {
-        guard storage.data(forKey: storageKey) == nil else { return }
-        save(load())
+        if storage.data(forKey: storageKey) == nil { save(load()) }
+        adoptGeneratedActivities()
     }
 }

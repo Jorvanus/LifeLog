@@ -2,6 +2,11 @@
 
 ## 2026-08-05
 
+### The activities LifeLog creates now exist in your list
+
+- Sleeping, Walking, Running, Cycling, Swimming, Yoga, Strength training, Commuting, In transit and Home time are all things LifeLog records for you, and none of them were in the Activities list. Each arrived as a grey dot with no colour and no group of its own, and could not be given one without you typing the name yourself — while the Sleep and Commute groups sat empty despite the timeline being full of both. They are now proper activities, added once to a list that predates them, and anything you delete afterwards stays deleted.
+- Four more icons: an electric car, a balloon, and two-person and family symbols. A hundred in total.
+
 ### Wi-Fi sharpens when you left
 
 - Leaving somewhere is rarely noticed at the time. Core Location reports a departure only once it sees the region was left, so LifeLog fell back to timing it from wherever you turned up next — which is why leaving home at 8:40 and reaching work at 9:09 was recorded as leaving at 9:05, and a twenty-five minute commute read as four.

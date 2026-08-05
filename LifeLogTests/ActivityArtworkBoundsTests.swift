@@ -27,6 +27,28 @@ struct ActivityArtworkBoundsTests {
                 "not offered: \(shipped.subtracting(offered).sorted().joined(separator: ", "))")
     }
 
+    @Test("Everything the app can produce exists as an activity")
+    func generatedLabelsAreDefined() {
+        // These arrive from Apple Health, the iPhone's motion history and journey
+        // detection. Missing from the catalogue, each showed as a grey dot with no
+        // group — and left the Sleep and Commute groups empty while the timeline
+        // was full of both.
+        let defined = Set(ActivityCatalog.defaults.map { $0.name.lowercased() })
+        for produced in ["Sleeping", "Walking", "Running", "Cycling", "Swimming",
+                         "Yoga", "Strength training", "Commuting", "In transit", "Home time"] {
+            #expect(defined.contains(produced.lowercased()), "\(produced) has no activity")
+        }
+        // Every group LifeLog offers should have something in it.
+        let groups = Set(ActivityCatalog.defaults.map(\.category))
+        #expect(groups.contains("Sleep"))
+        #expect(groups.contains(CommuteDetection.categoryName))
+        // And each shipped activity's icon must be one the picker offers.
+        let offered = Set(ActivityIcons.all)
+        for entry in ActivityCatalog.defaults {
+            #expect(offered.contains(entry.symbol), "\(entry.name) uses an unofferable icon")
+        }
+    }
+
     @Test("No icon is offered twice")
     func iconsAreUnique() {
         let all = ActivityIcons.all
