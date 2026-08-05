@@ -12,6 +12,7 @@ struct ActivitiesView: View {
     @State private var usage: [String: Int] = [:]
     @State private var pendingDeletion: IndexSet?
     @State private var renameRequest: RenameRequest?
+    @State private var renameFailed = false
 
     struct RenameRequest: Identifiable {
         let previousName: String
@@ -101,6 +102,11 @@ struct ActivitiesView: View {
             ActivityCatalog.seed()
             activities = ActivityCatalog.load()
             refreshUsage()
+        }
+        .alert("The visits kept the old name", isPresented: $renameFailed) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("The activity was renamed, but its visits could not be written just now. Rename it again to bring them across.")
         }
         .confirmationDialog("Delete activity?", isPresented: Binding(
             get: { pendingDeletion != nil },
@@ -201,8 +207,15 @@ struct ActivitiesView: View {
         activities = ActivityCatalog.sorted(activities)
         ActivityCatalog.save(activities)
         if updatingVisits {
-            try? ActivityCatalog.renameActivity(from: request.previousName,
-                                                to: request.updated.name, context: context)
+            do {
+                _ = try ActivityCatalog.renameActivity(from: request.previousName,
+                                                       to: request.updated.name, context: context)
+            } catch {
+                // The catalogue entry is renamed either way, so staying silent would
+                // leave every visit behind under the old label while the screen said
+                // they had come across — the exact stranding this option prevents.
+                renameFailed = true
+            }
         }
         refreshUsage()
         InsightsInvalidation.invalidate(reason: "Activity renamed", context: context)

@@ -2,6 +2,10 @@
 
 ## 2026-08-05
 
+### A rename that could not reach your visits now says so
+
+- Renaming an activity offers to bring its visits with it. If that write failed — a locked device, a protected store — the failure was discarded: the activity was renamed, the visits silently kept the old label, and Insights counted them as "Other" with nothing said. It now tells you, so you can rename again and bring them across.
+
 ### Importing a walk's route is safe against itself
 
 - Apple Health delivers a recorded route in batches, on its own queue rather than the one LifeLog imports on. The partial route was being assembled without guarding against that, so two batches arriving together could corrupt it or finish the import twice — the second of which ends the app rather than logging a warning. The route is now assembled behind a lock that can only complete once.
