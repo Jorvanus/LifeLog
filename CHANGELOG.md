@@ -2,6 +2,12 @@
 
 ## 2026-08-05
 
+### Ninety-six icons, and a picker you can see them in
+
+- Activities offered ten icons, and none of them were the ones the app ships with — so opening Coffee, Beers, Concert or Watching a movie showed a picker with nothing selected, as though the icon had been lost. There are now 96, grouped as Home, Work & study, Food & drink, Shopping & money, Fitness, Health, Travel, Outdoors, Going out, People & pets and Other, and every icon the app uses is among them.
+- Choosing one is now a grid tinted in the activity's own colour rather than a single-file menu, because picking an icon means comparing shapes side by side.
+- An icon that is not in the list — set by an older version, or by an import — is shown at the top as "Current" rather than being quietly dropped when you open the picker.
+
 ### The Activities list stops doing work it does not show
 
 - Opening Activities was still slow after the first fix — 380 ms on a 25,000-entry archive, against the 250 ms this project treats as the limit for blocking the screen. The list shows three things per activity, but was working out all of them: top locations reads and compares a place name for every entry in your history, and the shortest, longest, first-used, last-used and previous-period figures are each another pass over the same entries. None of that is on screen until you open an activity, so none of it is worked out until you do.

@@ -1,9 +1,38 @@
 import Foundation
 import ImageIO
 import Testing
+import UIKit
 @testable import LifeLog
 
 struct ActivityArtworkBoundsTests {
+    /// A misspelled SF Symbol does not fail to build — it renders as nothing at all,
+    /// so an activity would appear to have lost its icon. Every offered name is
+    /// checked against the system here rather than trusted.
+    @Test("Every offered activity icon exists on this system")
+    func iconsResolve() {
+        var missing: [String] = []
+        for symbol in ActivityIcons.all where UIImage(systemName: symbol) == nil {
+            missing.append(symbol)
+        }
+        #expect(missing.isEmpty, "unresolved symbols: \(missing.joined(separator: ", "))")
+    }
+
+    @Test("The icons the app ships with are all offered")
+    func shippedIconsAreOfferable() {
+        // Otherwise editing one of these shows a picker with nothing selected, which
+        // is what the ten-icon list used to do for most of the catalogue.
+        let shipped = Set(ActivityCatalog.defaults.map(\.symbol))
+        let offered = Set(ActivityIcons.all)
+        #expect(shipped.subtracting(offered).isEmpty,
+                "not offered: \(shipped.subtracting(offered).sorted().joined(separator: ", "))")
+    }
+
+    @Test("No icon is offered twice")
+    func iconsAreUnique() {
+        let all = ActivityIcons.all
+        #expect(all.count == Set(all).count)
+    }
+
     @Test("Current activity artwork has a bounded fixed footprint")
     func layoutIsBounded() {
         #expect(ActivityArtworkLayout.width == 170)

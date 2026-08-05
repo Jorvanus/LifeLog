@@ -270,14 +270,6 @@ struct ActivityEditor: View {
     @State private var symbol: String
     @State private var categoryColorValue: Color
 
-    private let iconOptions = [
-        ("Home", "house.fill"), ("Work", "briefcase.fill"),
-        ("Food", "fork.knife"), ("Shopping", "bag.fill"),
-        ("Fitness", "figure.run"), ("Health", "cross.case.fill"),
-        ("Study", "book.fill"), ("Travel", "car.fill"),
-        ("Social", "person.2.fill"), ("Place", "mappin.and.ellipse")
-    ]
-
     init(activity: ActivityDefinition? = nil, usageCount: Int = 0,
          onSave: @escaping (ActivityDefinition) -> Void,
          onDelete: ((ActivityDefinition) -> Void)? = nil) {
@@ -304,11 +296,14 @@ struct ActivityEditor: View {
             Picker("Group under", selection: $category) {
                 ForEach(ActivityCatalog.categories, id: \.self) { Text($0).tag($0) }
             }
-            Picker("Icon", selection: $symbol) {
-                ForEach(iconOptions, id: \.1) { option in
-                    Label(option.0, systemImage: option.1).tag(option.1)
+            NavigationLink {
+                ActivityIconPicker(symbol: $symbol, tint: categoryColorValue)
+            } label: {
+                LabeledContent("Icon") {
+                    Image(systemName: symbol).foregroundStyle(categoryColorValue)
                 }
             }
+            .accessibilityIdentifier("activity-icon-link")
             // The count on the list was a dead end: it said how much history an
             // edit would affect without letting any of it be inspected or fixed.
             if let existing, usageCount > 0 {
