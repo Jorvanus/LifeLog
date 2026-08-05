@@ -114,6 +114,36 @@ enum ActivityLocationPolicy {
         visit.source == "motion" || visit.source.hasPrefix("health-")
     }
 
+    /// A workout the person started themselves.
+    ///
+    /// Categorically different from the rest of device activity. `motion` and
+    /// `health-walking` are the phone noticing movement, which is why they are absorbed
+    /// into a stay unless a route proves they left it — movement inside an unclosed stay
+    /// is pacing about, and reading it as a departure invents an arrival.
+    ///
+    /// A workout is someone pressing Start. It is a first-hand statement that this
+    /// stretch of time was a walk, and no Core Location *guess* outranks it.
+    nonisolated static func isWorkoutSession(_ visit: Visit) -> Bool {
+        visit.source == "health-workout"
+    }
+
+    /// A started workout that nothing contradicts — believed, and kept as a row of its
+    /// own even with no destination either side and no route.
+    ///
+    /// The one thing that does contradict it is its own path. A route that never got
+    /// more than `departureRadius` from the place is proof the person did not leave,
+    /// and proof outranks the claim: pacing about the house with a walking workout
+    /// running is still pacing about the house, and splitting the stay there would
+    /// invent an arrival that never happened.
+    ///
+    /// So the three cases are: route shows it left → journey; route shows it stayed →
+    /// absorbed; no route at all → believe the person, because a deliberate session is
+    /// evidence and passive movement detection is not.
+    nonisolated static func isDeclaredJourney(_ visit: Visit, stays: [Visit]) -> Bool {
+        guard isWorkoutSession(visit) else { return false }
+        return !stays.contains { leftStay(visit, stay: $0) == false }
+    }
+
     /// Text-only tests so the import actor can classify a record before it becomes
     /// a `Visit`, and so both paths agree on what counts as walking or travel.
     nonisolated static func describesWalking(_ text: String) -> Bool {
@@ -361,6 +391,9 @@ enum ActivityLocationPolicy {
     /// Use this overload in batch processing so the caller can filter locations once
     /// instead of rescanning the entire timeline for every movement record.
     static func shouldShow(_ visit: Visit, locationVisits: [Visit], now: Date = .now) -> Bool {
+        // A started workout does not need a destination either side to be believed.
+        // The person said it happened, and its route has not said otherwise.
+        if isDeclaredJourney(visit, stays: locationVisits) { return true }
         guard isMovementActivity(visit) else { return true }
         return isBetweenDestinations(
             visit,
@@ -377,7 +410,11 @@ enum ActivityLocationPolicy {
         // Timeline is destination-first: device activity that occurs inside a
         // recorded place is retained for Insights but does not become another
         // simultaneous card. Sleep is the intentional exception.
-        if isDeviceActivity(visit), !visit.source.hasPrefix("health-sleep") {
+        // A started workout and sleep are both exceptions: each is an account of what
+        // the time was, not the phone guessing from movement, so neither is folded into
+        // a stay that happens to overlap it.
+        if isDeviceActivity(visit), !visit.source.hasPrefix("health-sleep"),
+           !isDeclaredJourney(visit, stays: locationVisits) {
             let end = visit.departure ?? now
             let overlapsDestination = locationVisits.contains { location in
                 let locationEnd = location.departure ?? now
@@ -394,6 +431,8 @@ enum ActivityLocationPolicy {
         // A recorded route is its own evidence of a journey: it shows where the walk
         // went, so it does not also need a destination on either side to be believed.
         if visit.hasRoute { return true }
+        // Neither does a started workout, which is the person saying the same thing.
+        if isDeclaredJourney(visit, stays: locationVisits) { return true }
         return isBetweenDestinations(visit, locationVisits: locationVisits, now: now)
     }
 
@@ -491,11 +530,21 @@ enum ActivityLocationPolicy {
         // the last day because this runs inside a Core Location callback; repairing
         // older history is `reconcileAll`'s job, once per installation.
         let recent = activities.filter { ($0.departure ?? now) >= now.addingTimeInterval(-24 * 60 * 60) }
+        // Before any stay is allowed to absorb a journey, drop the stays that a running
+        // workout explains. Otherwise the drive-by guess both survives and eats the walk.
+        // Scoped to the same day's window as `recent`: this runs inside a Core Location
+        // callback, and only a workout that could overlap the arriving stay matters.
+        // Nine years of workouts would otherwise be compared against every callback.
+        let recentWorkouts = visits.filter {
+            isWorkoutSession($0) && ($0.departure ?? now) >= now.addingTimeInterval(-24 * 60 * 60)
+        }
+        supersedePassingStays(during: recentWorkouts,
+                              stays: [locationVisit], context: context, now: now)
         let resumed = boundStays(around: recent, stays: visits.filter(isLocationVisit),
                                  context: context, now: now)
         try reconcile(
             activities: activities,
-            against: [locationVisit] + resumed,
+            against: ([locationVisit] + resumed).filter { !isSupersededLocation($0) },
             context: context,
             now: now
         )
@@ -506,10 +555,13 @@ enum ActivityLocationPolicy {
         let visits = try fetchPolicyVisits(context: context)
         let activities = visits.filter(isMovementActivity)
         let locations = visits.filter(isLocationVisit)
-        let resumed = boundStays(around: activities, stays: locations, context: context, now: now)
+        supersedePassingStays(during: visits.filter(isWorkoutSession),
+                              stays: locations, context: context, now: now)
+        let live = locations.filter { !isSupersededLocation($0) }
+        let resumed = boundStays(around: activities, stays: live, context: context, now: now)
         try reconcile(
             activities: activities,
-            against: locations + resumed,
+            against: (live + resumed).filter { !isSupersededLocation($0) },
             context: context,
             now: now
         )
@@ -637,6 +689,62 @@ enum ActivityLocationPolicy {
         return try context.fetch(descriptor)
     }
 
+    /// A stay recorded while a workout was running is the walk going past, not a
+    /// destination.
+    ///
+    /// Core Location is at its least reliable in exactly this situation: moving through
+    /// an area that has businesses in it, it reports an arrival, and Maps names whatever
+    /// sits nearest. LifeLog then puts "Is this right? Gracemere Lake Golf Club" in the
+    /// review queue about a lap of the lake. The workout is the person's own account of
+    /// that time, so it wins and the guess is superseded rather than asked about.
+    ///
+    /// Guarded so a genuine stop survives, because these are places people really do go:
+    ///
+    /// - a Saved Place is never touched — arriving home mid-walk is still arriving home;
+    /// - a stay the person named or corrected themselves is never touched;
+    /// - a stay that mostly outlives the workout is never touched, so stopping in for an
+    ///   hour after a walk leaves a stay reaching well past the session and survives.
+    ///
+    /// Superseded, not deleted: the row keeps its coordinates and can be read back in
+    /// Diagnostics, which matters when the guard turns out to be wrong.
+    @discardableResult
+    static func supersedePassingStays(during workouts: [Visit], stays: [Visit],
+                                      context: ModelContext, now: Date = .now) -> Int {
+        let sessions = workouts.filter(isWorkoutSession).compactMap { workout -> DateInterval? in
+            let end = workout.departure ?? now
+            return end > workout.arrival ? DateInterval(start: workout.arrival, end: end) : nil
+        }
+        guard !sessions.isEmpty else { return 0 }
+
+        var superseded = 0
+        for stay in stays where isLocationVisit(stay) && !isSupersededLocation(stay) {
+            guard stay.source == "automatic", !stay.isIgnored,
+                  stay.recognitionConfidence != "learned",
+                  stay.userActivity == nil else { continue }
+            let stayEnd = stay.departure ?? now
+            let duration = stayEnd.timeIntervalSince(stay.arrival)
+            guard duration > 0 else { continue }
+            let covered = sessions.reduce(0.0) { total, session in
+                total + max(0, min(stayEnd, session.end).timeIntervalSince(max(stay.arrival, session.start)))
+            }
+            guard covered / duration >= passingStayCoverage else { continue }
+
+            stay.departure = stay.arrival
+            stay.source = supersededLocationSource
+            superseded += 1
+            LocationDiagnostics.record(.superseded, subject: "Stay during a workout",
+                                       reason: "\(Int((covered / duration * 100).rounded()))% of it fell inside a started workout",
+                                       evidence: "\(stay.placeName) passed through, not visited",
+                                       context: context)
+        }
+        return superseded
+    }
+
+    /// How much of a stay must fall inside a workout before it reads as passing through.
+    /// Deliberately a clear majority rather than "any overlap": a walk that ends when the
+    /// person arrives somewhere overlaps that arrival slightly, and that arrival is real.
+    private static let passingStayCoverage = 0.75
+
     private static func reconcile(activities: [Visit], against locations: [Visit],
                                   context: ModelContext, now: Date) throws {
         for activity in activities {
@@ -646,7 +754,16 @@ enum ActivityLocationPolicy {
             let minimumDuration = minimumRetainedDuration(for: activity.source)
             // A stay the journey's own path shows it left cannot also have occupied
             // that time. Subtracting it would delete the walk that proves the point.
-            let occupying = locations.filter { leftStay(activity, stay: $0) != true }
+            //
+            // A started workout is never occupied at all. Without this, a walk with no
+            // route — which is every walk until Health grants route access — is
+            // subtracted by whatever stays overlap it, and `remaining` comes back empty:
+            // `case 0` below then *deletes* the workout outright. A walk out of the
+            // house and back, with a drive-by stay recorded partway round, disappears
+            // from Timeline and Insights entirely rather than merely being absorbed.
+            let occupying = isDeclaredJourney(activity, stays: locations)
+                ? []
+                : locations.filter { leftStay(activity, stay: $0) != true }
             let remaining = remainingSegments(for: interval, locationVisits: occupying, now: now)
                 .filter { $0.duration >= minimumDuration }
 

@@ -245,6 +245,28 @@ final class ActivityDataService {
         startImport(healthDays: healthDays, motionDays: motionDays)
     }
 
+    /// Forgets where the Health import had got to, so the next one re-reads the window
+    /// from the beginning.
+    ///
+    /// Anchored queries return only what has arrived since the last one, which is what
+    /// makes the routine import cheap — and also means anything LifeLog dropped after
+    /// reading it is gone for good. Two things need this. A walk deleted by the old
+    /// reconciliation rules, before a started workout was protected from being absorbed,
+    /// is not coming back any other way. And every workout imported before Health
+    /// granted route access has no path stored, which is precisely what decides whether
+    /// a walk left the place it started from.
+    ///
+    /// Safe to repeat. The importer matches a replayed sample to the visit it already
+    /// made and updates it in place — it never adds a second row, never overwrites an
+    /// activity the person confirmed, and never erases a route with an absent one.
+    func reimportHealthHistory() {
+        UserDefaults.standard.removeObject(forKey: sleepAnchorKey)
+        UserDefaults.standard.removeObject(forKey: workoutAnchorKey)
+        UserDefaults.standard.removeObject(forKey: healthRefreshKey)
+        guard HKHealthStore.isHealthDataAvailable() else { return }
+        startImport(healthDays: 30, motionDays: nil)
+    }
+
     func cancelImport() {
         guard isImporting else { return }
         importProgress = ActivityImportProgress(

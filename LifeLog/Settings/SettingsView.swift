@@ -87,6 +87,14 @@ struct SettingsView: View {
                         Text("Open the Health app → Sharing → Apps → LifeLog to change what LifeLog can read.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
+                    if !activityData.isImporting {
+                        Button("Re-import Health history") {
+                            activityData.reimportHealthHistory()
+                        }
+                        .accessibilityIdentifier("reimport-health")
+                        Text("Reads the last 30 days again from the beginning. Use it after granting Workout Routes, to fetch the paths of walks already imported without one. Existing entries are updated rather than duplicated.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     if activityData.motionStatus == "Denied" || activityData.motionStatus == "Restricted" {
                         Text("Turn Motion & Fitness back on in the iPhone Settings app, under Privacy & Security.")
                             .font(.caption).foregroundStyle(.orange)

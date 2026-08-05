@@ -2,6 +2,24 @@
 
 ## 2026-08-06
 
+### A walk you started is a walk, and it was being deleted
+
+- A morning walk from home, with a workout running on the Watch, appeared nowhere — not on the timeline, not in Insights. It had not been hidden. It had been deleted.
+- Any stay overlapping a walk is subtracted from it, and the test for whether the stay really contained the walk is how far the walk's own path got from it. With no path there is no answer, and LifeLog treated "unknown" as "yes". Home and a stay recorded partway round both claimed the walk, nothing was left of it, and the record was removed.
+- No walk had a path, because Health had never been asked for Workout Routes. So this had been happening to every walk.
+- A workout you started yourself is now believed. It keeps its own row whether or not a route was recorded, and no stay can subtract it away. The exception is its own path: a route that never leaves the place is proof you did not, and pacing about the house with a walking workout running is still pacing about the house. Movement the phone merely noticed — not a workout you started — is unchanged.
+
+### Places invented while you were out walking
+
+- A stay recorded while a workout was running is now treated as somewhere you passed, not somewhere you went, and no longer appears or asks to be confirmed. Walking through anywhere with businesses nearby produces an arrival, and Apple Maps names whatever is closest — which is how a lap of the lake became "Is this right? Gracemere Lake Golf Club".
+- A genuine stop still counts. Somewhere you have saved is never affected, nor anywhere you named or corrected yourself, nor a stay that mostly outlasts the workout — stopping in for an hour afterwards leaves a stay reaching well past the session, and it stays. The record is kept and readable in Diagnostics rather than thrown away.
+
+### Getting back what was lost
+
+- Settings gains "Re-import Health history". LifeLog reads Health from a bookmark, so anything it discarded after reading is not returned by an ordinary refresh — including the walks deleted by the rule above.
+- It reads the last 30 days again from the start. Existing entries are updated rather than duplicated, a confirmed activity is never overwritten, and a walk that already has a path keeps it.
+- Worth doing once after granting Workout Routes: it fetches the paths for walks already imported without one, which is what lets LifeLog tell a walk that went somewhere from one that circled the house.
+
 ### Last night's sleep could be missing all morning
 
 - An Apple Watch writes the night's sleep to the phone some time after waking, and LifeLog listens for exactly that so it lands in the timeline on its own. It has not been working. The sleep notification arrived, asked for an import, and was turned away by a six-hourly timer that a Core Motion sweep had set — one throttle covered both sources. Sleep would then appear hours later, for no visible reason.

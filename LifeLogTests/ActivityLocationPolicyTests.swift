@@ -1068,6 +1068,119 @@ struct ActivityLocationPolicyTests {
         #expect(overlapping.departure == nil)
     }
 
+    @Test("A started workout survives the stays that overlap it, even with no route")
+    func startedWorkoutIsNeverAbsorbed() throws {
+        let context = try makeContext()
+        // The real case from 2026-08-06: a walk from home, an Apple Watch workout
+        // running, and a Maps guess recorded partway round. With no route — which is
+        // every walk until Health grants route access — both stays occupied the walk,
+        // nothing remained of it, and the workout was deleted rather than absorbed.
+        let home = Visit(arrival: base, latitude: -23.37, longitude: 150.51,
+                         placeName: "Home", inferredActivity: "At home", source: "automatic",
+                         recognitionConfidence: "learned")
+        let driveBy = Visit(arrival: base.addingTimeInterval(43 * 60),
+                            departure: base.addingTimeInterval(52 * 60),
+                            latitude: -23.38, longitude: 150.52,
+                            placeName: "Gracemere Lake Golf Club", inferredActivity: "Visiting",
+                            source: "automatic", recognitionConfidence: "medium")
+        let workout = Visit(arrival: base.addingTimeInterval(5 * 60),
+                            departure: base.addingTimeInterval(50 * 60),
+                            latitude: 0, longitude: 0, placeName: "Walking",
+                            inferredActivity: "Walking", source: "health-workout")
+        [home, driveBy, workout].forEach(context.insert)
+        try context.save()
+
+        try ActivityLocationPolicy.reconcileAll(context: context, now: base.addingTimeInterval(2 * 60 * 60))
+
+        let remaining = try context.fetch(FetchDescriptor<Visit>())
+        let walk = remaining.first { $0.source == "health-workout" }
+        #expect(walk != nil, "a started workout must not be deleted by overlapping stays")
+        #expect(walk?.arrival == base.addingTimeInterval(5 * 60))
+        #expect(walk?.departure == base.addingTimeInterval(50 * 60))
+        #expect(ActivityLocationPolicy.shouldShowInTimeline(walk!, locationVisits: [home]))
+        #expect(ActivityLocationPolicy.shouldShowInInsights(walk!, locationVisits: [home]))
+    }
+
+    @Test("A stay recorded while a workout was running is passed through, not visited")
+    func passingStayDuringWorkoutIsSuperseded() throws {
+        let context = try makeContext()
+        let driveBy = Visit(arrival: base.addingTimeInterval(43 * 60),
+                            departure: base.addingTimeInterval(52 * 60),
+                            latitude: -23.38, longitude: 150.52,
+                            placeName: "Gracemere Lake Golf Club", inferredActivity: "Visiting",
+                            source: "automatic", recognitionConfidence: "medium")
+        let workout = Visit(arrival: base.addingTimeInterval(5 * 60),
+                            departure: base.addingTimeInterval(50 * 60),
+                            latitude: 0, longitude: 0, placeName: "Walking",
+                            inferredActivity: "Walking", source: "health-workout")
+        [driveBy, workout].forEach(context.insert)
+        try context.save()
+
+        let superseded = ActivityLocationPolicy.supersedePassingStays(
+            during: [workout], stays: [driveBy], context: context,
+            now: base.addingTimeInterval(2 * 60 * 60)
+        )
+
+        #expect(superseded == 1)
+        #expect(driveBy.resolutionState == .superseded)
+        #expect(!ActivityLocationPolicy.shouldShowInTimeline(driveBy, locationVisits: []))
+    }
+
+    @Test("A real stop during a walk keeps its place")
+    func genuineStopDuringWorkoutSurvives() throws {
+        let context = try makeContext()
+        // Same golf club, but the person actually stopped: the stay reaches well past
+        // the end of the session, so most of it is not explained by the workout.
+        let realStay = Visit(arrival: base.addingTimeInterval(43 * 60),
+                             departure: base.addingTimeInterval(120 * 60),
+                             latitude: -23.38, longitude: 150.52,
+                             placeName: "Gracemere Lake Golf Club", inferredActivity: "Visiting",
+                             source: "automatic", recognitionConfidence: "medium")
+        // A Saved Place is never superseded either, however the timing falls.
+        let home = Visit(arrival: base.addingTimeInterval(10 * 60),
+                         departure: base.addingTimeInterval(40 * 60),
+                         latitude: -23.37, longitude: 150.51,
+                         placeName: "Home", inferredActivity: "At home", source: "automatic",
+                         recognitionConfidence: "learned")
+        let workout = Visit(arrival: base.addingTimeInterval(5 * 60),
+                            departure: base.addingTimeInterval(50 * 60),
+                            latitude: 0, longitude: 0, placeName: "Walking",
+                            inferredActivity: "Walking", source: "health-workout")
+        [realStay, home, workout].forEach(context.insert)
+        try context.save()
+
+        let superseded = ActivityLocationPolicy.supersedePassingStays(
+            during: [workout], stays: [realStay, home], context: context,
+            now: base.addingTimeInterval(3 * 60 * 60)
+        )
+
+        #expect(superseded == 0)
+        #expect(realStay.resolutionState != .superseded)
+        #expect(home.resolutionState != .superseded)
+    }
+
+    @Test("Passive walking with no route is still absorbed into an open stay")
+    func passiveWalkingIsStillAbsorbed() throws {
+        let context = try makeContext()
+        // The exemption is for started workouts only. A phone noticing movement inside
+        // an unclosed stay is still pacing about, and must not invent a departure.
+        let home = Visit(arrival: base, latitude: -23.37, longitude: 150.51,
+                         placeName: "Home", inferredActivity: "At home", source: "automatic",
+                         recognitionConfidence: "learned")
+        let walk = Visit(arrival: base.addingTimeInterval(60 * 60),
+                         departure: base.addingTimeInterval(75 * 60),
+                         latitude: 0, longitude: 0, placeName: "Walking",
+                         inferredActivity: "Walking", source: "health-walking")
+        [home, walk].forEach(context.insert)
+        try context.save()
+
+        try ActivityLocationPolicy.reconcileAll(context: context, now: base.addingTimeInterval(2 * 60 * 60))
+
+        let walking = try context.fetch(FetchDescriptor<Visit>())
+            .filter { $0.source == "health-walking" }
+        #expect(walking.isEmpty, "movement inside an unclosed stay is not a journey")
+    }
+
     private func makeContext() throws -> ModelContext {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(
