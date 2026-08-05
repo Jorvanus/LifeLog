@@ -347,6 +347,45 @@ struct TimelineFixtureCoverageTests {
         #expect(unused?.activity == "Bowling")
     }
 
+    /// The list's summaries must agree with the full figures, and cost less: on a real
+    /// archive the full version measured 380 ms on device, over the project's 250 ms
+    /// main-thread budget.
+    @Test("List summaries match the full figures and cost less to produce")
+    func summariesAgreeWithFullStatistics() {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let labels = ["Beers", "Coffee", "Working", "At home", "Shopping"]
+        let visits = (0..<25_000).map { index -> Visit in
+            let start = now.addingTimeInterval(-Double(index) * 900)
+            return Visit(arrival: start, departure: start.addingTimeInterval(600),
+                         latitude: -23.37, longitude: 150.51,
+                         placeName: "Place \(index % 40)",
+                         inferredActivity: labels[index % labels.count],
+                         source: "imported-journal")
+        }
+
+        let summaryStarted = Date.now
+        let summaries = ActivityStatistics.summaries(named: labels, visits: visits,
+                                                     now: now, calendar: calendar)
+        let summaryElapsed = Date.now.timeIntervalSince(summaryStarted)
+
+        let fullStarted = Date.now
+        let full = ActivityStatistics.makeAll(named: labels, visits: visits,
+                                              now: now, calendar: calendar)
+        let fullElapsed = Date.now.timeIntervalSince(fullStarted)
+
+        for label in labels {
+            let summary = summaries.first { $0.activity == label }
+            let complete = full.first { $0.activity == label }
+            #expect(summary?.occasions == complete?.occasions)
+            #expect(summary?.totalTime == complete?.totalTime)
+            #expect(summary?.recentDays.map(\.occasions) == complete?.recentDays.map(\.occasions))
+            #expect(summary?.recentDays.map(\.hours) == complete?.recentDays.map(\.hours))
+        }
+        #expect(summaryElapsed < fullElapsed,
+                "summaries \(Int(summaryElapsed * 1000))ms vs full \(Int(fullElapsed * 1000))ms")
+    }
+
     @Test("A label the catalogue has never heard of is still counted")
     func includesLabelsMissingFromTheCatalogue() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)

@@ -20,8 +20,10 @@ struct ActivitiesTabView: View {
         var symbols: [String: String] = [:]
         for definition in definitions { symbols[definition.name.lowercased()] = definition.symbol }
 
-        let statistics = ActivityStatistics.makeAll(named: definitions.map(\.name), visits: visits)
-        var built = statistics.map { entry in
+        // Summaries, not full statistics: the list shows occasions, total time and
+        // the week's shape. Everything else is computed when an activity is opened.
+        let summaries = ActivityStatistics.summaries(named: definitions.map(\.name), visits: visits)
+        var built = summaries.map { entry in
             Row(name: entry.activity,
                 symbol: symbols[entry.activity.lowercased()] ?? "circle.fill",
                 statistics: entry)
@@ -44,7 +46,7 @@ struct ActivitiesTabView: View {
     private struct Row: Identifiable {
         let name: String
         let symbol: String
-        let statistics: ActivityStatistics
+        let statistics: ActivityStatistics.Summary
         var id: String { name }
     }
 
@@ -87,7 +89,7 @@ struct ActivitiesTabView: View {
         }
     }
 
-    private func subtitle(for statistics: ActivityStatistics) -> String {
+    private func subtitle(for statistics: ActivityStatistics.Summary) -> String {
         guard !statistics.isEmpty else { return "Not used yet" }
         let occasions = "\(statistics.occasions) \(statistics.occasions == 1 ? "occasion" : "occasions")"
         return "\(occasions) · \(formattedDuration(statistics.totalTime))"

@@ -2,6 +2,10 @@
 
 ## 2026-08-05
 
+### The Activities list stops doing work it does not show
+
+- Opening Activities was still slow after the first fix — 380 ms on a 25,000-entry archive, against the 250 ms this project treats as the limit for blocking the screen. The list shows three things per activity, but was working out all of them: top locations reads and compares a place name for every entry in your history, and the shortest, longest, first-used, last-used and previous-period figures are each another pass over the same entries. None of that is on screen until you open an activity, so none of it is worked out until you do.
+
 ### The Activities tab opens quickly
 
 - Opening Activities lagged. It worked out each activity's figures by walking your entire timeline separately for that activity, so with an imported archive it read hundreds of thousands of entries to draw one screen — and then did it again on every redraw. Every activity now comes from a single pass, worked out once when the screen appears and again only when something changes.

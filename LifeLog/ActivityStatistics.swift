@@ -53,6 +53,92 @@ struct ActivityStatistics: Sendable {
         currentPeriodTime: 0, previousPeriodTime: 0
     )
 
+    /// What the Activities list needs, and nothing else.
+    ///
+    /// The full statistics cost far more than the list shows: top locations alone
+    /// reads `displayPlaceName` for every visit — which trims and compares strings to
+    /// decide whether the place was ever identified — and the shortest, longest,
+    /// first, last and previous-period figures are each another walk over the same
+    /// visits. None of that is on screen until an activity is opened.
+    struct Summary: Sendable, Identifiable {
+        let activity: String
+        let occasions: Int
+        let totalTime: TimeInterval
+        let recentDays: [DayTotal]
+        var id: String { activity }
+        var isEmpty: Bool { occasions == 0 }
+    }
+
+    /// One pass over the timeline for every activity at once, accumulating as it goes
+    /// rather than grouping first and walking each group again.
+    static func summaries(named names: [String], visits: [Visit], days: Int = 7,
+                          now: Date = .now, calendar: Calendar = .current) -> [Summary] {
+        // Day boundaries worked out once. Calendar arithmetic is expensive and gets
+        // the awkward cases right — a day is not always 86,400 seconds — so it is
+        // done `days` times rather than once per visit.
+        let today = calendar.startOfDay(for: now)
+        var boundaries: [Date] = []
+        for offset in stride(from: days - 1, through: 0, by: -1) {
+            guard let day = calendar.date(byAdding: .day, value: -offset, to: today) else { continue }
+            boundaries.append(day)
+        }
+        let windowStart = boundaries.first ?? today
+
+        var totals: [String: (occasions: Int, time: TimeInterval)] = [:]
+        var buckets: [String: [Double]] = [:]
+        var bucketOccasions: [String: [Int]] = [:]
+        var spelling: [String: String] = [:]
+
+        for visit in visits {
+            let raw = visit.activity.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !raw.isEmpty else { continue }
+            let key = raw.lowercased()
+            let duration = visit.duration
+            let running = totals[key] ?? (0, 0)
+            totals[key] = (running.occasions + 1, running.time + duration)
+            if spelling[key] == nil { spelling[key] = raw }
+
+            // Most of an archive is older than the window, so this is one comparison
+            // for nearly every visit and the bucket search runs only for recent ones.
+            guard visit.arrival >= windowStart else { continue }
+            guard let index = boundaries.lastIndex(where: { visit.arrival >= $0 }) else { continue }
+            var seconds = buckets[key] ?? Array(repeating: 0, count: boundaries.count)
+            var counts = bucketOccasions[key] ?? Array(repeating: 0, count: boundaries.count)
+            // Seconds accumulated and converted once, matching how the full figures
+            // are worked out. Dividing per visit instead adds up differently in
+            // floating point, and the two paths must not disagree by a rounding tail.
+            seconds[index] += duration
+            counts[index] += 1
+            buckets[key] = seconds
+            bucketOccasions[key] = counts
+        }
+
+        func summary(for name: String, key: String) -> Summary {
+            let total = totals[key] ?? (0, 0)
+            let seconds = buckets[key] ?? Array(repeating: 0, count: boundaries.count)
+            let counts = bucketOccasions[key] ?? Array(repeating: 0, count: boundaries.count)
+            var recent: [DayTotal] = []
+            for (index, day) in boundaries.enumerated() {
+                recent.append(DayTotal(day: day, hours: seconds[index] / 3_600,
+                                       occasions: counts[index]))
+            }
+            return Summary(activity: name, occasions: total.occasions,
+                           totalTime: total.time, recentDays: recent)
+        }
+
+        var result: [Summary] = []
+        var seen = Set<String>()
+        for name in names {
+            let key = normalised(name)
+            guard seen.insert(key).inserted else { continue }
+            result.append(summary(for: name, key: key))
+        }
+        for key in totals.keys where !seen.contains(key) {
+            result.append(summary(for: spelling[key] ?? key, key: key))
+        }
+        return result
+    }
+
     /// Every activity from one pass over the timeline.
     ///
     /// Computing them one at a time meant normalising every visit once per activity:
