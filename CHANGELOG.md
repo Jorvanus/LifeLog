@@ -2,6 +2,10 @@
 
 ## 2026-08-05
 
+### Importing a walk's route is safe against itself
+
+- Apple Health delivers a recorded route in batches, on its own queue rather than the one LifeLog imports on. The partial route was being assembled without guarding against that, so two batches arriving together could corrupt it or finish the import twice — the second of which ends the app rather than logging a warning. The route is now assembled behind a lock that can only complete once.
+
 ### An Activities tab
 
 - A new tab between Timeline and Insights lists every activity you use, each with the shape of the last seven days beside it. Activities your timeline uses but the Activities list has never heard of appear too, rather than being quietly left out — those are usually the ones worth attention. Anything you have never recorded sorts to the bottom.

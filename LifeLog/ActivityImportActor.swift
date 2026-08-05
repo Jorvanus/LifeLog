@@ -3,6 +3,32 @@ import Foundation
 import HealthKit
 import SwiftData
 
+/// Collects a workout route delivered in batches on HealthKit's queue.
+///
+/// Unchecked because the compiler cannot see the lock, which is the whole point:
+/// every access to the two stored properties goes through it. `finish` is the
+/// single gate on resuming the continuation — it hands back the route once and
+/// returns nil to every later caller, whether the query finished or failed.
+private final class RouteAccumulator: @unchecked Sendable {
+    private let lock = NSLock()
+    private var points: [RoutePoint] = []
+    private var hasFinished = false
+
+    func append(_ newPoints: [RoutePoint]) {
+        lock.lock()
+        defer { lock.unlock() }
+        points += newPoints
+    }
+
+    func finish() -> [RoutePoint]? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !hasFinished else { return nil }
+        hasFinished = true
+        return points
+    }
+}
+
 /// A value-only import payload. HealthKit and Core Motion objects never cross into
 /// the SwiftData writer, keeping framework objects and model instances isolated.
 struct ActivityImportRecord: Sendable {
@@ -133,22 +159,22 @@ actor ActivitySampleReader {
 
     /// `HKWorkoutRouteQuery` predates async/await and delivers a route in batches, so
     /// the locations are accumulated across callbacks and returned once it reports done.
+    ///
+    /// The batches arrive on HealthKit's own queue rather than this actor, so the
+    /// partial route and the resumed flag live behind a lock. Resuming a continuation
+    /// twice is a crash rather than a warning, and `finish()` can only succeed once.
     private func locations(in route: HKWorkoutRoute) async throws -> [RoutePoint] {
-        try await withCheckedThrowingContinuation { continuation in
-            var collected: [RoutePoint] = []
-            var hasResumed = false
-            let query = HKWorkoutRouteQuery(route: route) { query, locations, done, error in
+        let accumulator = RouteAccumulator()
+        return try await withCheckedThrowingContinuation { continuation in
+            let query = HKWorkoutRouteQuery(route: route) { _, locations, done, error in
                 if let error {
-                    guard !hasResumed else { return }
-                    hasResumed = true
-                    self.healthStore.stop(query)
+                    guard accumulator.finish() != nil else { return }
                     continuation.resume(throwing: error)
                     return
                 }
-                collected += (locations ?? []).map(RoutePoint.init)
-                guard done, !hasResumed else { return }
-                hasResumed = true
-                continuation.resume(returning: collected)
+                accumulator.append((locations ?? []).map(RoutePoint.init))
+                guard done, let points = accumulator.finish() else { return }
+                continuation.resume(returning: points)
             }
             healthStore.execute(query)
         }
