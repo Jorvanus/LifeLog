@@ -2,6 +2,17 @@
 
 ## 2026-08-06
 
+### Last night's sleep could be missing all morning
+
+- An Apple Watch writes the night's sleep to the phone some time after waking, and LifeLog listens for exactly that so it lands in the timeline on its own. It has not been working. The sleep notification arrived, asked for an import, and was turned away by a six-hourly timer that a Core Motion sweep had set — one throttle covered both sources. Sleep would then appear hours later, for no visible reason.
+- The two now have separate schedules. Motion keeps the long interval: its queries are expensive and it only holds a week of history. Health repeats freely, because it is read from a bookmark and only ever collects what has arrived since.
+
+### Health said "Not connected" when only one category was missing
+
+- Workout routes are a separate permission from workouts, and were added to what LifeLog asks for after sleep, workouts and steps had already been granted. Because LifeLog asked about all four together, one never-requested category made the whole lot report as disconnected.
+- Each category is now checked on its own, so the status reads "Connected", "Partly connected" or "Not connected" — and Settings names the ones iOS has never asked about, which is why the permission sheet can be shorter than the list above it.
+- Consequence worth knowing: route access has been missing since walks first gained a path, so recorded walks have had no route. Granting it now is what lets a loop around the block be told apart from pacing at home.
+
 ### Apple Health said "Not connected" and would not reconnect
 
 - Settings could sit on "Not connected" indefinitely with no prompt and nothing to press. Two things caused it, and they hid each other.

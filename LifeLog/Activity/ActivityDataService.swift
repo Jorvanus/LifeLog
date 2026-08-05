@@ -40,6 +40,10 @@ final class ActivityDataService {
     private let workoutAnchorKey = "LifeLog.HealthKit.workoutAnchor.v1"
 
     var healthStatus = "Not connected"
+    /// Health categories iOS has never shown a prompt for. Non-empty means a sheet is
+    /// still available for them; everything else has been asked once and cannot be
+    /// asked again from inside the app.
+    var unaskedHealthTypes: [String] = []
     var motionStatus = "Not connected"
     var lastImport: Date?
     var lastError: String?
@@ -112,23 +116,71 @@ final class ActivityDataService {
     /// person be prompted if we asked now? `.shouldRequest` means the prompt is still
     /// available, so take it.
     ///
+    /// It is asked **per type**, not for the set as a whole, because the set answer is
+    /// all-or-nothing: one never-asked type makes the whole request "should request",
+    /// which reads as "not connected" even when everything else was granted years ago.
+    /// That is exactly what happened when workout routes were added to `healthTypes`
+    /// after sleep, workouts and steps had already been authorised — the label said
+    /// "Not connected" and the sheet, correctly, offered only routes.
+    ///
     /// Note the honest limit: HealthKit never discloses whether a *read* was allowed,
-    /// so `.unnecessary` means "already asked", not "granted". Settings says so.
+    /// so "asked" is not "granted". Settings says so.
     func refreshHealthStatus(requestingIfNeeded: Bool = false) async {
         guard HKHealthStore.isHealthDataAvailable() else {
             healthStatus = "Unavailable on this device"
+            unaskedHealthTypes = []
             return
         }
-        let status = try? await healthStore.statusForAuthorizationRequest(toShare: [], read: healthTypes)
-        switch status {
-        case .unnecessary:
+        var unasked: [String] = []
+        var unknown = false
+        for type in healthTypes {
+            switch try? await healthStore.statusForAuthorizationRequest(
+                toShare: [], read: Self.authorizationProbe(for: type)
+            ) {
+            case .shouldRequest: unasked.append(Self.healthTypeName(type))
+            case .unnecessary: break
+            default: unknown = true
+            }
+        }
+        unaskedHealthTypes = unasked.sorted()
+
+        if unknown && unasked.isEmpty {
+            healthStatus = "Couldn’t check"
+        } else if unasked.isEmpty {
             UserDefaults.standard.set(true, forKey: healthRequestedKey)
             healthStatus = "Connected"
-        case .shouldRequest:
+        } else if unasked.count == healthTypes.count {
             healthStatus = "Not connected"
-            if requestingIfNeeded { await requestHealthAccess() }
-        default:
-            healthStatus = "Couldn’t check"
+        } else {
+            // Naming what is outstanding matters: a route permission missing while
+            // sleep and workouts work is invisible otherwise, and it is the difference
+            // between a walk having a path and being two timestamps.
+            healthStatus = "Partly connected"
+        }
+        if !unasked.isEmpty, requestingIfNeeded { await requestHealthAccess() }
+    }
+
+    /// The set to ask HealthKit about when probing one type's status.
+    ///
+    /// Normally just the type itself. A workout route is the exception: it is a series
+    /// hanging off a workout, and HealthKit raises an Objective-C exception —
+    /// `_throwIfParentTypeNotRequestedForSharing` — if it is named without its parent
+    /// workout type in the same request. That is a trap, not an error: it cannot be
+    /// caught from Swift and takes the app down, so the parent has to be included
+    /// rather than the failure handled.
+    private static func authorizationProbe(for type: HKSampleType) -> Set<HKObjectType> {
+        type == HKSeriesType.workoutRoute() ? [type, HKWorkoutType.workoutType()] : [type]
+    }
+
+    /// Wording for the Health categories LifeLog reads, for a status line that can say
+    /// which one is missing.
+    private static func healthTypeName(_ type: HKSampleType) -> String {
+        switch type {
+        case HKWorkoutType.workoutType(): "Workouts"
+        case HKSeriesType.workoutRoute(): "Workout routes"
+        case HKObjectType.categoryType(forIdentifier: .sleepAnalysis): "Sleep"
+        case HKObjectType.quantityType(forIdentifier: .stepCount): "Steps"
+        default: type.identifier
         }
     }
 
@@ -160,22 +212,36 @@ final class ActivityDataService {
     ///
     /// Called at launch, when LifeLog is opened, and whenever Health delivers in the
     /// background, so the rolling window is drained well before it expires.
+    ///
+    /// The two sources are throttled separately, and must be. A single six-hourly gate
+    /// used to cover both, which quietly disabled the thing background delivery exists
+    /// for: an Apple Watch writes the night's sleep to the phone some time after
+    /// waking, the sleep observer fired exactly as designed, called this, and was
+    /// turned away by a throttle that had been set by a Core Motion sweep. Last
+    /// night's sleep would then be missing from the timeline all morning and appear
+    /// hours later for no visible reason.
+    ///
+    /// Motion keeps the long interval because its queries are expensive and its
+    /// history spans a week. Health is read by anchor, so repeating it collects only
+    /// what has arrived since and costs almost nothing.
     func refreshAutomatically(now: Date = .now) {
         // Never interrupt an import in flight: starting one cancels the last, and a
         // half-finished import would lose its place.
         guard !isImporting else { return }
-        let last = UserDefaults.standard.object(forKey: motionRefreshKey) as? Date
-        if let last, now.timeIntervalSince(last) < motionRefreshInterval { return }
 
-        let motionDays = CMMotionActivityManager.isActivityAvailable()
+        let lastMotion = UserDefaults.standard.object(forKey: motionRefreshKey) as? Date
+        let motionDue = lastMotion.map { now.timeIntervalSince($0) >= motionRefreshInterval } ?? true
+        let motionDays = motionDue && CMMotionActivityManager.isActivityAvailable()
             && CMMotionActivityManager.authorizationStatus() == .authorized ? 7 : nil
-        // Health samples are read by anchor, so repeating this only ever collects what
-        // arrived since last time. It rides along rather than needing its own button.
-        let healthDays = HKHealthStore.isHealthDataAvailable()
-            && UserDefaults.standard.bool(forKey: healthRequestedKey) ? 30 : nil
-        guard motionDays != nil || healthDays != nil else { return }
 
-        UserDefaults.standard.set(now, forKey: motionRefreshKey)
+        let lastHealth = UserDefaults.standard.object(forKey: healthRefreshKey) as? Date
+        let healthDue = lastHealth.map { now.timeIntervalSince($0) >= healthRefreshInterval } ?? true
+        let healthDays = healthDue && HKHealthStore.isHealthDataAvailable()
+            && UserDefaults.standard.bool(forKey: healthRequestedKey) ? 30 : nil
+
+        guard motionDays != nil || healthDays != nil else { return }
+        if motionDays != nil { UserDefaults.standard.set(now, forKey: motionRefreshKey) }
+        if healthDays != nil { UserDefaults.standard.set(now, forKey: healthRefreshKey) }
         startImport(healthDays: healthDays, motionDays: motionDays)
     }
 
@@ -291,6 +357,12 @@ final class ActivityDataService {
     /// Often enough that a week of history is never lost, rare enough that opening the
     /// app repeatedly does not re-read the same days.
     private let motionRefreshInterval: TimeInterval = 6 * 60 * 60
+    private let healthRefreshKey = "LifeLog.HealthLastRefreshed"
+    /// Short, because the anchored read only returns what has arrived since the last
+    /// one. It exists to stop a burst of observer callbacks from stacking imports, not
+    /// to ration the work. Anything longer delays the night's sleep reaching the
+    /// timeline after the Watch syncs it.
+    private let healthRefreshInterval: TimeInterval = 2 * 60
 
     private func startImport(healthDays: Int?, motionDays: Int?) {
         guard modelContainer != nil, healthDays != nil || motionDays != nil else { return }

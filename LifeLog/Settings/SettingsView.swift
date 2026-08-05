@@ -72,13 +72,19 @@ struct SettingsView: View {
                     // appears only when Health is not connected, because that state
                     // used to be a dead end: the label said "Not connected" and
                     // nothing on the screen could do anything about it.
-                    if activityData.healthStatus != "Connected"
-                        && activityData.healthStatus != "Unavailable on this device" {
+                    if !activityData.unaskedHealthTypes.isEmpty {
                         Button("Connect Apple Health") {
                             Task { await activityData.requestHealthAccess() }
                         }
                         .accessibilityIdentifier("connect-health")
-                        Text("If no sheet appears, iOS has already asked. Open the Health app → Sharing → Apps → LifeLog to turn the categories back on.")
+                        // iOS shows a sheet only for categories it has never asked
+                        // about, so saying which they are explains why the sheet is
+                        // shorter than the list above.
+                        Text("Not yet asked for: \(activityData.unaskedHealthTypes.formatted(.list(type: .and))). Only these will appear on the permission sheet — iOS never re-asks for the rest.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else if activityData.healthStatus != "Connected"
+                                && activityData.healthStatus != "Unavailable on this device" {
+                        Text("Open the Health app → Sharing → Apps → LifeLog to change what LifeLog can read.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     if activityData.motionStatus == "Denied" || activityData.motionStatus == "Restricted" {
