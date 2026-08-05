@@ -210,6 +210,22 @@ struct TimelineFixtureCoverageTests {
         #expect(ActivityCatalog.preferredLabel(for: "Studying", in: catalogue) == "Studying")
     }
 
+    @Test("The activities list reads alphabetically whatever order it was built in")
+    func activitiesSortByName() {
+        let unsorted = [
+            ActivityDefinition(name: "work", category: "Work", symbol: "briefcase.fill"),
+            ActivityDefinition(name: "Éating", category: "Food & Drink", symbol: "fork.knife"),
+            ActivityDefinition(name: "Beers", category: "Food & Drink", symbol: "mug.fill"),
+            ActivityDefinition(name: "At home", category: "Home", symbol: "house.fill")
+        ]
+
+        let names = ActivityCatalog.sorted(unsorted).map(\.name)
+
+        // Case and accents must not decide the order: an accented label belongs with
+        // its unaccented neighbours, and "work" is not filed after every capital.
+        #expect(names == ["At home", "Beers", "Éating", "work"])
+    }
+
     @Test("Adopted activities are grouped, not dumped into Other")
     func suggestedCategoriesCoverRealVocabulary() {
         #expect(ActivityCatalog.suggestedCategory(for: "Work") == "Work")

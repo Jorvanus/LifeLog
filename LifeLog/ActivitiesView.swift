@@ -165,6 +165,10 @@ struct ActivitiesView: View {
             return
         }
         activities[index] = updated
+        // Re-sorted here, not only in storage: the rows are driven by this array, and
+        // a renamed activity has to move to its new place immediately. Swipe-to-delete
+        // offsets index the same array, so display and storage order must not diverge.
+        activities = ActivityCatalog.sorted(activities)
         ActivityCatalog.save(activities)
         InsightsInvalidation.invalidate(reason: "Activity definition changed", context: context)
     }
@@ -180,6 +184,7 @@ struct ActivitiesView: View {
         } else {
             activities[index] = request.updated
         }
+        activities = ActivityCatalog.sorted(activities)
         ActivityCatalog.save(activities)
         if updatingVisits {
             try? ActivityCatalog.renameActivity(from: request.previousName,

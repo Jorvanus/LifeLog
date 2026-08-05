@@ -32,17 +32,28 @@ enum ActivityCatalog {
         ("Watching a movie", "Entertainment", "film.fill")
     ]
 
+    /// Alphabetical, ignoring case and accents. A list of labels is scanned by name
+    /// and nothing else, and storage order put each newly added entry wherever it
+    /// happened to land — so the one just added was the hardest to find again.
+    static func sorted(_ activities: [ActivityDefinition]) -> [ActivityDefinition] {
+        activities.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
     static func load() -> [ActivityDefinition] {
         guard let data = UserDefaults.standard.data(forKey: storageKey),
               let decoded = try? JSONDecoder().decode([ActivityDefinition].self, from: data),
               !decoded.isEmpty else {
-            return defaults.map { ActivityDefinition(name: $0.name, category: $0.category, symbol: $0.symbol) }
+            return sorted(defaults.map {
+                ActivityDefinition(name: $0.name, category: $0.category, symbol: $0.symbol)
+            })
         }
-        return decoded
+        return sorted(decoded)
     }
 
     static func save(_ activities: [ActivityDefinition]) {
-        guard let data = try? JSONEncoder().encode(activities) else { return }
+        // Sorted on the way in as well, so what is stored matches what is shown and
+        // a list edited by an older build is tidied the first time it is saved.
+        guard let data = try? JSONEncoder().encode(sorted(activities)) else { return }
         UserDefaults.standard.set(data, forKey: storageKey)
     }
 
