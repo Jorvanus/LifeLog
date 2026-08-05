@@ -29,15 +29,20 @@ struct PlaceLookupResult {
     let latencyMs: Int
     let candidateCount: Int
     let candidatePayloadBytes: Int
+    /// The radius actually searched, after clamping. Reported so a diagnostic records
+    /// what was asked of Maps rather than what the caller intended to ask.
+    var searchRadius: CLLocationDistance = 0
 
     init(confidence: Confidence, suggestions: [PlaceSuggestion], cacheHit: Bool = false,
-         latencyMs: Int = 0, candidateCount: Int = 0, candidatePayloadBytes: Int = 0) {
+         latencyMs: Int = 0, candidateCount: Int = 0, candidatePayloadBytes: Int = 0,
+         searchRadius: CLLocationDistance = 0) {
         self.confidence = confidence
         self.suggestions = suggestions
         self.cacheHit = cacheHit
         self.latencyMs = latencyMs
         self.candidateCount = candidateCount
         self.candidatePayloadBytes = candidatePayloadBytes
+        self.searchRadius = searchRadius
     }
 }
 
@@ -65,10 +70,10 @@ enum PlaceLookupService {
     static func nearbyPlaces(at coordinate: CLLocationCoordinate2D, radius: CLLocationDistance = 150,
                              arrival: Date = .now, category: String? = nil, lookupID: UUID? = nil) async throws -> PlaceLookupResult {
         let startedAt = Date.now
-        guard CLLocationCoordinate2DIsValid(coordinate) else {
-            return PlaceLookupResult(confidence: .low, suggestions: [])
-        }
         let boundedRadius = min(max(radius, 75), 500)
+        guard CLLocationCoordinate2DIsValid(coordinate) else {
+            return PlaceLookupResult(confidence: .low, suggestions: [], searchRadius: boundedRadius)
+        }
         let generation = lookupGeneration
         // A roughly 100 m cell avoids retaining exact user coordinates while
         // still reusing nearby results during repeated callback retries.
@@ -81,7 +86,8 @@ enum PlaceLookupService {
                                      cacheHit: true,
                                      latencyMs: Int((Date.now.timeIntervalSince(startedAt) * 1000).rounded()),
                                      candidateCount: cached.result.candidateCount,
-                                     candidatePayloadBytes: cached.result.candidatePayloadBytes)
+                                     candidatePayloadBytes: cached.result.candidatePayloadBytes,
+                                     searchRadius: boundedRadius)
         }
         try Task.checkCancellation()
         let request = MKLocalPointsOfInterestRequest(center: coordinate, radius: boundedRadius)
@@ -139,7 +145,8 @@ enum PlaceLookupService {
             let empty = PlaceLookupResult(confidence: .low, suggestions: [],
                                           latencyMs: Int((Date.now.timeIntervalSince(startedAt) * 1000).rounded()),
                                           candidateCount: response.mapItems.count,
-                                          candidatePayloadBytes: 0)
+                                          candidatePayloadBytes: 0,
+                                          searchRadius: boundedRadius)
             evictExpired()
             cache[cell] = CachedResult(createdAt: .now, result: empty)
             if let lookupID { cancelledLookups.remove(lookupID) }
@@ -159,7 +166,8 @@ enum PlaceLookupService {
         let result = PlaceLookupResult(confidence: confidence, suggestions: suggestions,
                                        latencyMs: Int((Date.now.timeIntervalSince(startedAt) * 1000).rounded()),
                                        candidateCount: response.mapItems.count,
-                                       candidatePayloadBytes: (try? JSONEncoder().encode(suggestions).count) ?? 0)
+                                       candidatePayloadBytes: (try? JSONEncoder().encode(suggestions).count) ?? 0,
+                                       searchRadius: boundedRadius)
         evictExpired()
         cache[cell] = CachedResult(createdAt: .now, result: result)
         if let lookupID { cancelledLookups.remove(lookupID) }

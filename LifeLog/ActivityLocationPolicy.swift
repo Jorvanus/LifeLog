@@ -89,6 +89,10 @@ enum ActivityLocationPolicy {
             stay.departure = stay.arrival
             stay.source = supersededLocationSource
             merged += 1
+            LocationDiagnostics.record(.merged, subject: "Overlapping stay",
+                                       reason: "two records claim the same minutes at one place",
+                                       evidence: "\(stay.placeName) folded into \(host.placeName)",
+                                       context: context)
         }
         return merged
     }
@@ -570,12 +574,20 @@ enum ActivityLocationPolicy {
                 candidate.departure = candidate.arrival
                 candidate.source = supersededLocationSource
                 removed += 1
+                LocationDiagnostics.record(.superseded, subject: "Duplicate callback",
+                                           reason: "same arrival within 60s and \(Int(distance.rounded())) m",
+                                           evidence: "\(candidate.placeName) folded into \(previous.placeName)",
+                                           context: context)
             } else {
                 // A later destination proves that an earlier open stay ended when this
                 // visit began. Closing it prevents an open stay from consuming the
                 // entire Insights interval.
                 if previous.departure == nil, candidate.arrival > previous.arrival {
                     previous.departure = candidate.arrival
+                    LocationDiagnostics.record(.closed, subject: "Open stay",
+                                               reason: "a later arrival proves it ended",
+                                               evidence: "\(previous.placeName) closed at \(candidate.placeName)'s arrival",
+                                               context: context)
                 }
                 retained.append(candidate)
             }
@@ -611,6 +623,10 @@ enum ActivityLocationPolicy {
             guard let next = locations.first(where: { $0.arrival > visit.arrival }) else { continue }
             visit.departure = next.arrival
             repaired += 1
+            LocationDiagnostics.record(.closed, subject: "Stranded open stay",
+                                       reason: "only the newest stay may be open",
+                                       evidence: "\(visit.placeName) bounded by \(next.placeName)",
+                                       context: context)
         }
         return repaired
     }

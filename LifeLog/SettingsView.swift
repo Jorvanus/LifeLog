@@ -15,6 +15,7 @@ struct SettingsView: View {
     @State private var importingBackup = false
     @State private var backupURL: URL?
     @State private var importMessage: String?
+    @AppStorage(LocationDiagnostics.detailKey) private var detailedLocationDiagnostics = false
     let recorder: LocationRecorder
     let activityData: ActivityDataService
     var body: some View {
@@ -114,6 +115,17 @@ struct SettingsView: View {
                     Text("iPhone & Apple Watch")
                 } footer: {
                     Text("Collected automatically, in small batches, while you use LifeLog and when Apple Health has something new. Sleep, Apple Watch workouts, and Watch walking come from Apple Health. Walking, running, cycling, and vehicle travel come from the iPhone’s motion history, which the iPhone keeps for about a week — so LifeLog gathers it regularly rather than waiting to be asked.")
+                }
+                Section {
+                    Toggle("Detailed location diagnostics", isOn: $detailedLocationDiagnostics)
+                        .onChange(of: detailedLocationDiagnostics) { _, enabled in
+                            LocationDiagnostics.isDetailed = enabled
+                        }
+                        .accessibilityIdentifier("detailed-location-diagnostics")
+                } header: {
+                    Text("Troubleshooting")
+                } footer: {
+                    Text("Records why each location was merged, closed or renamed, and which places Apple Maps offered for it. That includes place names and distances — a detailed record of where you have been — so it stays on this iPhone, expires with the rest of Diagnostics, and is off unless you turn it on.")
                 }
                 Section {
                     LabeledContent("On-device model", value: SmartActivityClassifier.availabilityDescription)

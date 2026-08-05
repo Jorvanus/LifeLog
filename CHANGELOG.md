@@ -2,6 +2,12 @@
 
 ## 2026-08-05
 
+### Diagnostics say why a location was changed
+
+- When LifeLog merges two records, closes a stay, supersedes a duplicate or renames a place, it now writes down which rule decided that. None of it was recorded before, so a stay that disappeared or a name that changed left no trace of what was responsible, and working out why meant guessing.
+- Apple Maps lookups record what was asked and what came back: a cache hit or miss, the radius searched, how many places were offered, the confidence, and whether it fell back to reverse geocoding.
+- Settings → Troubleshooting adds "Detailed location diagnostics", off unless you turn it on. With it on, the same entries also name the places Maps offered, how far away each was, and which was chosen. That is a detailed record of where you have been, so it stays on this iPhone and expires with everything else in Diagnostics.
+
 ### Places are remembered by identity, not by spelling
 
 - A place was recognised by its name and how close it sat to another. That cannot tell two businesses apart when they share a name, and it loses track of one the moment Apple rewords it or you rename it yourself. Places found through Apple Maps now keep Apple's own identifier for them, which survives both.

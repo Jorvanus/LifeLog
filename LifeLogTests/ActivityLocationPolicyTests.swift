@@ -832,6 +832,43 @@ struct ActivityLocationPolicyTests {
               source: "automatic", recognitionConfidence: "learned")
     }
 
+    /// The reason a callback was acted on is always safe to record. The evidence —
+    /// which places were offered and how far away they were — is a record of where the
+    /// owner has been, and must not be written unless they asked for it.
+    @Test("Place names are only recorded when detailed diagnostics are on")
+    func detailedDiagnosticsAreOptIn() throws {
+        let context = try makeContext()
+        let wasDetailed = LocationDiagnostics.isDetailed
+        defer { LocationDiagnostics.isDetailed = wasDetailed }
+
+        LocationDiagnostics.isDetailed = false
+        LocationDiagnostics.record(.merged, subject: "Duplicate callback",
+                                   reason: "same arrival", evidence: "Corner Cafe folded into Home",
+                                   context: context)
+        LocationDiagnostics.recordLookup(
+            radius: 150, cacheHit: false,
+            candidates: [PlaceSuggestion(name: "Corner Cafe", latitude: -23.37, longitude: 150.51,
+                                         suggestedActivity: "Eating", distance: 22)],
+            selected: nil, confidence: "medium", fallback: nil, context: context)
+        try context.save()
+
+        var events = try context.fetch(FetchDescriptor<DiagnosticEvent>())
+        #expect(events.count == 2)
+        // The decision and the numbers survive; the place names do not.
+        #expect(events.contains { $0.message.contains("merged") })
+        #expect(events.contains { $0.message.contains("1 candidates") })
+        #expect(events.allSatisfy { !$0.message.contains("Corner Cafe") })
+
+        LocationDiagnostics.isDetailed = true
+        LocationDiagnostics.record(.merged, subject: "Duplicate callback",
+                                   reason: "same arrival", evidence: "Corner Cafe folded into Home",
+                                   context: context)
+        try context.save()
+        events = try context.fetch(FetchDescriptor<DiagnosticEvent>())
+        #expect(events.contains { $0.message.contains("Corner Cafe") })
+        #expect(events.allSatisfy { $0.category == LocationDiagnostics.category })
+    }
+
     @Test("LifeLog sleep estimate reflects duration, stages, and interruptions")
     func estimatesSleepQuality() {
         let summary = SleepSummary(
@@ -1037,6 +1074,9 @@ struct ActivityLocationPolicyTests {
             for: Visit.self,
             SavedPlace.self,
             VisitCorrection.self,
+            // The resolver records why it merged, closed or superseded a callback, so
+            // its diagnostics have to be part of the store these tests write to.
+            DiagnosticEvent.self,
             configurations: configuration
         )
         return ModelContext(container)

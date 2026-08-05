@@ -453,6 +453,13 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 visit.placeSuggestions = result.suggestions
                 visit.recognitionConfidence = result.confidence.rawValue
 
+                LocationDiagnostics.recordLookup(
+                    radius: result.searchRadius, cacheHit: result.cacheHit,
+                    candidates: result.suggestions,
+                    selected: result.confidence == .high ? result.suggestions.first : nil,
+                    confidence: result.confidence.rawValue,
+                    fallback: result.suggestions.isEmpty ? "reverse geocoding" : nil,
+                    context: context)
                 if result.confidence == .high, let match = result.suggestions.first,
                    !Visit.isPlaceholderName(match.name) {
                     visit.placeName = match.name
@@ -510,6 +517,9 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 let resolvedName = item.name ?? item.address?.shortAddress ?? item.address?.fullAddress ?? Visit.unknownPlaceName
                 visit.placeName = TextSafety.clean(resolvedName, maximumLength: 120)
                 visit.recognitionConfidence = "low"
+                LocationDiagnostics.record(.promoted, subject: "Unnamed stay",
+                                           reason: "no Maps match; reverse geocoding supplied a name",
+                                           evidence: visit.placeName, context: context)
                 visit.inferredActivity = InferenceEngine.activity(placeName: visit.placeName,
                                                                    arrival: visit.arrival)
                 try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
