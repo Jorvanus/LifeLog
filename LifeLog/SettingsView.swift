@@ -14,7 +14,6 @@ struct SettingsView: View {
     @State private var importingJournal = false
     @State private var importingBackup = false
     @State private var backupURL: URL?
-    @AppStorage("LifeLog.HealthKit.backgroundDeliveryValidated.v1") private var backgroundDeliveryValidated = false
     @State private var importMessage: String?
     let recorder: LocationRecorder
     let activityData: ActivityDataService
@@ -66,22 +65,15 @@ struct SettingsView: View {
                 }
                 Section {
                     LabeledContent("Apple Health", value: activityData.healthStatus)
-                    Button("Connect Apple Health") { activityData.requestHealthAccess() }
-                        .disabled(activityData.isImporting)
                     LabeledContent("Motion Activity", value: activityData.motionStatus)
-                    Button("Connect Walking & Travel") { activityData.requestMotionAccess() }
-                        .disabled(activityData.isImporting)
-                    Button("Import Recent Activity") { activityData.importAll() }
-                        .disabled(activityData.isImporting)
-                    #if DEBUG
-                    Toggle("HealthKit background delivery (validated testing only)", isOn: $backgroundDeliveryValidated)
-                        .onChange(of: backgroundDeliveryValidated) { _, enabled in
-                            activityData.setBackgroundDeliveryValidated(enabled)
-                        }
-                    Text("Leave this off until the anchored importer has been tested on-device without Timeline or Insights stalls.")
-                        .font(.caption).foregroundStyle(.secondary)
-                        .accessibilityIdentifier("import-recent-activity")
-                    #endif
+                    // No connect or import buttons: both sources are asked for on first
+                    // run and collected from then on. What remains is the one thing the
+                    // app cannot do for itself — iOS never re-asks once refused.
+                    if activityData.healthStatus == "Denied" || activityData.motionStatus == "Denied" {
+                        Text("Turn these back on in the iPhone Settings app, under Privacy & Security.")
+                            .font(.caption).foregroundStyle(.orange)
+                            .accessibilityIdentifier("data-access-denied")
+                    }
                     if let progress = activityData.importProgress {
                         VStack(alignment: .leading, spacing: 9) {
                             HStack {
@@ -121,7 +113,7 @@ struct SettingsView: View {
                 } header: {
                     Text("iPhone & Apple Watch")
                 } footer: {
-                    Text("Imports run in the background in small, cancellable batches. Sleep, Apple Watch workouts, and Watch walking come from Apple Health. Walking, running, cycling, and vehicle travel also use the iPhone’s motion history.")
+                    Text("Collected automatically, in small batches, while you use LifeLog and when Apple Health has something new. Sleep, Apple Watch workouts, and Watch walking come from Apple Health. Walking, running, cycling, and vehicle travel come from the iPhone’s motion history, which the iPhone keeps for about a week — so LifeLog gathers it regularly rather than waiting to be asked.")
                 }
                 Section {
                     LabeledContent("On-device model", value: SmartActivityClassifier.availabilityDescription)

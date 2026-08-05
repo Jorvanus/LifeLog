@@ -2,6 +2,13 @@
 
 ## 2026-08-05
 
+### Walking and travel are collected without being asked for
+
+- Your walks and drives were missing even though Motion Activity said "Connected". The iPhone keeps its motion history for about a week, and LifeLog only read it when you pressed "Connect Walking & Travel" in Settings — so every week you did not press it expired unread, permanently. Apple Health was never affected, because its samples persist and are read from where LifeLog last stopped, which is why sleep and workouts arrived normally while walking and driving did not.
+- Both sources are now asked for once, on first run, and collected from then on: when LifeLog opens, when you come back to it, and when Apple Health has something new. The week of motion history is always gathered well before it expires.
+- The "Connect Apple Health", "Connect Walking & Travel" and "Import Recent Activity" buttons are gone. Settings shows what each source is doing and when it was last collected. If you have refused one, it says where to turn it back on — iOS never asks a second time, and that is the only part LifeLog cannot do for you.
+- Apple Health updates now arrive in the background by default, rather than only while the app is open.
+
 ### Ninety-six icons, and a picker you can see them in
 
 - Activities offered ten icons, and none of them were the ones the app ships with — so opening Coffee, Beers, Concert or Watching a movie showed a picker with nothing selected, as though the icon had been lost. There are now 96, grouped as Home, Work & study, Food & drink, Shopping & money, Fitness, Health, Travel, Outdoors, Going out, People & pets and Other, and every icon the app uses is among them.

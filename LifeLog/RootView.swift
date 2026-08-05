@@ -6,6 +6,7 @@ struct RootView: View {
     let modelContainer: ModelContainer
     @State private var recorder = LocationRecorder()
     @State private var activityData = ActivityDataService()
+    @Environment(\.scenePhase) private var scenePhase
     @State private var selectedTab = ProcessInfo.processInfo.arguments.contains("-showInsights") ? 2 : 0
 
     var body: some View {
@@ -24,12 +25,19 @@ struct RootView: View {
             }
         }
         .tint(.blue)
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            activityData.refreshAutomatically()
+        }
         .accessibilityIdentifier("root-tab-view")
         .task {
             ExportFileCleanup.removeExpired()
             let startedAt = Date.now
             recorder.connect(context)
             activityData.connect(context, container: modelContainer)
+            // Core Motion discards history about a week old, so it is collected
+            // whenever LifeLog runs rather than only when Settings is visited.
+            activityData.refreshAutomatically()
             Diagnostics.performance(context, subsystem: "Launch", operation: "service setup",
                                     startedAt: startedAt, threshold: 0.1)
             Diagnostics.budget(context, subsystem: "Launch", operation: "responsive first screen",

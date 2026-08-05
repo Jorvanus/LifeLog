@@ -55,7 +55,13 @@ final class ActivityDataService {
         self.context = context
         modelContainer = container
         refreshMotionStatus()
+        // Background delivery is on by default now. It was held behind a debug toggle
+        // while the anchored importer was proved out on-device; leaving it off means
+        // Health only arrives when the app is opened, which is the opposite of what a
+        // record of your life should need from you.
+        UserDefaults.standard.set(true, forKey: backgroundDeliveryKey)
         configureBackgroundDeliveryIfValidated()
+        requestAccessIfNeeded()
         // History remains opt-in. When requested, its queries and writes use isolated
         // actors so navigation and touch handling stay on the main interaction path.
     }
@@ -81,7 +87,7 @@ final class ActivityDataService {
                 completion()
                 Task { @MainActor [weak self] in
                     guard let self, !self.isImporting else { return }
-                    self.startImport(healthDays: 30, motionDays: nil)
+                    self.refreshAutomatically()
                 }
             }
             healthStore.execute(query)
@@ -99,6 +105,27 @@ final class ActivityDataService {
         healthStore.disableBackgroundDelivery(for: HKWorkoutType.workoutType()) { _, _ in }
     }
 
+    /// Asks for Health and Motion once, on first run.
+    ///
+    /// Both used to wait behind a button in Settings, which meant a fresh install
+    /// recorded nothing from either until the owner went looking — and in Motion's
+    /// case, silently lost every week that passed before they did. iOS only ever
+    /// shows each prompt once; a refusal is remembered and reported in Settings
+    /// rather than asked again.
+    func requestAccessIfNeeded() {
+        // A UI test run cannot dismiss a system permission sheet, and a sheet over the
+        // first screen fails every test that follows it. The seeded run has its own
+        // data and needs neither source.
+        guard !ProcessInfo.processInfo.arguments.contains("-uiTesting") else { return }
+        if HKHealthStore.isHealthDataAvailable(),
+           !UserDefaults.standard.bool(forKey: healthRequestedKey) {
+            requestHealthAccess()
+        }
+        // Core Motion has no request call: authorisation is raised by the first query,
+        // which the automatic refresh performs.
+        refreshAutomatically()
+    }
+
     func requestHealthAccess() {
         guard HKHealthStore.isHealthDataAvailable() else {
             healthStatus = "Unavailable on this device"
@@ -107,7 +134,7 @@ final class ActivityDataService {
         Task {
             do {
                 try await healthStore.requestAuthorization(toShare: [], read: healthTypes)
-                UserDefaults.standard.set(true, forKey: "LifeLogHealthAccessRequested")
+                UserDefaults.standard.set(true, forKey: healthRequestedKey)
                 healthStatus = "Connected"
                 startImport(healthDays: 2, motionDays: nil)
             } catch {
@@ -123,6 +150,34 @@ final class ActivityDataService {
             return
         }
         startImport(healthDays: nil, motionDays: 7)
+    }
+
+    /// Core Motion keeps only about a week of history, and LifeLog imported it solely
+    /// when the owner pressed a button in Settings. Miss a week and that week is gone
+    /// for good — which is why a phone reporting "Connected" had no motion records at
+    /// all, and why walks and drives were missing from the timeline while sleep and
+    /// workouts arrived normally. Health has no such problem: its samples persist and
+    /// are read by anchor.
+    ///
+    /// Called at launch, when LifeLog is opened, and whenever Health delivers in the
+    /// background, so the rolling window is drained well before it expires.
+    func refreshAutomatically(now: Date = .now) {
+        // Never interrupt an import in flight: starting one cancels the last, and a
+        // half-finished import would lose its place.
+        guard !isImporting else { return }
+        let last = UserDefaults.standard.object(forKey: motionRefreshKey) as? Date
+        if let last, now.timeIntervalSince(last) < motionRefreshInterval { return }
+
+        let motionDays = CMMotionActivityManager.isActivityAvailable()
+            && CMMotionActivityManager.authorizationStatus() == .authorized ? 7 : nil
+        // Health samples are read by anchor, so repeating this only ever collects what
+        // arrived since last time. It rides along rather than needing its own button.
+        let healthDays = HKHealthStore.isHealthDataAvailable()
+            && UserDefaults.standard.bool(forKey: healthRequestedKey) ? 30 : nil
+        guard motionDays != nil || healthDays != nil else { return }
+
+        UserDefaults.standard.set(now, forKey: motionRefreshKey)
+        startImport(healthDays: healthDays, motionDays: motionDays)
     }
 
     func importAll() {
@@ -238,6 +293,12 @@ final class ActivityDataService {
         types.insert(HKSeriesType.workoutRoute())
         return types
     }
+
+    private let healthRequestedKey = "LifeLogHealthAccessRequested"
+    private let motionRefreshKey = "LifeLog.MotionLastRefreshed"
+    /// Often enough that a week of history is never lost, rare enough that opening the
+    /// app repeatedly does not re-read the same days.
+    private let motionRefreshInterval: TimeInterval = 6 * 60 * 60
 
     private func startImport(healthDays: Int?, motionDays: Int?) {
         guard modelContainer != nil, healthDays != nil || motionDays != nil else { return }
