@@ -67,11 +67,22 @@ struct SettingsView: View {
                 Section {
                     LabeledContent("Apple Health", value: activityData.healthStatus)
                     LabeledContent("Motion Activity", value: activityData.motionStatus)
-                    // No connect or import buttons: both sources are asked for on first
-                    // run and collected from then on. What remains is the one thing the
-                    // app cannot do for itself — iOS never re-asks once refused.
-                    if activityData.healthStatus == "Denied" || activityData.motionStatus == "Denied" {
-                        Text("Turn these back on in the iPhone Settings app, under Privacy & Security.")
+                    // Both sources are asked for on first run and collected from then
+                    // on, so there is no connect button in the ordinary case. It
+                    // appears only when Health is not connected, because that state
+                    // used to be a dead end: the label said "Not connected" and
+                    // nothing on the screen could do anything about it.
+                    if activityData.healthStatus != "Connected"
+                        && activityData.healthStatus != "Unavailable on this device" {
+                        Button("Connect Apple Health") {
+                            Task { await activityData.requestHealthAccess() }
+                        }
+                        .accessibilityIdentifier("connect-health")
+                        Text("If no sheet appears, iOS has already asked. Open the Health app → Sharing → Apps → LifeLog to turn the categories back on.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if activityData.motionStatus == "Denied" || activityData.motionStatus == "Restricted" {
+                        Text("Turn Motion & Fitness back on in the iPhone Settings app, under Privacy & Security.")
                             .font(.caption).foregroundStyle(.orange)
                             .accessibilityIdentifier("data-access-denied")
                     }

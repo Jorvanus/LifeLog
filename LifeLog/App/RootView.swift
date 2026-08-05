@@ -28,6 +28,11 @@ struct RootView: View {
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             activityData.refreshAutomatically()
+            // Health access can be changed in the Health app while LifeLog is in the
+            // background, and the import throttle above can skip a launch entirely.
+            // Re-reading the status on every activation is what keeps Settings from
+            // showing a stale "Not connected".
+            Task { await activityData.refreshHealthStatus() }
         }
         .accessibilityIdentifier("root-tab-view")
         .task {

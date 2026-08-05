@@ -2,6 +2,16 @@
 
 ## 2026-08-06
 
+### Apple Health said "Not connected" and would not reconnect
+
+- Settings could sit on "Not connected" indefinitely with no prompt and nothing to press. Two things caused it, and they hid each other.
+- Whether to show the Health prompt was decided by LifeLog's own note that it had asked once before — not by asking iOS. If that note was ever set while authorisation did not actually complete, LifeLog would never ask again.
+- The status label itself was only ever set as a side effect of a successful request or an import. Imports are throttled to once every six hours, so on most launches nothing set it at all and it stayed on its start-up value of "Not connected" — whatever the true state was.
+- LifeLog now asks HealthKit directly whether the prompt is still available, at launch and every time the app is brought to the front, and shows the prompt when it is. The label reflects what iOS reports rather than what LifeLog last remembered.
+- If Health is not connected, Settings now offers "Connect Apple Health" instead of leaving a dead end. Because iOS only ever shows the sheet once, the screen also says where to go when nothing appears: Health → Sharing → Apps → LifeLog.
+- Worth knowing: Apple never tells an app whether reading was actually allowed, only whether it has asked. "Connected" therefore means the question has been settled, not that data is flowing — which is why the pointer to the Health app is there.
+- The "turn these back on" note was previously shown when either source read "Denied", but nothing ever set Health to "Denied" — only Motion could. It now says Motion & Fitness, which is what it always meant.
+
 ### One answer to "is this the same place?"
 
 - Comparing two place or activity names was written out separately in five places, and they disagreed. Three ignored accents and two did not, so `Café` and `Cafe` were one place to the part of LifeLog that resolves a stay and two separate activities in Insights. Three trimmed stray spaces and two did not. All five now go through one rule, so a name means the same thing on every screen.

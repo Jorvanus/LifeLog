@@ -86,38 +86,68 @@ final class ActivityDataService {
     ///
     /// Both used to wait behind a button in Settings, which meant a fresh install
     /// recorded nothing from either until the owner went looking — and in Motion's
-    /// case, silently lost every week that passed before they did. iOS only ever
-    /// shows each prompt once; a refusal is remembered and reported in Settings
-    /// rather than asked again.
+    /// case, silently lost every week that passed before they did.
     func requestAccessIfNeeded() {
         // A UI test run cannot dismiss a system permission sheet, and a sheet over the
         // first screen fails every test that follows it. The seeded run has its own
         // data and needs neither source.
         guard !ProcessInfo.processInfo.arguments.contains("-uiTesting") else { return }
-        if HKHealthStore.isHealthDataAvailable(),
-           !UserDefaults.standard.bool(forKey: healthRequestedKey) {
-            requestHealthAccess()
-        }
+        Task { await refreshHealthStatus(requestingIfNeeded: true) }
         // Core Motion has no request call: authorisation is raised by the first query,
         // which the automatic refresh performs.
         refreshAutomatically()
     }
 
-    func requestHealthAccess() {
+    /// Asks HealthKit what it would actually do, and reports that.
+    ///
+    /// This used to be decided by `healthRequestedKey` — LifeLog's own note that it
+    /// had asked once. That note was the only thing gating the prompt, and
+    /// `healthStatus` was only ever set as a side effect of a successful request or
+    /// import. So if the note was set while authorisation never completed — the
+    /// request threw, the app was killed over the sheet, Health data was reset —
+    /// LifeLog would never ask again and never update the label. Settings then read
+    /// "Not connected" for good, with nothing offering to reconnect.
+    ///
+    /// `statusForAuthorizationRequest` answers exactly the right question: would the
+    /// person be prompted if we asked now? `.shouldRequest` means the prompt is still
+    /// available, so take it.
+    ///
+    /// Note the honest limit: HealthKit never discloses whether a *read* was allowed,
+    /// so `.unnecessary` means "already asked", not "granted". Settings says so.
+    func refreshHealthStatus(requestingIfNeeded: Bool = false) async {
         guard HKHealthStore.isHealthDataAvailable() else {
             healthStatus = "Unavailable on this device"
             return
         }
-        Task {
-            do {
-                try await healthStore.requestAuthorization(toShare: [], read: healthTypes)
-                UserDefaults.standard.set(true, forKey: healthRequestedKey)
-                healthStatus = "Connected"
-                startImport(healthDays: 2, motionDays: nil)
-            } catch {
-                lastError = "Health access couldn’t be completed. Check Health permissions in Settings."
-                healthStatus = "Couldn’t connect"
-            }
+        let status = try? await healthStore.statusForAuthorizationRequest(toShare: [], read: healthTypes)
+        switch status {
+        case .unnecessary:
+            UserDefaults.standard.set(true, forKey: healthRequestedKey)
+            healthStatus = "Connected"
+        case .shouldRequest:
+            healthStatus = "Not connected"
+            if requestingIfNeeded { await requestHealthAccess() }
+        default:
+            healthStatus = "Couldn’t check"
+        }
+    }
+
+    /// Presents the Health sheet. Safe to call when access was already granted — iOS
+    /// simply returns without showing anything — which is what makes it usable as the
+    /// Reconnect action in Settings.
+    func requestHealthAccess() async {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            healthStatus = "Unavailable on this device"
+            return
+        }
+        do {
+            try await healthStore.requestAuthorization(toShare: [], read: healthTypes)
+            UserDefaults.standard.set(true, forKey: healthRequestedKey)
+            healthStatus = "Connected"
+            startImport(healthDays: 2, motionDays: nil)
+        } catch {
+            lastError = "Health access couldn’t be completed. Check Health permissions in Settings."
+            healthStatus = "Couldn’t connect"
         }
     }
 
