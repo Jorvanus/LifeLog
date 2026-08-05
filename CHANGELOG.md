@@ -2,6 +2,12 @@
 
 ## 2026-08-05
 
+### Groups you can see and change
+
+- Settings → Groups shows every group with the activities filed under it. Grouping decides where Insights counts your time, but it could only be set one activity at a time through a picker, and there was no way to ask what was in a group.
+- Groups are no longer a fixed list of twelve. Add your own, rename one — its activities come with it, and Insights re-counts their visits straight away — or delete one, which moves its activities to "Other" rather than dropping them out of the count. "Other" itself cannot be removed, because deleting a group has to leave its activities somewhere.
+- A group still in use by an activity is always listed, so a group cannot disappear while something is filed under it, and two groups cannot share a name — that would split the same time in two.
+
 ### Activities are listed alphabetically
 
 - Settings → Activities was ordered by when each entry was added, so a newly added activity appeared at the bottom and the list had no order to scan. It now reads alphabetically, ignoring case and accents, and a renamed activity moves to its new place immediately.

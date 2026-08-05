@@ -19,6 +19,18 @@ struct ActivityDefinition: Codable, Identifiable, Hashable {
 
 enum ActivityCatalog {
     private static let storageKey = "LifeLog.ActivityCatalog.v1"
+
+    /// Where the catalogue lives. Swappable so tests can exercise group edits — which
+    /// rewrite every activity's grouping — without touching the app's real defaults.
+    /// Only ever reassigned by `withStorage`, and `UserDefaults` is itself thread-safe.
+    nonisolated(unsafe) static var storage: UserDefaults = .standard
+
+    static func withStorage(_ defaults: UserDefaults, _ body: () -> Void) {
+        let previous = storage
+        storage = defaults
+        defer { storage = previous }
+        body()
+    }
     static let defaults: [(name: String, category: String, symbol: String)] = [
         ("At home", "Home", "house.fill"), ("Working", "Work", "briefcase.fill"),
         ("Coffee", "Food & Drink", "cup.and.saucer.fill"), ("Beers", "Food & Drink", "mug.fill"),
@@ -40,7 +52,7 @@ enum ActivityCatalog {
     }
 
     static func load() -> [ActivityDefinition] {
-        guard let data = UserDefaults.standard.data(forKey: storageKey),
+        guard let data = storage.data(forKey: storageKey),
               let decoded = try? JSONDecoder().decode([ActivityDefinition].self, from: data),
               !decoded.isEmpty else {
             return sorted(defaults.map {
@@ -54,7 +66,7 @@ enum ActivityCatalog {
         // Sorted on the way in as well, so what is stored matches what is shown and
         // a list edited by an older build is tidied the first time it is saved.
         guard let data = try? JSONEncoder().encode(sorted(activities)) else { return }
-        UserDefaults.standard.set(data, forKey: storageKey)
+        storage.set(data, forKey: storageKey)
     }
 
     static func category(for activity: String) -> String {
@@ -87,11 +99,97 @@ enum ActivityCatalog {
         return "Other"
     }
 
-    /// Categories LifeLog groups Insights by. Kept here so the picker, the add-from-
-    /// history flow and the grouping logic cannot drift apart.
-    static let categories = ["Home", "Work", "Food & Drink", "Shopping", "Fitness",
-                             "Healthcare", "Education", "Travel", "Entertainment",
-                             "Social", "Sleep", "Other"]
+    /// The groups LifeLog ships with. A starting point, not the whole list: the
+    /// person can add their own, so read `categories` rather than this.
+    static let defaultCategories = ["Home", "Work", "Food & Drink", "Shopping", "Fitness",
+                                    "Healthcare", "Education", "Travel", "Entertainment",
+                                    "Social", "Sleep", "Other"]
+
+    /// The group every activity falls back to. It can never be removed, because
+    /// deleting a group has to leave its activities somewhere.
+    static let fallbackCategory = "Other"
+
+    private static let categoryStorageKey = "LifeLog.ActivityCategories.v1"
+
+    /// Groups Insights counts by, including any the person added. Read through one
+    /// accessor so the picker, the add-from-history flow and the grouping logic
+    /// cannot drift apart.
+    static var categories: [String] { loadCategories() }
+
+    static func loadCategories() -> [String] {
+        guard let stored = storage.array(forKey: categoryStorageKey) as? [String],
+              !stored.isEmpty else { return defaultCategories }
+        // "Other" is always available even if an older list somehow lacks it, and any
+        // group still in use by an activity is kept, so a group can never disappear
+        // while something is filed under it.
+        var names = stored
+        for used in load().map(\.category) where !names.contains(used) { names.append(used) }
+        if !names.contains(fallbackCategory) { names.append(fallbackCategory) }
+        return names
+    }
+
+    static func saveCategories(_ names: [String]) {
+        var cleaned: [String] = []
+        for name in names {
+            let clean = TextSafety.clean(name, maximumLength: 40)
+            guard !clean.isEmpty,
+                  !cleaned.contains(where: { $0.caseInsensitiveCompare(clean) == .orderedSame }) else { continue }
+            cleaned.append(clean)
+        }
+        if !cleaned.contains(fallbackCategory) { cleaned.append(fallbackCategory) }
+        storage.set(cleaned, forKey: categoryStorageKey)
+    }
+
+    /// Renames a group and carries its activities with it. Visits are untouched:
+    /// a visit records what the person did, and the group is derived from the
+    /// activity, so moving the activities is what re-counts the history.
+    @discardableResult
+    static func renameCategory(from previous: String, to updated: String) -> Int {
+        let clean = TextSafety.clean(updated, maximumLength: 40)
+        guard !clean.isEmpty, clean.caseInsensitiveCompare(previous) != .orderedSame else { return 0 }
+        var activities = load()
+        var moved = 0
+        for index in activities.indices
+        where activities[index].category.caseInsensitiveCompare(previous) == .orderedSame {
+            activities[index].category = clean
+            moved += 1
+        }
+        save(activities)
+        saveCategories(loadCategories().map {
+            $0.caseInsensitiveCompare(previous) == .orderedSame ? clean : $0
+        })
+        return moved
+    }
+
+    /// Removes a group. Its activities fall back to "Other" rather than losing their
+    /// grouping entirely, which would drop them out of Insights until noticed.
+    @discardableResult
+    static func deleteCategory(_ name: String) -> Int {
+        guard name.caseInsensitiveCompare(fallbackCategory) != .orderedSame else { return 0 }
+        var activities = load()
+        var orphaned = 0
+        for index in activities.indices
+        where activities[index].category.caseInsensitiveCompare(name) == .orderedSame {
+            activities[index].category = fallbackCategory
+            orphaned += 1
+        }
+        save(activities)
+        saveCategories(loadCategories().filter { $0.caseInsensitiveCompare(name) != .orderedSame })
+        return orphaned
+    }
+
+    static func addCategory(_ name: String) -> Bool {
+        let clean = TextSafety.clean(name, maximumLength: 40)
+        let existing = loadCategories()
+        guard !clean.isEmpty,
+              !existing.contains(where: { $0.caseInsensitiveCompare(clean) == .orderedSame }) else { return false }
+        saveCategories(existing + [clean])
+        return true
+    }
+
+    static func activities(inCategory name: String) -> [ActivityDefinition] {
+        sorted(load().filter { $0.category.caseInsensitiveCompare(name) == .orderedSame })
+    }
 
     /// Best guess at where a label belongs, used to pre-fill the category when
     /// adopting an activity from history. Only a starting point — the person can
@@ -189,7 +287,7 @@ enum ActivityCatalog {
     }
 
     static func seed() {
-        guard UserDefaults.standard.data(forKey: storageKey) == nil else { return }
+        guard storage.data(forKey: storageKey) == nil else { return }
         save(load())
     }
 }

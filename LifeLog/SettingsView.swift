@@ -56,6 +56,9 @@ struct SettingsView: View {
                     NavigationLink { ActivitiesView() } label: {
                         Label("Activities", systemImage: "list.bullet.clipboard")
                     }.accessibilityIdentifier("activities-link")
+                    NavigationLink { ActivityGroupsView() } label: {
+                        Label("Groups", systemImage: "square.grid.2x2")
+                    }.accessibilityIdentifier("activity-groups-link")
                 } header: {
                     Text("Places")
                 } footer: {

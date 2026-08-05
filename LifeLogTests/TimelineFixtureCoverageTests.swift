@@ -226,6 +226,44 @@ struct TimelineFixtureCoverageTests {
         #expect(names == ["At home", "Beers", "Éating", "work"])
     }
 
+    /// Groups are only a string on each activity, so the risk in editing one is that
+    /// history quietly stops being counted. These assert it never does.
+    @Test("Renaming a group carries its activities; deleting one leaves them counted")
+    func groupEditsKeepActivitiesGrouped() {
+        let suite = "LifeLogGroupTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        ActivityCatalog.withStorage(defaults) {
+            ActivityCatalog.save([
+                ActivityDefinition(name: "CrossFit", category: "Fitness", symbol: "figure.run"),
+                ActivityDefinition(name: "Swimming", category: "Fitness", symbol: "figure.pool.swim"),
+                ActivityDefinition(name: "Work", category: "Work", symbol: "briefcase.fill")
+            ])
+
+            #expect(ActivityCatalog.addCategory("Fitness") == false, "A duplicate group would split the same time in two")
+            #expect(ActivityCatalog.addCategory("Volunteering"))
+            #expect(ActivityCatalog.categories.contains("Volunteering"))
+
+            // Renaming moves the activities, so their visits keep being counted under
+            // the new name rather than falling out of the group.
+            #expect(ActivityCatalog.renameCategory(from: "Fitness", to: "Training") == 2)
+            #expect(ActivityCatalog.activities(inCategory: "Training").map(\.name) == ["CrossFit", "Swimming"])
+            #expect(ActivityCatalog.categories.contains("Training"))
+            #expect(ActivityCatalog.categories.contains("Fitness") == false)
+
+            // Deleting drops them to the fallback rather than nowhere.
+            #expect(ActivityCatalog.deleteCategory("Training") == 2)
+            #expect(ActivityCatalog.categories.contains("Training") == false)
+            #expect(ActivityCatalog.activities(inCategory: ActivityCatalog.fallbackCategory)
+                .map(\.name) == ["CrossFit", "Swimming"])
+            #expect(ActivityCatalog.category(for: "CrossFit") == ActivityCatalog.fallbackCategory)
+
+            // The fallback itself must survive, or a later deletion has nowhere to go.
+            #expect(ActivityCatalog.deleteCategory(ActivityCatalog.fallbackCategory) == 0)
+            #expect(ActivityCatalog.categories.contains(ActivityCatalog.fallbackCategory))
+        }
+    }
+
     @Test("Adopted activities are grouped, not dumped into Other")
     func suggestedCategoriesCoverRealVocabulary() {
         #expect(ActivityCatalog.suggestedCategory(for: "Work") == "Work")

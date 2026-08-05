@@ -76,6 +76,7 @@ This plan prioritises a dependable private diary on a physical iPhone before exp
 - [ ] Learn aliases for GPS drift around large venues so multiple nearby Apple Maps pins resolve to one Saved Place without merging genuinely separate businesses.
 - [ ] Refresh unresolved visits when better Apple Maps information becomes available, while preserving the original candidates and never replacing a confirmed user choice.
 - [x] ~~Use Apple Maps category plus visit time to suggest activities…~~ Superseded: LifeLog no longer stores a place type. The Maps point-of-interest wording is now a transient inference hint only, and place identity is the place name.
+- [x] Groups are editable in their own right: Settings → Groups lists each group with its activities, and adding, renaming (carrying activities) and deleting (falling back to "Other") are all available. Still open: moving several activities into a group at once, and wiring up the half-built `saveCategoryColor` so Insights uses a colour chosen per group.
 - [ ] Add a review queue ranked by confidence and impact: current unresolved location first, then long-duration unknown visits, repeated unknown coordinates, and low-confidence Maps matches.
 - [ ] Show nearby Apple Maps alternatives with distance and category when editing a visit or Saved Place, and remember the selected Apple Maps identifier/alias where the API permits.
 - [ ] Add a bounded in-memory Saved Place spatial index and rounded-cell Maps cache so callbacks do not repeatedly fetch every place or contact Maps for the same area.

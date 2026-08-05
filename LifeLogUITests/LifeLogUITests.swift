@@ -178,6 +178,25 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(overnight.waitForExistence(timeout: 5))
     }
 
+    /// Grouping decides where Insights counts time, and until now it could only be
+    /// seen one activity at a time through a picker. The group's own view has to be
+    /// reachable from Settings and offer adding one.
+    func testActivityGroupsAreReachableFromSettings() {
+        app.tabBars.buttons["Settings"].tap()
+        let groups = element("activity-groups-link")
+        XCTAssertTrue(groups.waitForExistence(timeout: 5))
+        groups.tap()
+
+        XCTAssertTrue(element("activity-groups-screen").waitForExistence(timeout: 5))
+        // Adding has to stay reachable however many groups there are, so it lives in
+        // the toolbar rather than below a list SwiftUI only builds as you scroll.
+        XCTAssertTrue(element("add-group").waitForExistence(timeout: 5))
+        XCTAssertTrue(element("add-group").isHittable)
+        // The first group and an activity filed under it, both on screen at the top.
+        XCTAssertTrue(app.staticTexts["Home"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["At home"].exists)
+    }
+
     func testManualEntryIsAccessibleFromTimeline() {
         let addVisit = app.buttons["Add visit"]
         XCTAssertTrue(addVisit.waitForExistence(timeout: 5))
