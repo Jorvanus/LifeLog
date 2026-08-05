@@ -627,13 +627,6 @@ func categoryColor(forCategory category: String) -> Color {
     }
 }
 
-func saveCategoryColor(_ color: Color, forCategory category: String) {
-    var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
-    guard UIColor(color).getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return }
-    let hex = [red, green, blue].map { String(format: "%02X", Int(($0 * 255).rounded())) }.joined()
-    UserDefaults.standard.set(hex, forKey: "LifeLog.CategoryColor.\(category.trimmingCharacters(in: .whitespacesAndNewlines))")
-}
-
 func categoryColorHex(forCategory category: String) -> String {
     if let stored = UserDefaults.standard.string(forKey: "LifeLog.CategoryColor.\(category.trimmingCharacters(in: .whitespacesAndNewlines))") {
         return "#\(stored)"

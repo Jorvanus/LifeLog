@@ -101,27 +101,6 @@ struct PlacesView: View {
         recorder.invalidateSavedPlaceCache()
     }
 
-    @ViewBuilder
-    private func locationRow(_ visit: Visit) -> some View {
-        HStack {
-            NavigationLink { VisitEditor(visit: visit) } label: {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(visit.displayPlaceName).font(.headline)
-                    Text(visit.arrival.formatted(date: .abbreviated, time: .shortened))
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            Spacer()
-            Button(visit.isIgnored ? "Restore" : "Ignore") {
-                visit.isIgnored.toggle()
-                try? context.save()
-            }
-            .font(.caption.bold())
-            .buttonStyle(.bordered)
-            .tint(visit.isIgnored ? .green : .orange)
-            .accessibilityLabel(visit.isIgnored ? "Restore location" : "Ignore location")
-        }
-    }
 }
 
 private struct LocationVisitList: View {

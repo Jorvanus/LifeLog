@@ -89,10 +89,6 @@ actor ActivitySampleReader {
                                     deletedSampleIDs: result.deletedObjects.map(\.uuid))
     }
 
-    func workoutRecords(in interval: DateInterval) async throws -> [ActivityImportRecord] {
-        try await anchoredWorkoutRecords(in: interval, anchorData: nil).records
-    }
-
     func anchoredWorkoutRecords(in interval: DateInterval, anchorData: Data?) async throws -> ActivityAnchorResult {
         let predicate = HKQuery.predicateForSamples(
             withStart: interval.start, end: interval.end, options: .strictEndDate

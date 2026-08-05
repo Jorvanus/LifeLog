@@ -2,6 +2,10 @@
 
 ## 2026-08-05
 
+### A lookup record that grew for the life of the app
+
+- Every public-place lookup added an entry to a table that was only ever emptied by a cancellation path nothing called, so it grew with each place identified until the app was relaunched. The table is gone. What it was meant to protect still holds: a place is never looked up twice at once, and a late Apple Maps result still cannot overwrite a label you chose yourself.
+
 ### Groups you can see and change
 
 - Settings → Groups shows every group with the activities filed under it. Grouping decides where Insights counts your time, but it could only be set one activity at a time through a picker, and there was no way to ask what was in a group.

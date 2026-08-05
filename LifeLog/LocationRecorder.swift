@@ -15,7 +15,6 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     private var serviceSessionRequirement: CLServiceSession.AuthorizationRequirement?
     private var diagnosticTask: Task<Void, Never>?
     private var identifyingVisits: Set<ObjectIdentifier> = []
-    private var lookupIDs: [ObjectIdentifier: UUID] = [:]
     private var savedPlaceCache: [SavedPlace] = []
     /// Limits immediate-place creation to samples explicitly requested by LifeLog.
     /// Significant-change callbacks can arrive while travelling and must not become visits.
@@ -335,8 +334,14 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         let identity = ObjectIdentifier(visit)
         guard identifyingVisits.insert(identity).inserted else { return }
         let coordinate = CLLocationCoordinate2D(latitude: visit.latitude, longitude: visit.longitude)
+        // Identifies this lookup to the service for the life of the call. It used to
+        // be retained in a dictionary keyed by visit so a correction could cancel it,
+        // but nothing ever cancelled, and only the (uncalled) cancel path removed an
+        // entry — so the dictionary grew for the life of the process. `identifyingVisits`
+        // still guards against a second lookup for the same visit, and the `guard
+        // visit.needsCategorisation` below is what actually stops a late Maps result
+        // from overwriting a correction.
         let lookupID = UUID()
-        lookupIDs[identity] = lookupID
         Task { @MainActor [weak self] in
             guard let self, let context = self.context else { return }
             defer { self.identifyingVisits.remove(identity) }
@@ -375,16 +380,6 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 reverseGeocode(visit)
             }
         }
-    }
-
-    /// Corrections and superseded callbacks invalidate pending public-place
-    /// lookups so a late Maps response cannot overwrite the user's choice.
-    func cancelPlaceLookup(for visit: Visit) {
-        let identity = ObjectIdentifier(visit)
-        if let id = lookupIDs.removeValue(forKey: identity) {
-            PlaceLookupService.cancelLookup(id: id)
-        }
-        identifyingVisits.remove(identity)
     }
 
     private func cache(_ match: PlaceSuggestion, context: ModelContext) {
