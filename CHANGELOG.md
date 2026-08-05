@@ -2,6 +2,16 @@
 
 ## 2026-08-05
 
+### One place, one entry
+
+- A day at work was being listed three times. Core Location records a fresh arrival as the phone moves around a large site, and a delayed departure can stretch the first arrival across all of them, leaving stays that overlap each other at the same place. Overlapping stays at one place are now collapsed into the single stay they describe. A person cannot be somewhere twice over the same minutes, so nothing is guessed here — and it runs every time the timeline resolves, rather than as a one-time repair, so a store that drifts is corrected again.
+- This also clears the duplicated "Home" left behind by yesterday's change, which the earlier repair could not match once a departure callback made the two halves overlap instead of leaving a gap.
+- Insights was already unaffected: it divides the day at visit boundaries and gives each moment to one visit, so overlapping records never inflated a total.
+
+### Short journeys are journeys
+
+- The shortest movement that earns a timeline entry drops from five minutes to three. A recorded walk to a park took 11m25s and the walk home 4m18s, so the trip out appeared and the trip back did not.
+
 ### The day starts where you woke up
 
 - Today's Journey now shows the stay you were already in. Core Location records one arrival per stay, so a night at home arrives the evening before; Timeline selected entries by their arrival date and dropped it, and the day appeared to begin at the first time you went out. Stays that began earlier now show their start time with the day it fell on, so "Yesterday 6:12 pm – 7:20 am" cannot read as a few minutes.

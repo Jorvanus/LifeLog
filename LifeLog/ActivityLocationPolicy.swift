@@ -12,7 +12,11 @@ enum ActivityLocationPolicy {
     /// when they are recorded, so this mainly suppresses a stray sample either side
     /// of a stay rather than a real outing: a walk to the park and back is a journey
     /// worth seeing, and requiring an hour of it hid every one of them.
-    nonisolated static let minimumTimelineMovementDuration: TimeInterval = 5 * 60
+    ///
+    /// Three minutes rather than five because a real capture walked to a park in
+    /// 11m25s and home again in 4m18s. At five minutes the outbound leg appeared and
+    /// the return did not, which reads as an unfinished trip rather than a tidier one.
+    nonisolated static let minimumTimelineMovementDuration: TimeInterval = 3 * 60
 
     nonisolated static func isLocationVisit(_ visit: Visit) -> Bool {
         visit.source == "automatic" || visit.source == "manual"
@@ -36,11 +40,70 @@ enum ActivityLocationPolicy {
     static func resolveLocationCallbacks(context: ModelContext) throws -> Int {
         let repaired = try closeSupersededOpenLocations(context: context)
         let marked = try deduplicateAutomaticLocations(context: context)
-        let total = repaired + marked
+        let merged = try mergeOverlappingStays(context: context)
+        let total = repaired + marked + merged
         if total > 0 {
             Diagnostics.locationMetric(context, operation: "resolver_repairs", repairs: total)
         }
         return total
+    }
+
+    /// Collapses stays that claim overlapping time at the same place.
+    ///
+    /// A large site is entered and re-entered as the phone moves around it, and a
+    /// delayed departure callback can stretch the first arrival across all of them.
+    /// A real capture held three "Work" stays for one day: 9:09am–3:49pm, with
+    /// 10:17–11:04 and 11:17–12:42 sitting inside it, so Timeline listed one working
+    /// day three times. Insights was unaffected — it already resolves overlap by
+    /// slicing the day and awarding each slice to a single visit.
+    ///
+    /// Nothing is inferred here. A person cannot be at one place twice over the same
+    /// minutes, so one continuous stay is the only reading the records allow — which
+    /// is why this runs on every resolve rather than behind a one-time repair flag.
+    @discardableResult
+    static func mergeOverlappingStays(context: ModelContext, now: Date = .now) throws -> Int {
+        let stays = try context.fetch(FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.source == "automatic" },
+            sortBy: [SortDescriptor(\.arrival)]
+        ))
+        var retained: [Visit] = []
+        var merged = 0
+        for stay in stays {
+            guard let host = retained.last(where: { describesSameStay($0, stay, now: now) }) else {
+                retained.append(stay)
+                continue
+            }
+            host.arrival = min(host.arrival, stay.arrival)
+            switch (host.departure, stay.departure) {
+            case (nil, _), (_, nil): host.departure = nil
+            case let (left?, right?): host.departure = max(left, right)
+            }
+            if locationQuality(stay) > locationQuality(host) {
+                host.placeName = stay.placeName
+                host.inferredActivity = stay.inferredActivity
+                host.userActivity = stay.userActivity
+                host.recognitionConfidence = stay.recognitionConfidence
+            }
+            // Kept for inspection, the way a merged duplicate callback is, but closed
+            // so its duration cannot grow and excluded from every screen.
+            stay.departure = stay.arrival
+            stay.source = supersededLocationSource
+            merged += 1
+        }
+        return merged
+    }
+
+    /// Two records of one stay: overlapping in time, agreeing on the place, and close
+    /// enough together that GPS drift explains the difference. A placeholder name is
+    /// never matched — "Identifying…" says nothing about which place this is.
+    private static func describesSameStay(_ host: Visit, _ candidate: Visit, now: Date) -> Bool {
+        let hostEnd = host.departure ?? now
+        let candidateEnd = candidate.departure ?? now
+        guard host.arrival < candidateEnd, hostEnd > candidate.arrival else { return false }
+        guard !Visit.isPlaceholderName(host.placeName), !Visit.isPlaceholderName(candidate.placeName),
+              normalized(host.placeName) == normalized(candidate.placeName) else { return false }
+        return CLLocation(latitude: host.latitude, longitude: host.longitude)
+            .distance(from: CLLocation(latitude: candidate.latitude, longitude: candidate.longitude)) <= 250
     }
 
     nonisolated static func isDeviceActivity(_ visit: Visit) -> Bool {
