@@ -451,6 +451,49 @@ struct TimelineFixtureCoverageTests {
         #expect(hash != WiFiAnchor.hash(ssid: "Baxter Home 5G", bssid: "aa:bb:cc:dd:ee:00"))
     }
 
+    @Test("Add Visit suggests the gaps in the timeline")
+    func suggestsUnrecordedGaps() {
+        func stay(_ name: String, from: Double, to: Double) -> Visit {
+            Visit(arrival: base.addingTimeInterval(from * 60), departure: base.addingTimeInterval(to * 60),
+                  latitude: -23.37, longitude: 150.51, placeName: name,
+                  inferredActivity: "Visiting", source: "automatic", recognitionConfidence: "learned")
+        }
+        // Home, a gap, Work — the commute nobody recorded. Then back home later.
+        let visits = [stay("Home", from: 0, to: 60),
+                      stay("Work", from: 85, to: 400),
+                      stay("Home", from: 430, to: 600)]
+
+        let suggestions = VisitSuggestion.make(from: visits)
+
+        #expect(suggestions.count == 2)
+        // Newest first, because a recent hole is the one worth filling.
+        #expect(suggestions.first?.start == base.addingTimeInterval(400 * 60))
+        // Between home and work in either direction, the gap is the commute.
+        #expect(suggestions.allSatisfy { $0.activity == CommuteDetection.activityName })
+        #expect(suggestions.last?.summary.contains("Home") == true)
+
+        // A gap of seconds is not a visit, and neither is a day-long one.
+        let brief = [stay("Home", from: 0, to: 60), stay("Work", from: 61, to: 120)]
+        #expect(VisitSuggestion.make(from: brief).isEmpty)
+        let enormous = [stay("Home", from: 0, to: 60), stay("Work", from: 900, to: 1_000)]
+        #expect(VisitSuggestion.make(from: enormous).isEmpty)
+    }
+
+    @Test("Returning to the same place suggests still being there")
+    func suggestsStayingPut() {
+        func home(_ from: Double, _ to: Double) -> Visit {
+            Visit(arrival: base.addingTimeInterval(from * 60), departure: base.addingTimeInterval(to * 60),
+                  latitude: -23.37, longitude: 150.51, placeName: "Home",
+                  inferredActivity: "At home", userActivity: "At home",
+                  source: "automatic", recognitionConfidence: "learned")
+        }
+        let suggestions = VisitSuggestion.make(from: [home(0, 60), home(90, 200)])
+
+        #expect(suggestions.count == 1)
+        #expect(suggestions.first?.place == "Home")
+        #expect(suggestions.first?.activity == "At home")
+    }
+
     @Test("A label the catalogue has never heard of is still counted")
     func includesLabelsMissingFromTheCatalogue() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)

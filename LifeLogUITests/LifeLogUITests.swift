@@ -222,7 +222,17 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(addVisit.waitForExistence(timeout: 5))
         addVisit.tap()
         XCTAssertTrue(app.navigationBars["Add Visit"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.textFields["Search Apple Maps or enter a name"].exists)
-        XCTAssertTrue(app.buttons["Search nearby places"].exists)
+
+        // Location and activity are pages of their own rather than fields to fill in.
+        let location = element("choose-location-link")
+        XCTAssertTrue(location.waitForExistence(timeout: 5))
+        XCTAssertTrue(element("choose-activity-link").exists)
+        XCTAssertTrue(app.staticTexts["Start"].exists)
+        XCTAssertTrue(app.staticTexts["End"].exists)
+
+        location.tap()
+        XCTAssertTrue(element("visit-location-chooser").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.textFields["e.g. Aaron's Gardens"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Places nearby"].exists)
     }
 }

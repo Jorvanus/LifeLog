@@ -2,6 +2,13 @@
 
 ## 2026-08-05
 
+### Adding a visit asks where you were, not what to search for
+
+- Add Visit is now three questions: where, what you did, and when. Location and activity each open a page of their own instead of being fields to fill in.
+- "Where?" lists everywhere around you, closest first, with the distance to each. Places already in your timeline appear alongside them, marked, and keep your name for them rather than Apple's. You can still just type a name. Previously you had to think of a search term, press Search, and hope.
+- The arrow beside a place opens it on a map: move the pin, rename it, and see everything you have ever recorded there. A place you already use can be merged into another or deleted from the same screen — merging renames its visits onto the place you choose rather than discarding them, and deleting removes only the place, never a visit.
+- Underneath the times, LifeLog now offers the gaps in your own timeline: stretches it has nothing recorded for, with its reading of what they were. The same place either side means you were probably still there; home on one side and work on the other is a commute. Tapping one fills the whole entry in.
+
 ### Group colours you can tell apart
 
 - Work and Entertainment were both plain purple. Side by side in the Insights donut there was no telling which was which.
