@@ -130,6 +130,16 @@ struct ActivityScene: View {
                 .frame(width: ActivityArtworkLayout.width, height: ActivityArtworkLayout.height)
                 .offset(y: ActivityArtworkLayout.verticalOffset)
                 .clipped()
+                // Fixed regardless of appearance. Every illustration is painted with
+                // transparent edges, and several have transparent gaps inside the
+                // scene itself — a highlight on a bowl, a seam in a tablecloth. Left
+                // alone, that transparency shows the card's own background through:
+                // paper-white in light mode, but a scatter of black flecks through
+                // the artwork in dark mode. A constant pale canvas behind the image
+                // means every illustration always sits on the surface it was drawn
+                // for, in both appearances, with no dark-mode variant required.
+                .background(ActivityArtworkLayout.canvasColor,
+                            in: RoundedRectangle(cornerRadius: ActivityArtworkLayout.cornerRadius))
                 .accessibilityHidden(true)
         }
     }
@@ -150,6 +160,7 @@ enum ActivityArtworkLayout {
     static let width: CGFloat = 170
     static let height: CGFloat = 88
     static let verticalOffset: CGFloat = 0
+    static let cornerRadius: CGFloat = 14
 
     /// The shortest edge a replacement illustration should be exported at.
     ///
@@ -158,4 +169,15 @@ enum ActivityArtworkLayout {
     /// after cropping, not merely match the frame. 1024px on the short edge leaves
     /// room for that crop and for the card ever growing, without shipping megabytes.
     static let recommendedSourcePixels = 1024
+
+    /// The panel every illustration sits on, in both light and dark mode.
+    ///
+    /// Deliberately not `Color(uiColor: .secondarySystemGroupedBackground)` or any
+    /// other adaptive colour — the whole point is that this stays put while the
+    /// system colour around it changes, so a transparent pixel in the artwork always
+    /// reveals the same pale surface rather than turning black at night. Sampled
+    /// from the illustrations' own light highlights (the tablecloth in
+    /// `ActivityDiningOut`), so a fixed panel reads as part of the drawing rather
+    /// than as a mount behind it.
+    static let canvasColor = Color(red: 241 / 255, green: 244 / 255, blue: 232 / 255)
 }

@@ -2,6 +2,12 @@
 
 ## 2026-08-06
 
+### The current-activity picture no longer speckles black at night
+
+- Stripping the outer white background and border from each PNG (above) fixed the edges, but not the gaps *inside* the drawings — a highlight on a bowl, a seam in a tablecloth, the glow under a lamp. Composited straight onto the card, a fully transparent interior pixel reads as paper in light mode and as a black fleck in dark mode, scattered through the middle of the picture rather than around it.
+- The current-activity card now always draws the illustration on the same pale panel, with soft rounded corners, in both appearances. A transparent pixel reveals that panel rather than whatever the card's own background happens to be that night, so the speckling is gone regardless of which illustration is showing — including any added later, with no per-image care required.
+- Along the way: the football scene had been a duplicate of the home illustration, and both briefly picked up a watercolour checkerboard baked into their pixels as real colour rather than transparency — the same fault the nine scenes added earlier today shipped with, caught and cleaned the same way before either reached a card.
+
 ### Updated ActivityHome artwork asset
 
 - Processed newly generated `ActivityHome.png` asset: removed solid white background and AI badge overlay, making the background transparent RGBA so the house illustration and sage watercolor wash blend seamlessly on both Light and Dark mode cards.
