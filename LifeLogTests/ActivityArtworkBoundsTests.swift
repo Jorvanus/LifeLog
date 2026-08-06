@@ -132,13 +132,33 @@ struct ActivityArtworkBoundsTests {
             "Walking": "ActivityWalking", "Exercising": "ActivityFitnessV2",
             "Commuting": "ActivityDriving", "Running": "ActivityFitnessV2",
             "Cycling": "ActivityFitnessV2", "Swimming": "ActivityFitnessV2",
-            "Yoga": "ActivityFitnessV2", "Strength training": "ActivityFitnessV2"
+            "Yoga": "ActivityFitnessV2", "Strength training": "ActivityFitnessV2",
+            "Breakfast": "ActivityBreakfast", "Lunch": "ActivityLunch",
+            "Dining out": "ActivityDiningOut", "Eating": "ActivityEating",
+            "Concert": "ActivityConcert", "Watching a movie": "ActivityWatchingMovie",
+            "Studying": "ActivityStudying", "Football": "ActivityStudying",
+            "Socialising": "ActivitySocialising", "Visiting": "ActivityVisiting"
         ]
         for (activity, asset) in expected {
             #expect(ActivityScene(activity: activity).assetNameForTesting == asset,
                     "\(activity) did not resolve to \(asset)")
             #expect(UIImage(named: asset) != nil, "\(asset) is not in the bundle")
         }
+    }
+
+    /// The whole catalogue, not just the ones someone remembered to list above.
+    /// Twelve of these had no illustration and nothing said so.
+    @Test("Every shipped activity has an illustration")
+    func everyShippedActivityHasArtwork() {
+        var without: [String] = []
+        for entry in ActivityCatalog.defaults {
+            guard let asset = ActivityScene(activity: entry.name).assetNameForTesting,
+                  UIImage(named: asset) != nil else {
+                without.append(entry.name)
+                continue
+            }
+        }
+        #expect(without.isEmpty, "no artwork for: \(without.sorted().joined(separator: ", "))")
     }
 
     @Test("Activity artwork PNGs have sane source dimensions")

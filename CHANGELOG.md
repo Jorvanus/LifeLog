@@ -2,6 +2,13 @@
 
 ## 2026-08-06
 
+### Every activity now has a picture
+
+- Nine new scenes: breakfast, lunch, dining out, eating, a concert, studying, socialising, visiting, and watching television. With the artwork already in the app now wired up, all twenty-nine activities have an illustration on the current-activity card — it was twelve this morning.
+- Football and studying share one picture. They arrived as a single frame holding a goal, a ball, a desk lamp and an open book, so it reads as either; football deserves its own eventually.
+- The pictures came as one sheet with its transparency flattened into a grey checkerboard. That had to be found and removed rather than cropped around — including the pockets sealed inside the artwork, like the glow under the desk lamp, where the checker was tinted warm by the light and had to be smoothed out instead.
+- A test now fails if any shipped activity loses its picture, which is how the missing dozen went unnoticed in the first place.
+
 ### The current activity's illustration
 
 - Eleven finished illustrations were sitting in the app unused, including a whole refreshed set — tighter, squarer versions of work, coffee, beers, meeting, shopping, fitness, the doctor and family — plus scenes that existed for nothing else: a blood donation, a work trip, a cafe. They are all in use now.

@@ -78,20 +78,17 @@ Several parts of the app still assume a small, recent dataset.
 
 ## Current-activity artwork
 
-Ten of the twenty-nine shipped activities still show no illustration on the
-current-activity card. Export at **1024px on the short edge**, PNG with
-transparency, in the existing soft-green watercolour style, roughly square —
-the card crops to 170×88pt and fills, so anything important must sit near the
-centre. Name the file after its imageset (`ActivityLunch.png` in
-`ActivityLunch.imageset`), then add a rule to `ActivityIcon.resolvedAssetName`.
-Match on a **stem**, not the plain verb: "exercising" does not contain
-"exercise", which is how two rules silently matched nothing for months.
+Every shipped activity now has an illustration, and a test fails if one loses it.
+Two things are still worth doing.
 
-- [ ] **Food** — `Breakfast`, `Lunch`, `Dining out`, `Eating`. One "meal on a table" scene would cover all four; `ActivityCafe` is a shopfront and reads as going out, not eating.
-- [ ] **Going out** — `Concert`, `Football`, `Watching a movie`.
-- [ ] **Studying** — a desk with books, distinct from `ActivityDesk`, which is a work desk.
-- [ ] **Socialising** — people together, distinct from `ActivityVisitingFamily`.
-- [ ] **Visiting** — the fallback for an unrecognised place, so it needs to be generic: a map pin or doorway rather than any particular kind of outing.
+- [ ] **Football and Studying share one picture.** The nine new scenes arrived as a single sheet and that frame holds a goal, a ball, a desk lamp and an open book — one image for two activities. It reads acceptably as either, but Football deserves its own.
+- [ ] **The source art is small.** The new scenes are ~317px on the short edge and the older ones 277–384px; the card wants **1024px** to be crisp on a 6.9" screen (it is 170×88pt, so 510×264 device pixels, and the art is cropped to fill). Nothing looks broken, but a redraw at 1024px would be visibly sharper. Export PNG with real transparency — the sheet these came from had its checkerboard flattened into the pixels, which had to be detected and removed.
+
+When adding one: name the file after its imageset (`ActivityLunch.png` inside
+`ActivityLunch.imageset`), then add a rule to `ActivityIcon.resolvedAssetName`,
+ordered so a specific match precedes a general one. Match on a **stem**, not the
+plain verb — "exercising" does not contain "exercise", which is how two rules
+silently matched nothing for months.
 
 ## Layout and structure
 

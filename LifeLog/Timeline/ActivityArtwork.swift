@@ -56,6 +56,24 @@ struct ActivityIcon: View {
         if text.contains("work trip") || text.contains("business trip") { return "ActivityWorkTrip" }
         if text.contains("flight") || text.contains("plane") || text.contains("airport") { return "ActivityFlight" }
         if text.contains("hotel") || text.contains("lodging") { return "ActivityHotel" }
+        // Meals, before the broader rules. "Breakfast" would otherwise be caught by
+        // nothing at all, and "Dining out" must not fall through to the cafe.
+        if text.contains("breakfast") || text.contains("brunch") { return "ActivityBreakfast" }
+        if text.contains("lunch") { return "ActivityLunch" }
+        if text.contains("dining") || text.contains("dinner") || text.contains("restaurant") { return "ActivityDiningOut" }
+        if text.contains("eating") || text.contains("meal") { return "ActivityEating" }
+        if text.contains("concert") || text.contains("gig") || text.contains("live music") { return "ActivityConcert" }
+        if text.contains("movie") || text.contains("film") || text.contains("cinema")
+            || text.contains("watching tv") || text.contains("television") {
+            return "ActivityWatchingMovie"
+        }
+        // One picture serves both: the scene has a goal and a ball alongside the book
+        // and the desk lamp, because it arrived as a single frame for the two of them.
+        if text.contains("study") || text.contains("studying") || text.contains("revis")
+            || text.contains("football") || text.contains("soccer") {
+            return "ActivityStudying"
+        }
+        if text.contains("social") { return "ActivitySocialising" }
         if text.contains("home") { return "ActivityHome" }
         if text.contains("beer") { return "ActivityBeersV2" }
         if text.contains("exercis") || text.contains("fitness") || text.contains("gym")
@@ -79,6 +97,9 @@ struct ActivityIcon: View {
             return "ActivityDriving"
         }
         if text.contains("walk") { return "ActivityWalking" }
+        // Last, because it is the label for a place LifeLog could not name — anything
+        // more specific above should have claimed the visit before it reaches here.
+        if text.contains("visiting") || text.contains("visit") { return "ActivityVisiting" }
         return nil
     }
 }
