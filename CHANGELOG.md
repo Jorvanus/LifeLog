@@ -2,6 +2,12 @@
 
 ## 2026-08-07
 
+### `ActivityImportActor` no longer mixes reading with writing
+
+- The file held two complete, unrelated `actor` types in 521 lines: one reading HealthKit and Core Motion, one writing the results into SwiftData. Neither ever touched the other's concern; they only shared a file.
+- Split along that seam. `ActivitySampleReader.swift` now holds everything that reads Health/Motion data and turns it into plain records; `ActivityImportActor.swift` keeps only the SwiftData writer. `ActivityDataService` already coordinated the two as separate collaborators, so this is a move, not a rewrite — no behaviour changed, and no other file needed to change.
+- `ActivityLocationPolicy` has a version of the same problem, mixing six concerns rather than two split across two types. That one is a bigger job — noted in TODO with the breakdown.
+
 ### The home illustration had a checkerboard baked into it, not a background
 
 - The new home artwork looked fine on white and wrong everywhere else: a visible grey-and-white grid behind the house, in both light and dark mode. The file had an alpha channel but no pixel in it actually used one — the "transparency" was a checkerboard pattern flattened into ordinary opaque pixels, the same fault caught in the football scene yesterday.
