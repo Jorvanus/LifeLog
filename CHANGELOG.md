@@ -1,5 +1,13 @@
 # Change log
 
+## 2026-08-07
+
+### The home illustration had a checkerboard baked into it, not a background
+
+- The new home artwork looked fine on white and wrong everywhere else: a visible grey-and-white grid behind the house, in both light and dark mode. The file had an alpha channel but no pixel in it actually used one — the "transparency" was a checkerboard pattern flattened into ordinary opaque pixels, the same fault caught in the football scene yesterday.
+- Removed in three passes: flood-filled the checker from the canvas edges inward, then found the alternating pattern sealed inside the artwork itself — the soft edge of the watercolour wash — where a plain colour test would have punched holes through the wash rather than clearing only the grid. A last pass caught the faint scattered flecks left by the wash's antialiased edge, without touching the actual line art.
+- The rounded-rectangle border that had been baked into the previous version of this asset is gone from this one — a real change in the new source art, not something fixed here.
+
 ## 2026-08-06
 
 ### The current-activity picture no longer speckles black at night
