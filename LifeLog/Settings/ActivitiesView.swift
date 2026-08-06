@@ -91,7 +91,7 @@ struct ActivitiesView: View {
                 Text("The group decides where Insights counts the time, and changing it re-counts existing visits straight away. Deleting an activity leaves its visits labelled but ungrouped; renaming one offers to bring its visits with it.")
             }
         }
-        .navigationTitle("Activities")
+        .navigationTitle("Activity Labels")
         .accessibilityIdentifier("activities-screen")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {

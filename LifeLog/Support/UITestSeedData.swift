@@ -28,6 +28,11 @@ enum UITestSeedData {
         visit(480, nil, "Home", "At home")
         visit(120, 390, Visit.unknownPlaceName, "Visiting", "automatic", nil)
         visit(600, 660, "atWork Australia - Gracemere", "Working", "automatic", "low")
+        // A label that lives only in recorded visits and was never adopted into the
+        // catalogue — which describes most of a bulk-imported archive. The Activities
+        // tab has to show it, mark it as not yet an activity, and offer to add it.
+        // Without one seeded, that whole path renders as nothing at all.
+        visit(690, 750, "Rockhampton Hospital", "Donate Blood", "automatic", "medium")
         visit(-420, -30, "Sleep", "Sleeping", "health-sleep", "device")
         try context.save()
     }

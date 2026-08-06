@@ -23,10 +23,17 @@ struct ActivitiesTabView: View {
         // Summaries, not full statistics: the list shows occasions, total time and
         // the week's shape. Everything else is computed when an activity is opened.
         let summaries = ActivityStatistics.summaries(named: definitions.map(\.name), visits: visits)
+        // `summaries` deliberately also returns labels found in the archive that the
+        // catalogue has never heard of — most of a bulk-imported history is exactly
+        // that, and a screen reporting where time went must not hide it. But such a row
+        // cannot be renamed, grouped or given an icon until it is adopted, and until now
+        // nothing here said so or offered to do it.
+        let adopted = Set(definitions.map { NameKey.matching($0.name) })
         var built = summaries.map { entry in
             Row(name: entry.activity,
                 symbol: symbols[entry.activity.lowercased()] ?? "circle.fill",
-                statistics: entry)
+                statistics: entry,
+                isAdopted: adopted.contains(NameKey.matching(entry.activity)))
         }
         // Used first, unused last, each alphabetical: a list of labels is scanned by
         // name, but a label you have never recorded is not what you came here for.
@@ -47,7 +54,30 @@ struct ActivitiesTabView: View {
         let name: String
         let symbol: String
         let statistics: ActivityStatistics.Summary
+        /// In the catalogue, so it can be edited in Settings → Activity Labels. False
+        /// means the label exists only in recorded visits.
+        let isAdopted: Bool
         var id: String { name }
+    }
+
+    /// Adds a label the archive already uses to the catalogue, so it can be renamed,
+    /// grouped and given an icon — and so Insights stops counting it under "Other".
+    ///
+    /// The same thing "Add from your history" does in bulk, offered on the row where
+    /// the person is already looking at the label and can see how much of their time
+    /// it accounts for.
+    private func adopt(_ row: Row) {
+        var catalogue = ActivityCatalog.load()
+        let key = NameKey.matching(row.name)
+        guard !catalogue.contains(where: { NameKey.matching($0.name) == key }) else { return }
+        let category = ActivityCatalog.suggestedCategory(for: row.name)
+        catalogue.append(ActivityDefinition(name: row.name, category: category,
+                                            symbol: ActivityIcons.symbol(forCategory: category)))
+        ActivityCatalog.save(catalogue)
+        // Grouping is computed rather than stored, so adopting a label re-buckets every
+        // visit already carrying it. Insights has to be told.
+        InsightsInvalidation.invalidate(reason: "Activity adopted from history", context: context)
+        reload()
     }
 
     var body: some View {
@@ -67,6 +97,14 @@ struct ActivitiesTabView: View {
                                     Text(row.name).font(.headline)
                                     Text(subtitle(for: row.statistics))
                                         .font(.caption).foregroundStyle(.secondary)
+                                    if !row.isAdopted {
+                                        // Says why this row behaves differently from the
+                                        // one above it, rather than leaving the person to
+                                        // discover it in Settings.
+                                        Label("From your history · not yet an activity",
+                                              systemImage: "clock.arrow.trianglehead.counterclockwise.rotate.90")
+                                            .font(.caption2).foregroundStyle(.orange)
+                                    }
                                 }
                                 Spacer(minLength: 8)
                                 WeekSparkline(days: row.statistics.recentDays,
@@ -75,9 +113,19 @@ struct ActivitiesTabView: View {
                             }
                             .padding(.vertical, 2)
                         }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            if !row.isAdopted {
+                                Button { adopt(row) } label: {
+                                    Label("Add", systemImage: "plus.circle.fill")
+                                }.tint(.orange)
+                            }
+                        }
+                        .accessibilityIdentifier(row.isAdopted ? "activity-row" : "unadopted-activity-row")
                     }
                 } footer: {
-                    Text("The line beside each activity is the last seven days.")
+                    Text(unadoptedCount == 0
+                         ? "The line beside each activity is the last seven days."
+                         : "The line beside each activity is the last seven days. \(unadoptedCount) \(unadoptedCount == 1 ? "label comes" : "labels come") from recorded visits and \(unadoptedCount == 1 ? "is" : "are") not in your activity list yet — swipe to add \(unadoptedCount == 1 ? "it" : "them"), and Insights will stop counting \(unadoptedCount == 1 ? "it" : "them") as Other.")
                 }
             }
             .navigationTitle("Activities")
@@ -88,6 +136,8 @@ struct ActivitiesTabView: View {
             }
         }
     }
+
+    private var unadoptedCount: Int { rows.count { !$0.isAdopted } }
 
     private func subtitle(for statistics: ActivityStatistics.Summary) -> String {
         guard !statistics.isEmpty else { return "Not used yet" }

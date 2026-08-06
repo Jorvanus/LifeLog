@@ -53,8 +53,12 @@ struct SettingsView: View {
                             Label("Locations", systemImage: "house.and.flag.fill")
                         }
                     }.accessibilityIdentifier("saved-places-link")
+                    // "Activity Labels", not "Activities": the Activities tab reports on
+                    // how much you do each thing, while this edits the vocabulary — the
+                    // names, groups and icons. Two screens called the same thing, showing
+                    // different lists, read as one of them being wrong.
                     NavigationLink { ActivitiesView() } label: {
-                        Label("Activities", systemImage: "list.bullet.clipboard")
+                        Label("Activity Labels", systemImage: "list.bullet.clipboard")
                     }.accessibilityIdentifier("activities-link")
                     NavigationLink { ActivityGroupsView() } label: {
                         Label("Groups", systemImage: "square.grid.2x2")

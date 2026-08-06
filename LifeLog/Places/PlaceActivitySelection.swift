@@ -25,7 +25,7 @@ struct PlaceActivitySelection: View {
             Section {
                 Button { adding = true } label: { Label("Create activity", systemImage: "plus.circle") }
             } footer: {
-                Text("Activities are shared with the Activities list in Settings and can be reused across Saved Places and visits.")
+                Text("Activities are shared with Activity Labels in Settings and can be reused across Saved Places and visits.")
             }
         }
         .navigationTitle("Choose Activity")

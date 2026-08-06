@@ -7,7 +7,16 @@ struct RootView: View {
     @State private var recorder = LocationRecorder()
     @State private var activityData = ActivityDataService()
     @Environment(\.scenePhase) private var scenePhase
-    @State private var selectedTab = ProcessInfo.processInfo.arguments.contains("-showInsights") ? 2 : 0
+    /// Opens straight to a tab, so a screen can be inspected without driving the tab
+    /// bar. `-showInsights` predates this and still works; `-showTab N` reaches any of
+    /// them, which is what checking layout at accessibility sizes needs — the live
+    /// simulator panel does not run on this machine's Xcode beta, so screens have to be
+    /// reachable from a launch argument to be screenshotted at all.
+    @State private var selectedTab: Int = {
+        if ProcessInfo.processInfo.arguments.contains("-showInsights") { return 2 }
+        let requested = UserDefaults.standard.integer(forKey: "showTab")
+        return (0...3).contains(requested) ? requested : 0
+    }()
 
     var body: some View {
         TabView(selection: $selectedTab) {

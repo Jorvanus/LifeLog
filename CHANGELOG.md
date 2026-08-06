@@ -2,6 +2,13 @@
 
 ## 2026-08-06
 
+### Two screens called Activities, showing different lists
+
+- The Activities tab and Settings → Activities looked like the same list disagreeing with itself. They were never the same list. The tab reports on how much you do each thing; the Settings screen edits the vocabulary — the names, groups and icons. Settings is now called **Activity Labels**, so the difference is visible before you go looking for it.
+- The lists differ because the tab also shows labels found in your recorded visits that were never added to your activity list — which is most of a bulk-imported history, and a screen about where your time went should not hide it. Those rows now say so, instead of silently behaving differently from the ones above them.
+- They can be added where you find them: swipe a history label and tap Add. It joins your activity list with a suggested group and icon, and Insights stops counting it as Other straight away. The same thing "Add from your history" does in bulk, offered on the row where you can already see how much of your time it accounts for.
+- The footer counts what is left, so the gap between the two screens is a number you can work through rather than something you have to notice.
+
 ### The date was unreadable in dark mode
 
 - The day you are looking at, under "Today" on Insights, was drawn in dark blue on black. It sat inside a button, and a button tints its own label — so what was asked for as "secondary text" came out as a dim shade of the accent colour instead of a dim shade of the foreground. It now uses the colours it was always meant to. This was wrong at every text size, not only large ones.

@@ -130,7 +130,7 @@ arrives, deliberately without naming APIs that cannot be confirmed.
 ## Inference — sequencing agreed 2026-08-05, still the plan
 
 1. [ ] **Clean the history first.** 95% of named history is bulk-imported journal, and its labels are whatever Life Cycle defaulted to. 26 place names hold 10,756 entries, so most of the corpus is a few dozen corrections away from being trustworthy. Use the Place History screen.
-2. [ ] **Then run "Add from your history"** in Activities. 17% of the archive groups as "Other" in Insights, including 2,732 `Work` visits that show as 5. Grouping is computed rather than stored, so adopting the activities re-buckets that history immediately.
+2. [ ] **Then adopt the labels your history already uses.** 17% of the archive groups as "Other" in Insights, including 2,732 `Work` visits that show as 5. Grouping is computed rather than stored, so adopting re-buckets that history immediately. Two ways now: "Add from your history" in Settings → Activity Labels for bulk, or swipe-to-add on the Activities tab, where each label is shown beside the time it actually accounts for — which is the better order to work through them in.
 3. [ ] **Then infer from past behaviour**, keyed on place *and* time band rather than place alone. A home address is 92% `Sleeping` between midnight and 06:00 and 99% `At home` between 11:00 and 22:00, so place alone would be wrong roughly half the time. Weight corrections and LifeLog-entered activity heavily and imported values lightly — frequency in imported data measures what was never fixed, not what was true.
 
 ## Later

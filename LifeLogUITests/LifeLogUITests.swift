@@ -69,7 +69,9 @@ final class LifeLogUITests: XCTestCase {
 
         let bar = app.navigationBars["Edit Activity"]
         XCTAssertTrue(bar.waitForExistence(timeout: 5))
-        XCTAssertTrue(bar.buttons["Activities"].exists, "Pushed editor should keep a back button")
+        // The back button takes its title from the screen behind it, which is the
+        // vocabulary editor — "Activity Labels" — not the Activities tab.
+        XCTAssertTrue(bar.buttons["Activity Labels"].exists, "Pushed editor should keep a back button")
         XCTAssertTrue(bar.buttons["Save"].exists)
         XCTAssertFalse(bar.buttons["Cancel"].exists, "Cancel is only for the modal add flow")
     }
@@ -215,6 +217,37 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(element("activity-detail-screen").waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Total occasions"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Top locations"].exists)
+    }
+
+    /// The Activities tab lists labels the catalogue has never heard of, because most
+    /// of an imported archive is exactly that and a screen reporting where time went
+    /// must not hide them. They are marked as such and can be adopted where they are
+    /// found, which is what makes this list and Settings → Activity Labels converge.
+    func testAdoptingAHistoryLabelFromTheActivitiesTab() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+
+        app.tabBars.buttons["Activities"].tap()
+        XCTAssertTrue(element("activities-tab-screen").waitForExistence(timeout: 10))
+
+        // Seeded as a visit only, never added to the catalogue.
+        let label = app.staticTexts["Donate Blood"]
+        XCTAssertTrue(label.waitForExistence(timeout: 5))
+        let marker = app.staticTexts["From your history · not yet an activity"]
+        XCTAssertTrue(marker.waitForExistence(timeout: 5),
+                      "An unadopted label must say why it behaves differently")
+
+        let unadopted = element("unadopted-activity-row").firstMatch
+        XCTAssertTrue(unadopted.waitForExistence(timeout: 5))
+        unadopted.swipeLeft()
+        let add = app.buttons["Add"]
+        XCTAssertTrue(add.waitForExistence(timeout: 5))
+        add.tap()
+
+        // Adopted: still listed, with its figures intact, and no longer flagged.
+        XCTAssertTrue(label.waitForExistence(timeout: 5))
+        XCTAssertFalse(marker.exists, "An adopted label must stop being marked as history-only")
     }
 
     func testManualEntryIsAccessibleFromTimeline() {

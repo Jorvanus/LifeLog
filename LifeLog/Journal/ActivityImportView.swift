@@ -107,7 +107,7 @@ struct ActivityImportView: View {
     private func add() {
         let additions = candidates.filter(\.isSelected).map { candidate in
             var definition = ActivityDefinition(name: candidate.name, category: candidate.category,
-                                                symbol: symbol(for: candidate.category))
+                                                symbol: ActivityIcons.symbol(forCategory: candidate.category))
             definition.colorHex = nil
             return definition
         }
@@ -116,20 +116,4 @@ struct ActivityImportView: View {
         dismiss()
     }
 
-    private func symbol(for category: String) -> String {
-        switch category {
-        case "Home": "house.fill"
-        case "Work": "briefcase.fill"
-        case "Food & Drink": "fork.knife"
-        case "Shopping": "bag.fill"
-        case "Fitness": "figure.run"
-        case "Healthcare": "cross.case.fill"
-        case "Education": "book.fill"
-        case "Travel": "car.fill"
-        case "Entertainment": "film.fill"
-        case "Social": "person.2.fill"
-        case "Sleep": "bed.double.fill"
-        default: "circle.fill"
-        }
-    }
 }
