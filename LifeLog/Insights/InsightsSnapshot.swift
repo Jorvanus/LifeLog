@@ -73,9 +73,28 @@ struct InsightsSnapshot {
         let placeTotals = makePlaceTotals(visits: visits, range: analysisInterval, now: now)
         let mappablePlaces = placeTotals.filter { $0.latitude != 0 || $0.longitude != 0 }
         let loggedHours = segments.filter { !$0.isUnlogged }.reduce(0) { $0 + $1.hours }
-        let awayFromHomeHours = segments.filter {
-            !$0.isUnlogged && !$0.activity.localizedCaseInsensitiveContains("home") &&
-            !($0.placeName?.localizedCaseInsensitiveContains("home") ?? false)
+        // Sleep is imported as its own activity ("Sleeping" at place "Sleep"), and it
+        // wins the segment slot over the overnight Home stay it sits inside because it
+        // is the shorter, completed record. Neither of its labels mentions "home", so
+        // every night slept in your own bed was counted as time away from it.
+        //
+        // Only device records are rescued this way. They describe what the body was
+        // doing and carry no place of their own, so the surrounding stay is the only
+        // thing that knows where it happened. A location visit states its own place —
+        // it is away from home whatever else claims those minutes.
+        let homeVisits = locationVisits.filter {
+            $0.displayPlaceName.localizedCaseInsensitiveContains("home") ||
+            $0.suspectedActivity.localizedCaseInsensitiveContains("home")
+        }
+        let awayFromHomeHours = segments.filter { segment in
+            guard !segment.isUnlogged,
+                  !segment.activity.localizedCaseInsensitiveContains("home"),
+                  !(segment.placeName?.localizedCaseInsensitiveContains("home") ?? false)
+            else { return false }
+            guard let visit = segment.visit, ActivityLocationPolicy.isDeviceActivity(visit) else { return true }
+            return !homeVisits.contains { home in
+                home.arrival < segment.end && (home.departure ?? now) > segment.start
+            }
         }.reduce(0) { $0 + $1.hours }
         let unloggedHours = segments.filter(\.isUnlogged).reduce(0) { $0 + $1.hours }
         let periodVisits = visits.filter { $0.overlaps(analysisInterval, now: now) }
@@ -98,6 +117,23 @@ struct InsightsSnapshot {
             provisionalCount: periodVisits.filter { $0.resolutionState == .provisional }.count,
             supersededCount: periodVisits.filter { $0.resolutionState == .superseded }.count
         )
+    }
+
+    /// Hours per category over an arbitrary stretch of time.
+    ///
+    /// Exposed so the long-run trends can bucket history into weeks and still resolve
+    /// overlapping stays exactly the way the donut does. Counting a week by adding up
+    /// visit durations instead would double-count every night that an open stay and a
+    /// sleep record both claim, and the two charts would disagree about the same day.
+    static func categoryHours(visits: [Visit], range: DateInterval, now: Date) -> [String: Double] {
+        let locationVisits = visits.filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
+        let segments = makeSegments(visits: visits, locationVisits: locationVisits,
+                                    range: range, now: now)
+        var totals: [String: Double] = [:]
+        for segment in segments where !segment.isUnlogged {
+            totals[segment.category, default: 0] += segment.hours
+        }
+        return totals
     }
 
     private static func makeSegments(visits: [Visit], locationVisits: [Visit],
@@ -212,19 +248,33 @@ struct InsightsSnapshot {
         .sorted { abs($0.delta) > abs($1.delta) }
     }
 
+    /// What each weekday is usually spent doing, awake.
+    ///
+    /// Sleep is left out on purpose. It is the largest block in almost every day and
+    /// barely varies, so including it flattened the bars into seven near-identical
+    /// columns and buried the thing this chart exists to show — how the waking days
+    /// differ from one another. Sleep has its own reading elsewhere.
+    ///
+    /// Grouped by category rather than by activity so the bars carry the same colours
+    /// as the donut and Top Activities, and one day's "Shopping" stacks with another's.
     private static func makeWeekdayPatterns(from segments: [InsightSegment]) -> [WeekdayPattern] {
         let calendar = Calendar.current
         var totals = Array(repeating: 0.0, count: 7)
         var activities = Array(repeating: [String: Double](), count: 7)
-        for segment in segments where !segment.isUnlogged {
+        for segment in segments where !segment.isUnlogged && !segment.isSleep {
             let weekday = max(1, min(7, calendar.component(.weekday, from: segment.start))) - 1
             totals[weekday] += segment.hours
-            activities[weekday][segment.activity, default: 0] += segment.hours
+            activities[weekday][segment.category, default: 0] += segment.hours
         }
         return (0..<7).map { index in
             let top = activities[index].max { $0.value < $1.value }
+            let breakdown = activities[index]
+                .map { WeekdayActivity(weekday: index + 1, category: $0.key, hours: $0.value) }
+                .filter { $0.hours > 0.01 }
+                .sorted { $0.hours > $1.hours }
             return WeekdayPattern(weekday: index + 1, hours: totals[index],
-                                  topActivity: top?.key ?? "Visiting", topHours: top?.value ?? 0)
+                                  topActivity: top?.key ?? "Visiting", topHours: top?.value ?? 0,
+                                  activities: breakdown)
         }
     }
 
@@ -367,16 +417,44 @@ struct TrendComparison: Identifiable {
     }
 }
 
+/// One category's share of one weekday, which is the unit a stacked bar is drawn from.
+struct WeekdayActivity: Identifiable, Hashable {
+    let weekday: Int
+    let category: String
+    let hours: Double
+    var id: String { "\(weekday):\(category)" }
+    var color: Color { insightColor(for: category) }
+    var symbol: String { insightSymbol(for: category) }
+}
+
 struct WeekdayPattern: Identifiable {
     let weekday: Int
+    /// Waking hours only — see `InsightsSnapshot.makeWeekdayPatterns`.
     let hours: Double
     let topActivity: String
     let topHours: Double
+    let activities: [WeekdayActivity]
     var id: Int { weekday }
     var shortName: String {
         Calendar.current.shortWeekdaySymbols[(weekday - 1) % 7]
     }
-    static let empty = (1...7).map { WeekdayPattern(weekday: $0, hours: 0, topActivity: "Visiting", topHours: 0) }
+    var fullName: String {
+        Calendar.current.weekdaySymbols[(weekday - 1) % 7]
+    }
+    static let empty = (1...7).map {
+        WeekdayPattern(weekday: $0, hours: 0, topActivity: "Visiting", topHours: 0, activities: [])
+    }
+}
+
+extension Array where Element == WeekdayPattern {
+    /// The week in the order this person's calendar starts it, so a Monday-first
+    /// region reads Mon–Sun rather than being told its week begins on Sunday.
+    var inWeekOrder: [WeekdayPattern] {
+        let first = Calendar.current.firstWeekday
+        return sorted { left, right in
+            ((left.weekday - first + 7) % 7) < ((right.weekday - first + 7) % 7)
+        }
+    }
 }
 
 

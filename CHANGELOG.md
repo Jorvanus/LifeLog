@@ -2,6 +2,33 @@
 
 ## 2026-08-06
 
+### Every night's sleep was counted as time away from home
+
+- "Time away from Home" included every hour you slept in your own bed. Sleep arrives from Health as its own activity, "Sleeping", at a place called "Sleep" — and where an overnight stay at home overlapped it, the sleep record won, because it is the shorter and completed one. Neither of its labels says "home", so the night was read as time spent elsewhere.
+- A device record — sleep, or movement the phone noticed — has no place of its own, so it is now judged by the stay it happened inside. A night at home is time at home; a night away still counts as away.
+- A visit that names its own place is untouched. Shopping at four o'clock is time away from home whatever else claims those minutes, and an old open stay overlapping it cannot absorb it.
+
+### Insights now says what it noticed, not just what it counted
+
+- **Recurring habits.** Up to two things the last twelve weeks actually say: something taken up again after a gap, a new high, or a run of weeks. "Back to entertainment — first time since June, after seven weeks away." Sleep and time at home are left out; doing them every week is not a habit worth reporting, and both have their own cards asking how much instead.
+- **Recent months.** Two lines, home and sleep, a point per week over twelve weeks, with the usual week drawn behind them as a dashed rule. Underneath, the comparison in plain hours: "Less home than usual last week — 36h 52m against a usual 47h 46m." Weekly rather than daily, because hours at home swing between nothing and twenty-four depending only on whether you went out — a daily line draws your calendar, not your habits.
+- **A day now opens with what stood out.** Steps against the same weekday over recent weeks — a Saturday measured against a week of Mondays would read as a triumph every weekend — and sleep against the last fortnight of nights. Swipe between them. If there is no history to compare against, nothing is claimed; and anything within a tenth of usual is called "about the same", because inventing a trend out of three percent makes everything else here less believable.
+- Shifts in how time was spent are reported, never congratulated. Steps and sleep have a direction everyone agrees on. Eleven hours more at home is a fact about a day, and cheering it would be the app having an opinion about how you should have spent it.
+
+### Your weekly rhythm is a chart now
+
+- It used to name the single biggest activity for each weekday in seven small tiles. It is now a bar for each day, stacked by activity, in the same colours as the ring above it.
+- Sleep is left out. It is the largest and steadiest block of nearly every day, and including it flattened all seven bars into near-identical columns — burying the differences between the waking days, which is the only thing the chart is for.
+- Every day of the week is always drawn, including the empty ones. A week with nothing recorded on Monday previously had no Monday at all: the bars slid across and a quiet day was indistinguishable from a missing one. The week also starts on the day your calendar starts it.
+- "View full chart" opens a larger version with each day listed out and its activities broken down.
+- It no longer appears in the Day window. A single day cannot have a weekly rhythm, and six empty bars said nothing true.
+
+### Smaller things on Insights
+
+- **Top Activities**, showing each activity's share of your logged time, with the rest a tap away.
+- **Your day** gains a second bar underneath the hour-by-hour one, grouping the same day by activity, largest first — the ring's answer in a straight line. Both are tappable.
+- The file behind this screen was called `TrendsView` while the tab, the folder and everything on it said Insights. It is `InsightsView` now.
+
 ### Two screens called Activities, showing different lists
 
 - The Activities tab and Settings → Activities looked like the same list disagreeing with itself. They were never the same list. The tab reports on how much you do each thing; the Settings screen edits the vocabulary — the names, groups and icons. Settings is now called **Activity Labels**, so the difference is visible before you go looking for it.

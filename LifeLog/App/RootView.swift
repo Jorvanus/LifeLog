@@ -27,7 +27,7 @@ struct RootView: View {
                 ActivitiesTabView()
             }
             Tab("Insights", systemImage: "chart.bar.xaxis", value: 2) {
-                TrendsView(activityData: activityData)
+                InsightsView(activityData: activityData)
             }
             Tab("Settings", systemImage: "gear", value: 3) {
                 SettingsView(recorder: recorder, activityData: activityData)

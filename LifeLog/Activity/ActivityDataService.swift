@@ -277,6 +277,42 @@ final class ActivityDataService {
         importTask?.cancel()
     }
 
+    /// Step totals for the same weekday over the preceding weeks, newest first.
+    ///
+    /// A day is only remarkable against the days like it, and weekdays are genuinely
+    /// unalike — measuring a Saturday against an average that is mostly Mondays would
+    /// report a triumph every weekend. Days with no samples at all are dropped rather
+    /// than averaged in as zero, which would otherwise turn a week's holiday from
+    /// Health into a permanent personal best.
+    func stepHistory(forSameWeekdayAs day: Date, weeks: Int) async -> [Double] {
+        let calendar = Calendar.current
+        var totals: [Double] = []
+        for offset in 1...max(1, weeks) {
+            guard let start = calendar.date(byAdding: .weekOfYear, value: -offset,
+                                            to: calendar.startOfDay(for: day)),
+                  let end = calendar.date(byAdding: .day, value: 1, to: start) else { continue }
+            if let steps = await stepCount(for: DateInterval(start: start, end: end)), steps > 0 {
+                totals.append(steps)
+            }
+        }
+        return totals
+    }
+
+    /// The average night's sleep across the days before `day`, as a duration.
+    ///
+    /// One query for the whole stretch rather than one per night: the summary is
+    /// additive, so the mean is the total over the number of nights, and asking
+    /// HealthKit fourteen separate times to learn one number is not worth the wait.
+    func averageNightlySleep(before day: Date, nights: Int) async -> TimeInterval? {
+        let calendar = Calendar.current
+        let end = calendar.startOfDay(for: day)
+        guard nights > 0,
+              let start = calendar.date(byAdding: .day, value: -nights, to: end),
+              let summary = await sleepSummary(for: DateInterval(start: start, end: end)),
+              summary.totalSleep > 0 else { return nil }
+        return summary.totalSleep / Double(nights)
+    }
+
     /// Reads the selected sleep session on demand so opening Insights does not add a
     /// HealthKit query to every chart render.
     func sleepSummary(for interval: DateInterval) async -> SleepSummary? {
