@@ -2,6 +2,15 @@
 
 ## 2026-08-06
 
+### Updated ActivityHome artwork asset
+
+- Processed newly generated `ActivityHome.png` asset: removed solid white background and AI badge overlay, making the background transparent RGBA so the house illustration and sage watercolor wash blend seamlessly on both Light and Dark mode cards.
+
+### Current-activity card artwork border & cropping fix
+
+- Cleaned all 33 activity scene PNGs across `Assets.xcassets`: stripped out baked outer rounded-rectangle card borders and white background blocks, converting them to 1024×576 landscape artwork on transparent RGBA backgrounds.
+- Fixed the vertical white lines and misaligned cropping that appeared on Dark Mode current-activity cards (e.g. `ActivityHome`, `ActivityWorkV2`, `ActivityDriving`, `ActivitySleep`, `ActivityWalking`).
+
 ### SavedPlaceLearning preview & applyIgnored performance optimization
 
 - Added `SpatialBounds.box` spatial bounding box predicates to `SavedPlaceLearning.preview` and `SavedPlaceLearning.applyIgnored`. Instead of fetching every `Visit` in a 25,000+ record archive, both queries are now bounded to candidate visits within the place's bounding box.

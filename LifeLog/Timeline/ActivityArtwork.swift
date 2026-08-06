@@ -149,7 +149,7 @@ struct ActivityScene: View {
 enum ActivityArtworkLayout {
     static let width: CGFloat = 170
     static let height: CGFloat = 88
-    static let verticalOffset: CGFloat = -16
+    static let verticalOffset: CGFloat = 0
 
     /// The shortest edge a replacement illustration should be exported at.
     ///

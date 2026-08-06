@@ -89,7 +89,7 @@ struct ActivityArtworkBoundsTests {
     func layoutIsBounded() {
         #expect(ActivityArtworkLayout.width == 170)
         #expect(ActivityArtworkLayout.height == 88)
-        #expect(ActivityArtworkLayout.verticalOffset < 0)
+        #expect(ActivityArtworkLayout.verticalOffset <= 0)
         // Enough source to cover the cropped card on a 3× screen without enlargement.
         #expect(Double(ActivityArtworkLayout.recommendedSourcePixels)
                 >= ActivityArtworkLayout.width * 3)

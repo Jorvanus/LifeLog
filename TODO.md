@@ -77,10 +77,6 @@ Several parts of the app still assume a small, recent dataset.
 ## Current-activity artwork
 
 Every shipped activity now has an illustration, and a test fails if one loses it.
-Two things are still worth doing.
-
-- [ ] **The source art is small.** The new scenes are ~317px on the short edge and the older ones 277–384px; the card wants **1024px** to be crisp on a 6.9" screen (it is 170×88pt, so 510×264 device pixels, and the art is cropped to fill). Nothing looks broken, but a redraw at 1024px would be visibly sharper. Export PNG with real transparency — the sheet these came from had its checkerboard flattened into the pixels, which had to be detected and removed.
-
 When adding one: name the file after its imageset (`ActivityLunch.png` inside
 `ActivityLunch.imageset`), then add a rule to `ActivityIcon.resolvedAssetName`,
 ordered so a specific match precedes a general one. Match on a **stem**, not the
