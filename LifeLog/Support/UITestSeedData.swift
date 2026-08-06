@@ -5,6 +5,11 @@ enum UITestSeedData {
     static let launchArgument = "-ui-test-seed"
 
     static func install(in container: ModelContainer) throws {
+        // The store is in-memory and so starts empty every launch, but the activity
+        // catalogue lives in UserDefaults and does not. A test that adopts a label
+        // left it adopted for every run afterwards, so the seeded state a test began
+        // from depended on which tests had already been run on that simulator.
+        ActivityCatalog.resetForTesting()
         let context = ModelContext(container)
         let calendar = Calendar(identifier: .gregorian)
         let day = calendar.startOfDay(for: .now)

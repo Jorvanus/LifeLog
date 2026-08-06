@@ -328,4 +328,18 @@ enum ActivityCatalog {
         if storage.data(forKey: storageKey) == nil { save(load()) }
         adoptGeneratedActivities()
     }
+
+    /// Returns the catalogue to what a fresh install would have.
+    ///
+    /// Only for the seeded UI-test launch, which promises a known starting state and
+    /// until now only delivered half of one: the store is in-memory and thrown away,
+    /// but the catalogue lives in `UserDefaults` and survives. A test that adopted a
+    /// label therefore changed the state every later run began from — it passed once
+    /// on a clean simulator and failed on that simulator forever after, which reads
+    /// as a broken app rather than a test that had polluted its own fixture.
+    static func resetForTesting() {
+        storage.removeObject(forKey: storageKey)
+        storage.removeObject(forKey: categoryStorageKey)
+        storage.removeObject(forKey: adoptedGeneratedKey)
+    }
 }

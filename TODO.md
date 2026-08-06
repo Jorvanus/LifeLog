@@ -85,6 +85,7 @@ Several parts of the app still assume a small, recent dataset.
 - [ ] Expand the Insights UI regression test to tap several donut segments repeatedly, deselect the active segment, select Sleep, scroll away and back, and confirm the chart remains hittable.
 - [ ] Add UI tests for the Diagnostics and Journal Storage screens, including backup failure, protected-file failure, empty history, Dynamic Type, VoiceOver and dark mode.
 - [ ] `PlaceLookupService` cannot be tested without a live `MKLocalSearch`, and its cache is private. Injecting the search (a closure or small protocol, defaulted to the real one) would make the cache, the expiry split and the cancellation paths testable.
+- [ ] **Audit the rest of the persisted state the seeded launch does not reset.** `testAdoptingAHistoryLabelFromTheActivitiesTab` failed on every run after its first because it adopted an activity into `UserDefaults`, which the in-memory store does not clear — so the fixture a run started from depended on what had run before it. The activity catalogue is reset now, but `LifeLog.IgnoredLocations.v1`, the Diagnostics toggles and anything else keyed into defaults are not. Any test that writes one has the same trap waiting. Either reset all app-owned defaults for the seeded launch, or point the whole app at a scratch suite for it.
 
 ## Apple APIs worth adopting
 

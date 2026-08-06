@@ -2,6 +2,12 @@
 
 ## 2026-08-06
 
+### A test that could only ever pass once
+
+- `testAdoptingAHistoryLabelFromTheActivitiesTab` had been failing on every run since the day it was written, and the app was fine. The test adopts "Donate Blood" from recorded history and checks the row stops being marked as history-only.
+- The seeded test launch uses a throwaway in-memory database, so each run starts from the same visits. The activity list does not live there — it lives in preferences, which survive. So the first run adopted the label for good, and every run after it found the label already adopted, no marker to check, and failed. Once per simulator, then never again.
+- The seeded launch now resets the activity list too, so a run's starting state no longer depends on which tests happened to run on that simulator before it. No effect on the real app: this only applies to the seeded test launch.
+
 ### Every night's sleep was counted as time away from home
 
 - "Time away from Home" included every hour you slept in your own bed. Sleep arrives from Health as its own activity, "Sleeping", at a place called "Sleep" — and where an overnight stay at home overlapped it, the sleep record won, because it is the shorter and completed one. Neither of its labels says "home", so the night was read as time spent elsewhere.
