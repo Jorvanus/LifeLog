@@ -1,1 +1,13 @@
-{"images":[{"filename":"ActivityCoffee.png","idiom":"universal","scale":"1x"}],"info":{"author":"xcode","version":1}}
+{
+  "images": [
+    {
+      "filename": "ActivityFitnessV2.png",
+      "idiom": "universal",
+      "scale": "1x"
+    }
+  ],
+  "info": {
+    "author": "xcode",
+    "version": 1
+  }
+}

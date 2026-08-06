@@ -39,25 +39,46 @@ struct ActivityIcon: View {
         return "mappin"
     }
 
+    /// The illustration for the current-activity card, or nothing when there isn't one.
+    ///
+    /// Ordered most specific first: "Work trip" has to be caught before the plain
+    /// "work" rule, and a cafe before the coffee in it, or the general rule swallows
+    /// the particular one.
+    ///
+    /// Stems rather than whole words, because the catalogue's own names are the
+    /// inflected forms. `contains("exercise")` never matched **"Exercising"** — the
+    /// string is "exercis-ing", so the app's own default activity missed its own
+    /// artwork for as long as both have existed. `commuting` missed `ActivityDriving`
+    /// the same way.
     fileprivate var resolvedAssetName: String? {
         let text = "\(activity) \(context)".lowercased()
+        if text.contains("blood") { return "ActivityDonateBlood" }
+        if text.contains("work trip") || text.contains("business trip") { return "ActivityWorkTrip" }
+        if text.contains("flight") || text.contains("plane") || text.contains("airport") { return "ActivityFlight" }
+        if text.contains("hotel") || text.contains("lodging") { return "ActivityHotel" }
         if text.contains("home") { return "ActivityHome" }
-        if text.contains("beer") { return "ActivityBeers" }
-        if text.contains("exercise") || text.contains("fitness") || text.contains("gym") { return "ActivityExercise" }
-        if text.contains("meeting") { return "ActivityMeeting" }
-        if text.contains("doctor") { return "ActivityDoctor" }
+        if text.contains("beer") { return "ActivityBeersV2" }
+        if text.contains("exercis") || text.contains("fitness") || text.contains("gym")
+            || text.contains("workout") || text.contains("yoga") || text.contains("swim")
+            || text.contains("cycl") || text.contains("running") || text.contains("strength") {
+            return "ActivityFitnessV2"
+        }
+        if text.contains("meeting") { return "ActivityMeetingV2" }
+        if text.contains("doctor") { return "ActivityDoctorVisit" }
         if text.contains("health") || text.contains("medical") || text.contains("hospital") { return "ActivityHealthcare" }
         if text.contains("grocer") || text.contains("supermarket") { return "ActivityGroceries" }
-        if text.contains("family") || text.contains("child") { return "ActivityFamily" }
-        if text.contains("hotel") || text.contains("lodging") { return "ActivityHotel" }
+        if text.contains("family") || text.contains("child") { return "ActivityVisitingFamily" }
         if text.contains("desk") { return "ActivityDesk" }
-        if text.contains("shop") { return "ActivityShopping" }
+        if text.contains("shop") { return "ActivityShoppingV2" }
         if text.contains("sleep") { return "ActivitySleep" }
-        if text.contains("work") || text.contains("office") { return "ActivityWork" }
-        if text.contains("travel") || text.contains("transit") || text.contains("drive") || text.contains("car") { return "ActivityDriving" }
+        if text.contains("cafe") || text.contains("café") { return "ActivityCafe" }
+        if text.contains("coffee") { return "ActivityCoffeeV2" }
+        if text.contains("work") || text.contains("office") { return "ActivityWorkV2" }
+        if text.contains("commut") || text.contains("travel") || text.contains("transit")
+            || text.contains("drive") || text.contains("driving") || text.contains("car") {
+            return "ActivityDriving"
+        }
         if text.contains("walk") { return "ActivityWalking" }
-        if text.contains("coffee") || text.contains("cafe") { return "ActivityCoffee" }
-        if text.contains("flight") || text.contains("plane") || text.contains("airport") { return "ActivityFlight" }
         return nil
     }
 }
@@ -72,11 +93,16 @@ struct ActivityScene: View {
         if let assetName {
             Image(assetName)
                 .resizable()
-                .scaledToFit()
+                // Fill and crop, rather than fit-then-magnify. The previous version
+                // shrank the artwork to fit this band and then blew it back up three
+                // times, which drew a ~300px source at roughly 2.7× its own size —
+                // the reason the illustrations looked soft. Filling reaches the same
+                // framing at the smallest enlargement that still covers the card, and
+                // adapts to whatever aspect a replacement image happens to have.
+                .scaledToFill()
                 // The image is deliberately clipped to this fixed footprint. Do not
                 // let the transformed artwork affect layout: transparent source
                 // padding must never enlarge the card or push text out of alignment.
-                .scaleEffect(3.0)
                 .frame(width: ActivityArtworkLayout.width, height: ActivityArtworkLayout.height)
                 .offset(y: ActivityArtworkLayout.verticalOffset)
                 .clipped()
@@ -87,6 +113,11 @@ struct ActivityScene: View {
     private var assetName: String? {
         ActivityIcon(activity: activity, context: context, color: .clear).resolvedAssetName
     }
+
+    /// The chosen asset, so a test can check an activity reaches artwork that is
+    /// actually in the bundle. Reading it back through the rendered view is not
+    /// possible, and these rules have already shipped two silent misses.
+    var assetNameForTesting: String? { assetName }
 }
 
 /// Stable bounds for the decorative scene on the current-activity card. Keeping
@@ -94,6 +125,13 @@ struct ActivityScene: View {
 enum ActivityArtworkLayout {
     static let width: CGFloat = 170
     static let height: CGFloat = 88
-    static let maximumScale: CGFloat = 3
     static let verticalOffset: CGFloat = -16
+
+    /// The shortest edge a replacement illustration should be exported at.
+    ///
+    /// The card is 170×88pt, which is 510×264 device pixels on a 3× screen, and the
+    /// artwork is cropped to fill it — so the source has to cover the *longer* edge
+    /// after cropping, not merely match the frame. 1024px on the short edge leaves
+    /// room for that crop and for the card ever growing, without shipping megabytes.
+    static let recommendedSourcePixels = 1024
 }

@@ -89,9 +89,56 @@ struct ActivityArtworkBoundsTests {
     func layoutIsBounded() {
         #expect(ActivityArtworkLayout.width == 170)
         #expect(ActivityArtworkLayout.height == 88)
-        #expect(ActivityArtworkLayout.maximumScale == 3)
         #expect(ActivityArtworkLayout.verticalOffset < 0)
-        #expect(ActivityArtworkLayout.maximumScale * ActivityArtworkLayout.width > 0)
+        // Enough source to cover the cropped card on a 3× screen without enlargement.
+        #expect(Double(ActivityArtworkLayout.recommendedSourcePixels)
+                >= ActivityArtworkLayout.width * 3)
+    }
+
+    /// Ten illustrations shipped as `ActivityCoffee.png` inside imagesets for work,
+    /// beer, fitness and a blood donation. Nothing broke, because the catalog reads
+    /// the name out of `Contents.json` — which is exactly why it went unnoticed.
+    @Test("Each imageset's file is named after the imageset")
+    func assetFilenamesMatchTheirImageset() {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("LifeLog/Assets.xcassets")
+        let sets = (try? FileManager.default.contentsOfDirectory(atPath: root.path))?
+            .filter { $0.hasPrefix("Activity") && $0.hasSuffix(".imageset") } ?? []
+        #expect(!sets.isEmpty)
+        for imageSet in sets {
+            let stem = imageSet.replacingOccurrences(of: ".imageset", with: "")
+            let contents = root.appendingPathComponent(imageSet)
+            let pngs = (try? FileManager.default.contentsOfDirectory(atPath: contents.path))?
+                .filter { $0.hasSuffix(".png") } ?? []
+            for png in pngs {
+                #expect(png == "\(stem).png",
+                        "\(imageSet) contains \(png), which is named after another activity")
+            }
+        }
+    }
+
+    /// The catalogue's own names are inflected, so a rule written against the plain
+    /// verb silently matched nothing: "exercising" does not contain "exercise", and
+    /// "commuting" contains none of travel/transit/drive/car. Both shipped with
+    /// usable artwork sitting unreachable in the bundle.
+    @Test("Shipped activities resolve to artwork that exists")
+    func shippedActivitiesResolveToRealAssets() {
+        let expected = [
+            "At home": "ActivityHome", "Working": "ActivityWorkV2",
+            "Coffee": "ActivityCoffeeV2", "Beers": "ActivityBeersV2",
+            "Shopping": "ActivityShoppingV2", "Healthcare": "ActivityHealthcare",
+            "Travelling": "ActivityDriving", "Sleeping": "ActivitySleep",
+            "Walking": "ActivityWalking", "Exercising": "ActivityFitnessV2",
+            "Commuting": "ActivityDriving", "Running": "ActivityFitnessV2",
+            "Cycling": "ActivityFitnessV2", "Swimming": "ActivityFitnessV2",
+            "Yoga": "ActivityFitnessV2", "Strength training": "ActivityFitnessV2"
+        ]
+        for (activity, asset) in expected {
+            #expect(ActivityScene(activity: activity).assetNameForTesting == asset,
+                    "\(activity) did not resolve to \(asset)")
+            #expect(UIImage(named: asset) != nil, "\(asset) is not in the bundle")
+        }
     }
 
     @Test("Activity artwork PNGs have sane source dimensions")

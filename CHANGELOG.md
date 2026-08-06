@@ -2,6 +2,15 @@
 
 ## 2026-08-06
 
+### The current activity's illustration
+
+- Eleven finished illustrations were sitting in the app unused, including a whole refreshed set — tighter, squarer versions of work, coffee, beers, meeting, shopping, fitness, the doctor and family — plus scenes that existed for nothing else: a blood donation, a work trip, a cafe. They are all in use now.
+- **Exercising had never once shown its own picture.** The rule looked for "exercise" and the activity is called "Exercising" — "exercis-ing" does not contain "exercise", so it matched nothing and fell through to no artwork at all. Commuting missed the driving scene the same way. Both had usable pictures in the app the entire time.
+- Running, cycling, swimming, yoga and strength training now show the fitness scene rather than nothing.
+- The pictures are sharper. Each was being shrunk to fit the card and then magnified three times, drawing a small source several times larger than itself. They now fill the card directly, which reaches the same framing at the smallest enlargement that still covers it.
+- Ten of the picture files were named `ActivityCoffee.png` regardless of what they showed — the work desk, the beer, the blood donation. Nothing was broken by it, because the app reads the name from elsewhere, which is why nobody noticed. Each file is now named after what it is.
+- Nineteen of the twenty-nine activities now have a picture, up from twelve. The ten still without are listed in TODO.
+
 ### A test that could only ever pass once
 
 - `testAdoptingAHistoryLabelFromTheActivitiesTab` had been failing on every run since the day it was written, and the app was fine. The test adopts "Donate Blood" from recorded history and checks the row stops being marked as history-only.

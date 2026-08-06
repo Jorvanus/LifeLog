@@ -76,6 +76,23 @@ Several parts of the app still assume a small, recent dataset.
 - [ ] **"Your weekly rhythm" is hidden in the Day window rather than answered.** The snapshot only covers the selected period, so in Day view six of seven bars are empty by construction. Hiding it is honest but the card is missing from the screen most used. The fix is to give the weekly rhythm its own trailing-weeks aggregation, the way the trend lines have one, so it means the same thing in every window.
 - [ ] An activity whose name is not in the catalogue groups as "Other", and "Other" is excluded from the habits card — so a label used for years can never become a recurring habit. Another consequence of the grouping switch noted above, and another reason to adopt history labels.
 
+## Current-activity artwork
+
+Ten of the twenty-nine shipped activities still show no illustration on the
+current-activity card. Export at **1024px on the short edge**, PNG with
+transparency, in the existing soft-green watercolour style, roughly square —
+the card crops to 170×88pt and fills, so anything important must sit near the
+centre. Name the file after its imageset (`ActivityLunch.png` in
+`ActivityLunch.imageset`), then add a rule to `ActivityIcon.resolvedAssetName`.
+Match on a **stem**, not the plain verb: "exercising" does not contain
+"exercise", which is how two rules silently matched nothing for months.
+
+- [ ] **Food** — `Breakfast`, `Lunch`, `Dining out`, `Eating`. One "meal on a table" scene would cover all four; `ActivityCafe` is a shopfront and reads as going out, not eating.
+- [ ] **Going out** — `Concert`, `Football`, `Watching a movie`.
+- [ ] **Studying** — a desk with books, distinct from `ActivityDesk`, which is a work desk.
+- [ ] **Socialising** — people together, distinct from `ActivityVisitingFamily`.
+- [ ] **Visiting** — the fallback for an unrecognised place, so it needs to be generic: a map pin or doorway rather than any particular kind of outing.
+
 ## Layout and structure
 
 - [ ] **Insights aggregation — finish the tests.** The 2026-08-06 cleanup moved `InsightsSnapshot` out of the view and made it reachable from `@testable import LifeLog`; the Insights rebuild later that day added the first coverage it has ever had. Now covered: time away from home against overlapping stays, weekday rhythm and its sleep exclusion, weekly trend bucketing, habit detection, and the day highlights. **Still uncovered: comparison windows, unlogged gaps, active (open) visits, ignored records, and the large fixture.**
