@@ -2,6 +2,14 @@
 
 ## 2026-08-07
 
+### One walk is one row again
+
+- A 2.69 km morning walk was appearing on Timeline as two separate "Walking" entries of 709 m and 324 m, with a "Visiting Gracemere Pump Track" card wedged between them. Three of the four walks recorded since geofencing arrived were broken the same way, and the missing 1.66 km in the middle had not been hidden — it was never written down.
+- The cause was the import path subtracting every place that overlapped an incoming record. Timeline's own reconciliation stopped doing that to a started workout some time ago: pressing Start is your own account of what that time was, and no Core Location guess outranks it. The importer never learned the same rule, so a stay recorded partway round the walk cut the workout up as it was saved — and the pieces no longer overlapped the stay, which is exactly the evidence needed to recognise the stay as a drive-by. Each fault protected the other.
+- Both paths now agree. A workout is imported whole, and the stays it merely walked past are withdrawn before anything is allowed to cut it.
+- Deciding whether you stopped somewhere now asks the walk's own path whether it kept moving. This replaces a guess based on how the place was named: a park you saved yourself, walked straight through at a steady pace, was previously untouchable and split the walk in two. A path that goes nowhere for the whole time still reads as a real stop, so pausing mid-walk keeps its place.
+- Walks already broken in the store are put back together on next launch. Every fragment carries its Health session's identifier, so the halves are rejoined into one journey with no guesswork about which belonged together. The clipped part of the route cannot be invented, but Health still has it — **Settings → Reimport Health history** restores the full path, and re-runs the repair with the complete route to judge by.
+
 ### `ActivityImportActor` no longer mixes reading with writing
 
 - The file held two complete, unrelated `actor` types in 521 lines: one reading HealthKit and Core Motion, one writing the results into SwiftData. Neither ever touched the other's concern; they only shared a file.

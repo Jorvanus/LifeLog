@@ -5,7 +5,12 @@ import CoreLocation
 /// Keeps the timeline location-first by removing device activity that occurs during a place visit.
 @MainActor
 enum ActivityLocationPolicy {
-    static let supersededLocationSource = "automatic-superseded"
+    nonisolated static let supersededLocationSource = "automatic-superseded"
+
+    /// Marks `repairSplitWorkouts` as done, so it runs once rather than on every
+    /// appearance. Cleared by a Health re-import, which restores the routes the repair
+    /// needs to judge the stays it could not decide the first time.
+    static let splitWorkoutRepairKey = "workout-splits-repaired-v1"
 
     /// Movement shorter than this stays out of the daily card list, though Insights
     /// still counts it. Motion segments are already filtered at two to three minutes
@@ -140,8 +145,20 @@ enum ActivityLocationPolicy {
     /// absorbed; no route at all → believe the person, because a deliberate session is
     /// evidence and passive movement detection is not.
     nonisolated static func isDeclaredJourney(_ visit: Visit, stays: [Visit]) -> Bool {
-        guard isWorkoutSession(visit) else { return false }
-        return !stays.contains { leftStay(visit, stay: $0) == false }
+        isDeclaredJourney(source: visit.source, route: visit.route, stays: stays)
+    }
+
+    /// The same question asked of an import record, before it has become a `Visit`.
+    ///
+    /// The import path used to subtract every overlapping stay from an incoming record
+    /// with none of this reasoning, so a Core Location arrival recorded mid-walk cut a
+    /// workout into fragments as it was written — and the fragments no longer overlapped
+    /// the stay, which is the evidence `supersedePassingStays` needs to remove it. The
+    /// two faults locked each other in. Both paths ask the same question now.
+    nonisolated static func isDeclaredJourney(source: String, route: [RoutePoint],
+                                              stays: [Visit]) -> Bool {
+        guard source == "health-workout" else { return false }
+        return !stays.contains { leftStay(route: route, stay: $0) == false }
     }
 
     /// Text-only tests so the import actor can classify a record before it becomes
@@ -210,7 +227,14 @@ enum ActivityLocationPolicy {
     /// departure, no new arrival. The path separates them, and nothing else does.
     /// Without a route this stays `nil`: unknown, not "no".
     nonisolated static func leftStay(_ movement: Visit, stay: Visit) -> Bool? {
-        guard let farthest = movement.routeDistance(from: stay.coordinate) else { return nil }
+        leftStay(route: movement.route, stay: stay)
+    }
+
+    /// Route-only form, so the import path can ask before a record becomes a `Visit`.
+    nonisolated static func leftStay(route: [RoutePoint], stay: Visit) -> Bool? {
+        guard !route.isEmpty else { return nil }
+        let origin = CLLocation(latitude: stay.latitude, longitude: stay.longitude)
+        guard let farthest = route.map({ $0.location.distance(from: origin) }).max() else { return nil }
         return farthest > departureRadius
     }
 
@@ -338,6 +362,61 @@ enum ActivityLocationPolicy {
             rejoined += 1
         }
         return rejoined
+    }
+
+    /// Puts back together the workouts an earlier build cut up as it imported them.
+    ///
+    /// Every fragment of one workout carries that workout's HealthKit sample UUID, so
+    /// this needs no heuristic about gaps or timing: rows sharing a sample id are rows
+    /// of one session, and one session is one row. The surviving row takes the full
+    /// span and every fragment's share of the path.
+    ///
+    /// The path still has a hole in it — the stretch inside the stay was subtracted
+    /// before it was ever written, and nothing here can invent it. Health still holds
+    /// the original, so *Settings → Reimport Health history* restores it, and clears
+    /// this repair's flag so the pass runs again with a complete route to judge by.
+    @discardableResult
+    static func repairSplitWorkouts(context: ModelContext, now: Date = .now) throws -> Int {
+        let visits = try fetchPolicyVisits(context: context)
+        var fragments: [[UUID]: [Visit]] = [:]
+        for workout in visits where isWorkoutSession(workout) {
+            guard let ids = workout.healthKitSampleIDs, !ids.isEmpty else { continue }
+            fragments[ids, default: []].append(workout)
+        }
+
+        var rejoined = 0
+        var discarded: Set<PersistentIdentifier> = []
+        for group in fragments.values where group.count > 1 {
+            let ordered = group.sorted { $0.arrival < $1.arrival }
+            guard let host = ordered.first else { continue }
+            for extra in ordered.dropFirst() {
+                host.departure = max(host.departure ?? host.arrival, extra.departure ?? extra.arrival)
+                host.route = merge(host.route, extra.route)
+                discarded.insert(extra.persistentModelID)
+                context.delete(extra)
+                rejoined += 1
+            }
+            LocationDiagnostics.record(.merged, subject: "Split workout",
+                                       reason: "\(group.count) rows shared one HealthKit session",
+                                       evidence: "\(host.placeName) rejoined as a single journey",
+                                       context: context)
+        }
+
+        // Now that each workout covers its whole session again, the stays it merely
+        // walked past overlap it once more, which is what makes them recognisable.
+        let sessions = visits
+            .filter { isWorkoutSession($0) && !discarded.contains($0.persistentModelID) }
+            .compactMap { WorkoutSession($0, now: now) }
+        let live = visits.filter { isLocationVisit($0) && !isSupersededLocation($0) }
+        let superseded = supersedePassingStays(during: sessions, stays: live, context: context, now: now)
+        return rejoined + superseded
+    }
+
+    /// One path from two, in time order and without repeating a point a re-import has
+    /// already delivered to both halves.
+    private nonisolated static func merge(_ route: [RoutePoint], _ other: [RoutePoint]) -> [RoutePoint] {
+        var seen = Set<Date>()
+        return (route + other).sorted { $0.time < $1.time }.filter { seen.insert($0.time).inserted }
     }
 
     private static func canRejoin(_ previous: Visit, _ stay: Visit, walking: [Visit]) -> Bool {
@@ -707,43 +786,130 @@ enum ActivityLocationPolicy {
     ///
     /// Superseded, not deleted: the row keeps its coordinates and can be read back in
     /// Diagnostics, which matters when the guard turns out to be wrong.
+    /// A stretch of time the person declared a workout, with whatever path it recorded.
+    /// Carried as a value so the import actor can ask about a record it has not written
+    /// yet, and the repair pass can ask about one it has just put back together.
+    struct WorkoutSession: Sendable {
+        let interval: DateInterval
+        let route: [RoutePoint]
+
+        init(interval: DateInterval, route: [RoutePoint] = []) {
+            self.interval = interval
+            self.route = route
+        }
+
+        init?(_ workout: Visit, now: Date = .now) {
+            let end = workout.departure ?? now
+            guard end > workout.arrival else { return nil }
+            self.init(interval: DateInterval(start: workout.arrival, end: end), route: workout.route)
+        }
+    }
+
     @discardableResult
     static func supersedePassingStays(during workouts: [Visit], stays: [Visit],
                                       context: ModelContext, now: Date = .now) -> Int {
-        let sessions = workouts.filter(isWorkoutSession).compactMap { workout -> DateInterval? in
-            let end = workout.departure ?? now
-            return end > workout.arrival ? DateInterval(start: workout.arrival, end: end) : nil
-        }
-        guard !sessions.isEmpty else { return 0 }
+        supersedePassingStays(during: workouts.filter(isWorkoutSession).compactMap { WorkoutSession($0, now: now) },
+                              stays: stays, context: context, now: now)
+    }
 
-        var superseded = 0
+    @discardableResult
+    static func supersedePassingStays(during sessions: [WorkoutSession], stays: [Visit],
+                                      context: ModelContext, now: Date = .now) -> Int {
+        let passed = passingStays(during: sessions, stays: stays, now: now)
+        for entry in passed {
+            LocationDiagnostics.record(.superseded, subject: "Stay during a workout",
+                                       reason: entry.reason,
+                                       evidence: "\(entry.stay.placeName) passed through, not visited",
+                                       context: context)
+        }
+        return passed.count
+    }
+
+    /// Marks and returns the stays a workout shows were walked past rather than visited.
+    ///
+    /// Nonisolated so the import actor can apply the rule on its own context, ahead of
+    /// letting any stay cut up the record it is about to write. The main-actor overload
+    /// above is the same pass with a diagnostic line per decision.
+    @discardableResult
+    nonisolated static func passingStays(during sessions: [WorkoutSession], stays: [Visit],
+                                         now: Date = .now) -> [(stay: Visit, reason: String)] {
+        guard !sessions.isEmpty else { return [] }
+
+        var passed: [(stay: Visit, reason: String)] = []
         for stay in stays where isLocationVisit(stay) && !isSupersededLocation(stay) {
-            guard stay.source == "automatic", !stay.isIgnored,
-                  stay.recognitionConfidence != "learned",
-                  stay.userActivity == nil else { continue }
+            // Only Core Location's own guess is ever withdrawn. A place the person
+            // entered themselves is not a guess and is never touched.
+            guard stay.source == "automatic", !stay.isIgnored else { continue }
             let stayEnd = stay.departure ?? now
             let duration = stayEnd.timeIntervalSince(stay.arrival)
             guard duration > 0 else { continue }
+            let window = DateInterval(start: stay.arrival, end: stayEnd)
             let covered = sessions.reduce(0.0) { total, session in
-                total + max(0, min(stayEnd, session.end).timeIntervalSince(max(stay.arrival, session.start)))
+                total + max(0, min(stayEnd, session.interval.end)
+                    .timeIntervalSince(max(stay.arrival, session.interval.start)))
             }
             guard covered / duration >= passingStayCoverage else { continue }
+            let share = "\(Int((covered / duration * 100).rounded()))% of it fell inside a started workout"
+
+            // The path is asked first, and it settles the question outright: ground
+            // covered at a walking pace for the whole time a stay claims to have been
+            // holding someone is a measurement that they never stopped there. That
+            // outranks how confident Core Location was and how the place was named,
+            // which is the whole point — a saved place walked through is still walked
+            // through, and its geofence should not cut the walk into pieces.
+            let verdicts = sessions.compactMap { keptMoving($0, through: window) }
+            let reason: String
+            if verdicts.isEmpty {
+                // No path to consult. Fall back to the weaker test, which only withdraws
+                // a guess nobody has agreed with: an unconfirmed name the person has
+                // neither saved nor labelled.
+                guard stay.recognitionConfidence != "learned",
+                      stay.recognitionConfidence != "confirmed",
+                      stay.userActivity == nil else { continue }
+                reason = share
+            } else {
+                guard verdicts.contains(true) else { continue }
+                reason = "\(share), and its path kept moving throughout"
+            }
 
             stay.departure = stay.arrival
             stay.source = supersededLocationSource
-            superseded += 1
-            LocationDiagnostics.record(.superseded, subject: "Stay during a workout",
-                                       reason: "\(Int((covered / duration * 100).rounded()))% of it fell inside a started workout",
-                                       evidence: "\(stay.placeName) passed through, not visited",
-                                       context: context)
+            passed.append((stay, reason))
         }
-        return superseded
+        return passed
+    }
+
+    /// Whether a session's own path was still moving across a stay's whole window.
+    ///
+    /// This is the question that separates "I walked through the park" from "I stopped
+    /// at the park", and distance from the place cannot answer it: a two-minute stay
+    /// recorded mid-walk never gets far from its own centre, yet nothing about it was
+    /// a stop. Pace does answer it. Standing still leaves a few centimetres per second
+    /// of GPS noise; any real walking is several times that.
+    ///
+    /// `nil` when there is no usable path — too few points, or samples covering less
+    /// than half the window, which a route with a gap in it would otherwise fail.
+    private nonisolated static func keptMoving(_ session: WorkoutSession,
+                                               through window: DateInterval) -> Bool? {
+        let points = session.route.filter { window.contains($0.time) }.sorted { $0.time < $1.time }
+        guard points.count > 1, let first = points.first, let last = points.last else { return nil }
+        let sampled = last.time.timeIntervalSince(first.time)
+        guard sampled > 0, sampled >= window.duration / 2 else { return nil }
+        let covered = zip(points, points.dropFirst()).reduce(0.0) { total, pair in
+            total + pair.1.location.distance(from: pair.0.location)
+        }
+        return covered / sampled >= passingStayPace
     }
 
     /// How much of a stay must fall inside a workout before it reads as passing through.
     /// Deliberately a clear majority rather than "any overlap": a walk that ends when the
     /// person arrives somewhere overlaps that arrival slightly, and that arrival is real.
-    private static let passingStayCoverage = 0.75
+    private nonisolated static let passingStayCoverage = 0.75
+
+    /// Metres per second — about 1.8 km/h — below which a path is not going anywhere.
+    /// Well under a walking pace, so a slow amble still reads as movement, and well
+    /// above the drift of a phone sitting on a table.
+    private nonisolated static let passingStayPace: CLLocationDistance = 0.5
 
     private static func reconcile(activities: [Visit], against locations: [Visit],
                                   context: ModelContext, now: Date) throws {

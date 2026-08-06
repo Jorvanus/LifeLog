@@ -22,6 +22,8 @@ struct TimelineView: View {
     @AppStorage("location-policy-reconciled-v4") private var locationPolicyReconciled = false
     // Undoes the stays v3 split in two before reconciliation runs again.
     @AppStorage("stay-splits-rejoined-v1") private var staySplitsRejoined = false
+    // Puts back together the workouts the import path used to cut up at stay boundaries.
+    @AppStorage(ActivityLocationPolicy.splitWorkoutRepairKey) private var splitWorkoutsRepaired = false
     // Bump this marker whenever de-duplication rules become stronger so an
     // installed timeline receives the one-time repair as well as new callbacks.
     @AppStorage("automatic-location-deduplicated-v3") private var automaticLocationDeduplicated = false
@@ -146,6 +148,20 @@ struct TimelineView: View {
                                                message: "Rejoined \(rejoined) stays split by movement.", severity: "info")
                         }
                         staySplitsRejoined = true
+                    } catch {
+                        // Retry after a protected-store failure on the next appearance.
+                    }
+                }
+                if !splitWorkoutsRepaired {
+                    do {
+                        let repaired = try ActivityLocationPolicy.repairSplitWorkouts(context: context)
+                        if repaired > 0 {
+                            try context.save()
+                            Diagnostics.record(context, subsystem: "Core Location",
+                                               message: "Repaired \(repaired) workout rows split by a stay.",
+                                               severity: "info")
+                        }
+                        splitWorkoutsRepaired = true
                     } catch {
                         // Retry after a protected-store failure on the next appearance.
                     }

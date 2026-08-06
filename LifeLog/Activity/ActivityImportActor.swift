@@ -40,15 +40,16 @@ actor ActivityImportActor {
     }
 
     func insertBatch(_ records: [ActivityImportRecord]) throws -> Int {
+        // Before any stay is allowed to cut up an incoming record, withdraw the stays a
+        // workout in this batch shows were walked past. Core Location is at its least
+        // reliable moving through an area with businesses in it, and a drive-by arrival
+        // that survives here goes on to split the very walk that disproves it.
+        supersedeStaysPassedDuringWorkouts(in: records)
         var inserted = 0
         for record in records where record.end > record.start {
             let original = DateInterval(start: record.start, end: record.end)
             if record.source != "health-sleep" { boundStay(departedWith: original, record: record) }
-            let segments = record.source == "health-sleep"
-                ? [original]
-                : remainingSegments(for: original).filter {
-                    $0.duration >= minimumDuration(for: record.source)
-                }
+            let segments = segments(for: record, original: original)
 
             for segment in segments {
                 let sourceVisits = visitsBySource[record.source, default: []]
@@ -159,6 +160,39 @@ actor ActivityImportActor {
         guard ActivityLocationPolicy.describesWalking(record.activity) ||
                 ActivityLocationPolicy.describesTravel(text) else { return }
         ActivityLocationPolicy.boundStay(departedWith: interval, stays: locations)
+    }
+
+    /// The stretches of a record that survive the places it overlapped.
+    ///
+    /// Sleep is never subtracted, and neither is a started workout: it is the person's
+    /// own account of what that time was, and no Core Location guess outranks it. The
+    /// live path has held that position since `ActivityLocationPolicy.reconcile` learned
+    /// it; this path had not, so a stay recorded mid-walk cut the workout into fragments
+    /// as it was imported — 2.69 km stored as 709 m and 324 m with the middle deleted.
+    private func segments(for record: ActivityImportRecord, original: DateInterval) -> [DateInterval] {
+        guard record.source != "health-sleep" else { return [original] }
+        if ActivityLocationPolicy.isDeclaredJourney(source: record.source, route: record.route,
+                                                    stays: locations) {
+            return [original]
+        }
+        return remainingSegments(for: original).filter {
+            $0.duration >= minimumDuration(for: record.source)
+        }
+    }
+
+    /// Applies the passing-stay rule for every workout in the batch, then drops the
+    /// withdrawn stays from the cache the splitting reads, so they cannot cut anything.
+    private func supersedeStaysPassedDuringWorkouts(in records: [ActivityImportRecord]) {
+        let sessions = records.compactMap { record -> ActivityLocationPolicy.WorkoutSession? in
+            guard record.source == "health-workout", record.end > record.start else { return nil }
+            return .init(interval: DateInterval(start: record.start, end: record.end),
+                         route: record.route)
+        }
+        guard !sessions.isEmpty else { return }
+        let passed = ActivityLocationPolicy.passingStays(during: sessions, stays: locations)
+        guard !passed.isEmpty else { return }
+        let withdrawn = Set(passed.map(\.stay.persistentModelID))
+        locations.removeAll { withdrawn.contains($0.persistentModelID) }
     }
 
     private func remainingSegments(for activity: DateInterval) -> [DateInterval] {

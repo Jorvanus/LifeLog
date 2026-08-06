@@ -1126,6 +1126,150 @@ struct ActivityLocationPolicyTests {
         #expect(!ActivityLocationPolicy.shouldShowInTimeline(driveBy, locationVisits: []))
     }
 
+    @Test("A saved place walked straight through is superseded despite being learned")
+    func learnedPlaceWalkedThroughIsSuperseded() throws {
+        let context = try makeContext()
+        // Cedric Archer Park, on the real 7 August capture: a place the person saved
+        // themselves, so every confidence-based guard protects it — and the walk went
+        // straight through it at 1.3 m/s without ever stopping.
+        let park = Visit(arrival: base.addingTimeInterval(15 * 60),
+                         departure: base.addingTimeInterval(23 * 60),
+                         latitude: -23.44096, longitude: 150.45,
+                         placeName: "Cedric Archer Park", inferredActivity: "Walking",
+                         source: "automatic", recognitionConfidence: "learned")
+        let workout = Visit(arrival: base, departure: base.addingTimeInterval(34 * 60),
+                            latitude: 0, longitude: 0, placeName: "Walking workout",
+                            inferredActivity: "Walking", source: "health-workout")
+        workout.route = straightRoute(from: base, to: base.addingTimeInterval(34 * 60),
+                                      latitude: -23.44096, longitude: 150.45, metresPerSecond: 1.3)
+        [park, workout].forEach(context.insert)
+        try context.save()
+
+        let superseded = ActivityLocationPolicy.supersedePassingStays(
+            during: [workout], stays: [park], context: context,
+            now: base.addingTimeInterval(2 * 60 * 60)
+        )
+
+        #expect(superseded == 1, "a measured walking pace across the whole stay is proof of no stop")
+        #expect(park.resolutionState == .superseded)
+    }
+
+    @Test("A stop inside a workout survives, however the workout is timed")
+    func stationaryPathDuringWorkoutSurvives() throws {
+        let context = try makeContext()
+        // Same shape as above — the stay sits wholly inside the session — but the path
+        // does not move while the stay claims to be holding the person, so they stopped.
+        let shop = Visit(arrival: base.addingTimeInterval(15 * 60),
+                         departure: base.addingTimeInterval(23 * 60),
+                         latitude: -23.44096, longitude: 150.45,
+                         placeName: "Gracemere Shopping World", inferredActivity: "Shopping",
+                         source: "automatic", recognitionConfidence: "medium")
+        let workout = Visit(arrival: base, departure: base.addingTimeInterval(34 * 60),
+                            latitude: 0, longitude: 0, placeName: "Walking workout",
+                            inferredActivity: "Walking", source: "health-workout")
+        workout.route = straightRoute(from: base, to: base.addingTimeInterval(34 * 60),
+                                      latitude: -23.44096, longitude: 150.45, metresPerSecond: 0)
+        [shop, workout].forEach(context.insert)
+        try context.save()
+
+        let superseded = ActivityLocationPolicy.supersedePassingStays(
+            during: [workout], stays: [shop], context: context,
+            now: base.addingTimeInterval(2 * 60 * 60)
+        )
+
+        #expect(superseded == 0, "a path that goes nowhere is a stop, not a pass")
+        #expect(shop.resolutionState != .superseded)
+    }
+
+    @Test("Without a path, a stay the person named or saved is left alone")
+    func routelessWorkoutDoesNotWithdrawAnAgreedStay() throws {
+        let context = try makeContext()
+        // Touch Of Paradise Park, from the 3 August capture: two minutes, wholly inside
+        // the walk, but the person confirmed it as Exercising. Nothing here can outrank
+        // that without a route to measure, so it stands.
+        let confirmed = Visit(arrival: base.addingTimeInterval(15 * 60),
+                              departure: base.addingTimeInterval(17 * 60),
+                              latitude: -23.44, longitude: 150.45,
+                              placeName: "Touch Of Paradise Park", inferredActivity: "Visiting",
+                              userActivity: "Exercising", source: "automatic",
+                              recognitionConfidence: "confirmed")
+        let workout = Visit(arrival: base, departure: base.addingTimeInterval(34 * 60),
+                            latitude: 0, longitude: 0, placeName: "Walking workout",
+                            inferredActivity: "Walking", source: "health-workout")
+        [confirmed, workout].forEach(context.insert)
+        try context.save()
+
+        let superseded = ActivityLocationPolicy.supersedePassingStays(
+            during: [workout], stays: [confirmed], context: context,
+            now: base.addingTimeInterval(2 * 60 * 60)
+        )
+
+        #expect(superseded == 0)
+        #expect(confirmed.resolutionState != .superseded)
+    }
+
+    @Test("Workout rows split at a stay boundary are rejoined into one journey")
+    func repairsWorkoutSplitByAStay() throws {
+        let context = try makeContext()
+        // The 7 August capture exactly: one 34-minute walk stored as 10.6m + 4.6m, cut
+        // at the arrival and departure of a stay recorded partway round.
+        let session = UUID()
+        let first = Visit(arrival: base, departure: base.addingTimeInterval(11 * 60),
+                          latitude: 0, longitude: 0, placeName: "Walking workout",
+                          inferredActivity: "Walking", source: "health-workout",
+                          recognitionConfidence: "device", healthKitSampleIDs: [session])
+        first.route = straightRoute(from: base, to: base.addingTimeInterval(11 * 60),
+                                    latitude: -23.441, longitude: 150.45, metresPerSecond: 1.3)
+        let second = Visit(arrival: base.addingTimeInterval(28 * 60),
+                           departure: base.addingTimeInterval(33 * 60),
+                           latitude: 0, longitude: 0, placeName: "Walking workout",
+                           inferredActivity: "Walking", source: "health-workout",
+                           recognitionConfidence: "device", healthKitSampleIDs: [session])
+        second.route = straightRoute(from: base.addingTimeInterval(28 * 60),
+                                     to: base.addingTimeInterval(33 * 60),
+                                     latitude: -23.45, longitude: 150.45, metresPerSecond: 1.3)
+        let driveBy = Visit(arrival: base.addingTimeInterval(11 * 60),
+                            departure: base.addingTimeInterval(28 * 60),
+                            latitude: -23.44133, longitude: 150.45,
+                            placeName: "Gracemere Pump Track", inferredActivity: "Visiting",
+                            source: "automatic", recognitionConfidence: "medium")
+        [first, second, driveBy].forEach(context.insert)
+        try context.save()
+        // Read before the repair: the surviving row is `first`, so afterwards these
+        // counts are the merged path rather than the halves it was made from.
+        let recordedPoints = first.route.count + second.route.count
+
+        let repaired = try ActivityLocationPolicy.repairSplitWorkouts(
+            context: context, now: base.addingTimeInterval(2 * 60 * 60)
+        )
+        try context.save()
+
+        let workouts = try context.fetch(FetchDescriptor<Visit>())
+            .filter { $0.source == "health-workout" }
+        #expect(repaired == 2, "one row rejoined and one drive-by stay withdrawn")
+        #expect(workouts.count == 1, "one HealthKit session is one timeline row")
+        #expect(workouts.first?.arrival == base)
+        #expect(workouts.first?.departure == base.addingTimeInterval(33 * 60))
+        #expect(workouts.first?.route.count == recordedPoints, "both halves' paths are kept")
+        // With the walk whole again, the stay it was cut at is explained by it.
+        #expect(driveBy.resolutionState == .superseded)
+    }
+
+    /// A path along a line of longitude at a steady pace. Zero metres per second gives
+    /// a path that stays exactly where it started, which is what a real stop looks like.
+    private func straightRoute(from start: Date, to end: Date, latitude: Double,
+                               longitude: Double, metresPerSecond: Double) -> [RoutePoint] {
+        var points: [RoutePoint] = []
+        var time = start
+        while time <= end {
+            let metres = metresPerSecond * time.timeIntervalSince(start)
+            points.append(RoutePoint(latitude: latitude + metres / 111_000,
+                                     longitude: longitude, time: time))
+            time = time.addingTimeInterval(60)
+        }
+        return points
+    }
+
     @Test("A real stop during a walk keeps its place")
     func genuineStopDuringWorkoutSurvives() throws {
         let context = try makeContext()

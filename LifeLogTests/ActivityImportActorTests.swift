@@ -54,6 +54,90 @@ struct ActivityImportActorTests {
         #expect(imported.first?.source == "health-sleep")
     }
 
+    @Test("A stay recorded mid-walk does not cut the imported workout into fragments")
+    func workoutSurvivesAStayRecordedDuringIt() async throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(
+            for: Visit.self, SavedPlace.self, VisitCorrection.self,
+            configurations: configuration
+        )
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        // Cedric Archer Park on 7 August: a saved place, so every confidence guard
+        // protects it, sitting wholly inside the walk. Before this it split the workout
+        // into two rows and deleted the 17 minutes between them.
+        let setupContext = ModelContext(container)
+        setupContext.insert(Visit(
+            arrival: start.addingTimeInterval(11 * 60), departure: start.addingTimeInterval(28 * 60),
+            latitude: -23.44096, longitude: 150.45,
+            placeName: "Cedric Archer Park", inferredActivity: "Walking",
+            source: "automatic", recognitionConfidence: "learned"
+        ))
+        try setupContext.save()
+
+        let writer = ActivityImportActor(modelContainer: container)
+        try await writer.prepare()
+        let inserted = try await writer.insertBatch([
+            ActivityImportRecord(
+                name: "Walking workout", activity: "Walking", source: "health-workout",
+                start: start, end: start.addingTimeInterval(34 * 60),
+                healthKitSampleIDs: [UUID()]
+            )
+        ])
+        try await writer.finish()
+
+        let verificationContext = ModelContext(container)
+        let workouts = try verificationContext.fetch(FetchDescriptor<Visit>())
+            .filter { $0.source == "health-workout" }
+        #expect(inserted == 1)
+        #expect(workouts.count == 1, "one started workout is one row")
+        #expect(workouts.first?.arrival == start)
+        #expect(workouts.first?.departure == start.addingTimeInterval(34 * 60))
+    }
+
+    @Test("A stay the imported walk passed through is withdrawn before it can split anything")
+    func passingStayIsWithdrawnDuringImport() async throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(
+            for: Visit.self, SavedPlace.self, VisitCorrection.self, DiagnosticEvent.self,
+            configurations: configuration
+        )
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let setupContext = ModelContext(container)
+        setupContext.insert(Visit(
+            arrival: start.addingTimeInterval(11 * 60), departure: start.addingTimeInterval(28 * 60),
+            latitude: -23.44133, longitude: 150.45,
+            placeName: "Gracemere Pump Track", inferredActivity: "Visiting",
+            source: "automatic", recognitionConfidence: "medium"
+        ))
+        try setupContext.save()
+
+        var route: [RoutePoint] = []
+        var time = start
+        while time <= start.addingTimeInterval(34 * 60) {
+            route.append(RoutePoint(latitude: -23.44133 + 1.3 * time.timeIntervalSince(start) / 111_000,
+                                    longitude: 150.45, time: time))
+            time = time.addingTimeInterval(60)
+        }
+
+        let writer = ActivityImportActor(modelContainer: container)
+        try await writer.prepare()
+        _ = try await writer.insertBatch([
+            ActivityImportRecord(
+                name: "Walking workout", activity: "Walking", source: "health-workout",
+                start: start, end: start.addingTimeInterval(34 * 60),
+                healthKitSampleIDs: [UUID()], route: route
+            )
+        ])
+        try await writer.finish()
+
+        let verificationContext = ModelContext(container)
+        let stay = try #require(try verificationContext.fetch(FetchDescriptor<Visit>())
+            .first { $0.placeName == "Gracemere Pump Track" })
+        #expect(stay.source == ActivityLocationPolicy.supersededLocationSource)
+        #expect(try verificationContext.fetch(FetchDescriptor<Visit>())
+            .filter { $0.source == "health-workout" }.count == 1)
+    }
+
     @Test("Repeated background batches do not duplicate records")
     func deduplicatesAcrossBatches() async throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
