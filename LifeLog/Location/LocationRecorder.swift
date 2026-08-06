@@ -15,7 +15,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     private var serviceSessionRequirement: CLServiceSession.AuthorizationRequirement?
     private var diagnosticTask: Task<Void, Never>?
     private var identifyingVisits: Set<ObjectIdentifier> = []
-    private var savedPlaceCache: [SavedPlace] = []
+    private(set) var savedPlaceCache: [SavedPlace] = []
     private var placeMonitor: CLMonitor?
     private var placeMonitorTask: Task<Void, Never>?
     private var monitoredPlaces: [String: MonitoredPlaces.Ranked] = [:]
@@ -329,10 +329,19 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     private func loadSavedPlaceCache() {
         guard let context else { return }
         let startedAt = Date.now
-        savedPlaceCache = (try? context.fetch(FetchDescriptor<SavedPlace>())) ?? []
-        Diagnostics.locationMetric(context, operation: "saved_place_index_refresh",
-                                   durationMs: Int((Date.now.timeIntervalSince(startedAt) * 1000).rounded()),
-                                   candidateCount: savedPlaceCache.count)
+        do {
+            savedPlaceCache = try context.fetch(FetchDescriptor<SavedPlace>())
+            Diagnostics.locationMetric(context, operation: "saved_place_index_refresh",
+                                       durationMs: Int((Date.now.timeIntervalSince(startedAt) * 1000).rounded()),
+                                       candidateCount: savedPlaceCache.count)
+        } catch {
+            // Keep the previous cache on failure (e.g. if background store is locked under NSFileProtectionComplete).
+            // Overwriting with [] would cause known places to resolve as unknown and trigger redundant Maps lookups.
+            lastError = "Failed to read Saved Places: \(error.localizedDescription)"
+            Diagnostics.record(context, subsystem: "LocationRecorder",
+                               message: "Failed to read Saved Places cache; retaining previous cache (\(savedPlaceCache.count) item(s)). Error: \(error.localizedDescription)",
+                               severity: "warning")
+        }
     }
 
     func invalidateSavedPlaceCache() {

@@ -136,7 +136,7 @@ struct ActivityArtworkBoundsTests {
             "Breakfast": "ActivityBreakfast", "Lunch": "ActivityLunch",
             "Dining out": "ActivityDiningOut", "Eating": "ActivityEating",
             "Concert": "ActivityConcert", "Watching a movie": "ActivityWatchingMovie",
-            "Studying": "ActivityStudying", "Football": "ActivityStudying",
+            "Studying": "ActivityStudying", "Football": "ActivityFootball",
             "Socialising": "ActivitySocialising", "Visiting": "ActivityVisiting"
         ]
         for (activity, asset) in expected {

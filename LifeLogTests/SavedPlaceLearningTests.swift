@@ -240,12 +240,26 @@ struct SavedPlaceLearningTests {
         #expect(ActivityCatalog.preferredLabel(for: "Working", in: catalogue) == "Working")
     }
 
+    @Test("LocationRecorder loads and populates saved place cache when connected")
+    func locationRecorderSavedPlaceCache() throws {
+        let context = try makeContext()
+        let place = SavedPlace(name: "Home Base", latitude: -27.4698, longitude: 153.0251, radius: 100, defaultActivity: "Home")
+        context.insert(place)
+        try context.save()
+
+        let recorder = LocationRecorder()
+        recorder.connect(context)
+        #expect(recorder.savedPlaceCache.count == 1)
+        #expect(recorder.savedPlaceCache.first?.name == "Home Base")
+    }
+
     private func makeContext() throws -> ModelContext {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(
             for: Visit.self,
             SavedPlace.self,
             VisitCorrection.self,
+            DiagnosticEvent.self,
             configurations: configuration
         )
         return ModelContext(container)

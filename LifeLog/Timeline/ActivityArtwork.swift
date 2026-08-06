@@ -67,10 +67,10 @@ struct ActivityIcon: View {
             || text.contains("watching tv") || text.contains("television") {
             return "ActivityWatchingMovie"
         }
-        // One picture serves both: the scene has a goal and a ball alongside the book
-        // and the desk lamp, because it arrived as a single frame for the two of them.
-        if text.contains("study") || text.contains("studying") || text.contains("revis")
-            || text.contains("football") || text.contains("soccer") {
+        if text.contains("football") || text.contains("soccer") {
+            return "ActivityFootball"
+        }
+        if text.contains("study") || text.contains("studying") || text.contains("revis") {
             return "ActivityStudying"
         }
         if text.contains("social") { return "ActivitySocialising" }
@@ -92,7 +92,10 @@ struct ActivityIcon: View {
         if text.contains("cafe") || text.contains("café") { return "ActivityCafe" }
         if text.contains("coffee") { return "ActivityCoffeeV2" }
         if text.contains("work") || text.contains("office") { return "ActivityWorkV2" }
-        if text.contains("commut") || text.contains("travel") || text.contains("transit")
+        if text.contains("transit") || text.contains("train") || text.contains("subway") || text.contains("metro") || text.contains("bus") {
+            return "ActivityTransit"
+        }
+        if text.contains("commut") || text.contains("travel")
             || text.contains("drive") || text.contains("driving") || text.contains("car") {
             return "ActivityDriving"
         }

@@ -12,7 +12,6 @@ Dynamic Type at that size. Nothing here is App Store readiness work.
 
 ## Now — small changes, real consequences
 
-- [ ] `LocationRecorder.loadSavedPlaceCache` swallows a failed fetch and leaves the cache empty. If the protected store is locked when a background callback arrives, every Saved Place silently disappears: arrivals at Home are treated as unknown, a Maps lookup runs, and "Identifying…" visits are created at places LifeLog already knows. Distinguish "no saved places" from "could not read them", keep the previous cache on failure, and record a diagnostic.
 - [ ] A failed background save only sets `lastError`, which lives in memory and is gone after relaunch. An overnight failure leaves no trace at all. Record save failures to Diagnostics so they survive a restart.
 - [ ] `SavedPlaceLearning.preview` and `applyIgnored` still fetch every `Visit` in the archive. The bounding-box work covered `upsert` and `apply` but missed these two, and both run from the Saved Place editor against 25,000 rows.
 - [ ] The seeded `Working` entry shadows an adopted `Work`. `preferredLabel` tries an exact match first, and `Working` matches the seed exactly, so it never reaches the stem rule that would find `Work`. Inference therefore still writes `Working` — the case the change was meant to fix. Renaming the seeded entry offers to carry its visits across, so that is the cheapest fix.
@@ -81,7 +80,6 @@ Several parts of the app still assume a small, recent dataset.
 Every shipped activity now has an illustration, and a test fails if one loses it.
 Two things are still worth doing.
 
-- [ ] **Football and Studying share one picture.** The nine new scenes arrived as a single sheet and that frame holds a goal, a ball, a desk lamp and an open book — one image for two activities. It reads acceptably as either, but Football deserves its own.
 - [ ] **The source art is small.** The new scenes are ~317px on the short edge and the older ones 277–384px; the card wants **1024px** to be crisp on a 6.9" screen (it is 170×88pt, so 510×264 device pixels, and the art is cropped to fill). Nothing looks broken, but a redraw at 1024px would be visibly sharper. Export PNG with real transparency — the sheet these came from had its checkerboard flattened into the pixels, which had to be detected and removed.
 
 When adding one: name the file after its imageset (`ActivityLunch.png` inside

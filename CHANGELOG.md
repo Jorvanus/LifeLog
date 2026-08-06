@@ -2,6 +2,15 @@
 
 ## 2026-08-06
 
+### Timeline activity artwork clean-up & dedicated scenes
+
+- Removed redundant legacy V1 imagesets (`ActivityBeers`, `ActivityCoffee`, `ActivityDoctor`, `ActivityMeeting`, `ActivityWork`, `ActivityShopping`).
+- Added high-resolution, wide-aspect landscape scene artwork for **Football** (`ActivityFootball`) and **Public Transit** (`ActivityTransit`), giving both dedicated illustrations instead of sharing artwork with studying or driving.
+
+### Saved Place cache retained when data store is locked
+
+- `LocationRecorder.loadSavedPlaceCache` no longer clears the in-memory cache of Saved Places if reading the database fails (for example, when a background location callback arrives while the protected store is locked under `NSFileProtectionComplete`). Keeping the previous cache prevents arrivals at known places like Home from temporarily falling back to unknown MapKit lookups.
+
 ### Every activity now has a picture
 
 - Nine new scenes: breakfast, lunch, dining out, eating, a concert, studying, socialising, visiting, and watching television. With the artwork already in the app now wired up, all twenty-nine activities have an illustration on the current-activity card — it was twelve this morning.
