@@ -2,6 +2,10 @@
 
 ## 2026-08-06
 
+### SavedPlaceLearning preview & applyIgnored performance optimization
+
+- Added `SpatialBounds.box` spatial bounding box predicates to `SavedPlaceLearning.preview` and `SavedPlaceLearning.applyIgnored`. Instead of fetching every `Visit` in a 25,000+ record archive, both queries are now bounded to candidate visits within the place's bounding box.
+
 ### Timeline activity artwork clean-up & dedicated scenes
 
 - Removed redundant legacy V1 imagesets (`ActivityBeers`, `ActivityCoffee`, `ActivityDoctor`, `ActivityMeeting`, `ActivityWork`, `ActivityShopping`).

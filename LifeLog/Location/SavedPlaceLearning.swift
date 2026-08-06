@@ -10,7 +10,17 @@ enum SavedPlaceLearning {
     }
 
     static func preview(_ place: SavedPlace, context: ModelContext) throws -> BackfillPreview {
-        let visits = try context.fetch(FetchDescriptor<Visit>())
+        let placeCoordinate = CLLocationCoordinate2D(latitude: place.latitude, longitude: place.longitude)
+        let box = SpatialBounds.box(around: placeCoordinate, radius: place.radius)
+        let minLat = box.minLatitude, maxLat = box.maxLatitude, minLon = box.minLongitude, maxLon = box.maxLongitude
+        // Bounds the fetch to a box around this place instead of loading every Visit in the archive.
+        let visits = try context.fetch(FetchDescriptor<Visit>(
+            predicate: #Predicate { visit in
+                (visit.latitude != 0 || visit.longitude != 0) &&
+                visit.latitude >= minLat && visit.latitude <= maxLat &&
+                visit.longitude >= minLon && visit.longitude <= maxLon
+            }
+        ))
         let location = CLLocation(latitude: place.latitude, longitude: place.longitude)
         let matching = visits.filter { visit in
             guard ActivityLocationPolicy.isLocationVisit(visit), isLocated(visit) else { return false }
@@ -20,7 +30,17 @@ enum SavedPlaceLearning {
     }
 
     static func applyIgnored(_ ignored: Bool, to place: SavedPlace, context: ModelContext) throws -> Int {
-        let visits = try context.fetch(FetchDescriptor<Visit>())
+        let placeCoordinate = CLLocationCoordinate2D(latitude: place.latitude, longitude: place.longitude)
+        let box = SpatialBounds.box(around: placeCoordinate, radius: place.radius)
+        let minLat = box.minLatitude, maxLat = box.maxLatitude, minLon = box.minLongitude, maxLon = box.maxLongitude
+        // Bounds the fetch to a box around this place instead of loading every Visit in the archive.
+        let visits = try context.fetch(FetchDescriptor<Visit>(
+            predicate: #Predicate { visit in
+                (visit.latitude != 0 || visit.longitude != 0) &&
+                visit.latitude >= minLat && visit.latitude <= maxLat &&
+                visit.longitude >= minLon && visit.longitude <= maxLon
+            }
+        ))
         let location = CLLocation(latitude: place.latitude, longitude: place.longitude)
         var changed = 0
         for visit in visits where ActivityLocationPolicy.isLocationVisit(visit) && isLocated(visit) {

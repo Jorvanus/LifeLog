@@ -253,6 +253,31 @@ struct SavedPlaceLearningTests {
         #expect(recorder.savedPlaceCache.first?.name == "Home Base")
     }
 
+    @Test("SavedPlaceLearning preview and applyIgnored use spatial bounding box filtering")
+    func previewAndApplyIgnoredUseBoundingBox() throws {
+        let context = try makeContext()
+        let place = SavedPlace(name: "Studio", latitude: -27.4698, longitude: 153.0251, radius: 100, defaultActivity: "Working")
+        context.insert(place)
+
+        let nearby = Visit(arrival: .now, departure: .now.addingTimeInterval(1800),
+                           latitude: -27.4698, longitude: 153.0251, placeName: "Studio",
+                           inferredActivity: "Working", source: "automatic")
+        let distant = Visit(arrival: .now, departure: .now.addingTimeInterval(1800),
+                            latitude: -33.8688, longitude: 151.2093, placeName: "Sydney Harbour",
+                            inferredActivity: "Visiting", source: "automatic")
+        context.insert(nearby)
+        context.insert(distant)
+        try context.save()
+
+        let preview = try SavedPlaceLearning.preview(place, context: context)
+        #expect(preview.matchingVisits == 1)
+
+        let updatedCount = try SavedPlaceLearning.applyIgnored(true, to: place, context: context)
+        #expect(updatedCount == 1)
+        #expect(nearby.isIgnored == true)
+        #expect(distant.isIgnored == false)
+    }
+
     private func makeContext() throws -> ModelContext {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(
