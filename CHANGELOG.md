@@ -2,6 +2,10 @@
 
 ## 2026-08-07
 
+### Insights sits next to Timeline
+
+- Tab order is now Timeline, Insights, Activities, Settings. The two views of the same days — as they happened, and totalled up — are next to each other, which is the move you actually make.
+
 ### Deleting an activity no longer decides its group by accident
 
 - Deleting `Eating` left every meal grouped under Food & Drink. Deleting `Work` moved 2,732 visits to "Other". Same action, opposite result, and nothing on screen explained why: a hand-written list inside the app happened to mention one name and not the other.
