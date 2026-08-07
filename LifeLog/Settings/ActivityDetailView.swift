@@ -7,9 +7,13 @@ import Charts
 struct ActivityDetailView: View {
     let activityName: String
     var symbol: String = "circle.fill"
+    @Environment(\.modelContext) private var context
     @Query private var candidates: [Visit]
     @State private var window: Window = .week
     @State private var now = Date.now
+    /// Held in state rather than read inline, so adopting updates this page in place
+    /// instead of leaving the offer sitting there once it has been taken.
+    @State private var isAdopted = true
 
     enum Window: String, CaseIterable, Identifiable {
         case week = "7 days"
@@ -45,6 +49,11 @@ struct ActivityDetailView: View {
 
     var body: some View {
         List {
+            // First, because it is the only thing on this screen that needs doing. The
+            // row that led here says the label is not an activity yet; until this
+            // existed, tapping that message arrived somewhere that could not act on it,
+            // and the only remedy was a swipe mentioned once in a footer.
+            if !isAdopted { adoption }
             if statistics.isEmpty {
                 ContentUnavailableView("Nothing recorded yet", systemImage: "chart.line.uptrend.xyaxis",
                                        description: Text("When your timeline uses “\(activityName)”, its history appears here."))
@@ -59,7 +68,30 @@ struct ActivityDetailView: View {
         .navigationTitle(activityName)
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("activity-detail-screen")
-        .onAppear { now = .now }
+        .onAppear {
+            now = .now
+            isAdopted = ActivityCatalog.isAdopted(activityName)
+        }
+    }
+
+    private var adoption: some View {
+        Section {
+            Button {
+                guard ActivityCatalog.adoptFromHistory(activityName) else { return }
+                // Grouping is computed rather than stored, so adopting re-buckets every
+                // visit already carrying this label. Insights has to be told.
+                InsightsInvalidation.invalidate(reason: "Activity adopted from history", context: context)
+                isAdopted = true
+            } label: {
+                Label("Add to Activities", systemImage: "plus.circle.fill")
+                    .font(.body.weight(.semibold))
+            }
+            .accessibilityIdentifier("adopt-activity-button")
+        } header: {
+            Text("From your history")
+        } footer: {
+            Text("“\(activityName)” comes from your recorded visits and is not in your activity list yet, so it has no group, icon or colour of its own. Adding it gives it all three — and Insights will stop counting it as Other.")
+        }
     }
 
     private var overTime: some View {

@@ -257,6 +257,35 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertFalse(marker.exists, "An adopted label must stop being marked as history-only")
     }
 
+    /// The row announces that a label is not an activity yet, and tapping it is the
+    /// obvious response. That used to land on a statistics page with no way to act on
+    /// what had just been announced — the only remedy was a swipe mentioned once in a
+    /// footer. The message and the remedy have to be in the same place.
+    func testAdoptingAHistoryLabelFromItsOwnPage() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+
+        app.tabBars.buttons["Activities"].tap()
+        XCTAssertTrue(element("activities-tab-screen").waitForExistence(timeout: 10))
+
+        let unadopted = element("unadopted-activity-row").firstMatch
+        XCTAssertTrue(unadopted.waitForExistence(timeout: 5))
+        unadopted.tap()
+
+        XCTAssertTrue(element("activity-detail-screen").waitForExistence(timeout: 5))
+        let add = element("adopt-activity-button")
+        XCTAssertTrue(add.waitForExistence(timeout: 5),
+                      "the page the warning links to must be able to act on the warning")
+        add.tap()
+        XCTAssertFalse(add.exists, "the offer must go once it has been taken")
+
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(element("activities-tab-screen").waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["From your history · not yet an activity"].exists,
+                       "adopting on the detail page must reach the list behind it")
+    }
+
     func testManualEntryIsAccessibleFromTimeline() {
         let addVisit = app.buttons["Add visit"]
         XCTAssertTrue(addVisit.waitForExistence(timeout: 5))

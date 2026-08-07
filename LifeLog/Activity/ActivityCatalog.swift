@@ -363,6 +363,34 @@ enum ActivityCatalog {
         adoptGeneratedActivities()
     }
 
+    /// Adds a label the archive already uses to the catalogue, so it can be renamed,
+    /// grouped and given an icon — and so Insights stops counting it under "Other".
+    ///
+    /// One implementation for what is now three ways in: the bulk "Add from your
+    /// history" sheet, the swipe on the Activities tab, and the button on an activity's
+    /// own page. The same label must not come out looking different depending on which
+    /// was used. Returns whether anything was added, so the caller knows whether to
+    /// invalidate Insights.
+    @discardableResult
+    static func adoptFromHistory(_ name: String) -> Bool {
+        var catalogue = load()
+        let key = NameKey.matching(name)
+        guard !key.isEmpty, !catalogue.contains(where: { NameKey.matching($0.name) == key }) else {
+            return false
+        }
+        let category = suggestedCategory(for: name)
+        catalogue.append(ActivityDefinition(name: name, category: category,
+                                            symbol: ActivityIcons.symbol(forCategory: category)))
+        save(catalogue)
+        return true
+    }
+
+    /// Whether a label is already in the catalogue, matched the way adoption matches.
+    static func isAdopted(_ name: String) -> Bool {
+        let key = NameKey.matching(name)
+        return !key.isEmpty && load().contains { NameKey.matching($0.name) == key }
+    }
+
     private static let workingRenamedKey = "LifeLog.ActivityCatalog.workingRenamed.v1"
 
     /// Retires a stored `Working` entry in favour of `Work`.

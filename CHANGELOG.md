@@ -2,6 +2,12 @@
 
 ## 2026-08-07
 
+### A label from your history can be added where it says it needs adding
+
+- A label that exists only in recorded visits is marked "From your history · not yet an activity", and tapping it is the obvious response. That opened a statistics page with no way to act on what had just been announced — the only way to add it was a swipe, mentioned once in small print at the bottom of the list.
+- The page now offers **Add to Activities** at the top when the label is not in your list, and says what adding it gets you: a group, an icon, a colour, and Insights counting it properly instead of as Other. The footer no longer pretends the swipe is the only way in.
+- There are three ways to adopt a label now — the bulk sheet, the swipe, and this button — so they share one implementation. The same label cannot come out looking different depending on which one you used.
+
 ### Insights sits next to Timeline
 
 - Tab order is now Timeline, Insights, Activities, Settings. The two views of the same days — as they happened, and totalled up — are next to each other, which is the move you actually make.

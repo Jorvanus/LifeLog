@@ -67,13 +67,7 @@ struct ActivitiesTabView: View {
     /// the person is already looking at the label and can see how much of their time
     /// it accounts for.
     private func adopt(_ row: Row) {
-        var catalogue = ActivityCatalog.load()
-        let key = NameKey.matching(row.name)
-        guard !catalogue.contains(where: { NameKey.matching($0.name) == key }) else { return }
-        let category = ActivityCatalog.suggestedCategory(for: row.name)
-        catalogue.append(ActivityDefinition(name: row.name, category: category,
-                                            symbol: ActivityIcons.symbol(forCategory: category)))
-        ActivityCatalog.save(catalogue)
+        guard ActivityCatalog.adoptFromHistory(row.name) else { return }
         // Grouping is computed rather than stored, so adopting a label re-buckets every
         // visit already carrying it. Insights has to be told.
         InsightsInvalidation.invalidate(reason: "Activity adopted from history", context: context)
@@ -125,7 +119,7 @@ struct ActivitiesTabView: View {
                 } footer: {
                     Text(unadoptedCount == 0
                          ? "The line beside each activity is the last seven days."
-                         : "The line beside each activity is the last seven days. \(unadoptedCount) \(unadoptedCount == 1 ? "label comes" : "labels come") from recorded visits and \(unadoptedCount == 1 ? "is" : "are") not in your activity list yet — swipe to add \(unadoptedCount == 1 ? "it" : "them"), and Insights will stop counting \(unadoptedCount == 1 ? "it" : "them") as Other.")
+                         : "The line beside each activity is the last seven days. \(unadoptedCount) \(unadoptedCount == 1 ? "label comes" : "labels come") from recorded visits and \(unadoptedCount == 1 ? "is" : "are") not in your activity list yet — tap to open one, or swipe to add \(unadoptedCount == 1 ? "it" : "them"), and Insights will stop counting \(unadoptedCount == 1 ? "it" : "them") as Other.")
                 }
             }
             .navigationTitle("Activities")
