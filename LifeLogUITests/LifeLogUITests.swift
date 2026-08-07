@@ -41,18 +41,6 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(element("saved-places-screen").waitForExistence(timeout: 5))
     }
 
-    func testCurrentLocationLabelingHookIsExposedWhenAVisitIsActive() {
-        app.tabBars.buttons["Settings"].tap()
-        XCTAssertTrue(element("settings-screen").waitForExistence(timeout: 5))
-
-        // A fresh install may have no active location yet. When one exists,
-        // the control must be discoverable and tappable for accessibility users.
-        let labelControl = element("current-location-label")
-        if labelControl.exists {
-            XCTAssertTrue(labelControl.isHittable)
-        }
-    }
-
     /// Editing an activity pushes onto the Settings stack, so the editor keeps a
     /// working back button and offers Save without a redundant Cancel.
     func testEditingAnActivityPushesOntoTheSettingsStack() {
@@ -90,22 +78,6 @@ final class LifeLogUITests: XCTestCase {
 
         XCTAssertTrue(element("place-history-screen").waitForExistence(timeout: 10))
         XCTAssertTrue(app.navigationBars["Place History"].exists)
-    }
-
-    /// Adopting activities from history is what moves them out of the Insights
-    /// "Other" bucket, so the screen has to be reachable and has to render.
-    func testAddFromHistoryIsReachableFromActivities() {
-        app.tabBars.buttons["Settings"].tap()
-        let activities = element("activities-link")
-        XCTAssertTrue(activities.waitForExistence(timeout: 5))
-        activities.tap()
-
-        let addFromHistory = element("add-from-history")
-        XCTAssertTrue(addFromHistory.waitForExistence(timeout: 5))
-        addFromHistory.tap()
-
-        XCTAssertTrue(element("activity-import-screen").waitForExistence(timeout: 10))
-        XCTAssertTrue(app.navigationBars["Add From History"].exists)
     }
 
     /// Diagnostics can hold hundreds of events, so the actions have to sit above the

@@ -5,7 +5,6 @@ struct ActivitiesView: View {
     @Environment(\.modelContext) private var context
     @State private var activities = ActivityCatalog.load()
     @State private var adding = false
-    @State private var importingFromHistory = false
     /// How many visits carry each activity. Deleting or renaming an entry that is
     /// in use silently changes how its history is grouped, so the count has to be
     /// visible before either action rather than discovered afterwards in Insights.
@@ -66,16 +65,11 @@ struct ActivitiesView: View {
 
     var body: some View {
         List {
-            Section {
-                Button {
-                    importingFromHistory = true
-                } label: {
-                    Label("Add from your history", systemImage: "clock.arrow.trianglehead.counterclockwise.rotate.90")
-                }
-                .accessibilityIdentifier("add-from-history")
-            } footer: {
-                Text("Activities you have recorded but never added here are counted as “Other” in Insights.")
-            }
+            // The bulk "Add from your history" section lived here. Adopting a label now
+            // happens on the Activities tab, on the row for the label itself — where its
+            // occasions and hours are visible and the decision can be made with them in
+            // view. A second, blind path to the same thing from Settings was one place
+            // too many once the history had been imported.
             Section {
                 ForEach(activities) { activity in
                     row(for: activity)
@@ -146,14 +140,6 @@ struct ActivitiesView: View {
                 } else {
                     Text("\(request.count) \(request.count == 1 ? "visit is" : "visits are") labelled “\(request.previousName)”. Left alone they keep the old label and Insights counts them as Other.")
                 }
-            }
-        }
-        .sheet(isPresented: $importingFromHistory) {
-            ActivityImportView { added in
-                let known = Set(activities.map { $0.name.lowercased() })
-                activities.append(contentsOf: added.filter { !known.contains($0.name.lowercased()) })
-                ActivityCatalog.save(activities)
-                refreshUsage()
             }
         }
         .sheet(isPresented: $adding) {

@@ -32,20 +32,13 @@ struct SettingsView: View {
                     }
                 }
                 Section {
-                    if let currentLocation {
-                        NavigationLink { VisitEditor(visit: currentLocation) } label: {
-                            Label {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(currentLocation.needsCategorisation ? "Label Current Location" : "Edit Current Location")
-                                    Text(currentLocation.displayPlaceName)
-                                        .font(.caption).foregroundStyle(.secondary)
-                                }
-                            } icon: {
-                                Image(systemName: currentLocation.needsCategorisation ? "flag.badge.ellipsis" : "location.fill")
-                                    .foregroundStyle(currentLocation.needsCategorisation ? .orange : .blue)
-                            }
-                        }.accessibilityIdentifier("current-location-label")
-                    }
+                    // "Edit Current Location" lived here and opened `VisitEditor` on the
+                    // open stay — the same editor, on the same visit, that tapping the
+                    // current activity card on Timeline opens. Timeline is where the
+                    // current activity is already in front of you, and it surfaces an
+                    // uncategorised one more plainly besides, with its own card and the
+                    // review queue. Settings is for places you have saved, not for the
+                    // visit happening now.
                     NavigationLink { PlacesView(recorder: recorder) } label: {
                         LabeledContent {
                             Text("\(savedPlaces.count)")
@@ -240,10 +233,6 @@ struct SettingsView: View {
                 else { recorder.disableBackgroundLogging() }
             }
         )
-    }
-
-    private var currentLocation: Visit? {
-        visits.first { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored && $0.departure == nil }
     }
 
     private var permissionName: String {

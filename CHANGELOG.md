@@ -2,6 +2,11 @@
 
 ## 2026-08-07
 
+### Two ways to do something are one too many
+
+- **Settings → Edit Current Location** is gone. It opened the same editor, on the same visit, that tapping the current activity on Timeline opens — where the activity is already in front of you, and where an uncategorised one is surfaced more plainly anyway. Settings keeps **Locations**, which is a different thing: the places you have saved.
+- **Settings → Activity Labels → Add from your history** is gone, now that the history has been imported. Adopting a label happens on the Activities tab instead, on the row for that label, where its occasions and hours are visible while you decide — either by swiping the row or by opening it. The bulk list showed none of that.
+
 ### The journal can be read as a journal
 
 - Timeline only ever showed today. Nine years of recorded days existed and could not be opened — they were reachable only as totals in Insights, which answers "how much" and never "what happened".
