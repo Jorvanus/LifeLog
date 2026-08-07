@@ -92,7 +92,7 @@ enum CommuteDetection {
     /// and is on the roadmap.
     private static func endpoint(_ visit: Visit) -> Endpoint? {
         guard !visit.hasPlaceholderName else { return nil }
-        if InferenceEngine.activity(placeName: visit.placeName) == "Working" { return .work }
+        if InferenceEngine.canonicalActivity(placeName: visit.placeName) == "Working" { return .work }
         if visit.placeName.localizedCaseInsensitiveContains("home") { return .home }
         return nil
     }

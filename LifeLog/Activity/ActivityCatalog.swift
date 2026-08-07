@@ -25,14 +25,21 @@ enum ActivityCatalog {
     /// Only ever reassigned by `withStorage`, and `UserDefaults` is itself thread-safe.
     nonisolated(unsafe) static var storage: UserDefaults = .standard
 
-    static func withStorage(_ defaults: UserDefaults, _ body: () -> Void) {
+    /// `rethrows`, so a body that can fail — a catalogue migration that touches the
+    /// store, say — can be scoped to test storage without swallowing its error. The
+    /// `defer` restores the real storage whether the body returns or throws.
+    static func withStorage(_ defaults: UserDefaults, _ body: () throws -> Void) rethrows {
         let previous = storage
         storage = defaults
         defer { storage = previous }
-        body()
+        try body()
     }
     static let defaults: [(name: String, category: String, symbol: String)] = [
-        ("At home", "Home", "house.fill"), ("Working", "Work", "briefcase.fill"),
+        // "Work", not "Working": the inference rules produce the canonical "Working",
+        // and `preferredLabel` takes an exact catalogue match before it reaches the
+        // stem rule. A seeded entry named "Working" therefore matched itself and
+        // shadowed an adopted "Work" forever — the exact case the stem rule exists for.
+        ("At home", "Home", "house.fill"), ("Work", "Work", "briefcase.fill"),
         ("Coffee", "Food & Drink", "cup.and.saucer.fill"), ("Beers", "Food & Drink", "mug.fill"),
         ("Breakfast", "Food & Drink", "sunrise.fill"), ("Lunch", "Food & Drink", "fork.knife"),
         ("Dining out", "Food & Drink", "fork.knife"), ("Eating", "Food & Drink", "fork.knife"),
@@ -327,6 +334,47 @@ enum ActivityCatalog {
     static func seed() {
         if storage.data(forKey: storageKey) == nil { save(load()) }
         adoptGeneratedActivities()
+    }
+
+    private static let workingRenamedKey = "LifeLog.ActivityCatalog.workingRenamed.v1"
+
+    /// Retires a stored `Working` entry in favour of `Work`.
+    ///
+    /// Changing the seed above only helps a fresh install: an existing catalogue lives
+    /// in `UserDefaults` and keeps whatever it was seeded with. So the entry is renamed
+    /// where it is already stored, and the visits holding that wording are carried
+    /// across with it — a rename that left them behind would strand every one of them
+    /// on a label the catalogue no longer knows, which Insights counts as "Other".
+    ///
+    /// When `Work` has already been adopted from history the two are merged rather than
+    /// duplicated: the visits move over and the `Working` entry is dropped, keeping the
+    /// adopted entry's own category and symbol.
+    ///
+    /// Runs once. An entry deliberately renamed back to `Working` afterwards stays that
+    /// way instead of being corrected again at every launch.
+    @MainActor
+    @discardableResult
+    static func mergeWorkingIntoWork(context: ModelContext) throws -> Int {
+        guard !storage.bool(forKey: workingRenamedKey) else { return 0 }
+        var activities = load()
+        guard let working = activities.first(where: {
+            $0.name.caseInsensitiveCompare("Working") == .orderedSame
+        }) else {
+            storage.set(true, forKey: workingRenamedKey)
+            return 0
+        }
+
+        let moved = try renameActivity(from: working.name, to: "Work", context: context)
+        activities.removeAll { $0.id == working.id }
+        // Only add one when the adoption has not already supplied it; that entry is the
+        // person's own and keeps the category and symbol they gave it.
+        if !activities.contains(where: { $0.name.caseInsensitiveCompare("Work") == .orderedSame }) {
+            activities.append(ActivityDefinition(name: "Work", category: working.category,
+                                                 symbol: working.symbol))
+        }
+        save(activities)
+        storage.set(true, forKey: workingRenamedKey)
+        return moved
     }
 
     /// Returns the catalogue to what a fresh install would have.

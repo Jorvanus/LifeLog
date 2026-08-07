@@ -49,6 +49,13 @@ struct RootView: View {
             // Whatever a background save could not record about itself is written here,
             // where the store has just opened and is known to be accepting writes.
             Diagnostics.flushPending(context)
+            // Needs a context, so it cannot live in `seed()` alongside the other
+            // catalogue setup — the visits holding the old wording move with it.
+            if let moved = try? ActivityCatalog.mergeWorkingIntoWork(context: context), moved > 0 {
+                Diagnostics.record(context, subsystem: "Activities",
+                                   message: "Renamed the seeded Working label to Work across \(moved) visits.",
+                                   severity: "info")
+            }
             let startedAt = Date.now
             recorder.connect(context)
             activityData.connect(context, container: modelContainer)

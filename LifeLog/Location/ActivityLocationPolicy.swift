@@ -554,7 +554,7 @@ enum ActivityLocationPolicy {
 
     private static func destinationLabel(for destination: Visit, locations: [Visit]) -> String? {
         let destinationText = destination.placeName.lowercased()
-        if InferenceEngine.activity(placeName: destination.placeName) == "Working" {
+        if InferenceEngine.canonicalActivity(placeName: destination.placeName) == "Working" {
             return "Work"
         }
         if destinationText.contains("home") {
@@ -572,7 +572,7 @@ enum ActivityLocationPolicy {
 
     private static func destinationConfidence(for destination: Visit, locations: [Visit]) -> String {
         let text = destination.placeName.lowercased()
-        if InferenceEngine.activity(placeName: destination.placeName) == "Working" || text.contains("home") {
+        if InferenceEngine.canonicalActivity(placeName: destination.placeName) == "Working" || text.contains("home") {
             return "learned"
         }
         let key = NameKey.matching(destination.placeName)

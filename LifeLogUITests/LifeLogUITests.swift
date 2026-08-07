@@ -240,6 +240,13 @@ final class LifeLogUITests: XCTestCase {
 
         let unadopted = element("unadopted-activity-row").firstMatch
         XCTAssertTrue(unadopted.waitForExistence(timeout: 5))
+        // The fixture seeds exactly one history-only label, which is what makes
+        // `firstMatch` unambiguous. When a second one appeared, this quietly adopted
+        // the wrong row and failed on the assertion at the end instead, which says
+        // nothing about the cause.
+        XCTAssertEqual(app.descendants(matching: .any)
+            .matching(identifier: "unadopted-activity-row").count, 1,
+                       "another unadopted label has crept into the seed fixture")
         unadopted.swipeLeft()
         let add = app.buttons["Add"]
         XCTAssertTrue(add.waitForExistence(timeout: 5))

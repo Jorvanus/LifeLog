@@ -2,6 +2,14 @@
 
 ## 2026-08-07
 
+### Inference finally uses your word for work
+
+- Adopting `Work` from your history was supposed to make inference write `Work`. It kept writing `Working`, because the label LifeLog ships with is itself called `Working`: resolving a label takes an exact catalogue match before it tries the rule that folds `Working` and `Work` together, so the shipped entry matched itself and the one you adopted was never reachable.
+- The shipped label is now `Work`, and a catalogue that already holds `Working` has that entry retired on next launch. The visits move with it — a rename that left them behind would strand every one of them on wording the catalogue no longer knows, which is what sends visits to "Other".
+- Where `Work` had already been adopted, the two merge rather than sit side by side, and your own entry keeps the group and symbol you gave it. It happens once, so renaming an entry back to `Working` on purpose stays that way.
+- Each label had a test on its own; nothing tested a catalogue holding both, which is how this shipped. That case is covered now.
+- Renaming the shipped label uncovered a second fault sitting behind it. Commute detection, travel labelling and the Add Visit suggestions all decided "is this a workplace?" by comparing the *displayed* label against the fixed word `Working`. That only ever worked because the shipped label was spelled the same as the concept behind it — so renaming `Work` to anything of your own, which the app invites you to do, would have quietly stopped LifeLog recognising your commute. Those checks now ask what the place *is*, separately from what it is called.
+
 ### A save that fails overnight no longer disappears without trace
 
 - A background save failing only set an in-memory message shown in Settings. Core Location wakes LifeLog while you sleep, so a failure at 3am was gone by the time you looked — nothing said an arrival had been dropped, or why.

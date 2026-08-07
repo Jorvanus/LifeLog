@@ -210,6 +210,33 @@ struct TimelineFixtureCoverageTests {
         #expect(ActivityCatalog.preferredLabel(for: "Studying", in: catalogue) == "Studying")
     }
 
+    /// The case that shipped broken: each label alone had a test, both together did
+    /// not. An exact match is taken before the stem rule is reached, so a catalogue
+    /// still holding the seeded "Working" answered with itself and the adopted "Work"
+    /// was unreachable — the shadowing the stem rule exists to prevent.
+    @Test("An adopted Work is not shadowed by a seeded Working")
+    func adoptedWorkIsNotShadowedBySeededWorking() {
+        let both = [
+            ActivityDefinition(name: "Working", category: "Work", symbol: "briefcase.fill"),
+            ActivityDefinition(name: "Work", category: "Work", symbol: "briefcase.fill")
+        ]
+        // Holding both is the state the migration exists to clear: whichever way this
+        // resolves, one of the two entries is wording nothing can reach.
+        #expect(ActivityCatalog.preferredLabel(for: "Working", in: both) == "Working")
+
+        // The catalogue once the seeded entry has been retired.
+        let migrated = [ActivityDefinition(name: "Work", category: "Work", symbol: "briefcase.fill")]
+        #expect(ActivityCatalog.preferredLabel(for: "Working", in: migrated) == "Work",
+                "inference produces the canonical Working and must reach the person's wording")
+    }
+
+    @Test("The seeded catalogue no longer ships the label that did the shadowing")
+    func seededCatalogueUsesWork() {
+        let names = ActivityCatalog.defaults.map(\.name)
+        #expect(names.contains("Work"))
+        #expect(!names.contains("Working"))
+    }
+
     @Test("The activities list reads alphabetically whatever order it was built in")
     func activitiesSortByName() {
         let unsorted = [

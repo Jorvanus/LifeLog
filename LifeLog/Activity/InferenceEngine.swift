@@ -8,6 +8,21 @@ enum InferenceEngine {
     static func activity(placeName: String, defaultActivity: String? = nil,
                          arrival: Date = .now, mapsHint: String = "") -> String {
         if let defaultActivity, !defaultActivity.isEmpty { return defaultActivity }
+        return ActivityCatalog.preferredLabel(
+            for: canonicalActivity(placeName: placeName, arrival: arrival, mapsHint: mapsHint))
+    }
+
+    /// The concept the rules recognised, before the catalogue decides the wording.
+    ///
+    /// Anything asking a *question* about a place — is this a workplace? — has to use
+    /// this rather than `activity`. Comparing the displayed label against a fixed
+    /// string only ever worked because the label LifeLog shipped happened to be
+    /// spelled the same as the concept behind it. The moment the person adopted their
+    /// own wording, commute detection and travel labelling would have stopped
+    /// recognising work and said nothing about it.
+    static func canonicalActivity(placeName: String, defaultActivity: String? = nil,
+                                  arrival: Date = .now, mapsHint: String = "") -> String {
+        if let defaultActivity, !defaultActivity.isEmpty { return defaultActivity }
         let text = "\(placeName) \(mapsHint)".lowercased()
         let rules: [(String, [String])] = [
             ("Watching a movie", ["cinema", "movie theater", "movie theatre", "film theatre", "event cinemas", "reading cinemas"]),
@@ -19,17 +34,16 @@ enum InferenceEngine {
             ("Travelling", ["airport", "station", "transit", "hotel"]),
             ("Studying", ["school", "university", "library"])
         ]
-        // The rules describe a concept; the catalogue decides the wording. Without
-        // this a recognised workplace is written up as "Working" when the person's
-        // own timeline says "Work" — correct, but a label they would have to fix,
-        // and one Insights groups under "Other" rather than Work.
+        // The rules describe a concept; `activity` above lets the catalogue decide the
+        // wording, so a recognised workplace reads as "Work" when that is what the
+        // person's own timeline says rather than a label they would have to fix.
         if let match = rules.first(where: { rule in rule.1.contains { text.contains($0) } }) {
-            return ActivityCatalog.preferredLabel(for: match.0)
+            return match.0
         }
         let hour = Calendar.current.component(.hour, from: arrival)
         if text.contains("home") {
-            return ActivityCatalog.preferredLabel(for: hour < 8 || hour >= 18 ? "At home" : "Home time")
+            return hour < 8 || hour >= 18 ? "At home" : "Home time"
         }
-        return ActivityCatalog.preferredLabel(for: "Visiting")
+        return "Visiting"
     }
 }

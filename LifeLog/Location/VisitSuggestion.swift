@@ -62,7 +62,7 @@ struct VisitSuggestion: Identifiable, Sendable {
         // Between home and work in either direction, the gap is the commute.
         let names = [before.placeName.lowercased(), after.placeName.lowercased()]
         let isHome = names.contains { $0.contains("home") }
-        let isWork = names.contains { InferenceEngine.activity(placeName: $0) == "Working" }
+        let isWork = names.contains { InferenceEngine.canonicalActivity(placeName: $0) == "Working" }
         if isHome && isWork { return CommuteDetection.activityName }
         return "Travelling"
     }

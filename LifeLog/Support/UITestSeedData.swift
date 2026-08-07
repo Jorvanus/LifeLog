@@ -32,7 +32,10 @@ enum UITestSeedData {
         visit(400, 470, "Gracemere Shopping World", "Shopping")
         visit(480, nil, "Home", "At home")
         visit(120, 390, Visit.unknownPlaceName, "Visiting", "automatic", nil)
-        visit(600, 660, "atWork Australia - Gracemere", "Working", "automatic", "low")
+        // "Work", matching the catalogue. A label the catalogue already holds is an
+        // adopted one; seeded as "Working" it silently became a second history-only
+        // label, and the adoption test below depends on there being exactly one.
+        visit(600, 660, "atWork Australia - Gracemere", "Work", "automatic", "low")
         // A label that lives only in recorded visits and was never adopted into the
         // catalogue — which describes most of a bulk-imported archive. The Activities
         // tab has to show it, mark it as not yet an activity, and offer to add it.
