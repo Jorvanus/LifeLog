@@ -13,6 +13,13 @@ struct TimelineView: View {
            sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
     @State private var adding = false
     @State private var clock = Date.now
+    /// The day being read. Today until the person moves off it, at which point the
+    /// screen stops being a live view and becomes the journal it always held.
+    @State private var selectedDay = Calendar.current.startOfDay(for: .now)
+    @State private var jumpingToDate = false
+    /// The first day there is anything to read, so the picker cannot offer years of
+    /// empty days before the archive begins. Resolved once, from one row.
+    @State private var earliestDay: Date?
     // The add button's glyph and its circle have to grow together, otherwise a
     // Dynamic Type glyph overflows a fixed-size circle at accessibility sizes.
     @ScaledMetric(relativeTo: .title2) private var addButtonDiameter: CGFloat = 56
@@ -29,25 +36,37 @@ struct TimelineView: View {
     @AppStorage("automatic-location-deduplicated-v3") private var automaticLocationDeduplicated = false
 
     private var today: [Visit] {
+        TimelineView.rows(from: visits, day: TimelineView.interval(of: clock), now: clock)
+    }
+
+    /// The day a date falls in, as an interval.
+    static func interval(of date: Date) -> DateInterval {
+        let start = Calendar.current.startOfDay(for: date)
+        let end = Calendar.current.date(byAdding: .day, value: 1, to: start) ?? start
+        return DateInterval(start: start, end: max(start, end))
+    }
+
+    /// What a day's journey shows, from the visits available for it.
+    ///
+    /// Static and parameterised by day so today's live screen and any past day are
+    /// filtered by one implementation rather than two that would drift.
+    static func rows(from visits: [Visit], day: DateInterval, now: Date) -> [Visit] {
         let locationVisits = visits.filter(ActivityLocationPolicy.isLocationVisit)
-        // Today is what the day covered, not what began in it. Selecting by arrival
-        // date dropped the overnight stay, so the day appeared to start at the first
+        // A day is what it covered, not what began in it. Selecting by arrival date
+        // dropped the overnight stay, so the day appeared to start at the first
         // outing rather than at home.
-        let dayStart = Calendar.current.startOfDay(for: clock)
-        let dayEnd = Calendar.current.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart
-        let day = DateInterval(start: dayStart, end: max(dayStart, dayEnd))
-        return visits.filter { ActivityLocationPolicy.covers($0, day: day) }
+        return visits.filter { ActivityLocationPolicy.covers($0, day: day, now: now) }
             .filter { $0.resolutionState != .ignored && $0.resolutionState != .superseded }
-            .filter { ActivityLocationPolicy.shouldShowInTimeline($0, locationVisits: locationVisits) }
+            .filter { ActivityLocationPolicy.shouldShowInTimeline($0, locationVisits: locationVisits, now: now) }
             // Core Location can replay an older unknown callback after a later
             // named visit arrives. Do not show that stale review row when its
             // interval is covered by a more useful location record.
             .filter { visit in
                 guard visit.needsCategorisation else { return true }
-                let end = visit.departure ?? .now
+                let end = visit.departure ?? now
                 return !locationVisits.contains { other in
                     guard other.id != visit.id, !other.needsCategorisation else { return false }
-                    let otherEnd = other.departure ?? .now
+                    let otherEnd = other.departure ?? now
                     return other.arrival <= end && otherEnd > visit.arrival
                 }
             }
@@ -57,13 +76,13 @@ struct TimelineView: View {
                 // when one interval is fully contained by another.
                 guard ActivityLocationPolicy.isDeviceActivity(visit),
                       !visit.source.hasPrefix("health-sleep") else { return true }
-                let end = visit.departure ?? .now
+                let end = visit.departure ?? now
                 return !visits.contains { other in
                     guard other.id != visit.id,
                           ActivityLocationPolicy.isDeviceActivity(other),
                           !other.source.hasPrefix("health-sleep"),
                           other.activity.caseInsensitiveCompare(visit.activity) == .orderedSame else { return false }
-                    let otherEnd = other.departure ?? .now
+                    let otherEnd = other.departure ?? now
                     let contains = other.arrival <= visit.arrival && otherEnd >= end
                     let strictlyBroader = other.arrival < visit.arrival || otherEnd > end
                     // Motion and Health can describe the same walk over exactly the
@@ -79,7 +98,7 @@ struct TimelineView: View {
     /// How much a source actually knows about a walk. A recorded workout carries the
     /// person's own intent, Health's walking samples come from the watch, and Core
     /// Motion is an inference from the phone alone.
-    private func deviceDetail(_ visit: Visit) -> Int {
+    private static func deviceDetail(_ visit: Visit) -> Int {
         switch visit.source {
         case "health-workout": 3
         case "health-walking": 2
@@ -106,8 +125,14 @@ struct TimelineView: View {
                 Color.lifeBackground.ignoresSafeArea()
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 28) {
-                        header
-                        if let review = reviewQueue.first { reviewCard(review) }
+                        // The greeting, the date and the review queue are all about now.
+                        // On a past day they would sit above a different date entirely,
+                        // so the screen drops them and becomes what it is being used as:
+                        // a reader for one day of the journal.
+                        if isShowingToday {
+                            header
+                            if let review = reviewQueue.first { reviewCard(review) }
+                        }
                         journey
                     }
                     .padding(.horizontal, 18)
@@ -117,7 +142,9 @@ struct TimelineView: View {
             .accessibilityIdentifier("timeline-screen")
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $adding) { ManualVisitView() }
+            .sheet(isPresented: $jumpingToDate) { jumpToDateSheet }
             .task {
+                loadEarliestDay()
                 do {
                     let repaired = try ActivityLocationPolicy.resolveLocationCallbacks(context: context)
                     if repaired > 0 {
@@ -337,10 +364,143 @@ struct TimelineView: View {
         }.buttonStyle(.plain).accessibilityIdentifier("current-location-card")
     }
 
+    /// A day that is over, read from the whole store rather than the live query.
+    ///
+    /// Its own `@Query` because the screen's main one excludes `imported-journal` to
+    /// keep launch light, and nine years of archive is precisely what a past day is.
+    /// Scoped to a window rather than the whole table so opening a day in 2017 costs
+    /// the same as opening yesterday.
+    private struct PastDayJourney: View {
+        let day: Date
+        @Query private var visits: [Visit]
+
+        init(day: Date) {
+            self.day = day
+            let interval = TimelineView.interval(of: day)
+            let end = interval.end
+            // A stay is shown on every day it covers, so one that began earlier has to
+            // be fetched to be found. A week reaches the overnight and weekend-long
+            // stays without pulling the table in.
+            let from = Calendar.current.date(byAdding: .day, value: -7, to: interval.start) ?? interval.start
+            _visits = Query(
+                filter: #Predicate<Visit> { $0.arrival < end && $0.arrival >= from },
+                sort: [SortDescriptor(\Visit.arrival, order: .reverse)]
+            )
+        }
+
+        var body: some View {
+            let interval = TimelineView.interval(of: day)
+            // Ended, so "now" is the end of that day: an unclosed stay must not be
+            // measured against the present or it would run for years.
+            let rows = TimelineView.rows(from: visits, day: interval, now: interval.end)
+            if rows.isEmpty {
+                VStack(spacing: 14) {
+                    Image(systemName: "calendar").font(.largeTitle).foregroundStyle(.secondary)
+                    Text("Nothing recorded on this day").font(.headline)
+                    Text("Move to another day, or tap the date to jump.")
+                        .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity).padding(32).lifeCard()
+                .accessibilityIdentifier("empty-day")
+            } else {
+                VStack(spacing: 12) {
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, visit in
+                        JourneyRow(visit: visit, isCurrent: false,
+                                   isFirst: index == 0, isLast: index == rows.count - 1)
+                    }
+                }
+            }
+        }
+    }
+
+    private var isShowingToday: Bool {
+        Calendar.current.isDate(selectedDay, inSameDayAs: clock)
+    }
+
+
+    /// The day being read, and the way to change it.
+    ///
+    /// A calendar, not arrows. Nine years is far too much history to step through a day
+    /// at a time, so the only way in is to name the day you want. A swipe was tried and
+    /// removed: attached to the scrolling content it fought that view's own drag, and a
+    /// gesture that works only sometimes is worse than one that is not offered.
+    private var dayNavigator: some View {
+        HStack(spacing: 8) {
+            Button { jumpingToDate = true } label: {
+                HStack(spacing: 6) {
+                    Text(isShowingToday ? "Today’s Journey" : journeyTitle)
+                        .font(.system(.title, design: .rounded, weight: .bold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(2).minimumScaleFactor(0.7)
+                        .multilineTextAlignment(.leading)
+                    // Says the title is a control. Without it a heading that happens to
+                    // be tappable is indistinguishable from a heading that is not.
+                    Image(systemName: "calendar")
+                        .font(.headline).foregroundStyle(.blue)
+                }
+            }
+            .accessibilityHint("Opens a calendar to pick a day")
+            .accessibilityIdentifier("jump-to-date-button")
+
+            Spacer(minLength: 4)
+
+            if !isShowingToday {
+                Button("Today") { selectedDay = Calendar.current.startOfDay(for: clock) }
+                    .font(.subheadline.weight(.semibold))
+                    .accessibilityIdentifier("today-button")
+            }
+        }
+        .buttonStyle(.plain)
+        .tint(.blue)
+    }
+
+    private var journeyTitle: String {
+        selectedDay.formatted(.dateTime.weekday(.wide).day().month(.wide).year())
+    }
+
+    private var jumpToDateSheet: some View {
+        NavigationStack {
+            DatePicker("Jump to date",
+                       selection: Binding(
+                        get: { selectedDay },
+                        set: { selectedDay = Calendar.current.startOfDay(for: $0) }
+                       ),
+                       in: (earliestDay ?? .distantPast)...Calendar.current.startOfDay(for: clock),
+                       displayedComponents: .date)
+            .datePickerStyle(.graphical)
+            .padding()
+            .navigationTitle("Jump to date")
+            .navigationBarTitleDisplayMode(.inline)
+            .accessibilityIdentifier("jump-to-date-sheet")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { jumpingToDate = false }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    /// The first day with anything in it, so the picker cannot offer years of empty
+    /// days before the archive starts. One row, fetched once.
+    private func loadEarliestDay() {
+        guard earliestDay == nil else { return }
+        var descriptor = FetchDescriptor<Visit>(sortBy: [SortDescriptor(\Visit.arrival, order: .forward)])
+        descriptor.fetchLimit = 1
+        descriptor.propertiesToFetch = [\.arrival]
+        guard let first = try? context.fetch(descriptor).first else { return }
+        earliestDay = Calendar.current.startOfDay(for: first.arrival)
+    }
+
     private var journey: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Today’s Journey").font(.system(.title, design: .rounded, weight: .bold))
-            if today.isEmpty && current == nil && !isWaitingForVisitConfirmation {
+            dayNavigator
+            if !isShowingToday {
+                // A past day owns its own fetch: the query above deliberately excludes
+                // the imported journal to keep launch light, and that archive is exactly
+                // what a past day is made of.
+                PastDayJourney(day: selectedDay)
+            } else if today.isEmpty && current == nil && !isWaitingForVisitConfirmation {
                 VStack(spacing: 14) {
                     Image(systemName: "location.slash").font(.largeTitle).foregroundStyle(.secondary)
                     Text("Your visits will appear here").font(.headline)
@@ -362,7 +522,11 @@ struct TimelineView: View {
                     }
                 }
             }
-        }.accessibilityIdentifier("todays-journey")
+        }
+        // Deliberately no identifier on this container. One here propagates down and
+        // *overrides* every child's own, so the day navigator's buttons and every
+        // journey row all reported as "todays-journey" and none could be addressed by
+        // the name it was given. The heading below carries the section's identifier.
     }
 
     private var waitingForVisitCard: some View {

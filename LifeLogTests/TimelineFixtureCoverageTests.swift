@@ -230,6 +230,57 @@ struct TimelineFixtureCoverageTests {
                 "inference produces the canonical Working and must reach the person's wording")
     }
 
+    /// Timeline showed only today, so nine years of journal were unreadable. The
+    /// screen's own query excludes `imported-journal` to keep launch light, which is
+    /// exactly what a past day is made of — so a past day is filtered by this, from its
+    /// own fetch, and it has to keep what the live screen would have thrown away.
+    @Test("A past day keeps the archive that today's query leaves out")
+    func pastDayIncludesImportedJournal() {
+        let day = Calendar.current.startOfDay(for: base)
+        let dayEnd = Calendar.current.date(byAdding: .day, value: 1, to: day)!
+        let interval = DateInterval(start: day, end: dayEnd)
+
+        let archived = Visit(arrival: day.addingTimeInterval(9 * 3600),
+                             departure: day.addingTimeInterval(17 * 3600),
+                             latitude: -23.38, longitude: 150.52, placeName: "atWork Australia",
+                             inferredActivity: "Work", source: "imported-journal")
+        // Began the evening before: a stay counts for every day it covers, so the day
+        // must open with the stay it woke up in rather than the first time out.
+        let overnight = Visit(arrival: day.addingTimeInterval(-6 * 3600),
+                              departure: day.addingTimeInterval(8 * 3600),
+                              latitude: -23.44, longitude: 150.45, placeName: "Home",
+                              inferredActivity: "At home", source: "automatic")
+        let anotherDay = Visit(arrival: dayEnd.addingTimeInterval(3600),
+                               departure: dayEnd.addingTimeInterval(2 * 3600),
+                               latitude: -23.44, longitude: 150.45, placeName: "Home",
+                               inferredActivity: "At home", source: "automatic")
+
+        let rows = TimelineView.rows(from: [archived, overnight, anotherDay],
+                                     day: interval, now: dayEnd)
+
+        #expect(rows.contains { $0 === archived }, "the archive is what a past day is made of")
+        #expect(rows.contains { $0 === overnight }, "a day covers the stay it began in")
+        #expect(!rows.contains { $0 === anotherDay })
+    }
+
+    /// A day that is over is measured against its own end. Against the present, a stay
+    /// Core Location never closed in 2019 would be reported as still running, years long.
+    @Test("An unclosed stay on a past day ends with the day, not with now")
+    func pastDayMeasuresAgainstTheEndOfThatDay() {
+        let day = Calendar.current.startOfDay(for: base)
+        let dayEnd = Calendar.current.date(byAdding: .day, value: 1, to: day)!
+        let open = Visit(arrival: day.addingTimeInterval(20 * 3600), departure: nil,
+                         latitude: -23.44, longitude: 150.45, placeName: "Home",
+                         inferredActivity: "At home", source: "automatic")
+
+        let rows = TimelineView.rows(from: [open], day: DateInterval(start: day, end: dayEnd),
+                                     now: dayEnd)
+
+        #expect(rows.contains { $0 === open })
+        // Bounded by the day it is being read on rather than left running to the present.
+        #expect(TimelineView.interval(of: day).end == dayEnd)
+    }
+
     @Test("The seeded catalogue no longer ships the label that did the shadowing")
     func seededCatalogueUsesWork() {
         let names = ActivityCatalog.defaults.map(\.name)

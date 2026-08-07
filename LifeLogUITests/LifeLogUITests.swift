@@ -171,7 +171,7 @@ final class LifeLogUITests: XCTestCase {
         app.launchArguments = ["-uiTesting", "-ui-test-seed"]
         app.launch()
 
-        XCTAssertTrue(element("todays-journey").waitForExistence(timeout: 10))
+        XCTAssertTrue(element("jump-to-date-button").waitForExistence(timeout: 10))
         let walk = app.staticTexts["Walking"]
         XCTAssertTrue(walk.waitForExistence(timeout: 5))
         // The overnight stay is labelled with the day it began, so a stay of many
@@ -284,6 +284,35 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(element("activities-tab-screen").waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["From your history · not yet an activity"].exists,
                        "adopting on the detail page must reach the list behind it")
+    }
+
+    /// Timeline only ever showed today, so nine years of journal were reachable only
+    /// as Insights aggregates — the history existed and could not be read.
+    func testTimelineReadsPastDaysAsAJournal() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+
+        XCTAssertTrue(element("timeline-screen").waitForExistence(timeout: 10))
+        // The title is the button that opens the picker, so it is read as a control
+        // rather than as static text. Asserting its label tests what is on screen and
+        // what is tappable in one go.
+        let dayTitle = element("jump-to-date-button")
+        XCTAssertTrue(dayTitle.waitForExistence(timeout: 5))
+        XCTAssertEqual(dayTitle.label, "Today’s Journey")
+
+        // On today there is nowhere to return from, so nothing offers to.
+        XCTAssertFalse(element("today-button").exists)
+
+        // Naming the day is the only way in: nine years is far too much history to
+        // step through a day at a time.
+        dayTitle.tap()
+        XCTAssertTrue(element("jump-to-date-sheet").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.datePickers.firstMatch.exists, "the sheet must hold a calendar")
+        app.buttons["Done"].tap()
+
+        XCTAssertTrue(element("timeline-screen").waitForExistence(timeout: 5))
+        XCTAssertEqual(dayTitle.label, "Today’s Journey", "dismissing without picking stays put")
     }
 
     func testManualEntryIsAccessibleFromTimeline() {

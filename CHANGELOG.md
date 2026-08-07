@@ -2,6 +2,14 @@
 
 ## 2026-08-07
 
+### The journal can be read as a journal
+
+- Timeline only ever showed today. Nine years of recorded days existed and could not be opened — they were reachable only as totals in Insights, which answers "how much" and never "what happened".
+- Tap the date to open a calendar and pick the day you want, anywhere back to your first record. A **Today** button brings you back to the live screen. There are no day-at-a-time arrows: nine years is far too much history to step through, so naming the day is the way in.
+- Date navigation alone would not have been enough: Timeline's query deliberately excludes the imported journal to keep launch fast, and the imported journal is what nine years of past days are made of. A past day now fetches for itself, scoped to that day, so opening one in 2017 costs the same as opening yesterday and the archive is never loaded whole.
+- A past day is measured against the end of that day rather than the present. An unclosed stay from 2019 would otherwise have been reported as still running, six years long.
+- The greeting, the date and the review queue stay on today, where they mean something. A past day is just the day.
+
 ### A label from your history can be added where it says it needs adding
 
 - A label that exists only in recorded visits is marked "From your history · not yet an activity", and tapping it is the obvious response. That opened a statistics page with no way to act on what had just been announced — the only way to add it was a swipe, mentioned once in small print at the bottom of the list.
