@@ -23,6 +23,43 @@ final class DiagnosticEvent {
     }
 }
 
+/// Diagnostics waiting for a store that will accept them.
+///
+/// Deliberately not SwiftData. Everything else LifeLog records assumes the store
+/// works; these are the records made when it does not, so they are held somewhere
+/// that does not depend on it and survives relaunch on its own.
+enum PendingDiagnostics {
+    struct Entry: Codable, Equatable {
+        let createdAt: Date
+        let subsystem: String
+        let severity: String
+        let message: String
+    }
+
+    static let storageKey = "LifeLog.Diagnostics.pending.v1"
+    /// A store that has stopped accepting writes will keep failing, and each failure
+    /// queues another entry. The oldest are the ones that explain how it started, so
+    /// the newest are dropped once the queue is full rather than the other way round.
+    static let queueLimit = 50
+
+    static func queue(_ entry: Entry, defaults: UserDefaults = .standard) {
+        var entries = queued(defaults: defaults)
+        guard entries.count < queueLimit else { return }
+        entries.append(entry)
+        guard let data = try? JSONEncoder().encode(entries) else { return }
+        defaults.set(data, forKey: storageKey)
+    }
+
+    static func queued(defaults: UserDefaults = .standard) -> [Entry] {
+        guard let data = defaults.data(forKey: storageKey) else { return [] }
+        return (try? JSONDecoder().decode([Entry].self, from: data)) ?? []
+    }
+
+    static func clear(defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: storageKey)
+    }
+}
+
 @MainActor
 enum Diagnostics {
     enum Category {
@@ -60,6 +97,43 @@ enum Diagnostics {
         context.insert(DiagnosticEvent(subsystem: subsystem, severity: severity, message: message, category: category))
         trimToRetentionLimit(context, category: category)
         try? context.save()
+    }
+
+    /// Records an event that must outlive the process that saw it, even when the
+    /// store is the thing that is broken.
+    ///
+    /// `record` writes the event straight into SwiftData, which is exactly what a
+    /// failed save cannot rely on: the write that would record the failure is a write
+    /// to the store that just refused one. So the event is queued in `UserDefaults`
+    /// first — a separate file, with its own protection class, writable whenever the
+    /// app is running — and only then offered to the store. If the store takes it, the
+    /// queue is emptied; if not, it waits for the next launch.
+    static func recordDurable(_ context: ModelContext?, subsystem: String, message: String,
+                              severity: String = "warning", defaults: UserDefaults = .standard) {
+        PendingDiagnostics.queue(.init(createdAt: .now, subsystem: subsystem,
+                                       severity: severity, message: message), defaults: defaults)
+        guard let context else { return }
+        flushPending(context, defaults: defaults)
+    }
+
+    /// Moves anything queued by `recordDurable` into the store. Call after a save is
+    /// known to have worked, and once at launch, so an overnight failure is on screen
+    /// in Diagnostics the next morning rather than lost with the process that saw it.
+    @discardableResult
+    static func flushPending(_ context: ModelContext, defaults: UserDefaults = .standard) -> Int {
+        let pending = PendingDiagnostics.queued(defaults: defaults)
+        guard !pending.isEmpty else { return 0 }
+        for entry in pending {
+            context.insert(DiagnosticEvent(createdAt: entry.createdAt, subsystem: entry.subsystem,
+                                           severity: entry.severity, message: entry.message))
+        }
+        trimToRetentionLimit(context, category: Category.general)
+        // A failure here is the case this whole path exists for. The queue is left
+        // alone so the next launch tries again; clearing it would throw away the only
+        // copy at the exact moment the store proved it could not hold one.
+        do { try context.save() } catch { return 0 }
+        PendingDiagnostics.clear(defaults: defaults)
+        return pending.count
     }
 
     /// Keeps the diagnostic log bounded without loading every event on every write.

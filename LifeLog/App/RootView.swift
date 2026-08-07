@@ -46,6 +46,9 @@ struct RootView: View {
         .accessibilityIdentifier("root-tab-view")
         .task {
             ExportFileCleanup.removeExpired()
+            // Whatever a background save could not record about itself is written here,
+            // where the store has just opened and is known to be accepting writes.
+            Diagnostics.flushPending(context)
             let startedAt = Date.now
             recorder.connect(context)
             activityData.connect(context, container: modelContainer)

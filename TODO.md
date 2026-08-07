@@ -12,7 +12,7 @@ Dynamic Type at that size. Nothing here is App Store readiness work.
 
 ## Now — small changes, real consequences
 
-- [ ] A failed background save only sets `lastError`, which lives in memory and is gone after relaunch. An overnight failure leaves no trace at all. Record save failures to Diagnostics so they survive a restart.
+- [ ] **Prove a background save failure actually gets recorded.** Failures are queued outside SwiftData now (2026-08-07) and flushed into Diagnostics at the next successful save or launch, so an overnight failure should be on screen by morning. Nothing has yet made a real one fail — only a unit test has. Worth forcing once, by locking the phone with the store's protection class raised, and checking the entry survives a relaunch.
 - [ ] The seeded `Working` entry shadows an adopted `Work`. `preferredLabel` tries an exact match first, and `Working` matches the seed exactly, so it never reaches the stem rule that would find `Work`. Inference therefore still writes `Working` — the case the change was meant to fix. Renaming the seeded entry offers to carry its visits across, so that is the cheapest fix.
 - [ ] `ActivityCatalog.category(for:)` checks a hardcoded switch before the catalogue, so seeded names keep their group even after deletion while adopted ones lose theirs. That is why deleting `Eating` is harmless and deleting `Work` moved 2,732 visits to "Other". Either drop the switch and let the catalogue be the single source, or keep it and say so where it matters.
 

@@ -2,6 +2,13 @@
 
 ## 2026-08-07
 
+### A save that fails overnight no longer disappears without trace
+
+- A background save failing only set an in-memory message shown in Settings. Core Location wakes LifeLog while you sleep, so a failure at 3am was gone by the time you looked — nothing said an arrival had been dropped, or why.
+- Failures are recorded to Diagnostics now, which meant solving the obvious circularity first: Diagnostics is the same store, so the write that records a failed save is a write to the store that just refused one. Failures are queued outside SwiftData instead, and moved into Diagnostics at the next save that works or at the next launch.
+- A store that keeps refusing writes cannot flood the queue. It holds the first fifty failures rather than the last, because the earliest ones explain how it started.
+- The entry records the error's domain and code, not its text. A Core Data error can name the entity and attribute it failed on, and diagnostics stay clear of anything describing where you have been.
+
 ### One walk is one row again
 
 - A 2.69 km morning walk was appearing on Timeline as two separate "Walking" entries of 709 m and 324 m, with a "Visiting Gracemere Pump Track" card wedged between them. Three of the four walks recorded since geofencing arrived were broken the same way, and the missing 1.66 km in the middle had not been hidden — it was never written down.

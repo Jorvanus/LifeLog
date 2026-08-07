@@ -582,11 +582,27 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         }
     }
 
+    /// The one save that happens with nobody watching.
+    ///
+    /// Core Location wakes LifeLog in the background, so this can fail at 3am with the
+    /// app never brought to the foreground. `lastError` lives in memory and shows only
+    /// in Settings, so an overnight failure left no trace at all — by morning there was
+    /// nothing to say an arrival had been dropped, or why.
     private func save(_ context: ModelContext) {
         do {
             try context.save()
+            // The store has just proved it is writable, so this is the moment to move
+            // any earlier failure out of the queue and into the log.
+            Diagnostics.flushPending(context)
         } catch {
             lastError = "LifeLog couldn't securely save this update. Your existing timeline is unchanged."
+            // Domain and code rather than the message: a Core Data error can name the
+            // entity and attribute it failed on, and diagnostics stay clear of anything
+            // describing where the owner has been.
+            let failure = error as NSError
+            Diagnostics.recordDurable(context, subsystem: "Store",
+                                      message: "A background save failed (\(failure.domain) \(failure.code)). "
+                                             + "The update was not written.")
         }
     }
 
