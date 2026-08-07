@@ -24,10 +24,11 @@ struct TimelineView: View {
     // Dynamic Type glyph overflows a fixed-size circle at accessibility sizes.
     @ScaledMetric(relativeTo: .title2) private var addButtonDiameter: CGFloat = 56
     // Bump this marker whenever reconciliation learns a new rule, so an installed
-    // timeline is repaired once rather than only new records benefiting. v5 holds a
-    // stay open until the journey that left it, closing the gap Core Location leaves
-    // between a departure it timed early and the walk that actually ended the stay.
-    @AppStorage("location-policy-reconciled-v5") private var locationPolicyReconciled = false
+    // timeline is repaired once rather than only new records benefiting. v5 held a
+    // stay open until the journey that left it; v6 exists because v5 never ran — the
+    // marker below was written even when the repair was skipped for an unloaded query,
+    // so bumping the key alone could not recover it.
+    @AppStorage("location-policy-reconciled-v6") private var locationPolicyReconciled = false
     // Undoes the stays v3 split in two before reconciliation runs again.
     @AppStorage("stay-splits-rejoined-v1") private var staySplitsRejoined = false
     // Puts back together the workouts the import path used to cut up at stay boundaries.
@@ -203,14 +204,22 @@ struct TimelineView: View {
                     // Journal-only imports do not contain device activity, so there is
                     // nothing to reconcile. This cheap check avoids a second full-history
                     // pass immediately after importing a large archive.
-                    if visits.contains(where: ActivityLocationPolicy.isDeviceActivity) {
-                        let startedAt = Date.now
-                        try ActivityLocationPolicy.reconcileAll(context: context)
-                        try ActivityLocationPolicy.updateTravelDescriptions(context: context)
-                        try context.save()
-                        Diagnostics.performance(context, subsystem: "Timeline", operation: "activity reconciliation",
-                                                startedAt: startedAt, itemCount: visits.count)
-                    }
+                    //
+                    // Returning rather than falling through to the marker is the whole
+                    // point. `visits` is a @Query and this task can run before SwiftData
+                    // has filled it, so an empty array means "not loaded yet" far more
+                    // often than it means "nothing to do". Marking the repair done from
+                    // that state is how a bump to this key could take effect on paper and
+                    // never run: the flag was written, the work was not, and no later
+                    // launch would try again. Every previous bump of this marker was
+                    // capable of doing the same.
+                    guard visits.contains(where: ActivityLocationPolicy.isDeviceActivity) else { return }
+                    let startedAt = Date.now
+                    try ActivityLocationPolicy.reconcileAll(context: context)
+                    try ActivityLocationPolicy.updateTravelDescriptions(context: context)
+                    try context.save()
+                    Diagnostics.performance(context, subsystem: "Timeline", operation: "activity reconciliation",
+                                            startedAt: startedAt, itemCount: visits.count)
                     locationPolicyReconciled = true
                 } catch {
                     // Leave the flag unset so a transient protected-store failure can

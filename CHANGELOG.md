@@ -2,6 +2,12 @@
 
 ## 2026-08-08
 
+### Timeline repairs were being marked done without running
+
+- The reported 14-minute gap survived the fix meant to close it, and the reason was worse than the gap. Repairs that run once per version are guarded by a stored marker, and that marker was written whether or not the repair actually happened: the work is skipped when the timeline query holds nothing, which on a launch is far more often "not loaded yet" than "nothing to do".
+- So a repair could be recorded as complete having never executed, and no later launch would try again. Bumping the version to ship a fix did not help, because the new marker was written the same way on the first launch that saw an empty query.
+- This affected every timeline repair shipped this way, not only the newest one. The marker is now written only when the work is done; an unloaded query means try again next time.
+
 ### The minutes before a walk belong to where you were
 
 - Getting up at home before this morning's walk showed as fourteen minutes of "Unlogged". Home closed at 07:02:44, the walk began at 07:16:22, and nothing at all claimed the time between — so Insights was right, and the recording was what was missing.

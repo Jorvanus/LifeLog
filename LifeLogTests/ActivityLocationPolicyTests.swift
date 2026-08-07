@@ -500,6 +500,37 @@ struct ActivityLocationPolicyTests {
         #expect(home.departure == base)
     }
 
+
+    /// The whole path, not just the rule. The first test written for `extendStay`
+    /// called it directly, which proved the rule worked and said nothing about whether
+    /// anything reaches it — and when the fix appeared not to work on a real phone,
+    /// that test could not tell us where the failure was. This drives the exact records
+    /// of 8 August through `reconcileAll`, the way Timeline drives it.
+    @Test("Reconciliation closes a gap between a stay and the walk that left it")
+    func reconciliationClosesTheGapBeforeAWalk() throws {
+        let context = try makeContext()
+        let home = Visit(arrival: base.addingTimeInterval(-9.86 * 3600), departure: base,
+                         latitude: -23.4454, longitude: 150.4581, placeName: "Home",
+                         inferredActivity: "At home", source: "automatic",
+                         recognitionConfidence: "learned")
+        let walkStart = base.addingTimeInterval(13.6 * 60)
+        let walk = Visit(arrival: walkStart, departure: walkStart.addingTimeInterval(48.4 * 60),
+                         latitude: 0, longitude: 0, placeName: "Walking workout",
+                         inferredActivity: "Walking", userActivity: "Walking",
+                         source: "health-workout", recognitionConfidence: "device")
+        let later = Visit(arrival: base.addingTimeInterval(58.6 * 60), departure: nil,
+                          latitude: -23.4454, longitude: 150.4581, placeName: "Home",
+                          inferredActivity: "At home", source: "automatic",
+                          recognitionConfidence: "learned")
+        [home, walk, later].forEach(context.insert)
+        try context.save()
+
+        try ActivityLocationPolicy.reconcileAll(context: context, now: base.addingTimeInterval(2 * 3600))
+
+        #expect(home.departure == walkStart,
+                "expected \(walkStart) but Home departs \(String(describing: home.departure))")
+    }
+
     @Test("A walk out the door bounds the stay instead of being deleted")
     func walkBoundsTheStayItLeft() throws {
         let context = try makeContext()
