@@ -6,6 +6,9 @@ import MapKit
 struct InsightsView: View {
     @Environment(\.modelContext) private var context
     let activityData: ActivityDataService
+    /// The saved place called Home, which is what "time away from Home" is measured
+    /// against. Queried rather than matched by name — see `InsightsSnapshot.HomePlace`.
+    @Query private var savedPlaces: [SavedPlace]
     @State private var visits: [Visit] = []
     @State private var window: InsightWindow = .day
     @State private var anchorDate = Date.now
@@ -41,7 +44,6 @@ struct InsightsView: View {
                         if window == .day { dailyTimelineSection }
                         awayFromHomeSection
                         activityChangesSection
-                        dataQualitySection
                         trendsSection
                         // A single day cannot have a weekly rhythm. The snapshot only
                         // covers the selected period, so in the Day window six of the
@@ -431,16 +433,34 @@ struct InsightsView: View {
         .lifeCard()
     }
 
+    /// Space between blocks in the day bar. Named because the widths have to be
+    /// divided over what is left *after* the gaps are taken out.
+    private static let dayBarGap: CGFloat = 2
+
+    /// The place the person themselves named Home. An exact name match rather than a
+    /// contains, so "Homemaker Centre" is not mistaken for it.
+    private var homePlace: SavedPlace? {
+        savedPlaces.first { $0.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            .caseInsensitiveCompare("Home") == .orderedSame }
+    }
+
     private var dailyTimelineSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Your day").font(.title2.bold())
             Text("A 24-hour view of where your time went").font(.subheadline).foregroundStyle(.secondary)
             GeometryReader { proxy in
-                HStack(spacing: 2) {
-                    ForEach(snapshot.segments) { segment in
+                // Each block used to take its share of the *full* width, and then the
+                // HStack added a gap between every pair on top of that, so the bar
+                // overran the card by two points per block — worse the more broken up
+                // the day was. The gaps come out of the width first now.
+                let segments = snapshot.segments
+                let gaps = Self.dayBarGap * CGFloat(max(segments.count - 1, 0))
+                let available = max(proxy.size.width - gaps, 1)
+                HStack(spacing: Self.dayBarGap) {
+                    ForEach(segments) { segment in
                         RoundedRectangle(cornerRadius: 4)
                             .fill(segment.color)
-                            .frame(width: max(3, proxy.size.width * segment.hours / max(snapshot.totalHours, 0.01)))
+                            .frame(width: available * segment.hours / max(snapshot.totalHours, 0.01))
                             .accessibilityLabel("\(segment.activity), \(formatHours(segment.hours))")
                     }
                 }
@@ -448,25 +468,15 @@ struct InsightsView: View {
             .frame(height: 34)
             HStack { Text("12am"); Spacer(); Text("6am"); Spacer(); Text("12pm"); Spacer(); Text("6pm"); Spacer(); Text("Now") }
                 .font(.caption2).foregroundStyle(.secondary)
-            // The bar above is time-ordered, which scatters a category like Home
-            // across several separated blocks. Grouping instead — largest first,
-            // same colours as the donut — answers "what did the day add up to"
-            // the way the ring does, without needing to read every block's order.
-            Text("Grouped by activity").font(.caption).foregroundStyle(.secondary).padding(.top, 6)
-            GeometryReader { proxy in
-                HStack(spacing: 2) {
-                    ForEach(snapshot.slices.filter { $0.hours > 0 }) { slice in
-                        Button { selectedSlice = slice } label: {
-                            RoundedRectangle(cornerRadius: 4).fill(slice.color)
-                        }
-                        .buttonStyle(.plain)
-                        .frame(width: max(3, proxy.size.width * slice.hours / max(snapshot.totalHours, 0.01)))
-                        .accessibilityLabel("\(slice.name), \(formatHours(slice.hours))")
-                        .accessibilityHint("Review and edit visits")
-                    }
-                }
+            // The grouped-by-activity bar that sat here is gone. It said the same thing
+            // as the donut below — largest first, same colours — in a second shape, and
+            // the donut says it better because it is labelled.
+            if snapshot.unloggedHours > 0.25 {
+                // The honest caveat on every number on this screen, kept where the day
+                // is rather than filed under the app's own plumbing.
+                Text("\(formatHours(snapshot.unloggedHours)) of the day is not logged.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
-            .frame(height: 34)
         }.padding(20).lifeCard()
     }
 
@@ -481,6 +491,16 @@ struct InsightsView: View {
         }.padding(20).lifeCard()
     }
 
+    /// The colour this activity wears everywhere else on the screen.
+    ///
+    /// Taken from the slice rather than recomputed, so the bar here cannot end up a
+    /// different shade from the same activity in the donut above it. A name that only
+    /// existed in the previous period has no slice, and falls back to its group.
+    private func changeColor(for name: String) -> Color {
+        snapshot.slices.first { $0.name == name }?.color
+            ?? categoryColor(forCategory: ActivityCatalog.category(for: name))
+    }
+
     private var activityChangesSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Activity changes").font(.title2.bold())
@@ -490,29 +510,35 @@ struct InsightsView: View {
                 let maximum = max(snapshot.comparisons.map { abs($0.delta) }.max() ?? 0, 0.01)
                 ForEach(snapshot.comparisons.prefix(6)) { item in
                     VStack(alignment: .leading, spacing: 5) {
-                        HStack { Text(item.name).font(.subheadline.bold()); Spacer(); Text("\(item.delta >= 0 ? "+" : "−")\(formatHours(abs(item.delta)))").foregroundStyle(item.delta >= 0 ? .orange : .blue) }
+                        HStack {
+                            Text(item.name).font(.subheadline.bold())
+                            Spacer()
+                            // The sign carries the direction. These used to be orange
+                            // for up and blue for down, which put a second colour
+                            // language on a screen where colour already means activity
+                            // — Home read as orange here and green in the bar above it.
+                            Text("\(item.delta >= 0 ? "+" : "−")\(formatHours(abs(item.delta)))")
+                                .font(.subheadline.monospacedDigit())
+                                .foregroundStyle(.primary)
+                        }
                         GeometryReader { proxy in
-                            Capsule().fill((item.delta >= 0 ? Color.orange : Color.blue).opacity(0.8))
+                            Capsule().fill(changeColor(for: item.name).opacity(0.85))
                                 .frame(width: max(4, proxy.size.width * abs(item.delta) / maximum))
                         }.frame(height: 8)
                     }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(item.name), \(item.delta >= 0 ? "up" : "down") \(formatHours(abs(item.delta)))")
                 }
             }
         }.padding(20).lifeCard()
     }
 
-    private var dataQualitySection: some View {
-        Group {
-            if snapshot.provisionalCount > 0 || snapshot.supersededCount > 0 || snapshot.unloggedHours > 0.25 {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Timeline quality").font(.title2.bold())
-                    if snapshot.provisionalCount > 0 { Label("\(snapshot.provisionalCount) location callbacks need review", systemImage: "questionmark.circle") }
-                    if snapshot.supersededCount > 0 { Label("\(snapshot.supersededCount) duplicate callbacks resolved", systemImage: "checkmark.circle") }
-                    if snapshot.unloggedHours > 0.25 { Label("\(formatHours(snapshot.unloggedHours)) is not logged", systemImage: "clock.badge.questionmark") }
-                }.padding(20).lifeCard()
-            }
-        }
-    }
+    // The "Timeline quality" card lived here. It reported the app's own plumbing —
+    // callbacks reviewed, duplicates resolved — on a screen that answers where the
+    // time went, and it rendered narrower than every other card because it was the
+    // only one with nothing full-width inside it to stretch it. Those counts are in
+    // Settings → Diagnostics now. The one line that was about the day rather than the
+    // app, unlogged time, is a footnote under the day bar.
 
     private var placesSection: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -917,9 +943,13 @@ struct InsightsView: View {
         let startedAt = Date.now
         // The generation is captured with the input. A write arriving during
         // aggregation will post invalidation and trigger a fresh rebuild.
-        let cacheKey = "\(window.rawValue)|\(anchorDate.timeIntervalSinceReferenceDate)|\(Int(now.timeIntervalSinceReferenceDate / 60))|\(visits.count)"
+        // Home is part of the key: moving or resizing the saved place changes what
+        // counts as time away from it, and a stale snapshot would not know.
+        let home = InsightsSnapshot.HomePlace(homePlace)
+        let homeKey = home.map { "\($0.latitude),\($0.longitude),\($0.radius)" } ?? "none"
+        let cacheKey = "\(window.rawValue)|\(anchorDate.timeIntervalSinceReferenceDate)|\(Int(now.timeIntervalSinceReferenceDate / 60))|\(visits.count)|\(homeKey)"
         snapshot = snapshotCache.snapshot(key: cacheKey, generation: aggregationGeneration) {
-            InsightsSnapshot.make(visits: visits, window: window, anchorDate: anchorDate, now: now)
+            InsightsSnapshot.make(visits: visits, window: window, anchorDate: anchorDate, now: now, home: home)
         }
         Diagnostics.performance(context, subsystem: "Insights", operation: "snapshot rebuild",
                                 startedAt: startedAt, itemCount: visits.count)

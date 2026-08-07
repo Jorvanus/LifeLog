@@ -1,5 +1,28 @@
 # Change log
 
+## 2026-08-08
+
+### Home is a place, not a word
+
+- "Time away from Home" decided what counted as home by looking for the letters "home" in a place name or activity. Anywhere carrying them — a Homemaker Centre, a suburb called Homebush — counted as being home, and a home saved under any other name did not.
+- It now measures against the place you saved as Home: its coordinate and its radius. A stay there counts as home even when Core Location never worked out what to call it. With no Home saved, the wording is still read, because then the name genuinely is all there is.
+
+### Your day fits inside its card
+
+- Each block in the 24-hour bar took its share of the full width, and then a gap was added between every pair on top of that — so the bar overran the card by two points per block, worse the more broken up the day was. The gaps come out of the width first now.
+- The "Grouped by activity" bar below it is gone. It said what the donut says, in a second shape, without the labels that make the donut readable.
+- Unlogged time moved here as a footnote under the day, which is where a caveat about the day belongs.
+
+### One colour language on Insights
+
+- Activity changes drew its bars orange for up and blue for down, on a screen where colour otherwise means *which activity*. Home read as orange there and green in the bar directly above it.
+- The bars now wear each activity's own colour, taken from the same slice the donut uses so the two cannot drift apart, and the **+** or **−** carries the direction on its own. VoiceOver says "up" or "down" outright, since colour is no longer doing that job.
+
+### Timeline quality moved to Diagnostics
+
+- Callbacks reviewed and duplicates resolved are the app reporting on its own plumbing, on a screen that answers where your time went. They are in **Settings → Diagnostics** now, counted from the store directly so that screen no longer depends on Insights having been opened first.
+- It was also the only card on Insights narrower than the rest — nothing inside it was full-width, so it shrank to fit its own text while every sibling was stretched by a progress bar or a chart.
+
 ## 2026-08-07
 
 ### On this day

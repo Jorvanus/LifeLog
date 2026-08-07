@@ -4,12 +4,32 @@ import SwiftData
 struct DiagnosticsView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \DiagnosticEvent.createdAt, order: .reverse) private var diagnostics: [DiagnosticEvent]
+    /// Counted from the store rather than handed over by Insights, so this screen does
+    /// not depend on that one having been opened first.
+    @Query(filter: #Predicate<Visit> { $0.source == "automatic-superseded" })
+    private var supersededVisits: [Visit]
+    @Query(filter: #Predicate<Visit> { $0.source == "automatic" })
+    private var automaticVisits: [Visit]
     @State private var reportURL: URL?
     @State private var confirmingClear = false
     @State private var message: String?
 
+    /// A stay Core Location named but nobody has agreed with. The same test the review
+    /// queue uses, so the two cannot report different numbers.
+    private var provisionalCount: Int {
+        automaticVisits.count { $0.needsReview }
+    }
+
     var body: some View {
         List {
+            // Moved off Insights, which answers "where did my time go" and had no
+            // business reporting the app's own plumbing. A resolved duplicate callback
+            // is a fact about the recorder, and this is where the recorder accounts
+            // for itself.
+            Section("Timeline quality") {
+                LabeledContent("Stays needing review", value: "\(provisionalCount)")
+                LabeledContent("Duplicate callbacks resolved", value: "\(supersededVisits.count)")
+            }
             Section("Summary") {
                 LabeledContent("Events retained", value: "\(diagnostics.count)")
                 LabeledContent("Subsystems", value: "\(Set(diagnostics.map(\.subsystem)).count)")

@@ -136,6 +136,63 @@ struct InsightsAwayFromHomeTests {
         #expect(snapshot.awayFromHomeHours > 0)
     }
 
+    /// Where home is, once the person has said where home is.
+    private static let homeCoordinate = (latitude: -23.4454, longitude: 150.4581)
+    private var savedHome: InsightsSnapshot.HomePlace {
+        .init(latitude: Self.homeCoordinate.latitude,
+              longitude: Self.homeCoordinate.longitude, radius: 100)
+    }
+
+    private func stay(_ startHour: Double, _ endHour: Double, place: String, activity: String,
+                      latitude: Double, longitude: Double) -> Visit {
+        Visit(arrival: day.addingTimeInterval(startHour * 3600),
+              departure: day.addingTimeInterval(endHour * 3600),
+              latitude: latitude, longitude: longitude,
+              placeName: place, inferredActivity: activity, userActivity: activity,
+              source: "automatic", recognitionConfidence: "learned")
+    }
+
+    /// "Home" was a substring test, so anywhere carrying those four letters counted as
+    /// being home — a Homemaker Centre, a suburb called Homebush. A saved place has a
+    /// coordinate and a radius, which cannot be misread.
+    @Test("A place merely named like home is still time away from it")
+    func aPlaceNamedLikeHomeIsNotHome() {
+        let visits = [stay(9, 12, place: "Rockhampton Homemaker Centre", activity: "Shopping",
+                           latitude: -23.378, longitude: 150.511)]
+        let snapshot = InsightsSnapshot.make(
+            visits: visits, window: .day, anchorDate: day,
+            now: day.addingTimeInterval(12 * 3600), home: savedHome
+        )
+        #expect(snapshot.awayFromHomeHours > 0, "kilometres away is not home, whatever it is called")
+    }
+
+    /// And the reverse: the place decides, so a stay there is home even when Core
+    /// Location never worked out what to call it.
+    @Test("An unnamed stay at the saved home is not time away")
+    func anUnnamedStayAtHomeIsHome() {
+        let visits = [stay(0, 12, place: Visit.unknownPlaceName, activity: "Visiting",
+                           latitude: Self.homeCoordinate.latitude,
+                           longitude: Self.homeCoordinate.longitude)]
+        let snapshot = InsightsSnapshot.make(
+            visits: visits, window: .day, anchorDate: day,
+            now: day.addingTimeInterval(12 * 3600), home: savedHome
+        )
+        #expect(snapshot.awayFromHomeHours == 0)
+    }
+
+    /// With no home saved the wording is genuinely all there is, so the older reading
+    /// has to survive rather than every hour becoming time away.
+    @Test("Without a saved home the name is still read")
+    func withoutASavedHomeTheNameIsUsed() {
+        let visits = [stay(0, 12, place: "Home", activity: "At home",
+                           latitude: -23.378, longitude: 150.511)]
+        let snapshot = InsightsSnapshot.make(
+            visits: visits, window: .day, anchorDate: day,
+            now: day.addingTimeInterval(12 * 3600), home: nil
+        )
+        #expect(snapshot.awayFromHomeHours == 0)
+    }
+
     /// A visit that names its own place is away from home whatever else claims
     /// those minutes — an open Home stay overlapping it must not absorb it.
     @Test("A place visit overlapping an open home stay is still time away")

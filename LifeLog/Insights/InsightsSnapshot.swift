@@ -41,7 +41,45 @@ struct InsightsSnapshot {
         awayFromHomeHours: 0, unloggedHours: 0, provisionalCount: 0, supersededCount: 0
     )
 
-    static func make(visits: [Visit], window: InsightWindow, anchorDate: Date, now: Date) -> InsightsSnapshot {
+    /// Where home is, as a place rather than a word.
+    ///
+    /// "Home" used to be a substring test on the place name or activity, so anywhere
+    /// containing those four letters — a Homemaker Centre, a suburb called Homebush —
+    /// counted as being home, while a home saved under any other name did not. The
+    /// Saved Place has a coordinate and a radius, which is a fact.
+    struct HomePlace: Equatable, Sendable {
+        let latitude: Double
+        let longitude: Double
+        let radius: CLLocationDistance
+
+        init(latitude: Double, longitude: Double, radius: CLLocationDistance) {
+            self.latitude = latitude
+            self.longitude = longitude
+            self.radius = max(radius, 1)
+        }
+
+        init?(_ place: SavedPlace?) {
+            guard let place else { return nil }
+            self.init(latitude: place.latitude, longitude: place.longitude, radius: place.radius)
+        }
+
+        func contains(_ visit: Visit) -> Bool {
+            guard visit.latitude != 0 || visit.longitude != 0 else { return false }
+            return CLLocation(latitude: latitude, longitude: longitude)
+                .distance(from: CLLocation(latitude: visit.latitude, longitude: visit.longitude)) <= radius
+        }
+    }
+
+    /// Falls back to the wording when no home has been saved, because then the name is
+    /// genuinely all there is — but the saved place wins wherever there is one.
+    private static func isHome(_ visit: Visit, home: HomePlace?) -> Bool {
+        if let home { return home.contains(visit) }
+        return visit.displayPlaceName.localizedCaseInsensitiveContains("home")
+            || visit.suspectedActivity.localizedCaseInsensitiveContains("home")
+    }
+
+    static func make(visits: [Visit], window: InsightWindow, anchorDate: Date, now: Date,
+                     home: HomePlace? = nil) -> InsightsSnapshot {
         let interval = window.interval(containing: anchorDate)
         // Current periods end “now”; otherwise future time would dominate the donut as unlogged.
         let analysisInterval = interval.contains(now)
@@ -82,19 +120,19 @@ struct InsightsSnapshot {
         // doing and carry no place of their own, so the surrounding stay is the only
         // thing that knows where it happened. A location visit states its own place —
         // it is away from home whatever else claims those minutes.
-        let homeVisits = locationVisits.filter {
-            $0.displayPlaceName.localizedCaseInsensitiveContains("home") ||
-            $0.suspectedActivity.localizedCaseInsensitiveContains("home")
-        }
+        let homeVisits = locationVisits.filter { isHome($0, home: home) }
         let awayFromHomeHours = segments.filter { segment in
-            guard !segment.isUnlogged,
-                  !segment.activity.localizedCaseInsensitiveContains("home"),
-                  !(segment.placeName?.localizedCaseInsensitiveContains("home") ?? false)
-            else { return false }
-            guard let visit = segment.visit, ActivityLocationPolicy.isDeviceActivity(visit) else { return true }
-            return !homeVisits.contains { home in
-                home.arrival < segment.end && (home.departure ?? now) > segment.start
+            guard !segment.isUnlogged else { return false }
+            if let visit = segment.visit {
+                if isHome(visit, home: home) { return false }
+                guard ActivityLocationPolicy.isDeviceActivity(visit) else { return true }
+                return !homeVisits.contains { home in
+                    home.arrival < segment.end && (home.departure ?? now) > segment.start
+                }
             }
+            // No visit behind the segment, so its wording is all there is to read.
+            return !segment.activity.localizedCaseInsensitiveContains("home")
+                && !(segment.placeName?.localizedCaseInsensitiveContains("home") ?? false)
         }.reduce(0) { $0 + $1.hours }
         let unloggedHours = segments.filter(\.isUnlogged).reduce(0) { $0 + $1.hours }
         let periodVisits = visits.filter { $0.overlaps(analysisInterval, now: now) }
