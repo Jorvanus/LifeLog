@@ -2,6 +2,14 @@
 
 ## 2026-08-07
 
+### Deleting an activity no longer decides its group by accident
+
+- Deleting `Eating` left every meal grouped under Food & Drink. Deleting `Work` moved 2,732 visits to "Other". Same action, opposite result, and nothing on screen explained why: a hand-written list inside the app happened to mention one name and not the other.
+- That list held the same facts as the shipped activity list, in a second copy nothing kept in step. Eight shipped activities were missing from it — `Work`, `Commuting`, `Home time`, `Swimming`, `Yoga`, `Strength training` among them — and each lost its group when deleted. Yesterday's rename of `Working` to `Work` left it pointing at a name the app no longer ships, which is the same fault happening again in miniature.
+- There is one list now. The group a deleted activity keeps is read from the shipped activities themselves, so it cannot fall out of step with them, and all eight are covered.
+- Re-grouping a shipped activity in Settings now works. The hand-written list answered first and never consulted your catalogue, so moving `Eating` to a group of your own was quietly ignored.
+- An activity you named yourself still falls to "Other" when you delete it. LifeLog knows what `Swimming` means and does not know what your own label means, and inventing a group for it would be a worse answer than admitting that.
+
 ### Inference finally uses your word for work
 
 - Adopting `Work` from your history was supposed to make inference write `Work`. It kept writing `Working`, because the label LifeLog ships with is itself called `Working`: resolving a label takes an exact catalogue match before it tries the rule that folds `Working` and `Work` together, so the shipped entry matched itself and the one you adopted was never reachable.

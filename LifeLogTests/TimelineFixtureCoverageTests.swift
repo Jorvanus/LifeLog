@@ -237,6 +237,45 @@ struct TimelineFixtureCoverageTests {
         #expect(!names.contains("Working"))
     }
 
+    /// The test that makes the drift impossible rather than merely fixed. A shipped
+    /// activity used to keep its group after deletion only if someone had typed it into
+    /// a hand-written switch; eight never were, so deleting `Work` moved 2,732 visits
+    /// to "Other" while deleting `Eating` did nothing. Nothing checked the two lists
+    /// agreed, so renaming a shipped activity silently stranded its group.
+    @Test("Every shipped activity keeps its group after it is deleted")
+    func deletingAShippedActivityKeepsItsGroup() throws {
+        let defaults = try #require(UserDefaults(suiteName: UUID().uuidString))
+        ActivityCatalog.withStorage(defaults) {
+            // A catalogue with none of the shipped entries in it: the state that
+            // deleting one puts that name into.
+            ActivityCatalog.save([ActivityDefinition(name: "Zzz placeholder", category: "Other",
+                                                     symbol: "circle")])
+            var stranded: [String] = []
+            for entry in ActivityCatalog.defaults
+            where ActivityCatalog.category(for: entry.name) != entry.category {
+                stranded.append("\(entry.name) → \(ActivityCatalog.category(for: entry.name)), expected \(entry.category)")
+            }
+            #expect(stranded.isEmpty, "lost their group: \(stranded.joined(separator: "; "))")
+
+            // The wording an older build shipped, and what the inference rules call the
+            // concept, both still resolve — an archive is full of "Working".
+            #expect(ActivityCatalog.category(for: "Working") == "Work")
+            #expect(ActivityCatalog.category(for: "Traveling") == "Travel")
+        }
+    }
+
+    @Test("A group chosen in Settings outranks the one LifeLog ships")
+    func catalogueCategoryWinsOverTheShippedOne() throws {
+        let defaults = try #require(UserDefaults(suiteName: UUID().uuidString))
+        ActivityCatalog.withStorage(defaults) {
+            // Re-grouping a shipped activity used to do nothing: the hand-written switch
+            // answered first and never consulted the catalogue at all.
+            ActivityCatalog.save([ActivityDefinition(name: "Eating", category: "Social",
+                                                     symbol: "fork.knife")])
+            #expect(ActivityCatalog.category(for: "Eating") == "Social")
+        }
+    }
+
     @Test("The activities list reads alphabetically whatever order it was built in")
     func activitiesSortByName() {
         let unsorted = [

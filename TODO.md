@@ -13,7 +13,6 @@ Dynamic Type at that size. Nothing here is App Store readiness work.
 ## Now — small changes, real consequences
 
 - [ ] **Prove a background save failure actually gets recorded.** Failures are queued outside SwiftData now (2026-08-07) and flushed into Diagnostics at the next successful save or launch, so an overnight failure should be on screen by morning. Nothing has yet made a real one fail — only a unit test has. Worth forcing once, by locking the phone with the store's protection class raised, and checking the entry survives a relaunch.
-- [ ] `ActivityCatalog.category(for:)` checks a hardcoded switch before the catalogue, so seeded names keep their group even after deletion while adopted ones lose theirs. That is why deleting `Eating` is harmless and deleting `Work` moved 2,732 visits to "Other". Either drop the switch and let the catalogue be the single source, or keep it and say so where it matters.
 
 ## Location accuracy
 

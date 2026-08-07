@@ -113,27 +113,32 @@ enum ActivityCatalog {
         storage.set(data, forKey: storageKey)
     }
 
+    /// The group an activity counts towards in Insights.
+    ///
+    /// Asked in three passes, most authoritative first.
+    ///
+    /// This used to open with a hand-written switch of two dozen names, ahead of the
+    /// catalogue. It held the same facts as `defaults` in a second copy that nothing
+    /// kept in step, so the two drifted: eight shipped activities were missing from it,
+    /// and renaming the seeded `Working` to `Work` in 1.23.2 left it matching a name the
+    /// app no longer ships while the live one was absent. Deleting `Eating` was harmless
+    /// and deleting `Work` sent 2,732 visits to "Other", for no reason visible from the
+    /// screen — which of the two had been typed into the switch was the whole difference.
+    ///
+    /// Being first was the other half of the fault: a name in the switch took its group
+    /// from there whatever the catalogue said, so re-grouping `Eating` in Settings did
+    /// nothing at all.
     static func category(for activity: String) -> String {
         let key = activity.trimmingCharacters(in: .whitespacesAndNewlines)
-        switch key.lowercased() {
-        case "at home": return "Home"
-        case "working": return "Work"
-        case "eating": return "Food & Drink"
-        case "coffee", "beers", "breakfast", "lunch", "dining out": return "Food & Drink"
-        case "concert", "football": return "Entertainment"
-        case "shopping": return "Shopping"
-        case "exercising", "walking", "running", "cycling": return "Fitness"
-        case "healthcare": return "Healthcare"
-        case "studying": return "Education"
-        case "travelling", "traveling", "in transit": return "Travel"
-        case "socialising", "socializing": return "Social"
-        case "watching a movie": return "Entertainment"
-        case "sleeping": return "Sleep"
-        default: break
-        }
+        // The person's own list first. It is the one they edit, so a group they chose
+        // has to outrank anything LifeLog assumes about the name.
         if let match = load().first(where: { $0.name.caseInsensitiveCompare(key) == .orderedSame }) {
             return match.category
         }
+        // Then what LifeLog ships, read from `defaults` rather than restated. Reached
+        // when the entry has been deleted, or when history holds a label the catalogue
+        // never had — a name the app ships still means what it always meant.
+        if let shipped = shippedCategory(for: key) { return shipped }
         let text = key.lowercased()
         if text.contains("sleep") { return "Sleep" }
         if text.contains("walk") || text.contains("run") || text.contains("cycl") || text.contains("exercise") {
@@ -142,6 +147,28 @@ enum ActivityCatalog {
         if text.contains("travel") || text.contains("transit") { return "Travel" }
         return "Other"
     }
+
+    /// The group a name LifeLog ships with belongs to, whether or not the catalogue
+    /// still holds it. Derived from `defaults`, so adding or renaming a shipped
+    /// activity cannot leave a stale second copy behind.
+    private static func shippedCategory(for name: String) -> String? {
+        let key = name.lowercased()
+        if let entry = defaults.first(where: { $0.name.lowercased() == key }) { return entry.category }
+        guard let shipped = alternativeSpellings[key] else { return nil }
+        return defaults.first { $0.name.lowercased() == shipped.lowercased() }?.category
+    }
+
+    /// Other spellings of a shipped name, mapped to the shipped one rather than to a
+    /// group — so these stay derived too and cannot disagree with `defaults`.
+    ///
+    /// `working` is here because it is what the inference rules call the concept
+    /// (`InferenceEngine.canonicalActivity`), and because it was the shipped label
+    /// before 1.23.2, so a long archive is full of it.
+    private static let alternativeSpellings = [
+        "traveling": "Travelling",
+        "socializing": "Socialising",
+        "working": "Work"
+    ]
 
     /// The groups LifeLog ships with. A starting point, not the whole list: the
     /// person can add their own, so read `categories` rather than this.
