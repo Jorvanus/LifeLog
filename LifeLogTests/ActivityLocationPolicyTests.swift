@@ -433,6 +433,73 @@ struct ActivityLocationPolicyTests {
                                                            locationVisits: [home, park], now: now) == false)
     }
 
+    /// The morning of 8 August: Home closed at 07:02:44, the walk began at 07:16:22, and
+    /// the fourteen minutes of getting up between them belonged to nothing. Insights was
+    /// right to call it unlogged — nothing had recorded it.
+    @Test("A stay closed shortly before the walk that left it holds until the walk")
+    func stayHoldsUntilTheWalkThatLeftIt() {
+        let home = Visit(arrival: base.addingTimeInterval(-9 * 3600),
+                         departure: base, latitude: -23.4454, longitude: 150.4581,
+                         placeName: "Home", inferredActivity: "At home", source: "automatic")
+        let walkStart = base.addingTimeInterval(13.6 * 60)
+        let walk = Visit(arrival: walkStart, departure: walkStart.addingTimeInterval(48 * 60),
+                         latitude: 0, longitude: 0, placeName: "Walking workout",
+                         inferredActivity: "Walking", source: "health-workout")
+
+        let extended = ActivityLocationPolicy.extendStay(
+            upTo: DateInterval(start: walk.arrival, end: walk.departure!),
+            stays: [home], activities: [walk]
+        )
+
+        #expect(extended)
+        #expect(home.departure == walkStart, "the gap belonged to the stay the walk left")
+    }
+
+    /// The inference is only sound across silence. Anything recorded in the gap is
+    /// evidence of what happened in it, and the stay must not be stretched over it.
+    @Test("A stay is not stretched over minutes something else already claims")
+    func stayIsNotStretchedOverOtherRecords() {
+        let home = Visit(arrival: base.addingTimeInterval(-9 * 3600),
+                         departure: base, latitude: -23.4454, longitude: 150.4581,
+                         placeName: "Home", inferredActivity: "At home", source: "automatic")
+        // A shop stop between leaving home and setting off.
+        let shop = Visit(arrival: base.addingTimeInterval(2 * 60),
+                         departure: base.addingTimeInterval(6 * 60),
+                         latitude: -23.38, longitude: 150.52, placeName: "Gracemere Shopping World",
+                         inferredActivity: "Shopping", source: "automatic")
+        let walkStart = base.addingTimeInterval(10 * 60)
+        let walk = Visit(arrival: walkStart, departure: walkStart.addingTimeInterval(30 * 60),
+                         latitude: 0, longitude: 0, placeName: "Walking workout",
+                         inferredActivity: "Walking", source: "health-workout")
+
+        let extended = ActivityLocationPolicy.extendStay(
+            upTo: DateInterval(start: walk.arrival, end: walk.departure!),
+            stays: [home], activities: [shop, walk]
+        )
+
+        #expect(!extended)
+        #expect(home.departure == base, "the shop says where those minutes went")
+    }
+
+    /// Minutes after a departure the person is almost certainly still there. Hours after
+    /// it they could be anywhere, and claiming otherwise would be invention.
+    @Test("A long silence is not filled in")
+    func aLongGapIsLeftAlone() {
+        let home = Visit(arrival: base.addingTimeInterval(-9 * 3600),
+                         departure: base, latitude: -23.4454, longitude: 150.4581,
+                         placeName: "Home", inferredActivity: "At home", source: "automatic")
+        let walkStart = base.addingTimeInterval(ActivityLocationPolicy.departureCatchUp + 60)
+        let walk = Visit(arrival: walkStart, departure: walkStart.addingTimeInterval(30 * 60),
+                         latitude: 0, longitude: 0, placeName: "Walking workout",
+                         inferredActivity: "Walking", source: "health-workout")
+
+        #expect(!ActivityLocationPolicy.extendStay(
+            upTo: DateInterval(start: walk.arrival, end: walk.departure!),
+            stays: [home], activities: [walk]
+        ))
+        #expect(home.departure == base)
+    }
+
     @Test("A walk out the door bounds the stay instead of being deleted")
     func walkBoundsTheStayItLeft() throws {
         let context = try makeContext()

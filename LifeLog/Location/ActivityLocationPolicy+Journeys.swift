@@ -60,6 +60,49 @@ extension ActivityLocationPolicy {
     }
 
 
+    /// The mirror of `boundStay`: a stay Core Location closed *before* the journey that
+    /// left it, leaving a hole where the person was still there.
+    ///
+    /// A departure is timed from a geofence crossing or implied by a later arrival, not
+    /// from the moment somewhere stopped being where you were. On 8 August a Home stay
+    /// closed at 07:02:44 and the morning's walk began at 07:16:22, so fourteen minutes
+    /// of getting up and getting ready belonged to nothing and Insights reported them,
+    /// correctly, as unlogged.
+    ///
+    /// Nothing is invented here. If the person had gone anywhere in that gap there would
+    /// be a record of it, and the guard below refuses to act when one exists. What is
+    /// left is a stay, a journey out of it, and no evidence of anything in between —
+    /// under which the only reading the records allow is that they had not left yet.
+    ///
+    /// Bounded by `departureCatchUp` because the inference weakens with time: minutes
+    /// after a departure the person is almost certainly still there, hours after it they
+    /// could be anywhere, and "must have been home" would then be a guess wearing the
+    /// clothes of a measurement.
+    @discardableResult
+    nonisolated static func extendStay(upTo movement: DateInterval, stays: [Visit],
+                                       activities: [Visit]) -> Bool {
+        let candidates = stays.filter { stay in
+            guard stay.source == "automatic", let departure = stay.departure else { return false }
+            guard departure < movement.start,
+                  movement.start.timeIntervalSince(departure) <= departureCatchUp else { return false }
+            // Anything recorded inside the gap is evidence of what happened in it, and
+            // it is not this. A stay is only stretched across silence.
+            return !activities.contains { other in
+                other !== stay && other.arrival < movement.start
+                    && (other.departure ?? other.arrival) > departure
+            }
+        }
+        guard let stay = candidates.max(by: { ($0.departure ?? $0.arrival) < ($1.departure ?? $1.arrival) })
+        else { return false }
+        stay.departure = movement.start
+        return true
+    }
+
+    /// How long after a stay closes a following journey can still be read as the moment
+    /// the person actually left. Half an hour: long enough for waking up, getting ready
+    /// and finding your shoes, short enough that it cannot swallow a real absence.
+    nonisolated static let departureCatchUp: TimeInterval = 30 * 60
+
     /// The stay a movement record began inside. Only Core Location's own timing is
     /// ever adjusted: a manual entry states when the person says they were somewhere,
     /// and no device sample overrides that.
@@ -116,11 +159,12 @@ extension ActivityLocationPolicy {
     }
 
 
-    /// Applies `boundStay` to every movement record in date order, so a day with
-    /// several outings resolves against the stay each one actually left.
-    @discardableResult
+    /// Resolves every movement record against the stay it left, in date order, so a day
+    /// with several outings settles each one against the right stay.
+    ///
     /// Internal rather than private: reconciliation drives this, and the two live in
     /// different files now. It is the one member of this concern another one reaches for.
+    @discardableResult
     static func boundStays(around activities: [Visit], stays: [Visit],
                                    context: ModelContext? = nil, now: Date = .now) -> [Visit] {
         var stays = stays
@@ -130,6 +174,7 @@ extension ActivityLocationPolicy {
             .sorted { $0.arrival < $1.arrival }
         for record in movement {
             guard let end = record.departure, end > record.arrival else { continue }
+            let interval = DateInterval(start: record.arrival, end: end)
             // A recorded path is the stronger evidence, so it is asked first; the
             // timing rule only decides journeys with no route to consult.
             if let context, let stay = separateStay(around: record, stays: stays, now: now) {
@@ -138,7 +183,12 @@ extension ActivityLocationPolicy {
                 resumed.append(stay)
                 continue
             }
-            boundStay(departedWith: DateInterval(start: record.arrival, end: end), stays: stays)
+            // The two timing corrections are opposites and cannot both apply: a stay's
+            // departure either lands after this journey began, or before it. Try to pull
+            // it back first, and only reach forward when there was nothing to pull.
+            if !boundStay(departedWith: interval, stays: stays) {
+                extendStay(upTo: interval, stays: stays, activities: activities)
+            }
         }
         return resumed
     }

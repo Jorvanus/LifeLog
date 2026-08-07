@@ -2,6 +2,13 @@
 
 ## 2026-08-08
 
+### The minutes before a walk belong to where you were
+
+- Getting up at home before this morning's walk showed as fourteen minutes of "Unlogged". Home closed at 07:02:44, the walk began at 07:16:22, and nothing at all claimed the time between — so Insights was right, and the recording was what was missing.
+- Core Location times a departure from a geofence crossing, not from the moment somewhere stopped being where you were. A stay closed shortly before the journey that left it now holds until that journey begins.
+- Nothing is invented. If you had gone somewhere in the gap there would be a record of it, and the rule refuses when one exists. It also refuses after half an hour, past which "must have still been home" would be a guess rather than the only reading the records allow.
+- Applies to timelines already recorded, not only to new ones — so mornings already logged this way are corrected too, and their numbers will shift slightly.
+
 ### The donut fills its card, and you can scroll past it
 
 - Scrolling over the chart did nothing. It carried a zero-distance drag gesture to catch taps, and that claims *every* drag beginning anywhere on it — so the ring was a dead zone the height of the card and the page could only be moved around it. It reads taps as taps now, and lets a drag through.

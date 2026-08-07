@@ -24,9 +24,10 @@ struct TimelineView: View {
     // Dynamic Type glyph overflows a fixed-size circle at accessibility sizes.
     @ScaledMetric(relativeTo: .title2) private var addButtonDiameter: CGFloat = 56
     // Bump this marker whenever reconciliation learns a new rule, so an installed
-    // timeline is repaired once rather than only new records benefiting. v4 no longer
-    // reads a walk inside an unbounded stay as leaving, so the walk is reabsorbed.
-    @AppStorage("location-policy-reconciled-v4") private var locationPolicyReconciled = false
+    // timeline is repaired once rather than only new records benefiting. v5 holds a
+    // stay open until the journey that left it, closing the gap Core Location leaves
+    // between a departure it timed early and the walk that actually ended the stay.
+    @AppStorage("location-policy-reconciled-v5") private var locationPolicyReconciled = false
     // Undoes the stays v3 split in two before reconciliation runs again.
     @AppStorage("stay-splits-rejoined-v1") private var staySplitsRejoined = false
     // Puts back together the workouts the import path used to cut up at stay boundaries.
