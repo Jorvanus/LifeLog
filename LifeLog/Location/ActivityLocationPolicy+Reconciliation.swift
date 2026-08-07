@@ -51,6 +51,32 @@ extension ActivityLocationPolicy {
     }
 
 
+    /// Re-applies the journey timing rules to the last day, every time, cheaply.
+    ///
+    /// The one-shot repair cannot be relied on. `ActivityImportActor` is a `@ModelActor`
+    /// with its own `ModelContext`, and it runs on every launch — so it holds copies of
+    /// the same visits loaded before the repair, and its save writes them back over the
+    /// top. Timeline saved 07:16:22 and the store read 07:02:44 in the same second, on
+    /// every launch, which is why four correct fixes all looked like no fix at all.
+    ///
+    /// Rather than sequence two writers, the correction is simply re-applied. It is
+    /// idempotent — a stay already ending at the journey it left is left alone — and
+    /// scoped to a day, so it costs a filter over recent records rather than a pass over
+    /// the archive. Losing a race then costs a moment instead of a release.
+    @discardableResult
+    static func reapplyRecentJourneyTiming(context: ModelContext, now: Date = .now) throws -> Bool {
+        let visits = try fetchPolicyVisits(context: context)
+        let since = now.addingTimeInterval(-24 * 60 * 60)
+        let recent = visits.filter { isMovementActivity($0) && ($0.departure ?? now) >= since }
+        guard !recent.isEmpty else { return false }
+        let live = visits.filter { isLocationVisit($0) && !isSupersededLocation($0) }
+        let before = live.map(\.departure)
+        boundStays(around: recent, stays: live, now: now)
+        let changed = zip(before, live.map(\.departure)).contains { $0 != $1 }
+        if changed, context.hasChanges { try context.save() }
+        return changed
+    }
+
     /// Cleans timelines created by earlier app versions when the model container opens.
     static func reconcileAll(context: ModelContext, now: Date = .now) throws {
         let visits = try fetchPolicyVisits(context: context)

@@ -2,6 +2,12 @@
 
 ## 2026-08-08
 
+### The gap before a walk closes, and stays closed
+
+- The repair had been correct for four builds and invisible every time. The diagnostics finally caught it: the stay's departure was written as 07:16:22 and read back as 07:02:44 **in the same second**, with the background Health import running in that second.
+- That import has its own store connection and holds its own copies of the same visits, loaded before the repair. It saves last, so its older copies win — on every launch, which is why each fix appeared to do nothing.
+- Rather than sequence two writers, the correction is now re-applied to the last day every time the Timeline appears. It changes nothing when there is nothing to change, and covers a day rather than the archive, so losing the race costs a moment instead of a release.
+
 ### The reconciliation pass now reports what it decided
 
 - Instrumentation, not a fix. A gap between waking up and a morning walk has survived three attempts, and the pass that should close it leaves no trace either way, so each attempt was a guess.
