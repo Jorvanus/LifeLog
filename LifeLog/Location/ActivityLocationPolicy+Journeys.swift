@@ -186,8 +186,20 @@ extension ActivityLocationPolicy {
             // The two timing corrections are opposites and cannot both apply: a stay's
             // departure either lands after this journey began, or before it. Try to pull
             // it back first, and only reach forward when there was nothing to pull.
-            if !boundStay(departedWith: interval, stays: stays) {
-                extendStay(upTo: interval, stays: stays, activities: activities)
+            let bounded = boundStay(departedWith: interval, stays: stays)
+            let extended = bounded ? false : extendStay(upTo: interval, stays: stays,
+                                                        activities: activities)
+            // Reported for recent journeys only, and only when a context is driving this,
+            // so the log says what happened to today's records without writing hundreds
+            // of lines about months of history. Everything else about this pass has been
+            // invisible, which is why it took four wrong theories to get here.
+            if let context, record.arrival > now.addingTimeInterval(-24 * 60 * 60) {
+                let outcome = bounded ? "bounded the stay it left"
+                    : extended ? "held the stay open until it began"
+                    : "changed nothing"
+                Diagnostics.record(context, subsystem: "Timeline",
+                                   message: "Journey \(record.arrival.formatted(date: .omitted, time: .shortened)): \(outcome).",
+                                   severity: "info")
             }
         }
         return resumed

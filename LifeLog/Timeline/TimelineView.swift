@@ -28,7 +28,7 @@ struct TimelineView: View {
     // stay open until the journey that left it; v6 exists because v5 never ran — the
     // marker below was written even when the repair was skipped for an unloaded query,
     // so bumping the key alone could not recover it.
-    @AppStorage("location-policy-reconciled-v6") private var locationPolicyReconciled = false
+    @AppStorage("location-policy-reconciled-v7") private var locationPolicyReconciled = false
     // Undoes the stays v3 split in two before reconciliation runs again.
     @AppStorage("stay-splits-rejoined-v1") private var staySplitsRejoined = false
     // Puts back together the workouts the import path used to cut up at stay boundaries.
@@ -199,6 +199,15 @@ struct TimelineView: View {
                 // every appearance. Large journal imports made that noticeable, so run
                 // it once per installation/version; new visits are reconciled as they
                 // arrive by LocationRecorder.
+                // Before the guard, not after it. The first attempt at this reported
+                // from inside the branch the marker protects, so an already-completed
+                // marker returned in silence — indistinguishable from the block never
+                // being reached, which is the one thing it was meant to tell apart.
+                Diagnostics.record(context, subsystem: "Timeline",
+                                   message: "Reconciliation check: marker \(locationPolicyReconciled ? "set" : "unset"), "
+                                          + "\(visits.count) visits, "
+                                          + "\(visits.filter(ActivityLocationPolicy.isDeviceActivity).count) from a device.",
+                                   severity: "info")
                 guard !locationPolicyReconciled else { return }
                 do {
                     // Journal-only imports do not contain device activity, so there is

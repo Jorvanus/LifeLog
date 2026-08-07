@@ -2,8 +2,14 @@
 
 ## 2026-08-08
 
+### The reconciliation pass now reports what it decided
+
+- Instrumentation, not a fix. A gap between waking up and a morning walk has survived three attempts, and the pass that should close it leaves no trace either way, so each attempt was a guess.
+- Running `reconcileAll` offline over the complete exported store — all 673 recorded visits — closes the gap in under a tenth of a second. On the phone it does not. Every explanation for that has been wrong, so the pass now says what it did to each of the last day's journeys: bounded the stay it left, held the stay open until it began, or changed nothing.
+
 ### The reconciliation pass now says whether it ran
 
+- Reported before any guard, on every appearance, so an already-completed marker cannot return in silence — the first attempt at this logged from inside the branch the marker protects, which made "already done" and "never reached" look identical.
 - A reported gap survived two fixes, and neither could be checked: `Diagnostics.performance` only records operations slower than 250ms, and this pass takes milliseconds — so a repair that ran, and a repair that never ran, left exactly the same trace, which is none.
 - It records either "Reconciliation ran over N visits" or "Reconciliation deferred: N visits loaded, none from a device yet", every time, in **Settings → Diagnostics**. The count distinguishes an empty query from a store genuinely holding no device activity, which are different faults.
 
