@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import LifeLog
 
@@ -439,5 +440,139 @@ struct InsightsWeekdayPatternTests {
         #expect(ordered.count == 7)
         #expect(ordered.first?.weekday == calendar.firstWeekday)
         #expect(Set(ordered.map(\.weekday)) == Set(1...7))
+    }
+}
+
+/// The inputs `InsightsSnapshot.make` is actually given and had never been tested
+/// with: a period only partly elapsed, a day with holes in it, the visit still
+/// running, records the person hid, and an archive rather than a handful of rows.
+@MainActor
+struct InsightsSnapshotInputTests {
+    private let calendar = Calendar(identifier: .gregorian)
+    private let day = Calendar(identifier: .gregorian)
+        .startOfDay(for: Date(timeIntervalSince1970: 1_800_000_000))
+
+    private func visit(_ startHour: Double, _ endHour: Double?, place: String, activity: String,
+                       source: String = "automatic") -> Visit {
+        Visit(arrival: day.addingTimeInterval(startHour * 3600),
+              departure: endHour.map { day.addingTimeInterval($0 * 3600) },
+              latitude: -23.378, longitude: 150.511,
+              placeName: place, inferredActivity: activity, userActivity: activity,
+              source: source, recognitionConfidence: "learned")
+    }
+
+    /// The `min` in `previousInterval` exists so a part-finished day is measured
+    /// against the same number of hours yesterday. Without it every morning would
+    /// report every activity collapsing, because six hours would be compared with a
+    /// full twenty-four.
+    @Test("A part-finished day is compared against the same hours of the day before")
+    func comparisonUsesTheSameElapsedHours() {
+        let now = day.addingTimeInterval(6 * 3600)
+        let today = visit(0, 6, place: "atWork Australia", activity: "Working")
+        // Twelve hours yesterday, of which six fall inside the matching window.
+        let yesterday = visit(-24, -12, place: "atWork Australia", activity: "Working")
+
+        let snapshot = InsightsSnapshot.make(visits: [today, yesterday], window: .day,
+                                             anchorDate: day, now: now)
+
+        #expect(!snapshot.comparisons.contains { abs($0.delta) > 1 },
+                "six hours against the matching six is no change; against the whole day it would read as six lost")
+    }
+
+    /// The same shape, but genuinely different: half as much this morning as in the
+    /// matching hours yesterday has to be reported.
+    @Test("A real change against the matching hours is still reported")
+    func comparisonStillReportsARealChange() {
+        let now = day.addingTimeInterval(6 * 3600)
+        let today = visit(0, 2, place: "atWork Australia", activity: "Working")
+        let yesterday = visit(-24, -18, place: "atWork Australia", activity: "Working")
+
+        let snapshot = InsightsSnapshot.make(visits: [today, yesterday], window: .day,
+                                             anchorDate: day, now: now)
+
+        #expect(snapshot.comparisons.contains { $0.delta <= -3 }, "two hours against six is four fewer")
+    }
+
+    @Test("Hours with nothing recorded are counted as unlogged")
+    func unloggedGapsAreCounted() {
+        let now = day.addingTimeInterval(12 * 3600)
+        let morning = visit(0, 6, place: "Home", activity: "At home")
+
+        let snapshot = InsightsSnapshot.make(visits: [morning], window: .day, anchorDate: day, now: now)
+
+        #expect(abs(snapshot.unloggedHours - 6) < 0.1, "six of the twelve elapsed hours hold nothing")
+        #expect(abs(snapshot.loggedHours - 6) < 0.1)
+    }
+
+    /// The state Insights is in every time it is opened: the current stay has no
+    /// departure. Measured to the end of the day it would claim hours that have not
+    /// happened yet.
+    @Test("The visit still running is measured to now, not to the end of the day")
+    func openVisitIsMeasuredToNow() {
+        let now = day.addingTimeInterval(12 * 3600)
+        let open = visit(8, nil, place: "atWork Australia", activity: "Working")
+
+        let snapshot = InsightsSnapshot.make(visits: [open], window: .day, anchorDate: day, now: now)
+
+        #expect(abs(snapshot.loggedHours - 4) < 0.1, "08:00 until now is four hours, not sixteen")
+        #expect(abs(snapshot.unloggedHours - 8) < 0.1, "and the eight before it hold nothing")
+    }
+
+    @Test("A visit the person hid is left out of the totals and the places")
+    func ignoredVisitsAreExcluded() throws {
+        let container = try ModelContainer(
+            for: Visit.self, SavedPlace.self, VisitCorrection.self, DiagnosticEvent.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let context = ModelContext(container)
+        let kept = visit(0, 4, place: "Home", activity: "At home")
+        let hidden = visit(4, 8, place: "Somewhere Else", activity: "Visiting")
+        [kept, hidden].forEach(context.insert)
+        try context.save()
+        // Ignore state is keyed on the persistent id, so the visit has to be stored
+        // before it can be hidden at all.
+        hidden.isIgnored = true
+        defer { hidden.isIgnored = false }
+
+        let snapshot = InsightsSnapshot.make(visits: [kept, hidden], window: .day,
+                                             anchorDate: day, now: day.addingTimeInterval(8 * 3600))
+
+        #expect(abs(snapshot.loggedHours - 4) < 0.1, "hidden hours are not logged time")
+        #expect(abs(snapshot.unloggedHours - 4) < 0.1, "they are a hole in the day, not someone else's hours")
+        #expect(!snapshot.placeTotals.contains { $0.name == "Somewhere Else" })
+    }
+
+    /// The aggregation was once O(boundaries × visits) and took several seconds on a
+    /// few thousand rows. Nothing has exercised it at archive scale since, so this is
+    /// the guard against it quietly becoming quadratic again. The bound is loose on
+    /// purpose — it is there to catch a collapse, not to police milliseconds.
+    @Test("A year of archive aggregates without becoming quadratic")
+    func aYearOfArchiveAggregates() {
+        let labels = ["Working", "At home", "Shopping", "Eating", "Sleeping"]
+        // Spread across the window actually being analysed. Built from a fixed spacing
+        // instead, the rows landed outside it, and the test passed through in 0.2s
+        // having aggregated nothing at all — proving neither correctness nor speed.
+        let year = InsightWindow.year.interval(containing: day)
+        let now = year.end.addingTimeInterval(-1)
+        let count = 20_000
+        let spacing = year.duration / Double(count)
+        let visits = (0..<count).map { index -> Visit in
+            let arrival = year.start.addingTimeInterval(Double(index) * spacing)
+            return Visit(arrival: arrival, departure: arrival.addingTimeInterval(spacing * 0.8),
+                         latitude: -23.37, longitude: 150.51,
+                         placeName: "Place \(index % 40)",
+                         inferredActivity: labels[index % labels.count],
+                         userActivity: labels[index % labels.count],
+                         source: "imported-journal")
+        }
+
+        let began = Date.now
+        let snapshot = InsightsSnapshot.make(visits: visits, window: .year, anchorDate: day, now: now)
+        let elapsed = Date.now.timeIntervalSince(began)
+
+        #expect(snapshot.loggedHours > 0, "the fixture has to land inside the window to test anything")
+        #expect(!snapshot.slices.isEmpty)
+        #expect(snapshot.totalHours > 0)
+        #expect(elapsed < 15, "20,000 rows took \(String(format: "%.1f", elapsed))s — the aggregation has collapsed")
     }
 }
