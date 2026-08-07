@@ -531,6 +531,57 @@ struct ActivityLocationPolicyTests {
                 "expected \(walkStart) but Home departs \(String(describing: home.departure))")
     }
 
+
+    /// Not three tidy rows: several days of stays and movement either side of the gap,
+    /// the way a real store looks. Written because the narrow version of this passed
+    /// while the fix demonstrably did nothing on a real phone — a store holding only the
+    /// three visits in question is not what `reconcileAll` is ever handed.
+    @Test("The gap closes in a store with days of history around it")
+    func gapClosesAmongHistory() throws {
+        let context = try makeContext()
+        var all: [Visit] = []
+        // Four earlier days, each a stay plus a walk, so `activities` is not a one-item
+        // array and `stays` is not a two-item one.
+        for day in 1...4 {
+            let dayStart = base.addingTimeInterval(-Double(day) * 24 * 3600)
+            all.append(Visit(arrival: dayStart.addingTimeInterval(-9 * 3600),
+                             departure: dayStart, latitude: -23.4454, longitude: 150.4581,
+                             placeName: "Home", inferredActivity: "At home",
+                             source: "automatic", recognitionConfidence: "learned"))
+            all.append(Visit(arrival: dayStart.addingTimeInterval(600),
+                             departure: dayStart.addingTimeInterval(2400),
+                             latitude: 0, longitude: 0, placeName: "Walking workout",
+                             inferredActivity: "Walking", userActivity: "Walking",
+                             source: "health-workout", recognitionConfidence: "device"))
+            all.append(Visit(arrival: dayStart.addingTimeInterval(3600),
+                             departure: dayStart.addingTimeInterval(7200),
+                             latitude: -23.38, longitude: 150.52, placeName: "Work",
+                             inferredActivity: "Working", source: "automatic",
+                             recognitionConfidence: "learned"))
+        }
+        let home = Visit(arrival: base.addingTimeInterval(-9.86 * 3600), departure: base,
+                         latitude: -23.4454, longitude: 150.4581, placeName: "Home",
+                         inferredActivity: "At home", source: "automatic",
+                         recognitionConfidence: "learned")
+        let walkStart = base.addingTimeInterval(13.6 * 60)
+        let walk = Visit(arrival: walkStart, departure: walkStart.addingTimeInterval(48.4 * 60),
+                         latitude: 0, longitude: 0, placeName: "Walking workout",
+                         inferredActivity: "Walking", userActivity: "Walking",
+                         source: "health-workout", recognitionConfidence: "device")
+        let later = Visit(arrival: base.addingTimeInterval(58.6 * 60), departure: nil,
+                          latitude: -23.4454, longitude: 150.4581, placeName: "Home",
+                          inferredActivity: "At home", source: "automatic",
+                          recognitionConfidence: "learned")
+        all += [home, walk, later]
+        all.forEach(context.insert)
+        try context.save()
+
+        try ActivityLocationPolicy.reconcileAll(context: context, now: base.addingTimeInterval(2 * 3600))
+
+        #expect(home.departure == walkStart,
+                "Home departs \(String(describing: home.departure)), expected \(walkStart)")
+    }
+
     @Test("A walk out the door bounds the stay instead of being deleted")
     func walkBoundsTheStayItLeft() throws {
         let context = try makeContext()

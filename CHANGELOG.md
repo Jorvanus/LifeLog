@@ -2,6 +2,11 @@
 
 ## 2026-08-08
 
+### The reconciliation pass now says whether it ran
+
+- A reported gap survived two fixes, and neither could be checked: `Diagnostics.performance` only records operations slower than 250ms, and this pass takes milliseconds — so a repair that ran, and a repair that never ran, left exactly the same trace, which is none.
+- It records either "Reconciliation ran over N visits" or "Reconciliation deferred: N visits loaded, none from a device yet", every time, in **Settings → Diagnostics**. The count distinguishes an empty query from a store genuinely holding no device activity, which are different faults.
+
 ### Timeline repairs were being marked done without running
 
 - The reported 14-minute gap survived the fix meant to close it, and the reason was worse than the gap. Repairs that run once per version are guarded by a stored marker, and that marker was written whether or not the repair actually happened: the work is skipped when the timeline query holds nothing, which on a launch is far more often "not loaded yet" than "nothing to do".

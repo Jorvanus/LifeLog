@@ -213,13 +213,26 @@ struct TimelineView: View {
                     // never run: the flag was written, the work was not, and no later
                     // launch would try again. Every previous bump of this marker was
                     // capable of doing the same.
-                    guard visits.contains(where: ActivityLocationPolicy.isDeviceActivity) else { return }
+                    guard visits.contains(where: ActivityLocationPolicy.isDeviceActivity) else {
+                        // Said out loud, because this is the branch that silently did
+                        // nothing for two releases. `Diagnostics.performance` only records
+                        // operations over 250ms, so a repair that runs in milliseconds —
+                        // or never runs at all — left no trace either way, and the only
+                        // way to tell them apart was to guess.
+                        Diagnostics.record(context, subsystem: "Timeline",
+                                           message: "Reconciliation deferred: \(visits.count) visits loaded, none from a device yet.",
+                                           severity: "info")
+                        return
+                    }
                     let startedAt = Date.now
                     try ActivityLocationPolicy.reconcileAll(context: context)
                     try ActivityLocationPolicy.updateTravelDescriptions(context: context)
                     try context.save()
                     Diagnostics.performance(context, subsystem: "Timeline", operation: "activity reconciliation",
                                             startedAt: startedAt, itemCount: visits.count)
+                    Diagnostics.record(context, subsystem: "Timeline",
+                                       message: "Reconciliation ran over \(visits.count) visits.",
+                                       severity: "info")
                     locationPolicyReconciled = true
                 } catch {
                     // Leave the flag unset so a transient protected-store failure can
