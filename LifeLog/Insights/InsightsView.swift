@@ -382,25 +382,15 @@ struct InsightsView: View {
                 onSelectEntry: { selectedSlice = $0 }
             )
 
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 12) {
-                ForEach(snapshot.slices.filter { $0.hours > 0 }) { slice in
-                    Button { selectedSlice = slice } label: {
-                        HStack(spacing: 9) {
-                            Circle().fill(slice.color).frame(width: 10, height: 10)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(slice.name).font(.subheadline).lineLimit(1)
-                                Text(formatHours(slice.hours)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                            }
-                            Spacer(minLength: 4)
-                            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("\(slice.name), \(formatHours(slice.hours)), category colour \(categoryColorHex(forCategory: slice.name))")
-                    .accessibilityHint(slice.isUnlogged ? "Add a visit" : "Review and edit visits")
-                }
-            }
+            // The legend grid that sat here is gone. Each wedge already carries its icon
+            // and its hours, and tapping one names it in the middle of the ring and turns
+            // that centre into a button onto the same visits the legend rows opened — so
+            // nothing is unreachable, and the card is a chart rather than a chart plus a
+            // list of what the chart just said.
+            //
+            // It is not free: a wedge too thin for a label is now an unidentified colour
+            // until it is tapped, where before there was always a key underneath. The
+            // threshold for showing an icon is set low to keep that rare.
         }
         .padding(18)
         .lifeCard()

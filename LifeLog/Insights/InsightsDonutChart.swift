@@ -46,6 +46,12 @@ struct InsightsDonutChart: View {
         return segments.first { $0.category == focusedSlice.name && $0.isUnlogged == focusedSlice.isUnlogged }
     }
 
+    /// Below this a wedge is too narrow to hold anything legible, and its icon would
+    /// spill over its neighbours.
+    private static let iconLabelShare = 0.035
+    /// And below this there is room for the icon but not the duration under it.
+    private static let fullLabelShare = 0.08
+
     var body: some View {
         ZStack {
             Chart(slices) { slice in
@@ -60,48 +66,54 @@ struct InsightsDonutChart: View {
                 .cornerRadius(6)
                 .foregroundStyle(slice.color.opacity(hasSelection && !selected ? 0.2 : 1))
                 .annotation(position: .overlay) {
-                    if !hasSelection && slice.hours / max(totalHours, 1) > 0.08 {
+                    // The legend under the ring is gone, so a wedge with no label is now
+                    // an unidentifiable colour rather than a colour with a key beside it.
+                    // Anything worth a wedge gets its icon; only the wider ones have room
+                    // for the duration underneath as well.
+                    let share = slice.hours / max(totalHours, 1)
+                    if !hasSelection && share > Self.iconLabelShare {
                         VStack(spacing: 2) {
                             Image(systemName: slice.symbol)
-                            Text(formatHours(slice.hours)).font(.caption.bold())
+                            if share > Self.fullLabelShare {
+                                Text(formatHours(slice.hours)).font(.caption.bold())
+                            }
                         }
                         .foregroundStyle(.white)
                     }
                 }
             }
             .chartLegend(.hidden)
-            // Keep the binding for the selected data value, but explicitly forward each touch
-            // through ChartProxy. The zero-distance drag recognises both taps and short touches
-            // repeatedly, while ChartProxy handles the polar-to-data-angle conversion.
+            // Keep the binding for the selected data value, but forward each tap through
+            // ChartProxy, which handles the polar-to-data-angle conversion.
             .chartAngleSelection(value: $selectedAngle)
             .chartOverlay { proxy in
                 GeometryReader { _ in
                     Rectangle()
                         .fill(.clear)
                         .contentShape(Rectangle())
-                        .gesture(
-                            DragGesture(minimumDistance: 0)
-                                .onEnded { value in
-                                    let angle = proxy.angle(at: value.location)
-                                    // ChartProxy returns the polar angle in screen
-                                    // coordinates. Convert it back through the chart's
-                                    // data scale before comparing it with cumulative
-                                    // segment hours; raw degrees select the wrong slice.
-                                    guard let angleValue: Double = proxy.value(atAngle: angle, as: Double.self) else {
-                                        return
-                                    }
-                                    guard let slice = slice(at: angleValue) else { return }
-                                    if focusedSliceID == slice.id {
-                                        // A second tap on the focused slice restores the
-                                        // neutral donut and brings every slice back to full opacity.
-                                        focusedSliceID = nil
-                                        selectedAngle = nil
-                                    } else {
-                                        focusedSliceID = slice.id
-                                        selectedAngle = angleValue
-                                    }
-                                }
-                        )
+                        // A tap, not a zero-distance drag. The drag this replaces claimed
+                        // every gesture beginning anywhere on the chart, so the scroll view
+                        // never saw them: the donut was a dead zone the height of the card,
+                        // and the page could only be scrolled around it. A tap recognises
+                        // the same taps and lets a drag pass through untouched.
+                        .onTapGesture { location in
+                            let angle = proxy.angle(at: location)
+                            // ChartProxy returns the polar angle in screen coordinates.
+                            // Convert it back through the chart's data scale before
+                            // comparing it with cumulative segment hours; raw degrees
+                            // select the wrong slice.
+                            guard let angleValue: Double = proxy.value(atAngle: angle, as: Double.self),
+                                  let slice = slice(at: angleValue) else { return }
+                            if focusedSliceID == slice.id {
+                                // A second tap on the focused slice restores the neutral
+                                // donut and brings every slice back to full opacity.
+                                focusedSliceID = nil
+                                selectedAngle = nil
+                            } else {
+                                focusedSliceID = slice.id
+                                selectedAngle = angleValue
+                            }
+                        }
                 }
             }
             .onChange(of: selectedAngle) { _, angle in
@@ -154,15 +166,21 @@ struct InsightsDonutChart: View {
                     }
                 }
                 // Bounded to the widest line that fits the hole. The ring's inner radius
-                // is a ratio of a fixed height, so the space here is about 185pt across
-                // and a square inside that circle is narrower still. Unbounded, "Connect
-                // Apple Health" set one line straight across the segments.
+                // is a ratio of its size, so a square inside that circle is narrower
+                // still. Unbounded, "Connect Apple Health" set one line straight across
+                // the segments.
                 .frame(maxWidth: centreWidth)
                 .multilineTextAlignment(.center)
                 .allowsHitTesting(false)
             }
         }
-        .frame(height: 330)
+        // Square, sized from the width it is given rather than a fixed height, so the
+        // ring fills the card the way the rest of the screen does. It was 330pt tall on
+        // every device, which left a band of empty card either side of it on a 6.9"
+        // screen. A bigger ring also means a bigger hole, which is the one thing the
+        // centre text has always been short of.
+        .aspectRatio(1, contentMode: .fit)
+        .frame(maxWidth: .infinity)
         // The ring is fixed geometry: the hole is a ratio of its radius, so text sitting
         // inside cannot grow without limit. At the largest accessibility sizes it was
         // rendering several times the width of the hole — "1h 10m" lay across the
@@ -186,7 +204,11 @@ struct InsightsDonutChart: View {
     /// The usable width inside the ring. `chartHeight` × the 0.56 inner-radius ratio
     /// gives a hole roughly 185pt across; text has to fit a square inside that circle,
     /// not the circle itself, so this is deliberately narrower.
-    private var centreWidth: CGFloat { 150 }
+    /// The hole is 56% of the ring, and the largest square inside a circle is about 70%
+    /// of its diameter. On a 6.9" screen the ring is roughly 350pt across, so the usable
+    /// box is around 140pt — kept a little under that, because text that just fits is
+    /// text that overlaps at the next Dynamic Type size.
+    private var centreWidth: CGFloat { 170 }
 
     private var stepCountKey: String {
         "\(analysisInterval.start.timeIntervalSinceReferenceDate)-\(analysisInterval.end.timeIntervalSinceReferenceDate)"

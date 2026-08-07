@@ -2,6 +2,13 @@
 
 ## 2026-08-08
 
+### The donut fills its card, and you can scroll past it
+
+- Scrolling over the chart did nothing. It carried a zero-distance drag gesture to catch taps, and that claims *every* drag beginning anywhere on it — so the ring was a dead zone the height of the card and the page could only be moved around it. It reads taps as taps now, and lets a drag through.
+- The ring is a square sized from the card rather than a fixed height, so it fills the width instead of sitting in a band of empty card. The hole grows with it, which is the one thing the step count in the middle has always been short of.
+- The legend underneath is gone. Each wedge already carries its icon and its hours, and tapping one names it in the centre and turns that centre into a button onto the same visits the legend rows opened.
+- A wedge too thin for a label used to be a bare colour with a key underneath; with no key, thin wedges now keep their icon down to a much smaller share, and drop only the duration.
+
 ### Home is a place, not a word
 
 - "Time away from Home" decided what counted as home by looking for the letters "home" in a place name or activity. Anywhere carrying them — a Homemaker Centre, a suburb called Homebush — counted as being home, and a home saved under any other name did not.
