@@ -1116,7 +1116,7 @@ struct ActivityLocationPolicyTests {
         [driveBy, workout].forEach(context.insert)
         try context.save()
 
-        let superseded = ActivityLocationPolicy.supersedePassingStays(
+        let superseded = WorkoutJourneys.supersedePassingStays(
             during: [workout], stays: [driveBy], context: context,
             now: base.addingTimeInterval(2 * 60 * 60)
         )
@@ -1145,7 +1145,7 @@ struct ActivityLocationPolicyTests {
         [park, workout].forEach(context.insert)
         try context.save()
 
-        let superseded = ActivityLocationPolicy.supersedePassingStays(
+        let superseded = WorkoutJourneys.supersedePassingStays(
             during: [workout], stays: [park], context: context,
             now: base.addingTimeInterval(2 * 60 * 60)
         )
@@ -1172,7 +1172,7 @@ struct ActivityLocationPolicyTests {
         [shop, workout].forEach(context.insert)
         try context.save()
 
-        let superseded = ActivityLocationPolicy.supersedePassingStays(
+        let superseded = WorkoutJourneys.supersedePassingStays(
             during: [workout], stays: [shop], context: context,
             now: base.addingTimeInterval(2 * 60 * 60)
         )
@@ -1199,7 +1199,7 @@ struct ActivityLocationPolicyTests {
         [confirmed, workout].forEach(context.insert)
         try context.save()
 
-        let superseded = ActivityLocationPolicy.supersedePassingStays(
+        let superseded = WorkoutJourneys.supersedePassingStays(
             during: [workout], stays: [confirmed], context: context,
             now: base.addingTimeInterval(2 * 60 * 60)
         )
@@ -1239,7 +1239,7 @@ struct ActivityLocationPolicyTests {
         // counts are the merged path rather than the halves it was made from.
         let recordedPoints = first.route.count + second.route.count
 
-        let repaired = try ActivityLocationPolicy.repairSplitWorkouts(
+        let repaired = try WorkoutJourneys.repairSplitWorkouts(
             context: context, now: base.addingTimeInterval(2 * 60 * 60)
         )
         try context.save()
@@ -1293,7 +1293,7 @@ struct ActivityLocationPolicyTests {
         [realStay, home, workout].forEach(context.insert)
         try context.save()
 
-        let superseded = ActivityLocationPolicy.supersedePassingStays(
+        let superseded = WorkoutJourneys.supersedePassingStays(
             during: [workout], stays: [realStay, home], context: context,
             now: base.addingTimeInterval(3 * 60 * 60)
         )

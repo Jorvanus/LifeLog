@@ -183,13 +183,13 @@ actor ActivityImportActor {
     /// Applies the passing-stay rule for every workout in the batch, then drops the
     /// withdrawn stays from the cache the splitting reads, so they cannot cut anything.
     private func supersedeStaysPassedDuringWorkouts(in records: [ActivityImportRecord]) {
-        let sessions = records.compactMap { record -> ActivityLocationPolicy.WorkoutSession? in
+        let sessions = records.compactMap { record -> WorkoutJourneys.WorkoutSession? in
             guard record.source == "health-workout", record.end > record.start else { return nil }
             return .init(interval: DateInterval(start: record.start, end: record.end),
                          route: record.route)
         }
         guard !sessions.isEmpty else { return }
-        let passed = ActivityLocationPolicy.passingStays(during: sessions, stays: locations)
+        let passed = WorkoutJourneys.passingStays(during: sessions, stays: locations)
         guard !passed.isEmpty else { return }
         let withdrawn = Set(passed.map(\.stay.persistentModelID))
         locations.removeAll { withdrawn.contains($0.persistentModelID) }

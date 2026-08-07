@@ -266,7 +266,7 @@ final class ActivityDataService {
         // A re-import restores the routes that were clipped away when a workout was
         // split, so let the repair pass run once more — this time with a complete path
         // to judge by, which decides the stays it had to leave alone without one.
-        UserDefaults.standard.removeObject(forKey: ActivityLocationPolicy.splitWorkoutRepairKey)
+        UserDefaults.standard.removeObject(forKey: WorkoutJourneys.splitWorkoutRepairKey)
         guard HKHealthStore.isHealthDataAvailable() else { return }
         startImport(healthDays: 30, motionDays: nil)
     }
