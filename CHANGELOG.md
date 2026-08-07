@@ -2,6 +2,13 @@
 
 ## 2026-08-07
 
+### On this day
+
+- Under whatever day you are reading, the same date in earlier years — where you were, longest first. Tapping a year opens it, and that day has its own earlier years beneath it, so the archive can be walked rather than only queried.
+- It reports **places, not activities**. Almost the whole archive arrived by bulk import carrying labels the old app defaulted to, so an activity read back from 2019 is often not what happened; a place name came from an arrival that was really recorded.
+- Only the part of a stay that falls inside the day counts towards it, so a night at home does not outrank a working day on hours it spent in a different date.
+- Years with nothing recorded are left out rather than shown as blanks, and the search stops at your first record instead of offering years that cannot hold anything.
+
 ### Two ways to do something are one too many
 
 - **Settings → Edit Current Location** is gone. It opened the same editor, on the same visit, that tapping the current activity on Timeline opens — where the activity is already in front of you, and where an uncategorised one is surfaced more plainly anyway. Settings keeps **Locations**, which is a different thing: the places you have saved.

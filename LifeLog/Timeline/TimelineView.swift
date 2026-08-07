@@ -522,6 +522,9 @@ struct TimelineView: View {
                     }
                 }
             }
+            // Under the day, not above it: what happened today comes first, and the
+            // earlier years are what you read afterwards. Tapping one opens it.
+            OnThisDaySection(day: selectedDay, earliest: earliestDay) { selectedDay = $0 }
         }
         // Deliberately no identifier on this container. One here propagates down and
         // *overrides* every child's own, so the day navigator's buttons and every
