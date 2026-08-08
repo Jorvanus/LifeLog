@@ -2,6 +2,10 @@
 
 ## 2026-08-09
 
+### Home no longer overlaps the place visited straight after it
+
+- Home would sometimes show as still open two minutes after Gracemere Shopping World had already been recorded arriving — a Core Location departure callback for Home can be delayed and is only ever clamped against "now", so a late one could land after a different place had already opened. A person can't be at two places at once, so an already-closed stay's departure is now trimmed back to a later arrival at a different place, the same way an open stay is already closed by one.
+
 ### Insights drops its own name and gains a date button
 
 - The word "Insights" at the top of the Insights tab was telling you which screen you were already looking at — the tab bar right below it says the same thing. Removed.

@@ -186,6 +186,16 @@ extension ActivityLocationPolicy {
                                                reason: "a later arrival proves it ended",
                                                evidence: "\(previous.placeName) closed at \(candidate.placeName)'s arrival",
                                                context: context)
+                } else if let departure = previous.departure, departure > candidate.arrival {
+                    // A departure callback can be delayed and is only ever clamped against
+                    // `.now`, so it can land after a different place has already opened.
+                    // A person cannot be at two places at once, so it's the earlier stay's
+                    // own recorded departure that's wrong here, not the later arrival.
+                    previous.departure = max(previous.arrival, candidate.arrival)
+                    LocationDiagnostics.record(.closed, subject: "Overlapping stay",
+                                               reason: "a later arrival precedes this stay's recorded departure",
+                                               evidence: "\(previous.placeName) trimmed to \(candidate.placeName)'s arrival",
+                                               context: context)
                 }
                 retained.append(candidate)
             }

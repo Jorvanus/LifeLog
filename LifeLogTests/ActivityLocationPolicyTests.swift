@@ -251,6 +251,36 @@ struct ActivityLocationPolicyTests {
         #expect(locations[1].departure == nil)
     }
 
+    @Test("A departure delayed past a different place's arrival is trimmed, not left overlapping")
+    func trimsADepartureThatOverlapsALaterArrival() throws {
+        let context = try makeContext()
+        // Mirrors a real capture: Home's departure callback was delayed and clamped
+        // against `.now`, landing after Gracemere had already been recorded arriving —
+        // the two stays claimed the same two minutes at different places.
+        context.insert(Visit(
+            arrival: base, departure: base.addingTimeInterval(5_900),
+            latitude: -27.47, longitude: 153.03,
+            placeName: "Home", inferredActivity: "At home", source: "automatic"
+        ))
+        context.insert(Visit(
+            arrival: base.addingTimeInterval(5_760), departure: base.addingTimeInterval(5_900),
+            latitude: -27.50, longitude: 153.06,
+            placeName: "Gracemere Shopping World", inferredActivity: "Shopping", source: "automatic"
+        ))
+        try context.save()
+
+        _ = try ActivityLocationPolicy.deduplicateAutomaticLocations(context: context)
+        try context.save()
+        let locations = try context.fetch(FetchDescriptor<Visit>(sortBy: [SortDescriptor(\.arrival)]))
+            .filter(ActivityLocationPolicy.isLocationVisit)
+
+        #expect(locations.count == 2)
+        #expect(locations[0].placeName == "Home")
+        #expect(locations[0].departure == base.addingTimeInterval(5_760))
+        #expect(locations[1].placeName == "Gracemere Shopping World")
+        #expect(locations[1].departure == base.addingTimeInterval(5_900))
+    }
+
     @Test("A superseded duplicate is closed so its duration cannot grow forever")
     func supersededDuplicatesAreClosed() throws {
         let context = try makeContext()
