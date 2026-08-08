@@ -2,6 +2,10 @@
 
 ## 2026-08-09
 
+### The lead-in fix needed the archive re-checked once, which the first build didn't ask for
+
+- Shipped without bumping the reconciliation marker, so it would have reached today's walk and every future one but never gone back for a day like 3 August, already sitting in the store under the old rule. The marker now reflects this fix too; the archive-wide pass runs once more on the next launch.
+
 ### Steps taken before a workout starts now stay at home, not on the walk
 
 - The previous fix stopped a walk being recorded twice over, but the walk itself still opened a few minutes earlier than it should: waking up, moving around at home, then starting a workout showed as two adjacent entries rather than one, because the stay you left was closing at the moment those pre-workout steps began rather than at the moment the workout did.

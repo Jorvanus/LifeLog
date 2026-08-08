@@ -37,7 +37,11 @@ struct TimelineView: View {
     // over by health-walking/motion alongside health-workout needs this pass to clean
     // up the backlog once; new walks are covered going forward by the recent-day
     // re-apply, which does not reach anything already sitting in the store.
-    @AppStorage("location-policy-reconciled-v10") private var locationPolicyReconciled = false
+    // v11: boundStays stopped letting a workout's own lead-in steps bind a stay's
+    // departure ahead of the workout itself (2026-08-09) — the same backlog reasoning
+    // as v10 applies: a walk from days ago that opened a few minutes early under the
+    // old rule needs this pass to run again, not just the recent-day re-apply.
+    @AppStorage("location-policy-reconciled-v11") private var locationPolicyReconciled = false
     // Undoes the stays v3 split in two before reconciliation runs again.
     @AppStorage("stay-splits-rejoined-v1") private var staySplitsRejoined = false
     // Puts back together the workouts the import path used to cut up at stay boundaries.
