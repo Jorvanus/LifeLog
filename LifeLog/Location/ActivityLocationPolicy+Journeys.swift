@@ -50,11 +50,25 @@ extension ActivityLocationPolicy {
     /// home, a lap of the office — and that is the only honest reading. Deciding that
     /// a walk was a loop around the block instead needs to know where the walk went,
     /// which is the route work on the roadmap; duration cannot stand in for it.
+    ///
+    /// Nor may the movement consume the stay. A walk out the door covers the tail of a
+    /// stay; a stay that is *almost entirely* walking was never a stay at all, and
+    /// reading it as one erases the visit and keeps the walking. On 8 August a shop
+    /// visit ran 9:36 to 10:07 and the steps taken inside it began at 9:38, so bounding
+    /// left two minutes of shopping and twenty-nine minutes of "Walking" that ended at
+    /// a shop 455 m away — reported, correctly, as nonsense. The share below is a
+    /// threshold and not a measurement: only the route settles the middle ground, and
+    /// this refuses just the end of the range where the reading is plainly wrong.
+    nonisolated static let maximumStayShareConsumedByJourney = 0.75
+
     @discardableResult
     nonisolated static func boundStay(departedWith movement: DateInterval, stays: [Visit]) -> Bool {
         guard movement.duration > 0,
               let stay = containingStay(at: movement.start, stays: stays, requiringDeparture: true),
               let departure = stay.departure, departure <= movement.end else { return false }
+        let recorded = departure.timeIntervalSince(stay.arrival)
+        let consumed = departure.timeIntervalSince(movement.start)
+        guard recorded > 0, consumed / recorded <= maximumStayShareConsumedByJourney else { return false }
         stay.departure = movement.start
         return true
     }

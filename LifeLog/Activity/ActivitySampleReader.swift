@@ -168,6 +168,20 @@ actor ActivitySampleReader {
         return try? NSKeyedUnarchiver.unarchivedObject(ofClass: HKQueryAnchor.self, from: data)
     }
 
+    /// How long a pause in stepping may be before it is treated as two separate walks.
+    ///
+    /// These records are built from step counts, not from a walking workout, so the
+    /// only thing separating "one walk" from "walked, drove, walked" is this gap. It
+    /// was five minutes, which is longer than a short drive: on 8 August steps around
+    /// Gracemere Shopping World, steps to the car, and steps inside Star Liquor 455 m
+    /// away fused into a single 29-minute walk covering a two-minute drive between two
+    /// shops. Ninety seconds still absorbs a wait at a crossing or a pause to answer
+    /// the phone, and no longer spans a journey by car.
+    ///
+    /// A burst shorter than the two-minute floor below is dropped rather than shown,
+    /// so splitting more often means fewer spurious walks, not more.
+    private let walkingBurstGap: TimeInterval = 90
+
     func walkingRecords(in interval: DateInterval) async throws -> [ActivityImportRecord] {
         guard let type = HKObjectType.quantityType(forIdentifier: .stepCount) else { return [] }
         let predicate = HKQuery.predicateForSamples(
@@ -189,7 +203,7 @@ actor ActivitySampleReader {
             return DateInterval(start: sample.startDate,
                                 end: max(sample.endDate, sample.startDate.addingTimeInterval(60)))
         }
-        return merge(intervals, maximumGap: 5 * 60)
+        return merge(intervals, maximumGap: walkingBurstGap)
             .filter { $0.duration >= 2 * 60 }
             .map {
                 ActivityImportRecord(name: "Walking", activity: "Walking",

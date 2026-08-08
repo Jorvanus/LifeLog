@@ -1474,6 +1474,68 @@ struct ActivityLocationPolicyTests {
         #expect(walking.isEmpty, "movement inside an unclosed stay is not a journey")
     }
 
+    @Test("Steps taken inside a shop do not end the shop visit")
+    func stepsInsideAStayDoNotEndIt() throws {
+        let context = try makeContext()
+        // 8 August, from the export. Core Location timed the shop's departure from the
+        // arrival at the next shop 455 m away, and the steps taken walking around
+        // inside began two minutes after arriving. Bounding the stay there left two
+        // minutes of shopping and twenty-nine minutes of "Walking" across a short drive.
+        let shop = Visit(arrival: base, departure: base.addingTimeInterval(31 * 60),
+                         latitude: -23.4336, longitude: 150.4530,
+                         placeName: "Gracemere Shopping World", inferredActivity: "Shopping",
+                         source: "automatic", recognitionConfidence: "learned")
+        let walk = Visit(arrival: base.addingTimeInterval(2 * 60),
+                         departure: base.addingTimeInterval(33 * 60),
+                         latitude: 0, longitude: 0, placeName: "Walking",
+                         inferredActivity: "Walking", userActivity: "Walking",
+                         source: "health-walking")
+        let liquor = Visit(arrival: base.addingTimeInterval(31 * 60),
+                           departure: base.addingTimeInterval(34 * 60),
+                           latitude: -23.4368, longitude: 150.4558,
+                           placeName: "Star Liquor", inferredActivity: "Shopping",
+                           source: "automatic", recognitionConfidence: "learned")
+        [shop, walk, liquor].forEach(context.insert)
+        try context.save()
+
+        try ActivityLocationPolicy.reconcileAll(context: context, now: base.addingTimeInterval(3 * 60 * 60))
+        try context.save()
+
+        #expect(shop.departure == base.addingTimeInterval(31 * 60),
+                "the shop visit keeps the time Core Location recorded for it")
+        let walking = try context.fetch(FetchDescriptor<Visit>())
+            .filter { $0.source == "health-walking" }
+        #expect(walking.isEmpty, "walking about inside a stay is movement at that place")
+    }
+
+    @Test("A walk covering the tail of a stay still bounds it")
+    func aWalkOverTheTailStillBoundsTheStay() throws {
+        let context = try makeContext()
+        // The counterpart the guard must not break: the walk out the door runs to the
+        // end of the stay rather than consuming it, so it is still read as leaving.
+        let home = Visit(arrival: base, departure: base.addingTimeInterval(60 * 60),
+                         latitude: -23.37, longitude: 150.51,
+                         placeName: "Home", inferredActivity: "At home", source: "automatic")
+        let walk = Visit(arrival: base.addingTimeInterval(50 * 60),
+                         departure: base.addingTimeInterval(60 * 60),
+                         latitude: 0, longitude: 0, placeName: "Walking",
+                         inferredActivity: "Walking", userActivity: "Walking", source: "health-walking")
+        let park = Visit(arrival: base.addingTimeInterval(60 * 60),
+                         departure: base.addingTimeInterval(90 * 60),
+                         latitude: -23.40, longitude: 150.50,
+                         placeName: "Park", inferredActivity: "Exercising", source: "automatic")
+        [home, walk, park].forEach(context.insert)
+        try context.save()
+
+        try ActivityLocationPolicy.reconcileAll(context: context, now: base.addingTimeInterval(3 * 60 * 60))
+        try context.save()
+
+        #expect(home.departure == base.addingTimeInterval(50 * 60))
+        let walking = try context.fetch(FetchDescriptor<Visit>())
+            .filter { $0.source == "health-walking" }
+        #expect(walking.count == 1)
+    }
+
     private func makeContext() throws -> ModelContext {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(

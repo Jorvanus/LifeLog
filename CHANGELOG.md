@@ -2,6 +2,13 @@
 
 ## 2026-08-08
 
+### Shopping is no longer recorded as a 29-minute walk between two shops
+
+- A shop visit on 8 August ran 9:36 to 10:07 and appeared as two minutes of shopping followed by twenty-nine minutes of walking — to a shop 455 metres away, reached by car. Two separate faults each produced half of it.
+- Walking records are built from step counts, not from a walking workout, and bursts of stepping less than **five minutes** apart were fused into one walk. Steps around the first shop, steps to the car, and steps inside the second fused into a single record spanning the drive. The gap is now ninety seconds, which still absorbs a wait at a crossing but no longer spans a journey by car.
+- Separately, a walk beginning inside a stay was read as the moment the person left it. That is right for the walk out the door, and wrong for walking about inside a shop: here the steps began two minutes after arriving, so the stay was bounded there and the rest of the visit became the walk. A journey may no longer consume more than three quarters of the stay it supposedly left — a stay that is almost entirely walking was never a stay.
+- Neither of these can be settled properly without the walk's route, which these records have never carried. What has changed is that the two readings the data plainly does not support are refused.
+
 ### Typing a place name no longer costs as much as the archive is long
 
 - Every character typed into a visit's place name was written straight into the store. That changed a visit, which invalidated every `@Query` watching visits — this screen's own, and the Timeline still mounted behind it — so a keystroke re-read the archive before the letter appeared.
