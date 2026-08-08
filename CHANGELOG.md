@@ -2,6 +2,13 @@
 
 ## 2026-08-08
 
+### The visit editor now says why it settled on a place, not just how sure it was
+
+- "Confirmed", "Learned", "Medium" is a verdict with the reasoning left out. When a name is wrong, what matters is not how confident the app was but what it was reading.
+- Under Recognition, beside the confidence it already showed: whether a Saved Place covers this spot and how far from its centre the visit fell, which Apple Maps candidate the name came from and how far away that was, whether Maps supplied an identifier rather than just a matching name, and how many times the place has been recorded before. When the name matches none of the candidates Maps offered, it says so — that is a correction, a Saved Place or a typed name, and it should not read as a Maps result.
+- It is in the section that already answers "how did LifeLog work this out", rather than a new one competing with it.
+- **No coordinates appear anywhere in it**, and a test enforces that rather than trusting the wording. The map above already shows where the visit was; this screen is meant to be read and pasted into a bug report, and repeating a precise position as digits is a different thing entirely.
+
 ### A walk with no position now shows the places either side of it
 
 - Editing a walk imported from Health showed no map at all, because there is nothing to put on one: these records are built from step counts, which carry no location, so they are stored with no coordinate and no route. That left the entries hardest to judge as the only ones with nothing to judge them by.

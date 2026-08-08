@@ -38,6 +38,9 @@ struct VisitEditor: View {
     @State private var neighbours = SurroundingStays.Neighbours()
     @State private var contextPosition: MapCameraPosition = .automatic
 
+    // Saved Places near enough to explain this one, read once rather than derived.
+    @State private var nearbySavedPlaces: [SavedPlace] = []
+
     private let activities = ["At home", "Working", "Eating", "Shopping", "Exercising", "Healthcare", "Studying", "Travelling", "Socialising", "Visiting"]
 
     private var availableActivities: [String] {
@@ -232,7 +235,24 @@ struct VisitEditor: View {
             Text("Changing the activity or place type updates this visit. For a recognised location, saving also learns the choice for future check-ins; you can edit it again at any time.")
                 .font(.footnote).foregroundStyle(.secondary)
             Section("Recognition") {
+                // Confidence is the verdict; these are the workings. Kept in the same
+                // section rather than a new one, because "how sure" and "on what
+                // grounds" are one question and reading them apart is what made the
+                // verdict feel arbitrary.
                 LabeledContent("Confidence", value: visit.confidenceLabel)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Why this place?")
+                        .font(.subheadline.weight(.semibold))
+                    if placeReasons.isEmpty {
+                        Text("Nothing was recorded about how this place was identified.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    } else {
+                        ForEach(placeReasons, id: \.self) { reason in
+                            Text(reason).font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .accessibilityIdentifier("place-evidence")
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Inferred activity evidence")
                         .font(.subheadline.weight(.semibold))
@@ -322,6 +342,7 @@ struct VisitEditor: View {
             }
             if catalogue.isEmpty { catalogue = ActivityCatalog.load() }
             reloadVisitsHere()
+            nearbySavedPlaces = (try? PlaceEvidence.nearbyPlaces(of: visit, context: context)) ?? []
             if !visit.hasRoute, recordedCoordinate == nil {
                 neighbours = (try? SurroundingStays.around(visit, context: context)) ?? .init()
                 if let region = region(covering: neighbours) { contextPosition = .region(region) }
@@ -407,6 +428,10 @@ struct VisitEditor: View {
                 longitudeDelta: max((longitudes.max()! - longitudes.min()!) * 1.6, 0.004)
             )
         )
+    }
+
+    private var placeReasons: [String] {
+        PlaceEvidence.reasons(for: visit, savedPlaces: nearbySavedPlaces, recurrence: visitsHere.count)
     }
 
     private var inferenceEvidenceText: String {

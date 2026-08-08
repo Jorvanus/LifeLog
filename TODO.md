@@ -61,7 +61,7 @@ checklist rather than more code.
 
 ### Explaining and retaining
 
-- [ ] Add a "why this place?" detail showing Saved Place, Maps result, distance, recurrence, and confidence without exposing raw coordinates.
+- [x] Add a "why this place?" detail showing Saved Place, Maps result, distance, recurrence, and confidence without exposing raw coordinates. Done 2026-08-08 in the editor's Recognition section, beside the confidence it already showed. `PlaceEvidence` builds the lines and a test enforces that none of them contains a coordinate.
 - [ ] Add a location-event journal for personal diagnostics containing callback type, callback/arrival/departure times, coordinate, accuracy, distance from current visit, chosen resolution transition, and related visit identifier.
 - [ ] Add a "Location Debug" screen showing the raw callback sequence beside the resolved Timeline, with actions to export the detailed report and rerun resolution without deleting raw data.
 - [ ] Detailed location diagnostics are opt-in but never expire on their own. Add automatic expiry and mark exports as containing personal location data.

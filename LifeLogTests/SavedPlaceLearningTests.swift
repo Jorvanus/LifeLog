@@ -374,6 +374,93 @@ struct SavedPlaceLearningTests {
         #expect(try PlaceVisitLookup.visits(named: "   ", excluding: nil, context: context).isEmpty)
     }
 
+    // MARK: - Why this place
+
+    @Test("A visit inside a saved geofence says so, with the distance and the radius")
+    func explainsASavedPlaceMatch() throws {
+        let visit = Visit(arrival: base, latitude: -23.4455, longitude: 150.4522,
+                          placeName: "Home", inferredActivity: "At home",
+                          source: "automatic", recognitionConfidence: "learned")
+        let home = SavedPlace(name: "Home", latitude: -23.4455, longitude: 150.4522,
+                              radius: 100, defaultActivity: "At home")
+
+        let reasons = PlaceEvidence.reasons(for: visit, savedPlaces: [home], recurrence: 12)
+
+        #expect(reasons.contains { $0.contains("Saved Place: Home") && $0.contains("inside its 100 m radius") })
+        #expect(reasons.contains { $0.contains("Recorded here 12 times before") })
+    }
+
+    @Test("A saved place the visit falls outside of is reported as context, not as the reason")
+    func distinguishesOutsideTheGeofence() throws {
+        // ~350 m north of the place, well beyond its 100 m radius.
+        let visit = Visit(arrival: base, latitude: -23.4424, longitude: 150.4522,
+                          placeName: "Somewhere else", inferredActivity: "Visiting",
+                          source: "automatic")
+        let home = SavedPlace(name: "Home", latitude: -23.4455, longitude: 150.4522,
+                              radius: 100, defaultActivity: "At home")
+
+        let reasons = PlaceEvidence.reasons(for: visit, savedPlaces: [home], recurrence: 0)
+
+        #expect(reasons.contains { $0.hasPrefix("Nearest Saved Place: Home") && $0.contains("outside its") })
+        #expect(!reasons.contains { $0.hasPrefix("Saved Place:") })
+    }
+
+    @Test("A name that is none of the offered candidates says it came from elsewhere")
+    func namesFromElsewhereAreCalledOut() throws {
+        var visit = Visit(arrival: base, latitude: -23.4368, longitude: 150.4558,
+                          placeName: "Star Liquor", inferredActivity: "Shopping",
+                          source: "automatic")
+        visit.placeSuggestions = [
+            PlaceSuggestion(name: "Coffee Kick’n", latitude: -23.4378, longitude: 150.4564,
+                            suggestedActivity: "Eating", distance: 19, mapsIdentifier: "I1"),
+            PlaceSuggestion(name: "Gracemere Property Solutions", latitude: -23.4378,
+                            longitude: 150.4564, suggestedActivity: "Visiting", distance: 20)
+        ]
+
+        let reasons = PlaceEvidence.reasons(for: visit, savedPlaces: [], recurrence: 0)
+
+        #expect(reasons.contains { $0.contains("offered 2 other places") && $0.contains("came from elsewhere") })
+    }
+
+    @Test("A chosen Maps candidate reports its distance and whether Maps identified it")
+    func explainsAChosenMapsCandidate() throws {
+        var visit = Visit(arrival: base, latitude: -23.4378, longitude: 150.4564,
+                          placeName: "Coffee Kick’n", inferredActivity: "Eating",
+                          source: "automatic", recognitionConfidence: "medium")
+        visit.placeSuggestions = [
+            PlaceSuggestion(name: "Coffee Kick’n", latitude: -23.4378, longitude: 150.4564,
+                            suggestedActivity: "Eating", distance: 19, mapsIdentifier: "IF9A7716")
+        ]
+
+        let reasons = PlaceEvidence.reasons(for: visit, savedPlaces: [], recurrence: 0)
+
+        #expect(reasons.contains { $0.contains("Apple Maps: Coffee Kick’n") && $0.contains("19 m") })
+        #expect(reasons.contains { $0.contains("matched by Maps identifier") })
+    }
+
+    @Test("No reason ever contains a coordinate")
+    func reasonsNeverCarryCoordinates() throws {
+        var visit = Visit(arrival: base, latitude: -23.445470303380926, longitude: 150.45217746282592,
+                          placeName: "Home", inferredActivity: "At home", source: "automatic")
+        visit.placeSuggestions = [
+            PlaceSuggestion(name: "Home", latitude: -23.445470303380926,
+                            longitude: 150.45217746282592, suggestedActivity: "At home",
+                            distance: 4, mapsIdentifier: "I1")
+        ]
+        let home = SavedPlace(name: "Home", latitude: -23.445470303380926,
+                              longitude: 150.45217746282592, radius: 100)
+
+        let reasons = PlaceEvidence.reasons(for: visit, savedPlaces: [home], recurrence: 3)
+
+        // This screen exists to be read and pasted into a bug report. The map above it
+        // already shows where the visit was; the words must not repeat it as digits.
+        #expect(!reasons.isEmpty)
+        for reason in reasons {
+            #expect(!reason.contains("-23.4"), "a latitude reached the reasoning: \(reason)")
+            #expect(!reason.contains("150.4"), "a longitude reached the reasoning: \(reason)")
+        }
+    }
+
     // MARK: - Surrounding stays
 
     // A Health walk carries no coordinate and no route, so the editor can only show
