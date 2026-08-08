@@ -158,16 +158,23 @@ private struct SavedPlaceEditor: View {
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var adjustingLocation = false
 
+    // Typing goes here, not straight into the saved place model. Writing the model
+    // on every keystroke changes the store on every character typed, which triggers
+    // every `@Query` watching `SavedPlace` across active views (such as `PlacesView`).
+    // The model is written at the single commit point in `save()`.
+    @State private var nameDraft = ""
+    @State private var loadedDraft = false
+
     var body: some View {
         Form {
             Section("Place") {
-                TextField("Name", text: $place.name)
+                TextField("Name", text: $nameDraft)
             }
             Section("Map location") {
                 let coordinate = CLLocationCoordinate2D(latitude: place.latitude, longitude: place.longitude)
                 MapReader { proxy in
                     Map(position: $mapPosition) {
-                        Marker(place.name, coordinate: coordinate)
+                        Marker(nameDraft.isEmpty ? "Place" : nameDraft, coordinate: coordinate)
                             .tint(adjustingLocation ? .orange : .blue)
                     }
                     .frame(height: 220)
@@ -225,18 +232,22 @@ private struct SavedPlaceEditor: View {
                 Text("Visits already recorded here keep their name. LifeLog stops recognising the place for future visits.")
             }
         }
-        .navigationTitle(place.name.isEmpty ? "Edit Place" : place.name)
+        .navigationTitle(nameDraft.isEmpty ? "Edit Place" : nameDraft)
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             let coordinate = CLLocationCoordinate2D(latitude: place.latitude, longitude: place.longitude)
             mapPosition = .region(MKCoordinateRegion(center: coordinate,
                                                       span: .init(latitudeDelta: 0.004, longitudeDelta: 0.004)))
+            if !loadedDraft {
+                nameDraft = place.name
+                loadedDraft = true
+            }
         }
         .task { backfillPreview = try? SavedPlaceLearning.preview(place, context: context) }
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Done") { save() }
-                    .disabled(TextSafety.clean(place.name, maximumLength: 100).isEmpty)
+                    .disabled(TextSafety.clean(nameDraft, maximumLength: 100).isEmpty)
             }
         }
         .alert("Couldn't save place", isPresented: $saveFailed) {
@@ -272,6 +283,7 @@ private struct SavedPlaceEditor: View {
     }
 
     private func save() {
+        place.name = nameDraft
         do {
             try SavedPlaceLearning.apply(place, context: context)
             try context.save()

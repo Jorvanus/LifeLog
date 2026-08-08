@@ -2,6 +2,12 @@
 
 ## 2026-08-08
 
+### Editing a saved place name no longer mutates the store on every keystroke
+
+- `SavedPlaceEditor` bound its text field straight to the SwiftData model object, causing store updates and query evaluation on every character typed.
+- Editing now uses a local draft state that is committed when tapping **Done**, leaving store queries untouched while typing and keeping edits draft-only until saved.
+
+
 ### A journal of the raw location callbacks behind the timeline
 
 - Everything else LifeLog records is a conclusion — a visit, a correction, a sentence in Diagnostics. When a stay lands in the wrong place or at the wrong time the conclusion is the thing in doubt, and the inputs that produced it were gone. This keeps the inputs: what Core Location reported, when it reported it, how accurately, how far from the stay already in progress, and which branch the resolver then took.
