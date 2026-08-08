@@ -5,6 +5,10 @@ import Testing
 
 @MainActor
 struct SavedPlaceLearningTests {
+    /// Shadowed by a local of the same name in the older tests here, which each
+    /// declare their own; new tests use this one.
+    private let base = Date(timeIntervalSince1970: 1_800_000_000)
+
     @Test("A corrected located visit creates a reusable geofence")
     func createsSavedPlace() throws {
         let context = try makeContext()
@@ -368,6 +372,82 @@ struct SavedPlaceLearningTests {
         #expect(try PlaceVisitLookup.visits(named: Visit.unknownPlaceName,
                                             excluding: nil, context: context).isEmpty)
         #expect(try PlaceVisitLookup.visits(named: "   ", excluding: nil, context: context).isEmpty)
+    }
+
+    // MARK: - Surrounding stays
+
+    // A Health walk carries no coordinate and no route, so the editor can only show
+    // where it sits between. These cover that the neighbours found are the right ones.
+
+    @Test("A walk with no position of its own is placed between the stays either side")
+    func findsTheStaysEitherSideOfAWalk() throws {
+        let context = try makeContext()
+        let shop = Visit(arrival: base, departure: base.addingTimeInterval(30 * 60),
+                         latitude: -23.4336, longitude: 150.4530,
+                         placeName: "Gracemere Shopping World", inferredActivity: "Shopping",
+                         source: "automatic")
+        let walk = Visit(arrival: base.addingTimeInterval(30 * 60),
+                         departure: base.addingTimeInterval(59 * 60),
+                         latitude: 0, longitude: 0, placeName: "Walking",
+                         inferredActivity: "Walking", source: "health-walking")
+        let liquor = Visit(arrival: base.addingTimeInterval(59 * 60),
+                           departure: base.addingTimeInterval(62 * 60),
+                           latitude: -23.4368, longitude: 150.4558,
+                           placeName: "Star Liquor", inferredActivity: "Shopping",
+                           source: "automatic")
+        [shop, walk, liquor].forEach(context.insert)
+        try context.save()
+
+        let neighbours = try SurroundingStays.around(walk, context: context)
+
+        #expect(neighbours.before?.placeName == "Gracemere Shopping World")
+        #expect(neighbours.after?.placeName == "Star Liquor")
+        #expect(neighbours.haveBoth)
+    }
+
+    @Test("A record with nothing recorded around it reports no neighbours")
+    func reportsNoNeighboursWhenThereAreNone() throws {
+        let context = try makeContext()
+        let walk = Visit(arrival: base, departure: base.addingTimeInterval(20 * 60),
+                         latitude: 0, longitude: 0, placeName: "Walking",
+                         inferredActivity: "Walking", source: "health-walking")
+        // Far outside the window, and another movement record, which has no position
+        // to offer either.
+        let distant = Visit(arrival: base.addingTimeInterval(48 * 60 * 60),
+                            departure: base.addingTimeInterval(49 * 60 * 60),
+                            latitude: -23.4336, longitude: 150.4530,
+                            placeName: "Gracemere Shopping World", inferredActivity: "Shopping",
+                            source: "automatic")
+        let otherWalk = Visit(arrival: base.addingTimeInterval(-30 * 60),
+                              departure: base, latitude: 0, longitude: 0,
+                              placeName: "Walking", inferredActivity: "Walking",
+                              source: "health-walking")
+        [walk, distant, otherWalk].forEach(context.insert)
+        try context.save()
+
+        let neighbours = try SurroundingStays.around(walk, context: context)
+
+        #expect(neighbours.before == nil)
+        #expect(neighbours.after == nil)
+    }
+
+    @Test("A superseded duplicate is not offered as the place either side")
+    func skipsSupersededStays() throws {
+        let context = try makeContext()
+        let superseded = Visit(arrival: base, departure: base.addingTimeInterval(30 * 60),
+                               latitude: -23.4336, longitude: 150.4530,
+                               placeName: "Gracemere Shopping World", inferredActivity: "Shopping",
+                               source: "automatic-superseded")
+        let walk = Visit(arrival: base.addingTimeInterval(30 * 60),
+                         departure: base.addingTimeInterval(59 * 60),
+                         latitude: 0, longitude: 0, placeName: "Walking",
+                         inferredActivity: "Walking", source: "health-walking")
+        [superseded, walk].forEach(context.insert)
+        try context.save()
+
+        let neighbours = try SurroundingStays.around(walk, context: context)
+
+        #expect(neighbours.before == nil, "a superseded row is not where the person was")
     }
 
     @discardableResult

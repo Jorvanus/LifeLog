@@ -34,6 +34,10 @@ struct VisitEditor: View {
     @State private var catalogue: [ActivityDefinition] = []
     @State private var visitsHere: [Visit] = []
 
+    // For a record with no position of its own, the places either side of it.
+    @State private var neighbours = SurroundingStays.Neighbours()
+    @State private var contextPosition: MapCameraPosition = .automatic
+
     private let activities = ["At home", "Working", "Eating", "Shopping", "Exercising", "Healthcare", "Studying", "Travelling", "Socialising", "Visiting"]
 
     private var availableActivities: [String] {
@@ -108,6 +112,37 @@ struct VisitEditor: View {
                     // Said plainly, because this is the most precise location data
                     // LifeLog holds and the person should know it is here.
                     Text("The path this walk followed, recorded by Apple Health.")
+                }
+            }
+            // Only where there would otherwise be no map at all. A record with a path
+            // or a pin of its own already says where it was, above.
+            if !visit.hasRoute, recordedCoordinate == nil, neighbours.before != nil || neighbours.after != nil {
+                Section {
+                    Map(position: $contextPosition) {
+                        if let before = neighbours.before {
+                            Marker("Before: \(before.displayPlaceName)", systemImage: "figure.stand",
+                                   coordinate: before.coordinate)
+                                .tint(.green)
+                        }
+                        if let after = neighbours.after {
+                            Marker("After: \(after.displayPlaceName)", systemImage: "mappin",
+                                   coordinate: after.coordinate)
+                                .tint(.orange)
+                        }
+                    }
+                    .frame(height: 240)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .mapControls { MapCompass() }
+                    .accessibilityIdentifier("visit-context-map")
+                    Text(surroundingSummary)
+                        .font(.footnote).foregroundStyle(.secondary)
+                } header: {
+                    Text("Where this happened")
+                } footer: {
+                    // Said plainly rather than dressed up. The pins are not this entry's
+                    // position — LifeLog has none for it — they are the places either
+                    // side of it, which is what makes a wrong one recognisable.
+                    Text("This entry came from Apple Health, which records movement without a location, so LifeLog has no position for it. These are the places recorded either side of it.")
                 }
             }
             if visit.latitude != 0 || visit.longitude != 0 {
@@ -287,6 +322,10 @@ struct VisitEditor: View {
             }
             if catalogue.isEmpty { catalogue = ActivityCatalog.load() }
             reloadVisitsHere()
+            if !visit.hasRoute, recordedCoordinate == nil {
+                neighbours = (try? SurroundingStays.around(visit, context: context)) ?? .init()
+                if let region = region(covering: neighbours) { contextPosition = .region(region) }
+            }
             if correctionBaseline == nil { correctionBaseline = currentSnapshot }
             if let coordinate = recordedCoordinate {
                 mapPosition = .region(region(centeredOn: coordinate))
@@ -324,6 +363,50 @@ struct VisitEditor: View {
         let distance = formattedDistance(visit.routeDistance)
         let returned = last.location.distance(from: first.location) <= ActivityLocationPolicy.departureRadius
         return returned ? "\(distance) · returned to the start" : "\(distance) · ended elsewhere"
+    }
+
+    /// What the two pins amount to, in the terms the mistake shows up in.
+    ///
+    /// The distance is the point. Half an hour of walking that begins and ends 455 m
+    /// apart is not half an hour of walking, and the number says so faster than the
+    /// map does.
+    private var surroundingSummary: String {
+        let span = formattedDuration(visit.duration)
+        guard let before = neighbours.before, let after = neighbours.after else {
+            let only = neighbours.before ?? neighbours.after
+            guard let only else { return span }
+            let side = neighbours.before != nil ? "After" : "Before"
+            return "\(span) · \(side) \(only.displayPlaceName)"
+        }
+        if NameKey.same(before.placeName, after.placeName) {
+            return "\(span) · started and ended at \(before.displayPlaceName)"
+        }
+        let metres = CLLocation(latitude: before.latitude, longitude: before.longitude)
+            .distance(from: CLLocation(latitude: after.latitude, longitude: after.longitude))
+        return "\(span) · \(before.displayPlaceName) to \(after.displayPlaceName), "
+             + "\(formattedDistance(metres)) apart"
+    }
+
+    /// The region holding both pins, with enough margin that neither sits on an edge.
+    private func region(covering neighbours: SurroundingStays.Neighbours) -> MKCoordinateRegion? {
+        let points = [neighbours.before, neighbours.after].compactMap { $0?.coordinate }
+        guard let first = points.first else { return nil }
+        guard points.count > 1 else { return region(centeredOn: first) }
+        let latitudes = points.map(\.latitude)
+        let longitudes = points.map(\.longitude)
+        let centre = CLLocationCoordinate2D(
+            latitude: (latitudes.min()! + latitudes.max()!) / 2,
+            longitude: (longitudes.min()! + longitudes.max()!) / 2
+        )
+        // A floor as well as the measured span: two pins a hundred metres apart would
+        // otherwise zoom in so far that neither place is recognisable.
+        return MKCoordinateRegion(
+            center: centre,
+            span: MKCoordinateSpan(
+                latitudeDelta: max((latitudes.max()! - latitudes.min()!) * 1.6, 0.004),
+                longitudeDelta: max((longitudes.max()! - longitudes.min()!) * 1.6, 0.004)
+            )
+        )
     }
 
     private var inferenceEvidenceText: String {
@@ -511,6 +594,50 @@ enum PlaceVisitLookup {
             predicate: #Predicate { $0.placeName.localizedStandardContains(trimmed) }
         ))
         return candidates.filter { $0.id != identifier && NameKey.matching($0.placeName) == key }
+    }
+}
+
+/// The places either side of a record that has no position of its own.
+///
+/// A walk or a commute imported from Health carries no coordinate and no route —
+/// `walkingRecords` builds them from step counts, which have no location — so the
+/// editor showed no map at all for exactly the entries hardest to judge. LifeLog
+/// cannot say where you were during one of these, and inventing a position would be
+/// worse than showing none. What it does know is where you were before and after,
+/// and for a record wrongly spanning a drive between two shops that is the whole
+/// story: two pins 455 m apart, half an hour of "walking" between them.
+///
+/// Scoped to a window rather than fetched whole. The editor is opened from a
+/// timeline, so the neighbours are minutes away, and this must not become the
+/// archive-wide query the rest of this screen was just moved off.
+enum SurroundingStays {
+    struct Neighbours {
+        var before: Visit?
+        var after: Visit?
+        var haveBoth: Bool { before != nil && after != nil }
+    }
+
+    @MainActor
+    static func around(_ visit: Visit, context: ModelContext,
+                       window: TimeInterval = 6 * 60 * 60) throws -> Neighbours {
+        let start = visit.arrival.addingTimeInterval(-window)
+        let end = (visit.departure ?? visit.arrival).addingTimeInterval(window)
+        let nearby = try context.fetch(FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.arrival >= start && $0.arrival <= end },
+            sortBy: [SortDescriptor(\.arrival)]
+        ))
+        let located = nearby.filter {
+            ActivityLocationPolicy.isLocationVisit($0) &&
+            !ActivityLocationPolicy.isSupersededLocation($0) &&
+            ($0.latitude != 0 || $0.longitude != 0)
+        }
+        let ownEnd = visit.departure ?? visit.arrival
+        return Neighbours(
+            // At or before this record began, latest first — the place it left.
+            before: located.last { ($0.departure ?? $0.arrival) <= visit.arrival },
+            // At or after it ended — the place it arrived at.
+            after: located.first { $0.arrival >= ownEnd }
+        )
     }
 }
 

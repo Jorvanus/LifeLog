@@ -152,6 +152,29 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(overnight.waitForExistence(timeout: 5))
     }
 
+    /// A walk imported from Health has no coordinate and no route, so the editor used
+    /// to show no map at all — for exactly the entries hardest to judge. It now shows
+    /// the places recorded either side of it, which is what makes a walk that is really
+    /// half an hour of shopping recognisable.
+    func testAWalkWithNoPositionShowsThePlacesEitherSideOfIt() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+
+        XCTAssertTrue(element("jump-to-date-button").waitForExistence(timeout: 10))
+        // The card carries "Walking" twice, as the place name and as the activity, so
+        // the query matches more than once and a bare tap is ambiguous. Both sit inside
+        // the same entry and open the same editor.
+        let walk = app.staticTexts["Walking"].firstMatch
+        XCTAssertTrue(walk.waitForExistence(timeout: 5))
+        walk.tap()
+
+        XCTAssertTrue(app.textFields["Place name"].waitForExistence(timeout: 5))
+        XCTAssertTrue(element("visit-context-map").waitForExistence(timeout: 5))
+        // And not the pin map, which would mean a position this record does not have.
+        XCTAssertFalse(element("visit-location-map-picker").exists)
+    }
+
     /// Grouping decides where Insights counts time, and until now it could only be
     /// seen one activity at a time through a picker. The group's own view has to be
     /// reachable from Settings and offer adding one.

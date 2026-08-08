@@ -22,7 +22,15 @@ enum UITestSeedData {
             // A low-confidence guess must keep userActivity empty, otherwise the
             // person has effectively already answered and it is no longer in review.
             let userActivity = confidence == "low" ? nil : activity
-            context.insert(Visit(arrival: arrival, departure: departure, latitude: place == "Home" ? home.latitude : shops.latitude, longitude: place == "Home" ? home.longitude : shops.longitude, placeName: place, inferredActivity: activity, userActivity: userActivity, source: source, recognitionConfidence: confidence))
+            // Device records carry no coordinate. Health and Core Motion report that
+            // you moved or slept, not where — `walkingRecords` builds walks from step
+            // counts, which have no location at all. Seeding them at a place's
+            // coordinates made the fixture disagree with every real store, and hid the
+            // case where the editor has no position to show.
+            let located = !(source.hasPrefix("health-") || source == "motion")
+            let latitude = located ? (place == "Home" ? home.latitude : shops.latitude) : 0
+            let longitude = located ? (place == "Home" ? home.longitude : shops.longitude) : 0
+            context.insert(Visit(arrival: arrival, departure: departure, latitude: latitude, longitude: longitude, placeName: place, inferredActivity: activity, userActivity: userActivity, source: source, recognitionConfidence: confidence))
         }
         // The night before, so the day opens with the stay it woke up in rather than
         // with the first time the person went out.

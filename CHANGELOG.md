@@ -2,6 +2,13 @@
 
 ## 2026-08-08
 
+### A walk with no position now shows the places either side of it
+
+- Editing a walk imported from Health showed no map at all, because there is nothing to put on one: these records are built from step counts, which carry no location, so they are stored with no coordinate and no route. That left the entries hardest to judge as the only ones with nothing to judge them by.
+- The editor now shows where the record sits — the stay before it and the stay after it, pinned, with the distance between them. For a walk that is really half an hour of shopping the summary line settles it on its own: "29m · Gracemere Shopping World to Star Liquor, 455 m apart". A walk that begins and ends at the same place says so instead, which is what pacing about at home looks like.
+- The pins are not this entry's position and the screen says so. LifeLog has none for it, and drawing one would be a guess dressed as a record.
+- Found while testing this: the seeded walking visit used for UI tests was being given a shopping centre's coordinates, so the fixture disagreed with every real store and hid this case entirely. Records from Health and Core Motion now seed with no coordinate, as they are actually stored.
+
 ### The background import now says it ran, whether or not it was slow
 
 - It is the writer that lands on top of everything else — its own store connection, its own copies of the same visits, and the save that wins — so "did it run, and when" is the question every visit correction is now sequenced against. It answered that only on launches where it happened to take longer than 250 ms. The two entries that finally explained four failed fixes, at 334 ms and 361 ms, were luck.
