@@ -2,6 +2,13 @@
 
 ## 2026-08-08
 
+### Typing a place name no longer costs as much as the archive is long
+
+- Every character typed into a visit's place name was written straight into the store. That changed a visit, which invalidated every `@Query` watching visits — this screen's own, and the Timeline still mounted behind it — so a keystroke re-read the archive before the letter appeared.
+- The screen then rebuilt itself from that archive. Which activities have been used at this place, and how many times the place has been visited before, were each answered by scanning every visit ever recorded — three scans a keystroke, with the activity catalogue decoded from JSON and re-sorted alongside them.
+- Typing now stays in the fields and reaches the visit at the one point that already saved it, so the store is written when the edit is finished rather than while it is being made. The two questions the screen asks of the archive are answered by one scoped fetch, when it opens and when the name is committed, and the catalogue is read once.
+- The scoped fetch narrows in the store and then applies the same name comparison used everywhere else, so a place is still matched ignoring case and accents — and a longer name that merely contains the one typed is still a different place.
+
 ### The journey correction now lands after the import, not under it
 
 - Re-applying the correction whenever the Timeline appeared was still not enough: the background Health import runs at launch too, finishes second, and its save overwrites. The log caught both events in the same second, with the old value back 36 seconds later.

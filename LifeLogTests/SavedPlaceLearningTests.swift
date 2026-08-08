@@ -319,6 +319,72 @@ struct SavedPlaceLearningTests {
         #expect(distant.isIgnored == false)
     }
 
+    // MARK: - Place history lookup
+
+    // The editor's "activities used here before" and "N prior check-ins" used to be
+    // filtered out of a query holding the whole archive. These cover the scoped fetch
+    // that replaced it — in particular that narrowing in the store with a `contains`
+    // predicate does not widen what counts as the same place.
+
+    @Test("Prior visits to a place are found by name, ignoring case and accents")
+    func findsPriorVisitsAtTheSamePlace() throws {
+        let context = try makeContext()
+        let editing = makeVisit(placeName: "Corner Café", activity: "Eating", in: context)
+        makeVisit(placeName: "corner cafe", activity: "Coffee", in: context)
+        makeVisit(placeName: "CORNER CAFÉ", activity: "Lunch", in: context)
+        makeVisit(placeName: "Star Liquor", activity: "Shopping", in: context)
+        try context.save()
+
+        let found = try PlaceVisitLookup.visits(named: "Corner Café",
+                                                excluding: editing.persistentModelID,
+                                                context: context)
+
+        #expect(found.count == 2)
+        #expect(Set(found.map(\.activity)) == ["Coffee", "Lunch"])
+    }
+
+    @Test("A place whose name merely contains the typed one is a different place")
+    func doesNotMatchOnSubstring() throws {
+        let context = try makeContext()
+        makeVisit(placeName: "Star Liquor Warehouse", activity: "Shopping", in: context)
+        makeVisit(placeName: "Star Liquor", activity: "Shopping", in: context)
+        try context.save()
+
+        let found = try PlaceVisitLookup.visits(named: "Star Liquor", excluding: nil, context: context)
+
+        #expect(found.count == 1)
+        #expect(found.first?.placeName == "Star Liquor")
+    }
+
+    @Test("A placeholder name has no history of its own")
+    func placeholderNamesReturnNothing() throws {
+        let context = try makeContext()
+        makeVisit(placeName: Visit.identifyingPlaceName, activity: "Visiting", in: context)
+        makeVisit(placeName: Visit.unknownPlaceName, activity: "Visiting", in: context)
+        try context.save()
+
+        #expect(try PlaceVisitLookup.visits(named: Visit.identifyingPlaceName,
+                                            excluding: nil, context: context).isEmpty)
+        #expect(try PlaceVisitLookup.visits(named: Visit.unknownPlaceName,
+                                            excluding: nil, context: context).isEmpty)
+        #expect(try PlaceVisitLookup.visits(named: "   ", excluding: nil, context: context).isEmpty)
+    }
+
+    @discardableResult
+    private func makeVisit(placeName: String, activity: String, in context: ModelContext) -> Visit {
+        let visit = Visit(
+            arrival: .now,
+            departure: .now.addingTimeInterval(600),
+            latitude: -27.4698,
+            longitude: 153.0251,
+            placeName: placeName,
+            inferredActivity: "Visiting",
+            userActivity: activity
+        )
+        context.insert(visit)
+        return visit
+    }
+
     private func makeContext() throws -> ModelContext {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(

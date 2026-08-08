@@ -11,17 +11,33 @@ struct VisitEditor: View {
     @Environment(\.modelContext) private var context
     @Bindable var visit: Visit
     @Query(sort: \VisitCorrection.changedAt, order: .reverse) private var corrections: [VisitCorrection]
-    @Query(sort: \Visit.arrival, order: .reverse) private var history: [Visit]
     @State private var saveFailed = false
     @State private var confirmingDelete = false
     @State private var correctionBaseline: VisitCorrectionSnapshot?
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var adjustingLocation = false
     @State private var showingNearbyPlaces = false
+
+    // Typing goes here, not straight into the visit. Writing the model on every
+    // keystroke changed the store on every keystroke, and every `@Query` in the app
+    // — this screen's own, and the Timeline still mounted behind it — re-fetched in
+    // response. The place field was unusable on a full archive because of it. The
+    // model is written at the one point that already existed for it, `sanitizeVisit`.
+    @State private var placeNameDraft = ""
+    @State private var activityDraft = ""
+    @State private var noteDraft = ""
+    @State private var loadedDrafts = false
+
+    // Read once on appear rather than derived in `body`. Both were recomputed on
+    // every evaluation: the catalogue is a JSON decode and a localised sort, and the
+    // visits here used to be filtered out of a `@Query` holding the whole archive.
+    @State private var catalogue: [ActivityDefinition] = []
+    @State private var visitsHere: [Visit] = []
+
     private let activities = ["At home", "Working", "Eating", "Shopping", "Exercising", "Healthcare", "Studying", "Travelling", "Socialising", "Visiting"]
 
     private var availableActivities: [String] {
-        let names = ActivityCatalog.load().map(\.name)
+        let names = catalogue.map(\.name)
         return names.isEmpty ? activities : names
     }
 
@@ -136,7 +152,8 @@ struct VisitEditor: View {
                 }
             }
             Section {
-                TextField("Place name", text: $visit.placeName)
+                TextField("Place name", text: $placeNameDraft)
+                    .onSubmit { reloadVisitsHere() }
                 if recordedCoordinate != nil {
                     Button {
                         showingNearbyPlaces = true
@@ -164,18 +181,18 @@ struct VisitEditor: View {
                 if !historicalActivities.isEmpty {
                     Menu {
                         ForEach(historicalActivities, id: \.self) { activity in
-                            Button(activity) { visit.userActivity = activity }
+                            Button(activity) { activityDraft = activity }
                         }
                     } label: {
                         Label("Use a previous activity here", systemImage: "clock.arrow.circlepath")
                     }
                 }
-                Picker("Activity", selection: activityBinding) {
+                Picker("Activity", selection: $activityDraft) {
                     Text("Choose an activity").tag("")
                     ForEach(availableActivities, id: \.self) { Text($0).tag($0) }
                 }
-                TextField("Or enter your own", text: activityBinding)
-                TextField("Notes", text: $visit.note, axis: .vertical)
+                TextField("Or enter your own", text: $activityDraft)
+                TextField("Notes", text: $noteDraft, axis: .vertical)
             }
             Text("Changing the activity or place type updates this visit. For a recognised location, saving also learns the choice for future check-ins; you can edit it again at any time.")
                 .font(.footnote).foregroundStyle(.secondary)
@@ -259,6 +276,17 @@ struct VisitEditor: View {
             Text("If the visits before and after it are the same place and activity, their time will be merged. Otherwise no surrounding visit will be guessed.")
         }
         .onAppear {
+            // Guarded: `onAppear` fires again when this screen comes back to the
+            // front, and re-seeding from the model there would discard whatever had
+            // been typed and not yet committed.
+            if !loadedDrafts {
+                placeNameDraft = visit.placeName
+                activityDraft = visit.userActivity ?? ""
+                noteDraft = visit.note
+                loadedDrafts = true
+            }
+            if catalogue.isEmpty { catalogue = ActivityCatalog.load() }
+            reloadVisitsHere()
             if correctionBaseline == nil { correctionBaseline = currentSnapshot }
             if let coordinate = recordedCoordinate {
                 mapPosition = .region(region(centeredOn: coordinate))
@@ -271,16 +299,21 @@ struct VisitEditor: View {
         }
     }
 
-    private var activityBinding: Binding<String> {
-        Binding(get: { visit.userActivity ?? "" }, set: { visit.userActivity = $0 })
+    private var historicalActivities: [String] {
+        var values = visitsHere.map(\.activity)
+        values.append(contentsOf: catalogue.map(\.name))
+        return Array(Set(values)).filter { !$0.isEmpty }.sorted()
     }
 
-    private var historicalActivities: [String] {
-        var values = history
-            .filter { $0.id != visit.id && $0.placeName.caseInsensitiveCompare(visit.placeName) == .orderedSame }
-            .map(\.activity)
-        values.append(contentsOf: ActivityCatalog.load().map(\.name))
-        return Array(Set(values)).filter { !$0.isEmpty }.sorted()
+    /// Other visits to the place currently named in the field.
+    ///
+    /// Answers both questions this screen asks of the archive — which activities have
+    /// been used here, and how many times the place has been visited before — so they
+    /// are fetched once instead of scanned twice per keystroke.
+    private func reloadVisitsHere() {
+        visitsHere = (try? PlaceVisitLookup.visits(named: placeNameDraft,
+                                                   excluding: visit.persistentModelID,
+                                                   context: context)) ?? []
     }
 
     /// Whether the walk came back to where it started is the thing a person actually
@@ -295,16 +328,8 @@ struct VisitEditor: View {
 
     private var inferenceEvidenceText: String {
         var evidence = visit.inferenceEvidence
-        let key = visit.placeName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if !key.isEmpty, key != "identifying…", key != "unknown place" {
-            let recurrence = history.reduce(into: 0) { count, candidate in
-                if candidate.id != visit.id,
-                   candidate.placeName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == key {
-                    count += 1
-                }
-            }
-            if recurrence > 0 { evidence.append("Recurring place (\(recurrence) prior check-in\(recurrence == 1 ? "" : "s"))") }
-        }
+        let recurrence = visitsHere.count
+        if recurrence > 0 { evidence.append("Recurring place (\(recurrence) prior check-in\(recurrence == 1 ? "" : "s"))") }
         return evidence.isEmpty ? "No inference evidence recorded" : evidence.joined(separator: " · ")
     }
 
@@ -312,9 +337,7 @@ struct VisitEditor: View {
     /// explicit choice so the visit stops reading as a guess, and learning it saves
     /// the place for future arrivals.
     private func confirmPlace() {
-        if visit.userActivity?.isEmpty != false {
-            visit.userActivity = visit.inferredActivity
-        }
+        if activityDraft.isEmpty { activityDraft = visit.inferredActivity }
         visit.recognitionConfidence = "confirmed"
         learnPlace()
     }
@@ -330,14 +353,15 @@ struct VisitEditor: View {
     }
 
     private func select(_ suggestion: PlaceSuggestion) {
-        visit.placeName = suggestion.name
-        visit.userActivity = suggestion.suggestedActivity
+        placeNameDraft = suggestion.name
+        activityDraft = suggestion.suggestedActivity
         visit.recognitionConfidence = "confirmed"
+        reloadVisitsHere()
     }
 
     private func applyQuickLabel(name: String, activity: String) {
-        visit.placeName = name
-        visit.userActivity = activity
+        placeNameDraft = name
+        activityDraft = activity
         visit.recognitionConfidence = "confirmed"
         learnPlace()
     }
@@ -375,20 +399,36 @@ struct VisitEditor: View {
         NameKey.same(lhs.placeName, rhs.placeName) && NameKey.same(lhs.activity, rhs.activity)
     }
 
+    /// The one place the typed text reaches the visit. Every path that persists —
+    /// Done, Save & Learn Place, and leaving the screen — goes through here first,
+    /// so there is a single commit point rather than a write per keystroke.
     private func sanitizeVisit() {
         PlaceLookupService.cancelAllLookups()
-        visit.placeName = TextSafety.clean(visit.placeName, maximumLength: 120)
-        visit.userActivity = visit.userActivity.map { TextSafety.clean($0, maximumLength: 80) }
-        visit.note = TextSafety.clean(visit.note, maximumLength: 2_000)
+        // Nothing to commit if the fields were never filled from the visit. Without
+        // this, a screen dismissed before it appeared would write its empty drafts
+        // over a real place name.
+        guard loadedDrafts else { return }
+        visit.placeName = TextSafety.clean(placeNameDraft, maximumLength: 120)
+        // Nil, not empty: `ActivityImportActor`, `WorkoutJourneys` and the travel
+        // policy all read `userActivity == nil` to mean "the person has not said",
+        // and an empty string there reads as an answer they never gave.
+        let activity = TextSafety.clean(activityDraft, maximumLength: 80)
+        visit.userActivity = activity.isEmpty ? nil : activity
+        visit.note = TextSafety.clean(noteDraft, maximumLength: 2_000)
         if let departure = visit.departure, departure < visit.arrival {
             visit.departure = visit.arrival
         }
+        // Back into the fields, so what is shown is what was stored.
+        placeNameDraft = visit.placeName
+        activityDraft = visit.userActivity ?? ""
+        noteDraft = visit.note
     }
 
     private var canLearnPlace: Bool {
-        (visit.latitude != 0 || visit.longitude != 0) &&
-        !TextSafety.clean(visit.placeName, maximumLength: 100).isEmpty &&
-        !TextSafety.clean(visit.activity, maximumLength: 80).isEmpty
+        let activity = activityDraft.isEmpty ? visit.inferredActivity : activityDraft
+        return (visit.latitude != 0 || visit.longitude != 0) &&
+        !TextSafety.clean(placeNameDraft, maximumLength: 100).isEmpty &&
+        !TextSafety.clean(activity, maximumLength: 80).isEmpty
     }
 
     private var recordedCoordinate: CLLocationCoordinate2D? {
@@ -444,6 +484,33 @@ struct VisitEditor: View {
         }
         InsightsInvalidation.invalidate(reason: corrected ? "visit correction" : "visit edit", context: context)
         correctionBaseline = currentSnapshot
+    }
+}
+
+/// Visits recorded at a place, found by name.
+///
+/// The editor asks this two things — which activities have been used here before, and
+/// how many times the place has been visited — and used to answer both by filtering a
+/// `@Query` holding every visit in the archive. That loaded the whole archive to open
+/// one visit, and scanned it three times over on every evaluation of the view.
+///
+/// The predicate narrows in the store first. `localizedStandardContains` ignores case
+/// and diacritics, so it returns a superset of the names `NameKey` calls the same; the
+/// exact match is then applied to that much smaller set, which keeps the comparison
+/// identical to the one used everywhere else rather than weakening it to `==`.
+enum PlaceVisitLookup {
+    @MainActor
+    static func visits(named name: String, excluding identifier: PersistentIdentifier?,
+                       context: ModelContext) throws -> [Visit] {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = NameKey.matching(trimmed)
+        // A placeholder name is not a place, so "everything still being identified"
+        // is not a history of anywhere.
+        guard !key.isEmpty, !Visit.isPlaceholderName(trimmed) else { return [] }
+        let candidates = try context.fetch(FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.placeName.localizedStandardContains(trimmed) }
+        ))
+        return candidates.filter { $0.id != identifier && NameKey.matching($0.placeName) == key }
     }
 }
 
