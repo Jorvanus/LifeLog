@@ -2,6 +2,12 @@
 
 ## 2026-08-09
 
+### A walk is no longer recorded two or three times over
+
+- Cross-checked against Life Cycle, run in parallel the whole time LifeLog has been live: it recorded one walk on every morning this showed two or three. `health-walking` (step counts) and `motion` (Core Motion) are both weaker, inferred guesses at the same real event a Watch workout already declares, and their windows rarely line up exactly with the workout's own — a few minutes either side is normal — so neither ever fully contained the other, which is the only case the existing de-duplication caught.
+- A `health-walking` or `motion` record now has whatever a started workout already covers subtracted from it, the same way a Saved Place's time is already subtracted from movement recorded inside it. What is left of the weaker record — the part before the workout started, say — survives on its own; what the workout fully covers does not survive as a second entry.
+- This runs twice: once over the last day, every time the Timeline appears or an import finishes, because the weaker record for a walk is routinely imported before the workout that explains it — different HealthKit queries, different delivery timing — so catching it only once misses the ordinary case. And once over the whole archive, on the next launch, to clear roughly a week of walks already recorded twice over since live tracking began.
+
 ### A known place stopped meaning "the person agreed to this visit"
 
 - A park on a regular walking route was landing in the review queue — "Did you stop here?" — every single time it was merely passed, because it is a Saved Place: Core Location has matched that coordinate before, so every pass came back `recognitionConfidence == "learned"`, and that confidence alone was protecting it from ever being withdrawn when a route couldn't settle the question outright.

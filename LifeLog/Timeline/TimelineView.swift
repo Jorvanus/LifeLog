@@ -33,7 +33,11 @@ struct TimelineView: View {
     // old rule needs this pass to run again to be re-evaluated; it will not clear on
     // its own, since the workout's HKWorkout sample was already delivered once and an
     // anchored query does not redeliver it without a Health re-import.
-    @AppStorage("location-policy-reconciled-v9") private var locationPolicyReconciled = false
+    // v10: workout-vs-movement absorption (2026-08-09) — a week of walks recorded twice
+    // over by health-walking/motion alongside health-workout needs this pass to clean
+    // up the backlog once; new walks are covered going forward by the recent-day
+    // re-apply, which does not reach anything already sitting in the store.
+    @AppStorage("location-policy-reconciled-v10") private var locationPolicyReconciled = false
     // Undoes the stays v3 split in two before reconciliation runs again.
     @AppStorage("stay-splits-rejoined-v1") private var staySplitsRejoined = false
     // Puts back together the workouts the import path used to cut up at stay boundaries.
@@ -236,6 +240,15 @@ struct TimelineView: View {
                 } catch {
                     // Retried on the next appearance, like every other repair here.
                 }
+                do {
+                    if try ActivityLocationPolicy.reapplyRecentMovementAbsorption(context: context) {
+                        Diagnostics.record(context, subsystem: "Timeline",
+                                           message: "Absorbed movement a workout already accounted for.",
+                                           severity: "info")
+                    }
+                } catch {
+                    // Retried on the next appearance, like every other repair here.
+                }
                 guard !locationPolicyReconciled else { return }
                 do {
                     // Journal-only imports do not contain device activity, so there is
@@ -293,6 +306,15 @@ struct TimelineView: View {
                     if try ActivityLocationPolicy.reapplyRecentJourneyTiming(context: context) {
                         Diagnostics.record(context, subsystem: "Timeline",
                                            message: "Re-applied journey timing after an import.",
+                                           severity: "info")
+                    }
+                } catch {
+                    // Retried on the next import or appearance.
+                }
+                do {
+                    if try ActivityLocationPolicy.reapplyRecentMovementAbsorption(context: context) {
+                        Diagnostics.record(context, subsystem: "Timeline",
+                                           message: "Absorbed movement a workout already accounted for, after an import.",
                                            severity: "info")
                     }
                 } catch {

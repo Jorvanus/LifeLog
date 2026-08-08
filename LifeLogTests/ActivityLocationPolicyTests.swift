@@ -1387,6 +1387,148 @@ struct ActivityLocationPolicyTests {
         #expect(confirmed.resolutionState != .superseded)
     }
 
+    // MARK: - Workout vs. weaker movement records
+
+    // health-walking (step counts) and motion (Core Motion) are both weaker, inferred
+    // guesses at the same real event a health-workout already declares. Cross-checked
+    // against Life Cycle, run in parallel the whole time: it recorded one walk on every
+    // morning these overlapped, never two.
+
+    @Test("A health-walking record staggered against a workout is trimmed to what the workout does not cover")
+    func staggeredWalkingRecordIsTrimmedAroundTheWorkout() throws {
+        let context = try makeContext()
+        // The 9 August capture: health-walking 06:36-07:27, health-workout 06:43-07:29,
+        // neither containing the other, both "Device". Life Cycle showed one 45-minute
+        // walk (06:43-07:29); the workout is the more precise account.
+        let walking = Visit(arrival: base, departure: base.addingTimeInterval(51 * 60),
+                            latitude: 0, longitude: 0, placeName: "Walking",
+                            inferredActivity: "Walking", userActivity: "Walking", source: "health-walking")
+        let workout = Visit(arrival: base.addingTimeInterval(7 * 60),
+                            departure: base.addingTimeInterval(53 * 60),
+                            latitude: 0, longitude: 0, placeName: "Walking workout",
+                            inferredActivity: "Walking", source: "health-workout")
+        [walking, workout].forEach(context.insert)
+        try context.save()
+
+        let sessions = [workout].compactMap { WorkoutJourneys.WorkoutSession($0, now: base.addingTimeInterval(2 * 60 * 60)) }
+        let changed = WorkoutJourneys.recordAbsorbedMovement(
+            during: sessions, activities: [walking, workout], context: context,
+            now: base.addingTimeInterval(2 * 60 * 60)
+        )
+
+        #expect(changed == 1)
+        // Only the part before the workout began survives — seven minutes, above the
+        // two-minute floor for a health-walking record.
+        #expect(walking.arrival == base)
+        #expect(walking.departure == base.addingTimeInterval(7 * 60))
+        // The workout itself is never a candidate for its own rule.
+        #expect(workout.arrival == base.addingTimeInterval(7 * 60))
+        #expect(workout.departure == base.addingTimeInterval(53 * 60))
+    }
+
+    @Test("A motion record fully inside a workout is removed rather than left as a duplicate")
+    func motionRecordFullyInsideAWorkoutIsRemoved() throws {
+        let context = try makeContext()
+        let motion = Visit(arrival: base.addingTimeInterval(10 * 60),
+                           departure: base.addingTimeInterval(15 * 60),
+                           latitude: 0, longitude: 0, placeName: "Walking",
+                           inferredActivity: "Walking", userActivity: "Walking", source: "motion")
+        let workout = Visit(arrival: base, departure: base.addingTimeInterval(34 * 60),
+                            latitude: 0, longitude: 0, placeName: "Walking workout",
+                            inferredActivity: "Walking", source: "health-workout")
+        [motion, workout].forEach(context.insert)
+        try context.save()
+
+        let sessions = [workout].compactMap { WorkoutJourneys.WorkoutSession($0, now: base.addingTimeInterval(2 * 60 * 60)) }
+        let changed = WorkoutJourneys.recordAbsorbedMovement(
+            during: sessions, activities: [motion, workout], context: context,
+            now: base.addingTimeInterval(2 * 60 * 60)
+        )
+
+        #expect(changed == 1)
+        #expect(try context.fetch(FetchDescriptor<Visit>()).filter { $0.source == "motion" }.isEmpty)
+    }
+
+    @Test("A health-walking record with no overlap at all is left untouched")
+    func nonOverlappingWalkingRecordIsUntouched() throws {
+        let context = try makeContext()
+        let walking = Visit(arrival: base, departure: base.addingTimeInterval(10 * 60),
+                            latitude: 0, longitude: 0, placeName: "Walking",
+                            inferredActivity: "Walking", userActivity: "Walking", source: "health-walking")
+        let workout = Visit(arrival: base.addingTimeInterval(60 * 60),
+                            departure: base.addingTimeInterval(90 * 60),
+                            latitude: 0, longitude: 0, placeName: "Walking workout",
+                            inferredActivity: "Walking", source: "health-workout")
+        [walking, workout].forEach(context.insert)
+        try context.save()
+
+        let sessions = [workout].compactMap { WorkoutJourneys.WorkoutSession($0, now: base.addingTimeInterval(3 * 60 * 60)) }
+        let changed = WorkoutJourneys.recordAbsorbedMovement(
+            during: sessions, activities: [walking, workout], context: context,
+            now: base.addingTimeInterval(3 * 60 * 60)
+        )
+
+        #expect(changed == 0)
+        #expect(walking.arrival == base)
+        #expect(walking.departure == base.addingTimeInterval(10 * 60))
+    }
+
+    @Test("An automatic location visit is never a candidate for movement absorption")
+    func locationVisitsAreNeverAbsorbedAsMovement() throws {
+        let context = try makeContext()
+        // Only health-walking and motion are in scope. A Saved Place fully inside a
+        // workout window is WorkoutJourneys.supersedePassingStays's question, not this
+        // one, and must not be touched by this pass at all.
+        let home = Visit(arrival: base, departure: base.addingTimeInterval(30 * 60),
+                         latitude: -23.37, longitude: 150.51,
+                         placeName: "Home", inferredActivity: "At home", source: "automatic",
+                         recognitionConfidence: "learned")
+        let workout = Visit(arrival: base, departure: base.addingTimeInterval(30 * 60),
+                            latitude: 0, longitude: 0, placeName: "Walking workout",
+                            inferredActivity: "Walking", source: "health-workout")
+        [home, workout].forEach(context.insert)
+        try context.save()
+
+        let sessions = [workout].compactMap { WorkoutJourneys.WorkoutSession($0, now: base.addingTimeInterval(2 * 60 * 60)) }
+        let changed = WorkoutJourneys.recordAbsorbedMovement(
+            during: sessions, activities: [home, workout], context: context,
+            now: base.addingTimeInterval(2 * 60 * 60)
+        )
+
+        #expect(changed == 0)
+        #expect(home.departure == base.addingTimeInterval(30 * 60))
+    }
+
+    @Test("The archive-wide reconciliation absorbs a stuck week-old duplicate without crashing on the rest of the pass")
+    func reconcileAllAbsorbsMovementBeforeFurtherPasses() throws {
+        let context = try makeContext()
+        // The full pipeline: absorption must run and leave a clean, valid store behind
+        // for boundStays/reconcile to keep working on, not a deleted object other
+        // passes then try to mutate further.
+        let walking = Visit(arrival: base, departure: base.addingTimeInterval(51 * 60),
+                            latitude: 0, longitude: 0, placeName: "Walking",
+                            inferredActivity: "Walking", userActivity: "Walking", source: "health-walking")
+        let workout = Visit(arrival: base.addingTimeInterval(7 * 60),
+                            departure: base.addingTimeInterval(53 * 60),
+                            latitude: 0, longitude: 0, placeName: "Walking workout",
+                            inferredActivity: "Walking", source: "health-workout")
+        let home = Visit(arrival: base.addingTimeInterval(53 * 60),
+                         latitude: -23.37, longitude: 150.51,
+                         placeName: "Home", inferredActivity: "At home", source: "automatic",
+                         recognitionConfidence: "learned")
+        [walking, workout, home].forEach(context.insert)
+        try context.save()
+
+        try ActivityLocationPolicy.reconcileAll(context: context, now: base.addingTimeInterval(2 * 60 * 60))
+        try context.save()
+
+        let remaining = try context.fetch(FetchDescriptor<Visit>())
+        #expect(remaining.filter { $0.source == "health-walking" }.count == 1)
+        #expect(remaining.first { $0.source == "health-walking" }?.departure == base.addingTimeInterval(7 * 60))
+        #expect(remaining.filter { $0.source == "health-workout" }.count == 1)
+        #expect(home.arrival == base.addingTimeInterval(53 * 60))
+    }
+
     @Test("Workout rows split at a stay boundary are rejoined into one journey")
     func repairsWorkoutSplitByAStay() throws {
         let context = try makeContext()

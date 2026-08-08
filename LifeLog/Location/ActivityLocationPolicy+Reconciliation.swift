@@ -77,12 +77,40 @@ extension ActivityLocationPolicy {
         return changed
     }
 
+    /// Re-applies workout-vs-movement absorption to the last day, every time, cheaply —
+    /// the same shape as `reapplyRecentJourneyTiming`, for the same reason. A health-
+    /// walking or motion record for a walk is routinely imported in an earlier batch
+    /// than the workout that explains it — different HealthKit queries, different
+    /// delivery timing — so catching this once, at the moment either side is written,
+    /// misses the ordinary case rather than the rare one.
+    @discardableResult
+    static func reapplyRecentMovementAbsorption(context: ModelContext, now: Date = .now) throws -> Bool {
+        let visits = try fetchPolicyVisits(context: context)
+        let since = now.addingTimeInterval(-24 * 60 * 60)
+        let recent = visits.filter { isMovementActivity($0) && ($0.departure ?? now) >= since }
+        guard !recent.isEmpty else { return false }
+        let sessions = recent.filter(isWorkoutSession).compactMap { WorkoutJourneys.WorkoutSession($0, now: now) }
+        let changed = WorkoutJourneys.recordAbsorbedMovement(during: sessions, activities: recent,
+                                                              context: context, now: now)
+        if changed > 0, context.hasChanges { try context.save() }
+        return changed > 0
+    }
+
     /// Cleans timelines created by earlier app versions when the model container opens.
     static func reconcileAll(context: ModelContext, now: Date = .now) throws {
         let visits = try fetchPolicyVisits(context: context)
-        let activities = visits.filter(isMovementActivity)
-        let locations = visits.filter(isLocationVisit)
-        WorkoutJourneys.supersedePassingStays(during: visits.filter(isWorkoutSession),
+        // Before anything else: a health-walking or motion record a workout already
+        // explains is not independent evidence of a second walk. Run first and re-fetch
+        // afterward, rather than filter the in-memory list by hand, so a record this
+        // deletes is never seen again by the passes below that further mutate whatever
+        // they are handed.
+        let sessions = visits.filter(isWorkoutSession).compactMap { WorkoutJourneys.WorkoutSession($0, now: now) }
+        WorkoutJourneys.recordAbsorbedMovement(during: sessions, activities: visits.filter(isMovementActivity),
+                                               context: context, now: now)
+        let remaining = try fetchPolicyVisits(context: context)
+        let activities = remaining.filter(isMovementActivity)
+        let locations = remaining.filter(isLocationVisit)
+        WorkoutJourneys.supersedePassingStays(during: remaining.filter(isWorkoutSession),
                               stays: locations, context: context, now: now)
         let live = locations.filter { !isSupersededLocation($0) }
         let resumed = boundStays(around: activities, stays: live, context: context, now: now)
@@ -143,13 +171,16 @@ extension ActivityLocationPolicy {
         }
     }
 
-    private static func subtract(_ occupied: [DateInterval], from activity: DateInterval) -> [DateInterval] {
+    // Internal rather than private: WorkoutJourneys reuses both to subtract a workout's
+    // own span from a weaker device record of the same walk, rather than duplicating
+    // interval-splitting logic a second place for a second kind of "occupied" time.
+    nonisolated static func subtract(_ occupied: [DateInterval], from activity: DateInterval) -> [DateInterval] {
         occupied.sorted { $0.start < $1.start }.reduce([activity]) { segments, location in
             segments.flatMap { segment in subtract(location, from: segment) }
         }
     }
 
-    private static func subtract(_ occupied: DateInterval, from activity: DateInterval) -> [DateInterval] {
+    nonisolated static func subtract(_ occupied: DateInterval, from activity: DateInterval) -> [DateInterval] {
         guard occupied.start < activity.end, occupied.end > activity.start else { return [activity] }
         var result: [DateInterval] = []
         if occupied.start > activity.start {
@@ -161,7 +192,7 @@ extension ActivityLocationPolicy {
         return result.filter { $0.duration > 0 }
     }
 
-    private static func copy(of activity: Visit, interval: DateInterval) -> Visit {
+    nonisolated static func copy(of activity: Visit, interval: DateInterval) -> Visit {
         Visit(
             arrival: interval.start,
             departure: interval.end,

@@ -235,4 +235,72 @@ enum WorkoutJourneys {
     /// Well under a walking pace, so a slow amble still reads as movement, and well
     /// above the drift of a phone sitting on a table.
     private nonisolated static let passingStayPace: CLLocationDistance = 0.5
+
+    /// A started workout is also the person's own account of *their own movement*, not
+    /// only of whether a nearby stay was real. `health-walking` and `motion` are both
+    /// weaker, inferred guesses at the same underlying event — step counts, or Core
+    /// Motion's own classification — and once a workout explains a stretch of time, a
+    /// weaker record covering the same stretch is not a second walk. It is the same
+    /// walk, counted twice: cross-checked against Life Cycle, run in parallel the whole
+    /// time, which showed one walk on every morning this showed two or three.
+    ///
+    /// Unlike `passingStays`, this needs no coverage or pace threshold — the question is
+    /// not whether the workout is telling the truth about a stop, it is which record
+    /// already explains this stretch of time more precisely. Any overlap at all is the
+    /// workout's account of that portion, so it is simply subtracted, the same way a
+    /// stay's occupied time is already subtracted from movement that happens inside it.
+    ///
+    /// Nonisolated for the same reason `passingStays` is: the health-walking record for
+    /// a walk is frequently imported in an earlier batch than the workout that explains
+    /// it — different HealthKit queries, different delivery timing — so this has to be
+    /// re-appliable after the fact rather than caught once at the moment either side is
+    /// written. `ActivityLocationPolicy.reapplyRecentMovementAbsorption` is that re-apply.
+    @discardableResult
+    nonisolated static func absorbOverlappingMovement(during sessions: [WorkoutSession], activities: [Visit],
+                                                       context: ModelContext, now: Date = .now)
+    -> [(activity: Visit, reason: String)] {
+        guard !sessions.isEmpty else { return [] }
+        let occupied = sessions.map(\.interval)
+        var changed: [(Visit, String)] = []
+        for activity in activities where activity.source == "health-walking" || activity.source == "motion" {
+            let end = activity.departure ?? now
+            guard end > activity.arrival else { continue }
+            let interval = DateInterval(start: activity.arrival, end: end)
+            guard sessions.contains(where: { $0.interval.start < end && $0.interval.end > activity.arrival })
+            else { continue }
+            let minimum = ActivityLocationPolicy.minimumRetainedDuration(for: activity.source)
+            let remaining = ActivityLocationPolicy.subtract(occupied, from: interval)
+                .filter { $0.duration >= minimum }
+            guard remaining.count != 1 || remaining[0] != interval else { continue }
+            switch remaining.count {
+            case 0:
+                context.delete(activity)
+            case 1:
+                activity.arrival = remaining[0].start
+                activity.departure = remaining[0].end
+            default:
+                activity.arrival = remaining[0].start
+                activity.departure = remaining[0].end
+                for segment in remaining.dropFirst() {
+                    context.insert(ActivityLocationPolicy.copy(of: activity, interval: segment))
+                }
+            }
+            changed.append((activity, "a started workout already accounts for this stretch"))
+        }
+        return changed
+    }
+
+    /// The same rule, with a diagnostic line per decision — the pass the archive-wide
+    /// reconciliation and the recent-day re-apply both call.
+    @discardableResult
+    static func recordAbsorbedMovement(during sessions: [WorkoutSession], activities: [Visit],
+                                       context: ModelContext, now: Date = .now) -> Int {
+        let changed = absorbOverlappingMovement(during: sessions, activities: activities,
+                                                context: context, now: now)
+        for (activity, reason) in changed {
+            LocationDiagnostics.record(.superseded, subject: "\(activity.source) during a workout",
+                                       reason: reason, context: context)
+        }
+        return changed.count
+    }
 }

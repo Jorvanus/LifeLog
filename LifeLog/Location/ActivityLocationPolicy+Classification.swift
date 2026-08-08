@@ -102,7 +102,7 @@ extension ActivityLocationPolicy {
         isWalkingActivity(visit) || isTravelActivity(visit)
     }
 
-    static func minimumRetainedDuration(for source: String) -> TimeInterval {
+    nonisolated static func minimumRetainedDuration(for source: String) -> TimeInterval {
         switch source {
         case "health-sleep": 20 * 60
         case "motion", "health-walking": 2 * 60
