@@ -1529,6 +1529,81 @@ struct ActivityLocationPolicyTests {
         #expect(home.arrival == base.addingTimeInterval(53 * 60))
     }
 
+    @Test("Steps taken at home before starting a workout stay at home, and the workout is the whole walk")
+    func stepsBeforeAWorkoutStayAtHome() throws {
+        let context = try makeContext()
+        // The 9 August capture, and the owner's own account of it: wake up, move about
+        // at home for a few minutes, then start an outdoor walk workout. Home's own
+        // departure was originally timed from the CLVisit that closed it — 07:29, when
+        // the workout ended and the next arrival was recorded — well past everything
+        // here, which is exactly why boundStay pulls it back in the first place.
+        let home = Visit(arrival: base.addingTimeInterval(-20 * 60 * 60),
+                         departure: base.addingTimeInterval(53 * 60),
+                         latitude: -23.445, longitude: 150.452,
+                         placeName: "Home", inferredActivity: "At home", source: "automatic",
+                         recognitionConfidence: "learned")
+        let steps = Visit(arrival: base, departure: base.addingTimeInterval(7 * 60),
+                          latitude: 0, longitude: 0, placeName: "Walking",
+                          inferredActivity: "Walking", userActivity: "Walking", source: "health-walking")
+        let workout = Visit(arrival: base.addingTimeInterval(7 * 60),
+                            departure: base.addingTimeInterval(53 * 60),
+                            latitude: 0, longitude: 0, placeName: "Walking workout",
+                            inferredActivity: "Walking", source: "health-workout")
+        [home, steps, workout].forEach(context.insert)
+        try context.save()
+
+        try ActivityLocationPolicy.reconcileAll(context: context, now: base.addingTimeInterval(2 * 60 * 60))
+        try context.save()
+
+        // Home's departure sits at the workout's own start, not at the earlier steps —
+        // the pre-workout time reads as time at home.
+        #expect(home.departure == base.addingTimeInterval(7 * 60))
+        // The steps taken before the workout began do not survive as a walk of their
+        // own: Home now occupies that window, and the existing occupied-time
+        // subtraction absorbs them the same way it absorbs any other movement inside
+        // an open stay.
+        let remaining = try context.fetch(FetchDescriptor<Visit>())
+        #expect(remaining.filter { $0.source == "health-walking" }.isEmpty)
+        #expect(remaining.filter { $0.source == "health-workout" }.count == 1)
+    }
+
+    @Test("A real gap before a workout is not swallowed as a lead-in")
+    func aGenuineGapBeforeAWorkoutIsNotAbsorbed() throws {
+        let context = try makeContext()
+        // Same shape, but forty minutes of silence between the steps ending and the
+        // workout beginning — past the fifteen-minute lead-in window, so this reads as
+        // two separate things rather than one continuous excursion. Home's own
+        // departure is set to exactly where the steps end, matching the established
+        // "walk out the door" shape elsewhere in this file — boundStay only ever pulls
+        // a departure back when it already falls at or before the movement's own end,
+        // so setting it any later would leave boundStay refusing to fire at all here,
+        // for a reason that has nothing to do with the rule under test.
+        let home = Visit(arrival: base.addingTimeInterval(-20 * 60 * 60),
+                         departure: base.addingTimeInterval(7 * 60),
+                         latitude: -23.445, longitude: 150.452,
+                         placeName: "Home", inferredActivity: "At home", source: "automatic",
+                         recognitionConfidence: "learned")
+        let steps = Visit(arrival: base, departure: base.addingTimeInterval(7 * 60),
+                          latitude: 0, longitude: 0, placeName: "Walking",
+                          inferredActivity: "Walking", userActivity: "Walking", source: "health-walking")
+        let workout = Visit(arrival: base.addingTimeInterval(47 * 60),
+                            departure: base.addingTimeInterval(90 * 60),
+                            latitude: 0, longitude: 0, placeName: "Walking workout",
+                            inferredActivity: "Walking", source: "health-workout")
+        [home, steps, workout].forEach(context.insert)
+        try context.save()
+
+        try ActivityLocationPolicy.reconcileAll(context: context, now: base.addingTimeInterval(3 * 60 * 60))
+        try context.save()
+
+        // boundStay's ordinary behaviour, untouched by the lead-in exclusion: the steps
+        // are not a lead-in to anything, so they bound Home themselves, at their own
+        // start — not silently reassigned to the unrelated workout forty minutes later.
+        #expect(home.departure == base)
+        let remaining = try context.fetch(FetchDescriptor<Visit>())
+        #expect(remaining.contains { $0.source == "health-walking" })
+    }
+
     @Test("Workout rows split at a stay boundary are rejoined into one journey")
     func repairsWorkoutSplitByAStay() throws {
         let context = try makeContext()

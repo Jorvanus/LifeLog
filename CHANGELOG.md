@@ -2,6 +2,12 @@
 
 ## 2026-08-09
 
+### Steps taken before a workout starts now stay at home, not on the walk
+
+- The previous fix stopped a walk being recorded twice over, but the walk itself still opened a few minutes earlier than it should: waking up, moving around at home, then starting a workout showed as two adjacent entries rather than one, because the stay you left was closing at the moment those pre-workout steps began rather than at the moment the workout did.
+- The cause: deciding when a stay was left looks at every movement record independently, and whichever one reaches the stay first wins. A `health-walking` or `motion` record for the same walk as a workout routinely starts earlier — steps taken before pressing start — so it was reaching the stay first and closing it there instead of at the workout's own beginning.
+- A weaker record ending within fifteen minutes of a workout beginning no longer gets a say in when a stay was left; the workout alone decides that now. The time before it starts falls back into the stay it was recorded inside, absorbed by the same mechanism that already absorbs any other movement recorded inside an open stay. A real gap before an unrelated, much later workout is unaffected — the fifteen-minute window is deliberately short enough that it can't be mistaken for one.
+
 ### A walk is no longer recorded two or three times over
 
 - Cross-checked against Life Cycle, run in parallel the whole time LifeLog has been live: it recorded one walk on every morning this showed two or three. `health-walking` (step counts) and `motion` (Core Motion) are both weaker, inferred guesses at the same real event a Watch workout already declares, and their windows rarely line up exactly with the workout's own — a few minutes either side is normal — so neither ever fully contained the other, which is the only case the existing de-duplication caught.

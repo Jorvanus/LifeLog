@@ -231,19 +231,26 @@ struct TimelineView: View {
                                    severity: "info")
                 // Always, not once. A one-shot repair loses to the import actor's own
                 // context, which saves stale copies of the same visits a moment later.
+                //
+                // Absorption before journey timing, not after: journey timing calls
+                // boundStays, which decides a lead-in health-walking record is not its
+                // own excursion by checking how close it ends to a workout's start —
+                // and that check reads the wrong answer against a record still carrying
+                // its full, untrimmed, overlapping end. Absorption has to shorten it
+                // first.
                 do {
-                    if try ActivityLocationPolicy.reapplyRecentJourneyTiming(context: context) {
+                    if try ActivityLocationPolicy.reapplyRecentMovementAbsorption(context: context) {
                         Diagnostics.record(context, subsystem: "Timeline",
-                                           message: "Re-applied journey timing to the last day.",
+                                           message: "Absorbed movement a workout already accounted for.",
                                            severity: "info")
                     }
                 } catch {
                     // Retried on the next appearance, like every other repair here.
                 }
                 do {
-                    if try ActivityLocationPolicy.reapplyRecentMovementAbsorption(context: context) {
+                    if try ActivityLocationPolicy.reapplyRecentJourneyTiming(context: context) {
                         Diagnostics.record(context, subsystem: "Timeline",
-                                           message: "Absorbed movement a workout already accounted for.",
+                                           message: "Re-applied journey timing to the last day.",
                                            severity: "info")
                     }
                 } catch {
@@ -302,19 +309,20 @@ struct TimelineView: View {
             // fires when the import announces it has finished, so the correction lands on
             // top of its write instead of underneath it.
             .onReceive(NotificationCenter.default.publisher(for: InsightsInvalidation.notification)) { _ in
+                // Absorption first — see the matching note above.
                 do {
-                    if try ActivityLocationPolicy.reapplyRecentJourneyTiming(context: context) {
+                    if try ActivityLocationPolicy.reapplyRecentMovementAbsorption(context: context) {
                         Diagnostics.record(context, subsystem: "Timeline",
-                                           message: "Re-applied journey timing after an import.",
+                                           message: "Absorbed movement a workout already accounted for, after an import.",
                                            severity: "info")
                     }
                 } catch {
                     // Retried on the next import or appearance.
                 }
                 do {
-                    if try ActivityLocationPolicy.reapplyRecentMovementAbsorption(context: context) {
+                    if try ActivityLocationPolicy.reapplyRecentJourneyTiming(context: context) {
                         Diagnostics.record(context, subsystem: "Timeline",
-                                           message: "Absorbed movement a workout already accounted for, after an import.",
+                                           message: "Re-applied journey timing after an import.",
                                            severity: "info")
                     }
                 } catch {

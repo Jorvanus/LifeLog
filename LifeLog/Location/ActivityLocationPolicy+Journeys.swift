@@ -173,6 +173,35 @@ extension ActivityLocationPolicy {
     }
 
 
+    /// How long after a health-walking or motion record ends a started workout may
+    /// still begin and be read as the same excursion, rather than a separate outing.
+    /// Waking up, moving around, and pressing start on a workout is minutes, not hours
+    /// — wide enough for that, narrow enough that a real gap before a much later,
+    /// unrelated walk is not mistaken for one long lead-in.
+    private nonisolated static let workoutLeadInWindow: TimeInterval = 15 * 60
+
+    /// Whether a weaker movement record is steps taken before a workout began, rather
+    /// than an outing of its own.
+    ///
+    /// `boundStays` processes every movement record independently, earliest first, and
+    /// the first one to reach a stay wins. A `health-walking` or `motion` record for the
+    /// same walk as a workout routinely starts earlier — steps taken getting ready
+    /// before the workout is started — so it reached the stay first and pulled its
+    /// departure back to *those* steps rather than to when the workout actually began.
+    /// "I don't need those steps at home included in the walking time... the workout
+    /// can just be the walk" — so a record answering this is excluded from binding or
+    /// extending anything at all; the workout's own record does that, and the stay it
+    /// is bound to then naturally absorbs this record's time as its own, the same way
+    /// it already absorbs any other movement recorded inside it.
+    private nonisolated static func isWorkoutLeadIn(_ record: Visit, sessions: [WorkoutJourneys.WorkoutSession]) -> Bool {
+        guard record.source == "health-walking" || record.source == "motion",
+              let departure = record.departure else { return false }
+        return sessions.contains { session in
+            let gap = session.interval.start.timeIntervalSince(departure)
+            return gap >= 0 && gap <= workoutLeadInWindow
+        }
+    }
+
     /// Resolves every movement record against the stay it left, in date order, so a day
     /// with several outings settles each one against the right stay.
     ///
@@ -183,7 +212,13 @@ extension ActivityLocationPolicy {
                                    context: ModelContext? = nil, now: Date = .now) -> [Visit] {
         var stays = stays
         var resumed: [Visit] = []
-        let movement = activities
+        let sessions = activities.filter(isWorkoutSession).compactMap { WorkoutJourneys.WorkoutSession($0, now: now) }
+        // Excluded here, not only from the loop below: `extendStay` separately treats
+        // anything recorded inside a gap as evidence the gap should not be stretched
+        // across, and a lead-in record left in that list would still block the very
+        // extension this whole exclusion exists to allow.
+        let consideredActivities = activities.filter { !isWorkoutLeadIn($0, sessions: sessions) }
+        let movement = consideredActivities
             .filter { isMovementActivity($0) && $0.departure != nil }
             .sorted { $0.arrival < $1.arrival }
         for record in movement {
@@ -202,7 +237,7 @@ extension ActivityLocationPolicy {
             // it back first, and only reach forward when there was nothing to pull.
             let bounded = boundStay(departedWith: interval, stays: stays)
             let extended = bounded ? false : extendStay(upTo: interval, stays: stays,
-                                                        activities: activities)
+                                                        activities: consideredActivities)
             // Reported for recent journeys only, and only when a context is driving this,
             // so the log says what happened to today's records without writing hundreds
             // of lines about months of history. Everything else about this pass has been
