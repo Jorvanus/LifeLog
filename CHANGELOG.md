@@ -2,6 +2,11 @@
 
 ## 2026-08-09
 
+### Insights drops its own name and gains a date button
+
+- The word "Insights" at the top of the Insights tab was telling you which screen you were already looking at — the tab bar right below it says the same thing. Removed.
+- A calendar button now sits top-right, opening the same date picker the period title in the middle already opened. One more way in, not a replacement — tapping "Today" still works too.
+
 ### The lead-in fix needed the archive re-checked once, which the first build didn't ask for
 
 - Shipped without bumping the reconciliation marker, so it would have reached today's walk and every future one but never gone back for a day like 3 August, already sitting in the store under the old rule. The marker now reflects this fix too; the archive-wide pass runs once more on the next launch.

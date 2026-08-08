@@ -61,8 +61,15 @@ struct InsightsView: View {
                 }
             }
             .accessibilityIdentifier("insights-screen")
-            .navigationTitle("Insights")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { choosingDate = true } label: {
+                        Image(systemName: "calendar")
+                    }
+                    .accessibilityLabel("Choose a date")
+                }
+            }
             .sheet(isPresented: $choosingDate) {
                 NavigationStack {
                     DatePicker("Choose date", selection: $anchorDate, displayedComponents: .date)

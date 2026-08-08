@@ -373,4 +373,15 @@ final class LifeLogUITests: XCTestCase {
         // still build and stay reachable at the largest size, which is where they
         // previously fell over.
     }
+
+    func testInsightsDateButtonOpensTheDatePicker() {
+        app.tabBars.buttons["Insights"].tap()
+        XCTAssertTrue(element("insights-screen").waitForExistence(timeout: 10))
+
+        app.buttons["Choose a date"].tap()
+        XCTAssertTrue(app.navigationBars["Choose Date"].waitForExistence(timeout: 5))
+
+        app.buttons["Done"].tap()
+        XCTAssertFalse(app.navigationBars["Choose Date"].exists)
+    }
 }
