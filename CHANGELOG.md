@@ -1,5 +1,15 @@
 # Change log
 
+## 2026-08-09
+
+### A known place stopped meaning "the person agreed to this visit"
+
+- A park on a regular walking route was landing in the review queue — "Did you stop here?" — every single time it was merely passed, because it is a Saved Place: Core Location has matched that coordinate before, so every pass came back `recognitionConfidence == "learned"`, and that confidence alone was protecting it from ever being withdrawn when a route couldn't settle the question outright.
+- That conflated two different facts. "Learned" means the *place* has been recognised before — it says nothing about whether *this* particular pass was a stop. Only a chosen activity, typed or picked for that specific visit, is the person actually agreeing with it.
+- Without a route to consult, a stay is now superseded when it is unanswered and brief — matching the same ten-minute limit the review queue itself already uses to decide "somewhere passed" from "somewhere spent time." A Saved Place is not, on its own, exempt any more. Duration is what still protects a long stay a workout happens to fully cover, such as a workout started before leaving the house — that guard was never really about the place's name, and now it does the job on its own.
+- Independently checked against Life Cycle's own record of the same morning: it logged the whole stretch as one uninterrupted forty-five-minute walk, no stops at all — confirming this wasn't only the park. A five-minute stop recorded moments earlier at a shop the walk also merely passed will fold back into the same walk once this runs.
+- Existing installs need one more pass over the whole archive for this to reach a stay already stuck from before; that runs once on the next launch.
+
 ## 2026-08-08
 
 ### Editing a saved place name no longer mutates the store on every keystroke

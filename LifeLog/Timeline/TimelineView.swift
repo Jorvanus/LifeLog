@@ -28,7 +28,12 @@ struct TimelineView: View {
     // stay open until the journey that left it; v6 exists because v5 never ran — the
     // marker below was written even when the repair was skipped for an unloaded query,
     // so bumping the key alone could not recover it.
-    @AppStorage("location-policy-reconciled-v8") private var locationPolicyReconciled = false
+    // v9: WorkoutJourneys' no-route fallback stopped exempting "learned"/"confirmed"
+    // stays outright (2026-08-09) — a stay already stuck in the review queue under the
+    // old rule needs this pass to run again to be re-evaluated; it will not clear on
+    // its own, since the workout's HKWorkout sample was already delivered once and an
+    // anchored query does not redeliver it without a Health re-import.
+    @AppStorage("location-policy-reconciled-v9") private var locationPolicyReconciled = false
     // Undoes the stays v3 split in two before reconciliation runs again.
     @AppStorage("stay-splits-rejoined-v1") private var staySplitsRejoined = false
     // Puts back together the workouts the import path used to cut up at stay boundaries.

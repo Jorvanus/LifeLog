@@ -83,10 +83,24 @@ enum WorkoutJourneys {
     ///
     /// Guarded so a genuine stop survives, because these are places people really do go:
     ///
-    /// - a Saved Place is never touched — arriving home mid-walk is still arriving home;
+    /// - a stay that mostly outlives the workout is never touched — coverage does this,
+    ///   not the place's name, so stopping home for good after a walk leaves a stay
+    ///   reaching well past the session and survives without anything knowing it is Home;
     /// - a stay the person named or corrected themselves is never touched;
-    /// - a stay that mostly outlives the workout is never touched, so stopping in for an
-    ///   hour after a walk leaves a stay reaching well past the session and survives.
+    /// - with a route, the path itself decides: kept moving throughout supersedes it,
+    ///   stayed put keeps it, regardless of anything else known about the place.
+    ///
+    /// Without a route, a stay survives unless it is both unanswered and brief — until
+    /// 2026-08-09, `recognitionConfidence == "learned"` protected it regardless of
+    /// duration, on the theory that a confidently named place was a real destination.
+    /// It is not: "learned" means Core Location has matched this coordinate to a Saved
+    /// Place before, which is a fact about the *place*, not about whether the person
+    /// stopped *this time*. Cedric Archer Park sits on a walking route and is passed
+    /// most days; every pass came back "learned" and none of them were ever asked
+    /// about, however briefly the walk was there. The brief-stay requirement is what
+    /// still protects Home when a workout happens to cover it whole. A route can still
+    /// prove a genuine stop outright — the branch above this one — so this only affects
+    /// cases with no path to consult at all.
     ///
     /// Superseded, not deleted: the row keeps its coordinates and can be read back in
     /// Diagnostics, which matters when the guard turns out to be wrong.
@@ -165,11 +179,18 @@ enum WorkoutJourneys {
             let reason: String
             if verdicts.isEmpty {
                 // No path to consult. Fall back to the weaker test, which only withdraws
-                // a guess nobody has agreed with: an unconfirmed name the person has
-                // neither saved nor labelled.
-                guard stay.recognitionConfidence != "learned",
-                      stay.recognitionConfidence != "confirmed",
-                      stay.userActivity == nil else { continue }
+                // a guess nobody has personally agreed with and that was brief enough to
+                // be a pass in the first place — the same `briefStayLimit` the review
+                // queue itself uses to decide whether something is "somewhere passed"
+                // rather than "somewhere spent time". Being a known Saved Place is not
+                // agreement: it is Core Location recognising a coordinate it has seen
+                // before, a fact about the place rather than about this particular pass.
+                // A workout begun before leaving the house can cover an entire half-hour
+                // stay at Home, and full coverage there must not read as evidence of
+                // nothing — the duration is the evidence, and only an explicit answer
+                // (a chosen activity) or a short stay overrides it.
+                guard stay.userActivity == nil,
+                      duration <= ReviewQueue.briefStayLimit else { continue }
                 reason = share
             } else {
                 guard verdicts.contains(true) else { continue }

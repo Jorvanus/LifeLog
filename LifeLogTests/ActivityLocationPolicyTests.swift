@@ -1330,6 +1330,36 @@ struct ActivityLocationPolicyTests {
         #expect(shop.resolutionState != .superseded)
     }
 
+    @Test("Without a route, a known place is still superseded unless the person answered")
+    func learnedPlaceWithNoRouteIsStillSupersededWithoutAnAnswer() throws {
+        let context = try makeContext()
+        // Cedric Archer Park again, from the 9 August capture: sits on a walking route
+        // and gets passed most mornings, so "learned" is true on every occurrence and
+        // says nothing about whether this one was a stop. Until 2026-08-09 that
+        // confidence alone protected it from the review queue every single time,
+        // however brief the stay and however completely the workout covered it.
+        let park = Visit(arrival: base.addingTimeInterval(15 * 60),
+                         departure: base.addingTimeInterval(17 * 60),
+                         latitude: -23.44096, longitude: 150.45,
+                         placeName: "Cedric Archer Park", inferredActivity: "Walking",
+                         source: "automatic", recognitionConfidence: "learned")
+        // No route: the workout ended before Health had delivered one, which is the
+        // ordinary case for a short stay near the start of a walk.
+        let workout = Visit(arrival: base, departure: base.addingTimeInterval(34 * 60),
+                            latitude: 0, longitude: 0, placeName: "Walking workout",
+                            inferredActivity: "Walking", source: "health-workout")
+        [park, workout].forEach(context.insert)
+        try context.save()
+
+        let superseded = WorkoutJourneys.supersedePassingStays(
+            during: [workout], stays: [park], context: context,
+            now: base.addingTimeInterval(2 * 60 * 60)
+        )
+
+        #expect(superseded == 1, "a known place is not the same as a person confirming this visit")
+        #expect(park.resolutionState == .superseded)
+    }
+
     @Test("Without a path, a stay the person named or saved is left alone")
     func routelessWorkoutDoesNotWithdrawAnAgreedStay() throws {
         let context = try makeContext()
