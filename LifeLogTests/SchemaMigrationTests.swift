@@ -165,6 +165,50 @@ struct SchemaMigrationTests {
         #expect(try context.fetch(FetchDescriptor<SavedPlace>())[0].mapsIdentifier == "I1234567890ABCDEF")
     }
 
+    @Test("A V4 store gains the location journal without losing anything it held")
+    func migratesV4StoreAddingLocationJournal() throws {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LifeLog-v4-\(UUID().uuidString).store")
+        defer { try? FileManager.default.removeItem(at: storeURL) }
+
+        let arrival = Date(timeIntervalSince1970: 1_800_000_000)
+        let v4Schema = Schema(versionedSchema: LifeLogSchemaV4.self)
+        let v4Configuration = ModelConfiguration(
+            "LifeLogMigrationFixture", schema: v4Schema, url: storeURL,
+            allowsSave: true, cloudKitDatabase: .none
+        )
+        do {
+            let container = try ModelContainer(for: v4Schema, configurations: [v4Configuration])
+            let context = ModelContext(container)
+            let visit = Visit(arrival: arrival, departure: arrival.addingTimeInterval(1_800),
+                              latitude: -23.4455, longitude: 150.4522, placeName: "Home",
+                              inferredActivity: "At home", note: "V4 fixture", source: "automatic")
+            context.insert(visit)
+            context.insert(SavedPlace(name: "Home", latitude: -23.4455, longitude: 150.4522,
+                                      radius: 85, defaultActivity: "At home",
+                                      mapsIdentifier: "I1234567890ABCDEF"))
+            try context.save()
+        }
+
+        let context = ModelContext(try openVersionedStore(at: storeURL))
+        let visits = try context.fetch(FetchDescriptor<Visit>())
+        let places = try context.fetch(FetchDescriptor<SavedPlace>())
+
+        // Nothing gained or lost a property, so everything is carried over untouched.
+        #expect(visits.count == 1)
+        #expect(visits[0].note == "V4 fixture")
+        #expect(places.count == 1)
+        #expect(places[0].mapsIdentifier == "I1234567890ABCDEF")
+        // The new table exists and is empty, which is the whole of this migration.
+        #expect(try context.fetch(FetchDescriptor<LocationEvent>()).isEmpty)
+
+        context.insert(LocationEvent(callbackType: "visit-arrival", callbackAt: arrival,
+                                     arrival: arrival, latitude: -23.4455, longitude: 150.4522,
+                                     accuracy: 12, transition: "created", visitArrival: arrival))
+        try context.save()
+        #expect(try context.fetch(FetchDescriptor<LocationEvent>()).count == 1)
+    }
+
     @Test("A V1 store carrying place types migrates to V2 without losing visits or places")
     func migratesV1StoreDroppingPlaceType() throws {
         let storeURL = FileManager.default.temporaryDirectory
@@ -237,8 +281,11 @@ struct SchemaMigrationTests {
         try context.save()
     }
 
+    /// Opens at the newest version, so every fixture in this file is carried all the
+    /// way to what the app actually ships. Left at V4 while the app moved to V5, these
+    /// tests would keep passing without once exercising the new stage.
     private func openVersionedStore(at url: URL) throws -> ModelContainer {
-        let schema = Schema(versionedSchema: LifeLogSchemaV4.self)
+        let schema = Schema(versionedSchema: LifeLogSchemaV5.self)
         let configuration = ModelConfiguration(
             "LifeLogMigrationFixture", schema: schema, url: url,
             allowsSave: true, cloudKitDatabase: .none

@@ -147,7 +147,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Troubleshooting")
                 } footer: {
-                    Text("Records why each location was merged, closed or renamed, and which places Apple Maps offered for it. That includes place names and distances — a detailed record of where you have been — so it stays on this iPhone, expires with the rest of Diagnostics, and is off unless you turn it on.")
+                    Text("Records why each location was merged, closed or renamed, which places Apple Maps offered for it, and a journal of the raw Core Location callbacks behind them — including their coordinates and accuracy. That is a precise record of where you have been, so it stays on this iPhone, is trimmed like the rest of Diagnostics, and is off unless you turn it on. The journal is under Diagnostics, where it can also be emptied.")
                 }
                 Section {
                     LabeledContent("On-device model", value: SmartActivityClassifier.availabilityDescription)

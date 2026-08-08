@@ -153,9 +153,11 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                                message: "A visit arrived later than expected (\(Int(callbackDelay / 60)) minutes).")
         }
         if visit.departureDate == .distantFuture {
-            createVisit(at: visit.coordinate, arrival: visit.arrivalDate)
+            createVisit(at: visit.coordinate, arrival: visit.arrivalDate,
+                        callbackType: "visit-arrival", accuracy: visit.horizontalAccuracy)
         } else {
-            closeVisit(at: visit.coordinate, arrival: visit.arrivalDate, departure: visit.departureDate)
+            closeVisit(at: visit.coordinate, arrival: visit.arrivalDate, departure: visit.departureDate,
+                       callbackType: "visit-departure", accuracy: visit.horizontalAccuracy)
         }
     }
 
@@ -166,11 +168,23 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
               location.horizontalAccuracy <= 1_000,
               abs(location.timestamp.timeIntervalSinceNow) <= 5 * 60 else { return }
         latestLocationTimestamp = location.timestamp
+        let seeding = shouldSeedCurrentLocation
         if shouldSeedCurrentLocation {
             shouldSeedCurrentLocation = false
             seedCurrentVisit(from: location)
         }
         identifyRecentUnknown(near: location)
+        // The ordinary fixes, which create nothing on their own but are the evidence a
+        // stay was or was not where it claims. Their accuracy is the field that matters:
+        // a stay built on a 200 m fix and one built on a 5 m fix look identical
+        // afterwards, and only this says which it was.
+        if let context {
+            LocationJournal.record("location-update", at: location.coordinate,
+                                   callbackAt: location.timestamp,
+                                   accuracy: location.horizontalAccuracy,
+                                   transition: seeding ? .created : .none,
+                                   openVisit: latestLocationVisit(in: context), context: context)
+        }
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
@@ -180,7 +194,9 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         Diagnostics.record(context, subsystem: "Core Location", message: "A location update failed.")
     }
 
-    private func createVisit(at coordinate: CLLocationCoordinate2D, arrival: Date) {
+    private func createVisit(at coordinate: CLLocationCoordinate2D, arrival: Date,
+                             callbackType: String = "visit-arrival",
+                             accuracy: CLLocationAccuracy = -1) {
         guard let context, CLLocationCoordinate2DIsValid(coordinate) else { return }
         let callbackStartedAt = Date.now
         let safeArrival = min(arrival, .now)
@@ -192,6 +208,9 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             if duplicate.needsCategorisation { identifyPlace(duplicate) }
             reconcileActivity(with: duplicate, context: context)
             save(context)
+            LocationJournal.record(callbackType, at: coordinate, callbackAt: arrival,
+                                   arrival: safeArrival, accuracy: accuracy,
+                                   transition: .merged, openVisit: duplicate, context: context)
             Diagnostics.locationMetric(context, operation: "callback_to_save",
                                        durationMs: Int((Date.now.timeIntervalSince(callbackStartedAt) * 1000).rounded()))
             return
@@ -206,6 +225,9 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 reconcileActivity(with: latest, context: context)
                 try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
                 save(context)
+                LocationJournal.record(callbackType, at: coordinate, callbackAt: arrival,
+                                       arrival: safeArrival, accuracy: accuracy,
+                                       transition: .merged, openVisit: latest, context: context)
                 Diagnostics.locationMetric(context, operation: "callback_to_save",
                                            durationMs: Int((Date.now.timeIntervalSince(callbackStartedAt) * 1000).rounded()))
                 return
@@ -249,6 +271,12 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         try? SavedPlaceLearning.enrichImportedVisits(with: item, context: context)
         try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
         save(context)
+        // Reported against the visit this callback produced, so the journal points at
+        // the stay it is explaining rather than the one it replaced.
+        LocationJournal.record(callbackType, at: coordinate, callbackAt: arrival,
+                               arrival: safeArrival, departure: inferredDeparture,
+                               accuracy: accuracy, transition: .created,
+                               openVisit: item, context: context)
         Diagnostics.locationMetric(context, operation: "callback_to_save",
                                    durationMs: Int((Date.now.timeIntervalSince(callbackStartedAt) * 1000).rounded()))
         if saved == nil { identifyPlace(item) }
@@ -271,7 +299,9 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         }
     }
 
-    private func closeVisit(at coordinate: CLLocationCoordinate2D, arrival: Date, departure: Date) {
+    private func closeVisit(at coordinate: CLLocationCoordinate2D, arrival: Date, departure: Date,
+                            callbackType: String = "visit-departure",
+                            accuracy: CLLocationAccuracy = -1) {
         guard let context else { return }
         let resolutionStartedAt = Date.now
         var descriptor = FetchDescriptor<Visit>(
@@ -286,6 +316,11 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
               ) else {
             Diagnostics.record(context, subsystem: "Core Location",
                                message: "A departure callback did not match a stored arrival.")
+            // A departure that matched nothing is the most useful row in the journal:
+            // it is a real observation the timeline has no record of acting on.
+            LocationJournal.record(callbackType, at: coordinate, callbackAt: departure,
+                                   arrival: arrival, departure: departure, accuracy: accuracy,
+                                   transition: .ignored, context: context)
             return
         }
         matched.departure = max(matched.arrival, min(departure, .now))
@@ -293,6 +328,9 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         _ = try? ActivityLocationPolicy.resolveLocationCallbacks(context: context)
         try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
         save(context)
+        LocationJournal.record(callbackType, at: coordinate, callbackAt: departure,
+                               arrival: arrival, departure: matched.departure, accuracy: accuracy,
+                               transition: .closed, openVisit: matched, context: context)
         Diagnostics.locationMetric(context, operation: "callback_resolution",
                                    durationMs: Int((Date.now.timeIntervalSince(resolutionStartedAt) * 1000).rounded()))
         Diagnostics.locationMetric(context, operation: "callback_to_save",
@@ -404,9 +442,9 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         guard let place = monitoredPlaces[event.identifier] else { return }
         switch event.state {
         case .satisfied:
-            createVisit(at: place.coordinate, arrival: event.date)
+            createVisit(at: place.coordinate, arrival: event.date, callbackType: "geofence-entry")
         case .unsatisfied:
-            closeMonitoredVisit(named: place.name, at: event.date)
+            closeMonitoredVisit(named: place.name, at: event.date, coordinate: place.coordinate)
         default:
             break
         }
@@ -414,7 +452,8 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
 
     /// A geofence exit is the departure itself, observed as it happens rather than
     /// inferred from wherever the person turned up next.
-    private func closeMonitoredVisit(named name: String, at departure: Date) {
+    private func closeMonitoredVisit(named name: String, at departure: Date,
+                                     coordinate: CLLocationCoordinate2D? = nil) {
         guard let context, let open = latestLocationVisit(in: context), open.departure == nil,
               open.placeName.caseInsensitiveCompare(name) == .orderedSame else { return }
         open.departure = max(open.arrival, min(departure, .now))
@@ -422,6 +461,11 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         reconcileActivity(with: open, context: context)
         _ = try? ActivityLocationPolicy.resolveLocationCallbacks(context: context)
         save(context)
+        if let coordinate {
+            LocationJournal.record("geofence-exit", at: coordinate, callbackAt: departure,
+                                   departure: open.departure, transition: .closed,
+                                   openVisit: open, context: context)
+        }
     }
 
     private func nearestSavedPlace(to coordinate: CLLocationCoordinate2D) -> SavedPlace? {

@@ -293,20 +293,39 @@ enum LifeLogSchemaV4: VersionedSchema {
     }
 }
 
+/// Adds the location-event journal: the raw Core Location callbacks behind the visits,
+/// kept only while detailed diagnostics are on.
+///
+/// A new model and nothing else. No existing type gains, loses or changes a property,
+/// so every visit, place and correction is carried over untouched and the store gains
+/// one empty table — which is the cheapest migration there is, and deliberately chosen
+/// over giving `Visit` an identifier to reference, which would have rewritten every one
+/// of them.
+enum LifeLogSchemaV5: VersionedSchema {
+    static let versionIdentifier = Schema.Version(5, 0, 0)
+
+    static var models: [any PersistentModel.Type] {
+        [LifeLog.Visit.self, LifeLog.SavedPlace.self, VisitCorrection.self,
+         DiagnosticEvent.self, LocationEvent.self]
+    }
+}
+
 enum LifeLogMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [LifeLogSchemaV1.self, LifeLogSchemaV2.self, LifeLogSchemaV3.self, LifeLogSchemaV4.self]
+        [LifeLogSchemaV1.self, LifeLogSchemaV2.self, LifeLogSchemaV3.self,
+         LifeLogSchemaV4.self, LifeLogSchemaV5.self]
     }
 
-    /// Dropping a property and adding an optional one are both lightweight, so
-    /// SwiftData rewrites the store without a custom handler. Every existing visit
-    /// keeps its fields and arrives at V3 with no route, which is correct: nothing
-    /// recorded before this version has a path to restore.
+    /// Dropping a property, adding an optional one and adding a whole model are all
+    /// lightweight, so SwiftData rewrites the store without a custom handler. Every
+    /// existing visit keeps its fields and arrives at V3 with no route, which is
+    /// correct: nothing recorded before this version has a path to restore.
     static var stages: [MigrationStage] {
         [
             .lightweight(fromVersion: LifeLogSchemaV1.self, toVersion: LifeLogSchemaV2.self),
             .lightweight(fromVersion: LifeLogSchemaV2.self, toVersion: LifeLogSchemaV3.self),
-            .lightweight(fromVersion: LifeLogSchemaV3.self, toVersion: LifeLogSchemaV4.self)
+            .lightweight(fromVersion: LifeLogSchemaV3.self, toVersion: LifeLogSchemaV4.self),
+            .lightweight(fromVersion: LifeLogSchemaV4.self, toVersion: LifeLogSchemaV5.self)
         ]
     }
 }

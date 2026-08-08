@@ -10,6 +10,7 @@ struct DiagnosticsView: View {
     private var supersededVisits: [Visit]
     @Query(filter: #Predicate<Visit> { $0.source == "automatic" })
     private var automaticVisits: [Visit]
+    @Query private var locationEvents: [LocationEvent]
     @State private var reportURL: URL?
     @State private var confirmingClear = false
     @State private var message: String?
@@ -50,6 +51,21 @@ struct DiagnosticsView: View {
                     .accessibilityIdentifier("clear-diagnostics")
             } footer: {
                 Text("Reports contain only aggregate timings, counts, app version, and device/OS class—not coordinates, place names, notes, or Health values.")
+            }
+            // Its own screen rather than mixed into the list below: these are raw
+            // inputs, there are several per arrival, and they carry coordinates that
+            // the rest of this screen is careful not to.
+            Section {
+                NavigationLink {
+                    LocationJournalView()
+                } label: {
+                    LabeledContent("Location journal", value: "\(locationEvents.count)")
+                }
+                .accessibilityIdentifier("location-journal-link")
+            } footer: {
+                Text(LocationDiagnostics.isDetailed
+                     ? "The Core Location callbacks behind your timeline, with their coordinates and accuracy. Recording now."
+                     : "Empty unless detailed location diagnostics are on, in Settings.")
             }
             Section("Events") {
                 if diagnostics.isEmpty { Text("No diagnostic events recorded.").foregroundStyle(.secondary) }
@@ -100,5 +116,84 @@ struct DiagnosticsView: View {
         } catch {
             message = "LifeLog couldn’t clear the diagnostics."
         }
+    }
+}
+
+/// The raw Core Location callbacks, newest first.
+///
+/// Every other screen in LifeLog shows a conclusion. This shows the evidence: what the
+/// phone reported, how accurately, how late it arrived, and which branch the resolver
+/// took. A stay in the wrong place is usually one bad row here, and until now that row
+/// existed only in the moment it was handled.
+struct LocationJournalView: View {
+    @Environment(\.modelContext) private var context
+    @Query(sort: \LocationEvent.recordedAt, order: .reverse) private var events: [LocationEvent]
+    @State private var confirmingClear = false
+
+    var body: some View {
+        List {
+            if events.isEmpty {
+                ContentUnavailableView(
+                    "No location callbacks recorded",
+                    systemImage: "location.slash",
+                    description: Text(LocationDiagnostics.isDetailed
+                                      ? "Recording is on. Callbacks will appear here as Core Location delivers them."
+                                      : "Turn on detailed location diagnostics in Settings to start recording.")
+                )
+            } else {
+                Section {
+                    Button("Clear location journal", role: .destructive) { confirmingClear = true }
+                        .accessibilityIdentifier("clear-location-journal")
+                } footer: {
+                    Text("These rows hold precise coordinates. They stay on this iPhone, and the oldest are dropped past \(LocationJournal.retentionLimit).")
+                }
+                ForEach(events) { event in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(event.callbackType).font(.caption.bold())
+                            Spacer()
+                            Text(event.transition)
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(event.transition == "ignored" ? .orange : .secondary)
+                        }
+                        Text(detail(for: event)).font(.footnote).foregroundStyle(.secondary)
+                        Text(position(of: event)).font(.caption2).foregroundStyle(.tertiary)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Location Journal")
+        .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("location-journal-screen")
+        .confirmationDialog("Clear the location journal?", isPresented: $confirmingClear) {
+            Button("Clear \(events.count) events", role: .destructive) { LocationJournal.clear(context) }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This is the only record of the callbacks behind your timeline. Clearing it cannot be undone.")
+        }
+    }
+
+    /// Times first, because lateness is the fault this screen exists to expose: a stay
+    /// that looks mistimed is usually a callback that was delivered long after the
+    /// moment it describes.
+    private func detail(for event: LocationEvent) -> String {
+        var parts: [String] = [event.callbackAt.formatted(date: .abbreviated, time: .standard)]
+        let delay = event.deliveryDelay
+        if delay >= 60 { parts.append("delivered \(Int(delay / 60)) min later") }
+        if let arrival = event.arrival {
+            parts.append("arrived \(arrival.formatted(date: .omitted, time: .standard))")
+        }
+        if let departure = event.departure {
+            parts.append("left \(departure.formatted(date: .omitted, time: .standard))")
+        }
+        if let distance = event.distanceFromCurrentVisit {
+            parts.append("\(Int(distance.rounded())) m from the open stay")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private func position(of event: LocationEvent) -> String {
+        let accuracy = event.accuracy >= 0 ? "±\(Int(event.accuracy.rounded())) m" : "accuracy unknown"
+        return String(format: "%.5f, %.5f · %@", event.latitude, event.longitude, accuracy)
     }
 }

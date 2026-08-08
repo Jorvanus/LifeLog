@@ -2,6 +2,13 @@
 
 ## 2026-08-08
 
+### A journal of the raw location callbacks behind the timeline
+
+- Everything else LifeLog records is a conclusion — a visit, a correction, a sentence in Diagnostics. When a stay lands in the wrong place or at the wrong time the conclusion is the thing in doubt, and the inputs that produced it were gone. This keeps the inputs: what Core Location reported, when it reported it, how accurately, how far from the stay already in progress, and which branch the resolver then took.
+- Under **Diagnostics → Location journal**. Arrivals, departures, geofence crossings and ordinary fixes, newest first, each showing how late the callback was delivered — a stay that looks mistimed is usually a callback that was — and whether it was merged, closed, created or ignored. A departure that matched no stored arrival is called out, because that is a real observation the timeline has no record of acting on.
+- **It holds precise coordinates, deliberately**, which is the opposite of every other diagnostic. So it is written only while detailed location diagnostics are on, which is off unless you turn it on, is trimmed to the most recent 500, and can be emptied from the journal itself. The Settings footer for that switch now says so; it previously promised only place names and distances, which would have understated what it turns on.
+- Storing this needed a new table and nothing else — no existing type gains, loses or changes a field — so upgrading carries every visit, place and correction across untouched. Adding an identifier to `Visit` to reference instead would have rewritten all 25,000 of them; the journal points at a visit by its arrival time, the way corrections already do.
+
 ### The visit editor now says why it settled on a place, not just how sure it was
 
 - "Confirmed", "Learned", "Medium" is a verdict with the reasoning left out. When a name is wrong, what matters is not how confident the app was but what it was reading.
