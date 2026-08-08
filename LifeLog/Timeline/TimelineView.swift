@@ -278,6 +278,22 @@ struct TimelineView: View {
                     // be retried on the next appearance.
                 }
             }
+            // After the import, not before it. The import has its own store connection and
+            // saves last, so a correction applied on appearance is overwritten within the
+            // same second — which is exactly what the diagnostics recorded, twice. This
+            // fires when the import announces it has finished, so the correction lands on
+            // top of its write instead of underneath it.
+            .onReceive(NotificationCenter.default.publisher(for: InsightsInvalidation.notification)) { _ in
+                do {
+                    if try ActivityLocationPolicy.reapplyRecentJourneyTiming(context: context) {
+                        Diagnostics.record(context, subsystem: "Timeline",
+                                           message: "Re-applied journey timing after an import.",
+                                           severity: "info")
+                    }
+                } catch {
+                    // Retried on the next import or appearance.
+                }
+            }
             .task {
                 // Refresh elapsed labels without polling Core Location or the store.
                 while !Task.isCancelled {

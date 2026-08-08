@@ -2,6 +2,11 @@
 
 ## 2026-08-08
 
+### The journey correction now lands after the import, not under it
+
+- Re-applying the correction whenever the Timeline appeared was still not enough: the background Health import runs at launch too, finishes second, and its save overwrites. The log caught both events in the same second, with the old value back 36 seconds later.
+- The correction now also runs when the import announces it has finished, so it lands on top of that write rather than beneath it.
+
 ### The gap before a walk closes, and stays closed
 
 - The repair had been correct for four builds and invisible every time. The diagnostics finally caught it: the stay's departure was written as 07:16:22 and read back as 07:02:44 **in the same second**, with the background Health import running in that second.
