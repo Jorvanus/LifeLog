@@ -64,8 +64,10 @@ struct RootView: View {
             // Core Motion discards history about a week old, so it is collected
             // whenever LifeLog runs rather than only when Settings is visited.
             activityData.refreshAutomatically()
-            Diagnostics.performance(context, subsystem: "Launch", operation: "service setup",
-                                    startedAt: startedAt, threshold: 0.1)
+            // One record of one measurement. `budget` below reports this same elapsed
+            // time on every launch, so a `performance` sample from the same `startedAt`
+            // only added a second row — and a contradictory one, calling 150 ms "Slow"
+            // beside a "pass" against the 250 ms budget.
             Diagnostics.budget(context, subsystem: "Launch", operation: "responsive first screen",
                                startedAt: startedAt,
                                budget: Diagnostics.PerformanceBudget.responsiveFirstScreen)

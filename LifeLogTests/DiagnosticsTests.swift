@@ -20,6 +20,33 @@ struct DiagnosticsTests {
         return ModelContext(container)
     }
 
+    // The rule these two cover: a timing sample answers "was this slow", and only an
+    // unconditional record answers "did this run". Conflating them cost four builds on
+    // 8 August, when a repair that ran and a repair that never ran left the same trace.
+
+    @Test("A fast operation leaves no timing sample at all")
+    func performanceStaysSilentBelowItsThreshold() throws {
+        let context = try makeContext()
+        Diagnostics.performance(context, subsystem: "Timeline", operation: "a quick repair",
+                                startedAt: .now)
+
+        let events = try context.fetch(FetchDescriptor<DiagnosticEvent>())
+        #expect(events.isEmpty, "this is the silence that made 'ran' and 'never ran' identical")
+    }
+
+    @Test("A budget sample records whether or not it was slow")
+    func budgetRecordsEveryTime() throws {
+        let context = try makeContext()
+        Diagnostics.budget(context, subsystem: "Launch", operation: "responsive first screen",
+                           startedAt: .now, budget: 10)
+
+        let events = try context.fetch(FetchDescriptor<DiagnosticEvent>())
+        #expect(events.count == 1)
+        #expect(events.first?.message.contains("Budget pass") == true)
+        // Kept out of the general bucket so chatty location logging cannot evict it.
+        #expect(events.first?.category == Diagnostics.Category.performance)
+    }
+
     @Test("A queued failure outlives the process that recorded it")
     func queuedFailureSurvivesInDefaults() throws {
         let defaults = try makeDefaults()

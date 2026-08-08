@@ -2,6 +2,12 @@
 
 ## 2026-08-08
 
+### The background import now says it ran, whether or not it was slow
+
+- It is the writer that lands on top of everything else — its own store connection, its own copies of the same visits, and the save that wins — so "did it run, and when" is the question every visit correction is now sequenced against. It answered that only on launches where it happened to take longer than 250 ms. The two entries that finally explained four failed fixes, at 334 ms and 361 ms, were luck.
+- All ten timing samples in the app were checked rather than just this one. Three of them — launch service setup and both Insights passes — sat beside a budget line already measuring the same interval unconditionally, so they only ever added a second and contradictory row: "Slow, 150 ms" next to "Budget pass, 150 ms / 250 ms", for one measurement. Those are gone.
+- The five that remain are all computations whose results are on the screen in front of you, so their absence is visible without a log. A timing sample is the right instrument there, and the wrong one for anything whose silence is indistinguishable from success.
+
 ### Shopping is no longer recorded as a 29-minute walk between two shops
 
 - A shop visit on 8 August ran 9:36 to 10:07 and appeared as two minutes of shopping followed by twenty-nine minutes of walking — to a shop 455 metres away, reached by car. Two separate faults each produced half of it.

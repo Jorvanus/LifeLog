@@ -510,8 +510,21 @@ final class ActivityDataService {
                 importProgress = ActivityImportProgress(state: .complete, title: "Import complete",
                                                         completed: records.count, total: records.count)
                 importTask = nil
-                Diagnostics.performance(context, subsystem: "Activity Import", operation: "background import",
-                                        startedAt: startedAt, itemCount: records.count)
+                // Unconditionally, not only when slow. This import has its own store
+                // connection and its save lands on top of whatever the main context
+                // wrote, so "did it run, and when" is the question every visit
+                // correction is now sequenced against — and `performance` answered it
+                // only on the launches where it happened to exceed 250 ms. The two
+                // entries that finally explained four failed fixes on 8 August, at
+                // 334 ms and 361 ms, were luck; a faster import left no trace at all.
+                // Kept in the performance bucket so chatty location logging cannot
+                // evict it, and worded so the performance report still reads both
+                // numbers out of it.
+                Diagnostics.record(context, subsystem: "Activity Import",
+                                   message: "Background import finished: "
+                                          + "\(Int((Date.now.timeIntervalSince(startedAt) * 1000).rounded())) ms "
+                                          + "(\(records.count) items)",
+                                   severity: "info", category: Diagnostics.Category.performance)
                 InsightsInvalidation.invalidate(reason: "HealthKit or Motion import", context: context)
             } catch is CancellationError {
                 await importWriter.cancel()

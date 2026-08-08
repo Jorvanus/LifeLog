@@ -921,8 +921,10 @@ struct InsightsView: View {
                                    operation: "Insights fallback fetch")
             }
         }
-        Diagnostics.performance(context, subsystem: "Insights", operation: "period fetch",
-                                startedAt: fetchStartedAt, itemCount: visits.count)
+        // `budget` records this same elapsed time unconditionally, and against the
+        // window's own limit rather than a flat 250 ms — which a year view is expected
+        // to exceed. The `performance` sample beside it wrote a second row calling that
+        // "Slow" while the budget row called the same measurement a pass.
         Diagnostics.budget(context, subsystem: "Insights", operation: "\(window.rawValue) period fetch",
                            startedAt: fetchStartedAt,
                            budget: Diagnostics.PerformanceBudget.insights(window: window),
@@ -941,8 +943,6 @@ struct InsightsView: View {
         snapshot = snapshotCache.snapshot(key: cacheKey, generation: aggregationGeneration) {
             InsightsSnapshot.make(visits: visits, window: window, anchorDate: anchorDate, now: now, home: home)
         }
-        Diagnostics.performance(context, subsystem: "Insights", operation: "snapshot rebuild",
-                                startedAt: startedAt, itemCount: visits.count)
         Diagnostics.budget(context, subsystem: "Insights", operation: "\(window.rawValue) snapshot rebuild",
                            startedAt: startedAt,
                            budget: Diagnostics.PerformanceBudget.insights(window: window),
