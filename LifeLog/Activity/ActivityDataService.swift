@@ -222,8 +222,24 @@ final class ActivityDataService {
     /// hours later for no visible reason.
     ///
     /// Motion keeps the long interval because its queries are expensive and its
-    /// history spans a week. Health is read by anchor, so repeating it collects only
-    /// what has arrived since and costs almost nothing.
+    /// history spans a week. Sleep and workouts are read by anchor, so repeating them
+    /// collects only what has arrived since and costs almost nothing regardless of the
+    /// window handed to them — but `walkingRecords` has no anchored-query equivalent
+    /// and re-reads every step-count sample in the window on every call. A flat 30-day
+    /// window here, throttled to once every two minutes, meant every foreground
+    /// reprocessed roughly a month of steps: a real capture (`LifeLog-Performance-
+    /// Report.json`, 9 August) showed 18 imports averaging ~700ms, one at 1.9s, with
+    /// item counts flat around 392-421 rather than trending toward the handful of
+    /// genuinely new samples since the last read — the signature of a full re-scan,
+    /// not an incremental one.
+    ///
+    /// The window is now sized to the actual gap since the last successful health
+    /// refresh, floored at two days (what `requestHealthAccess` already uses for the
+    /// same "catch up since last time" purpose) and capped at thirty (what a full
+    /// `reimportHealthHistory` re-scans). Opened every few minutes, as this capture
+    /// was, it stays at the two-day floor and walking stops being re-read from scratch.
+    /// Left closed for a week, it widens to cover the real gap instead of silently
+    /// losing that week's walks the way a flat two-day window would have.
     func refreshAutomatically(now: Date = .now) {
         // Never interrupt an import in flight: starting one cancels the last, and a
         // half-finished import would lose its place.
@@ -237,12 +253,28 @@ final class ActivityDataService {
         let lastHealth = UserDefaults.standard.object(forKey: healthRefreshKey) as? Date
         let healthDue = lastHealth.map { now.timeIntervalSince($0) >= healthRefreshInterval } ?? true
         let healthDays = healthDue && HKHealthStore.isHealthDataAvailable()
-            && UserDefaults.standard.bool(forKey: healthRequestedKey) ? 30 : nil
+            && UserDefaults.standard.bool(forKey: healthRequestedKey)
+            ? Self.healthImportWindowDays(since: lastHealth, now: now) : nil
 
         guard motionDays != nil || healthDays != nil else { return }
         if motionDays != nil { UserDefaults.standard.set(now, forKey: motionRefreshKey) }
         if healthDays != nil { UserDefaults.standard.set(now, forKey: healthRefreshKey) }
         startImport(healthDays: healthDays, motionDays: motionDays)
+    }
+
+    /// How many days of Health history the routine refresh re-reads, sized to the
+    /// actual gap since the last successful read rather than a flat constant.
+    ///
+    /// Floored at two days — what `requestHealthAccess` already reads on first
+    /// connect — so the window comfortably outlasts `healthRefreshInterval` without
+    /// `walkingRecords`, which has no anchored-query equivalent, re-scanning a much
+    /// wider window than the gap it exists to cover. Capped at thirty, the same ceiling
+    /// `reimportHealthHistory` uses, so a very long absence costs one wide read rather
+    /// than an unbounded one. Pure and separated from `refreshAutomatically` so this
+    /// sizing can be tested without a `HealthKit`/`ModelContainer` fixture.
+    nonisolated static func healthImportWindowDays(since lastHealth: Date?, now: Date) -> Int {
+        let gapDays = lastHealth.map { Int((now.timeIntervalSince($0) / (24 * 60 * 60)).rounded(.up)) } ?? 2
+        return max(2, min(gapDays, 30))
     }
 
     /// Forgets where the Health import had got to, so the next one re-reads the window

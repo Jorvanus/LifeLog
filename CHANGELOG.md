@@ -2,6 +2,10 @@
 
 ## 2026-08-09
 
+### The routine Health refresh stops re-reading a month of steps every time
+
+- Walking data isn't read incrementally the way sleep and workouts are — it has no anchored-query equivalent, so it re-scans whatever window it's given from scratch every time. The routine refresh, throttled to once every two minutes, was handing it a flat 30-day window regardless, so every foreground reprocessed roughly a month of step-count samples: a real capture showed 18 imports in under three hours averaging ~700ms, one at 1.9s, with item counts flat around 392-421 rather than trending toward the handful of genuinely new samples since the last read. The window is now sized to the actual gap since the last successful read — two days during ordinary, frequent use, widening automatically to cover a real absence instead of a flat number either too small (silently losing history) or too large (re-reading it needlessly).
+
 ### Diagnostics focus on actionable slow paths
 
 - Fast Insights budget passes and completed Timeline reconciliation checks are no longer persisted on every tab appearance. Slow budget samples, recovery attempts, and resolver warnings remain visible, while correction validation now evaluates only the latest manual edit for an arrival.
