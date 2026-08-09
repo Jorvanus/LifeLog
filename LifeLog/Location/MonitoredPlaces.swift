@@ -27,7 +27,7 @@ enum MonitoredPlaces {
         var coordinate: CLLocationCoordinate2D { .init(latitude: latitude, longitude: longitude) }
         /// Stable across launches and independent of the store's identifiers, so a
         /// monitored region can be matched back to its place after a cold start.
-        var identifier: String { "place|\(name.lowercased())|\(rounded(latitude)),\(rounded(longitude))" }
+        var identifier: String { "place|\(NameKey.matching(name))|\(rounded(latitude)),\(rounded(longitude))" }
 
         private func rounded(_ value: Double) -> String { String(format: "%.5f", value) }
     }
@@ -67,7 +67,7 @@ enum MonitoredPlaces {
     /// overlap, and counting every named visit inside one would let a place stationed
     /// near a busier neighbour inherit its history and take its slot.
     private static func matches(_ visit: Visit, _ place: SavedPlace) -> Bool {
-        if visit.placeName.caseInsensitiveCompare(place.name) == .orderedSame { return true }
+        if NameKey.same(visit.placeName, place.name) { return true }
         guard visit.hasPlaceholderName else { return false }
         guard visit.latitude != 0 || visit.longitude != 0 else { return false }
         let distance = CLLocation(latitude: visit.latitude, longitude: visit.longitude)

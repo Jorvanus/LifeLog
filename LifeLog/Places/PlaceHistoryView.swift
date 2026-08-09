@@ -186,10 +186,12 @@ private struct PlaceHistoryDetail: View {
     }
 
     private func reload() {
-        let name = placeName
-        matching = (try? context.fetch(FetchDescriptor<Visit>(
-            predicate: #Predicate { $0.placeName == name }
-        ))) ?? []
+        // SwiftData's string predicate cannot express NameKey's accent and
+        // whitespace normalization, so fetch the names and apply the shared
+        // fallback identity in memory. This keeps bulk corrections consistent
+        // with the other place-history consumers.
+        let visits = (try? context.fetch(FetchDescriptor<Visit>())) ?? []
+        matching = visits.filter { NameKey.same($0.placeName, placeName) }
         breakdown = PlaceTimeBand.allCases.filter { $0 != .allDay }.map { slot in
             var counts: [String: Int] = [:]
             for visit in matching where slot.contains(visit.arrival) {

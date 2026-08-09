@@ -756,6 +756,19 @@ struct TimelineFixtureCoverageTests {
         #expect(ranked.first?.visits == 2)
     }
 
+    @Test("Monitored-place matching uses the shared name normalization")
+    func matchesMonitoredPlacesByNormalizedName() {
+        let place = SavedPlace(name: "Café Central", latitude: -23.37, longitude: 150.51, radius: 100)
+        let visit = Visit(arrival: base, departure: base.addingTimeInterval(600),
+                          latitude: 0, longitude: 0, placeName: "  cafe central  ",
+                          inferredActivity: "Eating", source: "automatic")
+
+        let ranked = MonitoredPlaces.prioritised([place], visits: [visit])
+
+        #expect(ranked.first?.visits == 1)
+        #expect(ranked.first?.identifier == "place|cafe central|-23.37000,150.51000")
+    }
+
     @Test("A label the catalogue has never heard of is still counted")
     func includesLabelsMissingFromTheCatalogue() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)

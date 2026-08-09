@@ -2,6 +2,10 @@
 
 ## 2026-08-09
 
+### Place-name fallback matching is consistent
+
+- Place History and monitored-place ranking now use the shared `NameKey` normalization for accent-, case-, and whitespace-insensitive fallback matching. Visit identity by Maps identifier remains a separate V5 migration.
+
 ### Place lookups stop retrying on every location update
 
 - An unresolved stay now gets at most three place-resolution attempts, spaced at least five minutes apart. A Maps search and its reverse-geocoding fallback share the same attempt, so repeated noisy fixes cannot keep sending the same place to MapKit.
