@@ -2,6 +2,10 @@
 
 ## 2026-08-09
 
+### Place decisions keep one explainable score
+
+- Saved Place/geofence evidence, Apple Maps distance and category, dwell duration, location accuracy, recurrence, time of day, and prior corrections now feed one place-scoring pipeline. Each visit keeps the component breakdown alongside its stored MapKit candidates for later inspection.
+
 ### Place-name fallback matching is consistent
 
 - Place History and monitored-place ranking now use the shared `NameKey` normalization for accent-, case-, and whitespace-insensitive fallback matching. Visit identity by Maps identifier remains a separate V5 migration.

@@ -254,6 +254,15 @@ struct VisitEditor: View {
                 }
                 .accessibilityIdentifier("place-evidence")
                 VStack(alignment: .leading, spacing: 5) {
+                    if let score = visit.placeScoreBreakdown {
+                        Text("Place score breakdown")
+                            .font(.subheadline.weight(.semibold))
+                        ForEach(score.lines, id: \.self) { line in
+                            Text(line).font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                VStack(alignment: .leading, spacing: 5) {
                     Text("Inferred activity evidence")
                         .font(.subheadline.weight(.semibold))
                     Text(inferenceEvidenceText)

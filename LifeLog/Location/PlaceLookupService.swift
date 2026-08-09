@@ -9,6 +9,8 @@ struct PlaceSuggestion: Codable, Identifiable, Hashable {
     let longitude: Double
     let suggestedActivity: String
     let distance: Double
+    /// Raw Apple Maps POI category used by the shared place scorer.
+    var mapsCategory: String?
     /// Apple Maps' identifier for this result, where it supplies one. Names collide
     /// and get reworded; this does not. Optional because suggestions stored before
     /// this existed have none, and Maps does not identify every result.
@@ -17,7 +19,18 @@ struct PlaceSuggestion: Codable, Identifiable, Hashable {
     // Older stored suggestions carried a place-type string. It is ignored on
     // decode so previously saved candidate payloads still read cleanly.
     private enum CodingKeys: String, CodingKey {
-        case name, latitude, longitude, suggestedActivity, distance, mapsIdentifier
+        case name, latitude, longitude, suggestedActivity, distance, mapsIdentifier, mapsCategory
+    }
+
+    init(name: String, latitude: Double, longitude: Double, suggestedActivity: String,
+         distance: Double, mapsIdentifier: String? = nil, mapsCategory: String? = nil) {
+        self.name = name
+        self.latitude = latitude
+        self.longitude = longitude
+        self.suggestedActivity = suggestedActivity
+        self.distance = distance
+        self.mapsIdentifier = mapsIdentifier
+        self.mapsCategory = mapsCategory
     }
 }
 
@@ -110,7 +123,8 @@ enum PlaceLookupService {
                 longitude: location.coordinate.longitude,
                 suggestedActivity: InferenceEngine.activity(placeName: name, mapsCategory: mapsCategory),
                 distance: origin.distance(from: location),
-                mapsIdentifier: item.identifier?.rawValue
+                mapsIdentifier: item.identifier?.rawValue,
+                mapsCategory: mapsCategory?.rawValue
             )
         }
         .filter { $0.distance <= boundedRadius }
@@ -130,7 +144,8 @@ enum PlaceLookupService {
                 longitude: first.longitude,
                 suggestedActivity: smart.activity,
                 distance: first.distance,
-                mapsIdentifier: first.mapsIdentifier
+                mapsIdentifier: first.mapsIdentifier,
+                mapsCategory: first.mapsCategory
             )
         }
         suggestions = Array(suggestions.prefix(3))

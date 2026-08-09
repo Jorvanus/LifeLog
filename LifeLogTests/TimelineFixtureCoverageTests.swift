@@ -769,6 +769,67 @@ struct TimelineFixtureCoverageTests {
         #expect(ranked.first?.identifier == "place|cafe central|-23.37000,150.51000")
     }
 
+    @Test("Place scoring keeps every evidence component")
+    func scoresPlaceEvidenceAsOneBreakdown() {
+        let place = SavedPlace(name: "Home", latitude: -23.37, longitude: 150.51, radius: 100,
+                               mapsIdentifier: "home-id")
+        let arrival = base.addingTimeInterval(9 * 3_600)
+        let visit = Visit(arrival: arrival, departure: arrival.addingTimeInterval(3_600),
+                          latitude: -23.37001, longitude: 150.51001, placeName: "Home",
+                          inferredActivity: "At home", source: "automatic")
+        let previous = (0..<3).map { offset in
+            Visit(arrival: arrival.addingTimeInterval(Double(offset - 4) * 86_400),
+                  departure: arrival.addingTimeInterval(Double(offset - 4) * 86_400 + 3_600),
+                  latitude: -23.37, longitude: 150.51, placeName: "Home",
+                  inferredActivity: "At home", source: "automatic")
+        }
+        let suggestion = PlaceSuggestion(name: "Home", latitude: -23.37001, longitude: 150.51001,
+                                         suggestedActivity: "At home", distance: 8,
+                                         mapsIdentifier: "home-id", mapsCategory: "home")
+        let correction = VisitCorrection(visitArrival: arrival.addingTimeInterval(-86_400),
+                                         latitude: -23.37, longitude: 150.51,
+                                         previousPlaceName: "House", newPlaceName: "Home",
+                                         previousActivity: "Visiting", newActivity: "At home")
+
+        let evaluation = PlaceScoringPipeline.evaluate(
+            visit: visit, savedPlaces: [place], suggestions: [suggestion], accuracy: 8,
+            geofenceTriggered: true, visits: previous + [visit], corrections: [correction],
+            now: base
+        )
+
+        #expect(evaluation.selected?.mapsIdentifier == "home-id")
+        #expect(evaluation.breakdown.total > 80)
+        #expect(evaluation.breakdown.savedPlaceGeofence == 35)
+        #expect(evaluation.breakdown.poiDistance > 0)
+        #expect(evaluation.breakdown.poiCategory == 10)
+        #expect(evaluation.breakdown.dwellDuration > 0)
+        #expect(evaluation.breakdown.horizontalAccuracy == 10)
+        #expect(evaluation.breakdown.recurrence == 3)
+        #expect(evaluation.breakdown.timeOfDay > 0)
+        #expect(evaluation.breakdown.priorCorrections == 5)
+    }
+
+    @Test("Place score survives the existing candidate payload")
+    func storesPlaceScoreAlongsideCandidates() {
+        let visit = Visit(arrival: base, latitude: -23.37, longitude: 150.51)
+        let suggestion = PlaceSuggestion(name: "Corner Cafe", latitude: -23.37, longitude: 150.51,
+                                         suggestedActivity: "Eating", distance: 20,
+                                         mapsIdentifier: "cafe-id", mapsCategory: "cafe")
+        let score = PlaceScoreBreakdown(recordedAt: base, total: 84,
+                                        savedPlaceGeofence: 35, poiDistance: 14,
+                                        poiCategory: 10, dwellDuration: 10,
+                                        horizontalAccuracy: 8, recurrence: 4,
+                                        timeOfDay: 2, priorCorrections: 1,
+                                        selectedPlaceName: "Corner Cafe", mapsIdentifier: "cafe-id")
+
+        visit.placeSuggestions = [suggestion]
+        visit.placeScoreBreakdown = score
+
+        #expect(visit.placeSuggestions.first?.mapsIdentifier == "cafe-id")
+        #expect(visit.placeSuggestions.first?.mapsCategory == "cafe")
+        #expect(visit.placeScoreBreakdown == score)
+    }
+
     @Test("A label the catalogue has never heard of is still counted")
     func includesLabelsMissingFromTheCatalogue() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)

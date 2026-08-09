@@ -221,7 +221,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     private func recordLocationEvidence(_ location: CLLocation, callbackType: String,
                                         transition: LocationJournal.Transition = .none) {
         latestLocationTimestamp = location.timestamp
-        identifyRecentUnknown(near: location)
+        identifyRecentUnknown(near: location, accuracy: location.horizontalAccuracy)
         // The ordinary fixes, which create nothing on their own but are the evidence a
         // stay was or was not where it claims. Their accuracy is the field that matters:
         // a stay built on a 200 m fix and one built on a 5 m fix look identical
@@ -353,7 +353,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             // Core Location can replay the same arrival after a visit was closed. Keep
             // the original record and update its bounds instead of creating a new card.
             duplicate.arrival = min(duplicate.arrival, safeArrival)
-            if duplicate.needsCategorisation { identifyPlace(duplicate) }
+            if duplicate.needsCategorisation { identifyPlace(duplicate, accuracy: accuracy) }
             reconcileActivity(with: duplicate, context: context)
             save(context)
             LocationJournal.record(callbackType, at: coordinate, callbackAt: arrival,
@@ -413,6 +413,13 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                          latitude: coordinate.latitude, longitude: coordinate.longitude,
                          placeName: name, inferredActivity: activity,
                          recognitionConfidence: saved == nil ? nil : "learned")
+        let priorVisits = (try? context.fetch(FetchDescriptor<Visit>())) ?? []
+        let corrections = (try? context.fetch(FetchDescriptor<VisitCorrection>())) ?? []
+        item.placeScoreBreakdown = PlaceScoringPipeline.evaluate(
+            visit: item, savedPlaces: savedPlaceCache, suggestions: [],
+            accuracy: accuracy, geofenceTriggered: callbackType == "geofence-entry",
+            visits: priorVisits, corrections: corrections
+        ).breakdown
         context.insert(item)
         WiFiAnchor.save(nil)
         sampleWiFiAnchor()
@@ -509,7 +516,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 return
             }
         }
-        createVisit(at: location.coordinate, arrival: location.timestamp)
+        createVisit(at: location.coordinate, arrival: location.timestamp, accuracy: location.horizontalAccuracy)
     }
 
     private func latestLocationVisit(in context: ModelContext) -> Visit? {
@@ -647,7 +654,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             .min { $0.1 < $1.1 }?.0
     }
 
-    private func identifyPlace(_ visit: Visit) {
+    private func identifyPlace(_ visit: Visit, accuracy: CLLocationAccuracy = -1) {
         let identity = ObjectIdentifier(visit)
         let now = Date.now
         let attempts = placeLookupAttempts[identity, default: []]
@@ -676,22 +683,31 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 // The user may label Home or Work while Maps is still searching. Never let
                 // a late public-place result overwrite that explicit correction.
                 guard visit.needsCategorisation else { return }
+                let visits = (try? context.fetch(FetchDescriptor<Visit>())) ?? []
+                let corrections = (try? context.fetch(FetchDescriptor<VisitCorrection>())) ?? []
+                let evaluation = PlaceScoringPipeline.evaluate(
+                    visit: visit, savedPlaces: self.savedPlaceCache,
+                    suggestions: result.suggestions, accuracy: accuracy,
+                    geofenceTriggered: false, visits: visits,
+                    corrections: corrections
+                )
                 visit.placeSuggestions = result.suggestions
-                visit.recognitionConfidence = result.confidence.rawValue
+                visit.placeScoreBreakdown = evaluation.breakdown
+                visit.recognitionConfidence = evaluation.breakdown.confidence
 
                 LocationDiagnostics.recordLookup(
                     radius: result.searchRadius, cacheHit: result.cacheHit,
                     candidates: result.suggestions,
-                    selected: result.confidence == .high ? result.suggestions.first : nil,
-                    confidence: result.confidence.rawValue,
+                    selected: evaluation.breakdown.confidence == "high" ? evaluation.selected : nil,
+                    confidence: evaluation.breakdown.confidence,
                     fallback: result.suggestions.isEmpty ? "reverse geocoding" : nil,
                     context: context)
-                if result.confidence == .high, let match = result.suggestions.first,
+                if evaluation.breakdown.confidence == "high", let match = evaluation.selected,
                    !Visit.isPlaceholderName(match.name) {
                     visit.placeName = match.name
                     visit.inferredActivity = match.suggestedActivity
                     cache(match, context: context)
-                } else if let likely = result.suggestions.first {
+                } else if let likely = evaluation.selected {
                     visit.placeName = likely.name
                     visit.inferredActivity = likely.suggestedActivity
                 } else {
@@ -767,7 +783,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         save(context)
     }
 
-    private func identifyRecentUnknown(near location: CLLocation) {
+    private func identifyRecentUnknown(near location: CLLocation, accuracy: CLLocationAccuracy = -1) {
         guard let context else { return }
         // Placeholder names are what marks a visit as still unidentified now that
         // LifeLog no longer stores a place type.
@@ -784,7 +800,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         for visit in recent {
             let visitLocation = CLLocation(latitude: visit.latitude, longitude: visit.longitude)
             if visitLocation.distance(from: location) <= 250 {
-                identifyPlace(visit)
+                identifyPlace(visit, accuracy: accuracy)
                 return
             }
         }

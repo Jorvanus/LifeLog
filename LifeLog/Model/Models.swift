@@ -191,9 +191,22 @@ final class Visit {
     var placeSuggestions: [PlaceSuggestion] {
         get {
             guard let candidateData else { return [] }
+            if let payload = try? JSONDecoder().decode(VisitCandidatePayload.self, from: candidateData) {
+                return payload.suggestions
+            }
             return (try? JSONDecoder().decode([PlaceSuggestion].self, from: candidateData)) ?? []
         }
-        set { candidateData = try? JSONEncoder().encode(newValue) }
+        set { candidateData = try? JSONEncoder().encode(VisitCandidatePayload(suggestions: newValue, score: placeScoreBreakdown)) }
+    }
+
+    var placeScoreBreakdown: PlaceScoreBreakdown? {
+        get {
+            guard let candidateData else { return nil }
+            return try? JSONDecoder().decode(VisitCandidatePayload.self, from: candidateData).score
+        }
+        set {
+            candidateData = try? JSONEncoder().encode(VisitCandidatePayload(suggestions: placeSuggestions, score: newValue))
+        }
     }
 
     var confidenceLabel: String {
@@ -226,6 +239,14 @@ final class Visit {
         }
         return evidence
     }
+}
+
+/// Candidate payloads were originally stored as a bare suggestion array. The
+/// envelope keeps those old visits readable while allowing the scorer to persist
+/// its explainable result alongside the candidates that produced it.
+private struct VisitCandidatePayload: Codable {
+    let suggestions: [PlaceSuggestion]
+    let score: PlaceScoreBreakdown?
 }
 
 /// Immutable audit entry for a user correction or a learned Saved Place update.

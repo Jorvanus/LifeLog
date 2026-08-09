@@ -45,6 +45,9 @@ enum PlaceEvidence {
         if recurrence > 0 {
             reasons.append("Recorded here \(recurrence) time\(recurrence == 1 ? "" : "s") before")
         }
+        if let score = visit.placeScoreBreakdown {
+            reasons.append(contentsOf: score.lines)
+        }
         return reasons
     }
 
