@@ -2,6 +2,15 @@
 
 ## 2026-08-09
 
+### Place lookups stop retrying on every location update
+
+- An unresolved stay now gets at most three place-resolution attempts, spaced at least five minutes apart. A Maps search and its reverse-geocoding fallback share the same attempt, so repeated noisy fixes cannot keep sending the same place to MapKit.
+
+### Hardware checks now collect proof during ordinary use
+
+- The first real Saved Place geofence entry, exit, Wi-Fi-assisted departure, and completed Core Motion import now leave a concise one-time proof in Diagnostics. Changes to the monitored-place ranking also say how many Saved Places iOS is watching and whether any were excluded.
+- Local backups now include the detailed Location journal as well as the ordinary Diagnostics record, so an arrival or departure can be inspected after the fact without arranging a special trip.
+
 ### Timeline honours chosen activity icons
 
 - Timeline activity icons now use the saved icon from the Activities catalogue before falling back to keyword inference for uncatalogued labels.

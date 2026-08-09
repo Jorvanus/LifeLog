@@ -46,6 +46,11 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     private var serviceSessionRequirement: CLServiceSession.AuthorizationRequirement?
     private var diagnosticTask: Task<Void, Never>?
     private var identifyingVisits: Set<ObjectIdentifier> = []
+    /// MapKit and reverse geocoding are a single resolution attempt. A noisy stream
+    /// of location fixes must not turn one unresolved stay into a request per fix.
+    private var placeLookupAttempts: [ObjectIdentifier: [Date]] = [:]
+    private static let placeLookupCooldown: TimeInterval = 5 * 60
+    private static let maximumPlaceLookupAttempts = 3
     private(set) var savedPlaceCache: [SavedPlace] = []
     private var placeMonitor: CLMonitor?
     private var placeMonitorTask: Task<Void, Never>?
@@ -343,6 +348,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         let callbackStartedAt = Date.now
         let safeArrival = min(arrival, .now)
         var inferredDeparture: Date?
+        var usedWiFiAnchor = false
         if let duplicate = recentDuplicateLocation(at: coordinate, arrival: safeArrival, context: context) {
             // Core Location can replay the same arrival after a visit was closed. Keep
             // the original record and update its bounds instead of creating a new card.
@@ -386,6 +392,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 let anchored = WiFiAnchor.departure(for: WiFiAnchor.loadObservation(),
                                                     arrival: latest.arrival,
                                                     fallback: safeArrival)
+                usedWiFiAnchor = anchored != nil
                 latest.departure = max(latest.arrival, anchored ?? safeArrival)
                 // The stay is closed, so its network observation belongs to nothing now.
                 WiFiAnchor.save(nil)
@@ -421,6 +428,14 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                                openVisit: item, context: context)
         Diagnostics.locationMetric(context, operation: "callback_to_save",
                                    durationMs: Int((Date.now.timeIntervalSince(callbackStartedAt) * 1000).rounded()))
+        if callbackType == "geofence-entry", saved != nil {
+            HardwareValidation.recordFirst(.namedGeofenceEntry, context: context,
+                message: "A Saved Place geofence named an arrival locally; no Maps lookup was needed.")
+        }
+        if usedWiFiAnchor {
+            HardwareValidation.recordFirst(.wifiDepartureAnchor, context: context,
+                message: "A Wi-Fi absence sharpened a stay departure before the next arrival.")
+        }
         if saved == nil { identifyPlace(item) }
     }
 
@@ -563,7 +578,8 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         let visits = (try? context.fetch(FetchDescriptor<Visit>(
             predicate: #Predicate { $0.source == "automatic" || $0.source == "manual" }
         ))) ?? []
-        let wanted = MonitoredPlaces.prioritised(savedPlaceCache, visits: visits)
+        let ranked = MonitoredPlaces.prioritised(savedPlaceCache, visits: visits, limit: .max)
+        let wanted = Array(ranked.prefix(MonitoredPlaces.limit))
         let wantedByID = Dictionary(uniqueKeysWithValues: wanted.map { ($0.identifier, $0) })
 
         for identifier in await placeMonitor.identifiers where wantedByID[identifier] == nil {
@@ -578,6 +594,13 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         monitoredPlaces = wantedByID
         Diagnostics.locationMetric(context, operation: "geofences_monitored",
                                    candidateCount: wanted.count)
+        let selected = wanted.first.map { "first selected place has \($0.visits) prior visit(s)" } ?? "no Saved Places selected"
+        let excluded = ranked.dropFirst(MonitoredPlaces.limit).first.map {
+            "; first excluded has \($0.visits) prior visit(s)"
+        } ?? "; no Saved Places excluded"
+        HardwareValidation.recordRanking(signature: wanted.map(\.identifier).joined(separator: "|"),
+                                         context: context,
+                                         message: "Geofence monitoring selected \(wanted.count) of \(ranked.count) Saved Places by frequency then recency: \(selected)\(excluded).")
     }
 
     private func handle(_ event: CLMonitor.Event) {
@@ -602,11 +625,15 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         WiFiAnchor.save(nil)
         reconcileActivity(with: open, context: context)
         _ = try? ActivityLocationPolicy.resolveLocationCallbacks(context: context)
-        save(context)
+        let didSave = save(context)
         if let coordinate {
             LocationJournal.record("geofence-exit", at: coordinate, callbackAt: departure,
                                    departure: open.departure, transition: .closed,
                                    openVisit: open, context: context)
+        }
+        if didSave {
+            HardwareValidation.recordFirst(.geofenceExit, context: context,
+                message: "A Saved Place geofence exit closed its open stay at the boundary.")
         }
     }
 
@@ -622,7 +649,14 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
 
     private func identifyPlace(_ visit: Visit) {
         let identity = ObjectIdentifier(visit)
-        guard identifyingVisits.insert(identity).inserted else { return }
+        let now = Date.now
+        let attempts = placeLookupAttempts[identity, default: []]
+        guard !identifyingVisits.contains(identity),
+              attempts.count < Self.maximumPlaceLookupAttempts,
+              attempts.last.map({ now.timeIntervalSince($0) >= Self.placeLookupCooldown }) ?? true
+        else { return }
+        identifyingVisits.insert(identity)
+        placeLookupAttempts[identity, default: []].append(now)
         let coordinate = CLLocationCoordinate2D(latitude: visit.latitude, longitude: visit.longitude)
         // Lookups used to carry a per-visit identifier so a correction could cancel
         // one, but nothing ever cancelled by identifier and the token was threaded
@@ -774,12 +808,14 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     /// app never brought to the foreground. `lastError` lives in memory and shows only
     /// in Settings, so an overnight failure left no trace at all — by morning there was
     /// nothing to say an arrival had been dropped, or why.
-    private func save(_ context: ModelContext) {
+    @discardableResult
+    private func save(_ context: ModelContext) -> Bool {
         do {
             try context.save()
             // The store has just proved it is writable, so this is the moment to move
             // any earlier failure out of the queue and into the log.
             Diagnostics.flushPending(context)
+            return true
         } catch {
             lastError = "LifeLog couldn't securely save this update. Your existing timeline is unchanged."
             // Domain and code rather than the message: a Core Data error can name the
@@ -789,6 +825,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             Diagnostics.recordDurable(context, subsystem: "Store",
                                       message: "A background save failed (\(failure.domain) \(failure.code)). "
                                              + "The update was not written.")
+            return false
         }
     }
 

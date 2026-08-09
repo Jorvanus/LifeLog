@@ -240,4 +240,20 @@ struct DiagnosticsTests {
         #expect(try context.fetch(FetchDescriptor<DiagnosticEvent>()).count == 1)
         #expect(PendingDiagnostics.queued(defaults: defaults).isEmpty)
     }
+
+    @Test("Hardware validation keeps the first real-device proof without repeating it")
+    func hardwareValidationRecordsEachProofOnce() throws {
+        let defaults = try makeDefaults()
+        let context = try makeContext()
+
+        HardwareValidation.recordFirst(.motionHistory, context: context,
+                                       message: "Core Motion returned a segment.", defaults: defaults)
+        HardwareValidation.recordFirst(.motionHistory, context: context,
+                                       message: "Core Motion returned a segment.", defaults: defaults)
+
+        let evidence = try context.fetch(FetchDescriptor<DiagnosticEvent>())
+            .filter { $0.subsystem == "Hardware validation" }
+        #expect(evidence.count == 1)
+        #expect(evidence.first?.message == "Core Motion returned a segment.")
+    }
 }

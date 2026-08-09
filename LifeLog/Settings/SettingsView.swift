@@ -173,7 +173,7 @@ struct SettingsView: View {
                         ShareLink(item: backupURL) { Label("Share backup", systemImage: "square.and.arrow.up") }
                     }
                     Button { importingBackup = true } label: { Label("Restore backup", systemImage: "arrow.clockwise.icloud") }
-                    Text("Backups include visits, Saved Places, corrections, ignored state, activities, category colours, and LifeLog preferences. Restore into an empty store for a complete replacement.")
+                    Text("Backups include visits, Saved Places, corrections, diagnostics, detailed location callbacks, ignored state, activities, category colours, and LifeLog preferences. Restore into an empty store for a complete replacement.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 if let error = recorder.lastError ?? activityData.lastError { Section("Last issue") { Text(error) } }

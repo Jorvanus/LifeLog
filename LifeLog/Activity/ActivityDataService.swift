@@ -490,6 +490,7 @@ final class ActivityDataService {
                 var sleepResultAnchor = Data()
                 var workoutResultAnchor = Data()
                 var deletedSampleIDs: [UUID] = []
+                var motionSegmentsRead = 0
                 let end = Date.now
 
                 if let healthDays {
@@ -517,7 +518,9 @@ final class ActivityDataService {
                     try Task.checkCancellation()
                     let start = Calendar.current.date(byAdding: .day, value: -motionDays, to: end) ?? end
                     updateProgress(id: id, state: .reading, title: "Reading travel…", completed: 0, total: 0)
-                    records += try await sampleReader.motionRecords(in: DateInterval(start: start, end: end))
+                    let motionRecords = try await sampleReader.motionRecords(in: DateInterval(start: start, end: end))
+                    motionSegmentsRead = motionRecords.count
+                    records += motionRecords
                 }
 
                 try Task.checkCancellation()
@@ -571,6 +574,10 @@ final class ActivityDataService {
                                           + "\(Int((Date.now.timeIntervalSince(startedAt) * 1000).rounded())) ms "
                                           + "(\(records.count) items)",
                                    severity: "info", category: Diagnostics.Category.performance)
+                if motionSegmentsRead > 0 {
+                    HardwareValidation.recordFirst(.motionHistory, context: context,
+                        message: "Core Motion returned \(motionSegmentsRead) segment(s) and the automatic import finished.")
+                }
                 InsightsInvalidation.invalidate(reason: "HealthKit or Motion import", context: context)
             } catch is CancellationError {
                 await importWriter.cancel()

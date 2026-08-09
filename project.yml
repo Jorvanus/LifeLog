@@ -22,8 +22,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.aaronbaxter.LifeLog
-        MARKETING_VERSION: "1.40.2"
-        CURRENT_PROJECT_VERSION: "100"
+        MARKETING_VERSION: "1.41.0"
+        CURRENT_PROJECT_VERSION: "101"
         INFOPLIST_FILE: LifeLog/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic

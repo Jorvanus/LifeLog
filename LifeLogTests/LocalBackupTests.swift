@@ -6,12 +6,16 @@ import Testing
 struct LocalBackupTests {
     @Test("Local backup round-trips into an empty store")
     func roundTrip() throws {
-        let schema = Schema([Visit.self, SavedPlace.self, VisitCorrection.self, DiagnosticEvent.self])
+        let schema = Schema([Visit.self, SavedPlace.self, VisitCorrection.self, DiagnosticEvent.self, LocationEvent.self])
         let source = try ModelContainer(for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let sourceContext = ModelContext(source)
         let arrival = Date(timeIntervalSince1970: 1_800_000_000)
         sourceContext.insert(Visit(arrival: arrival, departure: arrival.addingTimeInterval(1800), latitude: -27.47, longitude: 153.03, placeName: "Cinema", inferredActivity: "Watching a movie", userActivity: "Watching a movie", source: "automatic", recognitionConfidence: "medium"))
         sourceContext.insert(SavedPlace(name: "Cinema", latitude: -27.47, longitude: 153.03, defaultActivity: "Watching a movie"))
+        sourceContext.insert(LocationEvent(recordedAt: arrival.addingTimeInterval(10), callbackType: "geofence-entry",
+                                           callbackAt: arrival, arrival: arrival, latitude: -27.47,
+                                           longitude: 153.03, accuracy: 15, transition: "created",
+                                           visitArrival: arrival))
         try sourceContext.save()
         let data = try LocalBackupService.makeBackup(context: sourceContext, diagnostics: [])
 
@@ -20,5 +24,8 @@ struct LocalBackupTests {
         try LocalBackupService.restore(data, into: restoredContext)
         #expect(try restoredContext.fetch(FetchDescriptor<Visit>()).count == 1)
         #expect(try restoredContext.fetch(FetchDescriptor<SavedPlace>()).first?.defaultActivity == "Watching a movie")
+        let callbacks = try restoredContext.fetch(FetchDescriptor<LocationEvent>())
+        #expect(callbacks.count == 1)
+        #expect(callbacks.first?.callbackType == "geofence-entry")
     }
 }
