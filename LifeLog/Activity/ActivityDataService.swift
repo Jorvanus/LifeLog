@@ -288,13 +288,19 @@ final class ActivityDataService {
     /// report a triumph every weekend. Days with no samples at all are dropped rather
     /// than averaged in as zero, which would otherwise turn a week's holiday from
     /// Health into a permanent personal best.
-    func stepHistory(forSameWeekdayAs day: Date, weeks: Int) async -> [Double] {
+    func stepHistory(forSameWeekdayAs day: Date, through endOfDay: Date? = nil, weeks: Int) async -> [Double] {
         let calendar = Calendar.current
+        let dayStart = calendar.startOfDay(for: day)
+        let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart
+        // At 11am, compare the current Sunday with prior Sundays at 11am—not with
+        // their completed totals, which makes every ordinary morning look deficient.
+        let duration = min(max(endOfDay?.timeIntervalSince(dayStart) ?? dayEnd.timeIntervalSince(dayStart), 0),
+                           dayEnd.timeIntervalSince(dayStart))
         var totals: [Double] = []
         for offset in 1...max(1, weeks) {
             guard let start = calendar.date(byAdding: .weekOfYear, value: -offset,
-                                            to: calendar.startOfDay(for: day)),
-                  let end = calendar.date(byAdding: .day, value: 1, to: start) else { continue }
+                                            to: dayStart) else { continue }
+            let end = start.addingTimeInterval(duration)
             if let steps = await stepCount(for: DateInterval(start: start, end: end)), steps > 0 {
                 totals.append(steps)
             }

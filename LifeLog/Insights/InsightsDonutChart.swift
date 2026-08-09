@@ -330,13 +330,11 @@ struct InsightsPlacesMap: View {
     var body: some View {
         Map(initialPosition: .region(region)) {
             ForEach(places) { place in
-                Annotation(place.name, coordinate: place.coordinate) {
-                    VStack(spacing: 2) {
-                        Image(systemName: "mappin.circle.fill").font(.title).foregroundStyle(.blue)
-                        Text(place.name).font(.caption2.bold()).padding(.horizontal, 5).padding(.vertical, 2)
-                            .background(.regularMaterial, in: Capsule()).lineLimit(1)
-                    }
-                }
+                // Always-visible labels overlap as soon as nearby places share a map.
+                // Native markers retain the name in their tap callout without covering
+                // the location and automatically use the platform's map interaction.
+                Marker(place.name, coordinate: place.coordinate)
+                    .tint(.blue)
             }
         }
         .mapStyle(.standard(pointsOfInterest: .excludingAll))

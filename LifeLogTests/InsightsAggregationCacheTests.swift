@@ -24,7 +24,7 @@ struct DayHighlightTests {
 
     @Test("A clearly bigger day is celebrated, with the size of the change")
     func stepsCelebrateABigDay() {
-        let highlight = DayHighlights.steps(today: 7_000, weekdayBaseline: [5_000, 5_000],
+        let highlight = DayHighlights.steps(today: 7_000, weekdayBaseline: [5_000, 5_000, 5_000, 5_000],
                                             weekdayName: "Tuesday")
         #expect(highlight?.isCelebration == true)
         #expect(highlight?.headline == "7,000 steps")
@@ -33,7 +33,7 @@ struct DayHighlightTests {
 
     @Test("A quieter day is reported plainly rather than congratulated")
     func stepsReportAQuietDay() {
-        let highlight = DayHighlights.steps(today: 3_000, weekdayBaseline: [5_000, 5_000],
+        let highlight = DayHighlights.steps(today: 3_000, weekdayBaseline: [5_000, 5_000, 5_000, 5_000],
                                             weekdayName: "Tuesday")
         #expect(highlight?.isCelebration == false)
         #expect(highlight?.detail == "40% fewer than your usual Tuesday.")
@@ -43,7 +43,7 @@ struct DayHighlightTests {
     /// every other highlight less believable.
     @Test("A day within the noise is called about the same")
     func stepsWithinNoiseAreUnremarkable() {
-        let highlight = DayHighlights.steps(today: 5_150, weekdayBaseline: [5_000, 5_000],
+        let highlight = DayHighlights.steps(today: 5_150, weekdayBaseline: [5_000, 5_000, 5_000, 5_000],
                                             weekdayName: "Tuesday")
         #expect(highlight?.isCelebration == false)
         #expect(highlight?.detail == "About the same as your usual Tuesday.")
@@ -432,6 +432,26 @@ struct InsightsWeekdayPatternTests {
         #expect(abs(summed - (pattern?.hours ?? 0)) < 0.001)
     }
 
+    @Test("Weekly rhythm averages matching weekdays across its history")
+    func weekdayPatternsAverageAcrossHistory() {
+        let nextWeek = day.addingTimeInterval(7 * 24 * 3600)
+        let visits = [
+            stay(8, 12, place: "Gracemere Shopping World", activity: "Shopping"),
+            Visit(arrival: nextWeek.addingTimeInterval(8 * 3600),
+                  departure: nextWeek.addingTimeInterval(12 * 3600),
+                  latitude: -23.378, longitude: 150.511,
+                  placeName: "Gracemere Shopping World", inferredActivity: "Shopping",
+                  userActivity: "Shopping", source: "automatic", recognitionConfidence: "learned")
+        ]
+        let range = DateInterval(start: day, duration: 14 * 24 * 3600)
+        let weekday = calendar.component(.weekday, from: day)
+        let pattern = InsightsSnapshot.weekdayPatterns(visits: visits, range: range, now: range.end)
+            .first { $0.weekday == weekday }
+
+        #expect(abs((pattern?.hours ?? 0) - 4) < 0.001)
+        #expect(abs((pattern?.activities.first?.hours ?? 0) - 4) < 0.001)
+    }
+
     /// A Monday-first region must not be told its week begins on Sunday.
     @Test("The week is ordered from the calendar's own first day")
     func weekOrderStartsAtFirstWeekday() {
@@ -459,6 +479,17 @@ struct InsightsSnapshotInputTests {
               latitude: -23.378, longitude: 150.511,
               placeName: place, inferredActivity: activity, userActivity: activity,
               source: source, recognitionConfidence: "learned")
+    }
+
+    @Test("Month comparisons use the preceding calendar month")
+    func monthComparisonUsesCalendarMonth() {
+        let calendar = Calendar(identifier: .gregorian)
+        let may = calendar.date(from: DateComponents(year: 2026, month: 5, day: 1))!
+        let interval = InsightWindow.month.interval(containing: may)
+        let previous = InsightWindow.month.previousComparisonInterval(for: interval)
+
+        #expect(previous.start == calendar.date(from: DateComponents(year: 2026, month: 4, day: 1))!)
+        #expect(previous.end == may)
     }
 
     /// The `min` in `previousInterval` exists so a part-finished day is measured

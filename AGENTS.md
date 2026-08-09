@@ -11,6 +11,10 @@ do not publish or push personal data, credentials, signing material, or device
 backups. Continue to protect against accidental destructive changes and explain
 when a diagnostic intentionally includes sensitive local data.
 
+The owner’s device is an iPhone 17 Pro Max. When verification needs a device,
+target that model by default; use the simulator only when the check cannot be run on
+the physical phone or when it is specifically requested.
+
 For every requested edit in this repository:
 
 1. Add a concise dated entry to `CHANGELOG.md` describing the user-facing change. Do not add routine verification, test, or build text.

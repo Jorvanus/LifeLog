@@ -27,6 +27,7 @@ struct InsightsView: View {
     @State private var highlightHeight: CGFloat = 52
     @State private var trendSeries: [InsightsTrendSeries] = []
     @State private var habits: [InsightsHabit] = []
+    @State private var weeklyRhythm = WeekdayPattern.empty
 
     private var interval: DateInterval { window.interval(containing: anchorDate) }
     private var sleepRefreshKey: String {
@@ -39,17 +40,13 @@ struct InsightsView: View {
                 ScrollView {
                     LazyVStack(spacing: 22) {
                         controls
-                        if window == .day { highlightsSection }
+                        highlightsSection
                         donutSection
                         if window == .day { dailyTimelineSection }
                         awayFromHomeSection
                         activityChangesSection
                         trendsSection
-                        // A single day cannot have a weekly rhythm. The snapshot only
-                        // covers the selected period, so in the Day window six of the
-                        // seven bars are empty by construction rather than because
-                        // those days were quiet — a shape that says nothing true.
-                        if window != .day { weekdayPatternsSection }
+                        weekdayPatternsSection
                         habitsSection
                         trendLinesSection
                         topActivitiesSection
@@ -160,34 +157,56 @@ struct InsightsView: View {
     /// identity of its own this would re-query HealthKit on every snapshot rebuild,
     /// which happens once a minute while the screen is open.
     private var highlightKey: String {
-        "\(window.rawValue)-\(interval.start.timeIntervalSinceReferenceDate)-\(snapshot.comparisons.count)"
+        let leadingPlace = snapshot.placeTotals.first
+        return "\(window.rawValue)-\(interval.start.timeIntervalSinceReferenceDate)-\(snapshot.comparisons.count)-\(leadingPlace?.id ?? "none")-\(leadingPlace?.hours ?? 0)"
     }
 
     private func reloadHighlights() async {
-        guard window == .day else { highlights = []; return }
         var found: [DayHighlight] = []
         let queryEnd = interval.contains(now) ? now : interval.end
         let dayInterval = DateInterval(start: interval.start, end: max(interval.start, queryEnd))
 
-        if let steps = await activityData.stepCount(for: dayInterval) {
-            let baseline = await activityData.stepHistory(forSameWeekdayAs: interval.start, weeks: 4)
-            let weekday = interval.start.formatted(.dateTime.weekday(.wide))
-            if let highlight = DayHighlights.steps(today: steps, weekdayBaseline: baseline,
-                                                   weekdayName: weekday) {
+        if window == .day {
+            if let steps = await activityData.stepCount(for: dayInterval) {
+                let baseline = await activityData.stepHistory(
+                    forSameWeekdayAs: interval.start,
+                    through: interval.contains(now) ? now : nil,
+                    weeks: 4
+                )
+                let weekday = interval.start.formatted(.dateTime.weekday(.wide))
+                if let highlight = DayHighlights.steps(today: steps, weekdayBaseline: baseline,
+                                                       weekdayName: weekday) {
+                    found.append(highlight)
+                }
+            }
+            if let night = await activityData.sleepSummary(for: dayInterval),
+               let average = await activityData.averageNightlySleep(before: interval.start, nights: 14),
+               let highlight = DayHighlights.sleep(lastNight: night.totalSleep, averageNight: average) {
                 found.append(highlight)
             }
-        }
-        if let night = await activityData.sleepSummary(for: dayInterval),
-           let average = await activityData.averageNightlySleep(before: interval.start, nights: 14),
-           let highlight = DayHighlights.sleep(lastNight: night.totalSleep, averageNight: average) {
-            found.append(highlight)
         }
         if let highlight = DayHighlights.activity(from: snapshot.comparisons, window: window) {
             found.append(highlight)
         }
+        if let place = snapshot.placeTotals.first,
+           let highlight = DayHighlights.leadingPlace(place, window: window) {
+            found.append(highlight)
+        }
         guard !Task.isCancelled else { return }
-        highlights = found
+        highlights = variedHighlights(found)
         highlightPage = min(highlightPage, max(0, found.count - 1))
+    }
+
+    /// Keep the strongest comparison first, but rotate supporting cards by the
+    /// selected period. This gives the carousel variety without it jumping around
+    /// every time SwiftUI refreshes the screen.
+    private func variedHighlights(_ candidates: [DayHighlight]) -> [DayHighlight] {
+        guard candidates.count > 2, let primary = candidates.first else { return candidates }
+        let supporting = Array(candidates.dropFirst())
+        let periodNumber = Int(interval.start.timeIntervalSinceReferenceDate / (24 * 60 * 60))
+        let offset = abs(periodNumber) % supporting.count
+        let rotated = Array(supporting[offset...]) + Array(supporting[..<offset])
+        return [primary] + rotated
     }
 
     /// Loads the season of history the trend lines are drawn from.
@@ -215,6 +234,7 @@ struct InsightsView: View {
                                operation: "trend history fetch", severity: "warning")
             trendSeries = []
             habits = []
+            weeklyRhythm = WeekdayPattern.empty
             return
         }
         // Resolved once; the lines and the habits are both read out of this.
@@ -224,6 +244,7 @@ struct InsightsView: View {
             InsightsTrends.series(for: "Sleep", title: "Sleep", symbol: "bed.double.fill", weeks: weeks)
         ].filter { !$0.isEmpty }
         habits = InsightsTrends.habits(from: weeks)
+        weeklyRhythm = InsightsSnapshot.weekdayPatterns(visits: history, range: span, now: now)
         Diagnostics.performance(context, subsystem: "Insights", operation: "trend history",
                                 startedAt: startedAt, itemCount: history.count)
     }
@@ -554,14 +575,14 @@ struct InsightsView: View {
         .lifeCard()
     }
 
-    private var weekdayPatterns: [WeekdayPattern] { snapshot.weekdayPatterns.inWeekOrder }
+    private var weekdayPatterns: [WeekdayPattern] { weeklyRhythm.inWeekOrder }
 
     private var weekdayPatternsSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Your weekly rhythm").font(.title2.bold())
             Text("Waking hours on each day, by activity. Sleep is counted separately.")
                 .font(.subheadline).foregroundStyle(.secondary)
-            if snapshot.weekdayPatterns.allSatisfy({ $0.hours == 0 }) {
+            if weeklyRhythm.allSatisfy({ $0.hours == 0 }) {
                 InsightEmptyRow(icon: "calendar", title: "Not enough activity history", detail: "Your usual weekday activities will appear here as visits accumulate.")
             } else {
                 weekdayChart(height: 190)
@@ -882,8 +903,9 @@ struct InsightsView: View {
         // Fetch only the selected and comparison periods. Keeping the nine-year journal
         // archive out of memory is substantially cheaper than trimming useful history.
         let currentInterval = window.interval(containing: anchorDate)
-        let fetchStart = currentInterval.start.addingTimeInterval(-currentInterval.duration)
         let fetchEnd = currentInterval.contains(now) ? now : currentInterval.end
+        let analysisInterval = DateInterval(start: currentInterval.start, end: fetchEnd)
+        let fetchStart = window.previousComparisonInterval(for: analysisInterval).start
         let fetchStartedAt = Date.now
         let descriptor = FetchDescriptor<Visit>(
             predicate: #Predicate { visit in

@@ -26,7 +26,7 @@ enum DayHighlights {
 
     /// A baseline built from too little history is not a habit, it is one day
     /// wearing a lab coat. Under this many prior samples nothing is claimed.
-    static let minimumBaselineSamples = 2
+    static let minimumBaselineSamples = 4
 
     static func percentage(_ value: Double, against baseline: Double) -> Int {
         guard baseline > 0 else { return 0 }
@@ -40,10 +40,14 @@ enum DayHighlights {
     /// would read as a triumph every week and mean nothing.
     static func steps(today: Double, weekdayBaseline: [Double], weekdayName: String) -> DayHighlight? {
         guard weekdayBaseline.count >= minimumBaselineSamples else { return nil }
-        let average = weekdayBaseline.reduce(0, +) / Double(weekdayBaseline.count)
-        guard average > 0, today > 0 else { return nil }
-        let change = (today - average) / average
-        let percent = percentage(today, against: average)
+        let ordered = weekdayBaseline.sorted()
+        let middle = ordered.count / 2
+        let usual = !ordered.count.isMultiple(of: 2)
+            ? ordered[middle]
+            : (ordered[middle - 1] + ordered[middle]) / 2
+        guard usual > 0, today > 0 else { return nil }
+        let change = (today - usual) / usual
+        let percent = percentage(today, against: usual)
         let headline = "\(formatSteps(today)) steps"
         if change >= noticeableChange {
             return DayHighlight(id: "steps", symbol: "figure.walk.motion",
@@ -110,6 +114,19 @@ enum DayHighlights {
             symbol: insightSymbol(for: largest.name),
             headline: "\(formatHours(abs(largest.delta))) \(largest.delta >= 0 ? "more" : "less") on \(largest.name.lowercased())",
             detail: "Compared with the previous \(window.title.lowercased()).",
+            isCelebration: false
+        )
+    }
+
+    /// A period can be meaningful even when it has no prior comparison yet. The
+    /// leading place gives Week, Month and Year a grounded second card without
+    /// pretending its total is a trend.
+    static func leadingPlace(_ place: PlaceTotal, window: InsightWindow) -> DayHighlight? {
+        guard place.hours >= 0.25 else { return nil }
+        return DayHighlight(
+            id: "place-\(place.name)", symbol: "mappin.circle.fill",
+            headline: "Most time at \(place.name)",
+            detail: "\(formatHours(place.hours)) there this \(window.title.lowercased()).",
             isCelebration: false
         )
     }

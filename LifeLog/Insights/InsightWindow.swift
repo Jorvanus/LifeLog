@@ -23,6 +23,22 @@ enum InsightWindow: String, CaseIterable, Identifiable, Hashable {
         return Calendar.current.date(byAdding: component, value: value, to: date) ?? date
     }
 
+    /// The comparable preceding calendar period. Subtracting a duration makes May
+    /// compare with a 31-day slice beginning in March; calendar arithmetic keeps a
+    /// month against April and a leap year against the preceding calendar year.
+    func previousComparisonInterval(for interval: DateInterval) -> DateInterval {
+        let component: Calendar.Component = switch self {
+        case .day: .day
+        case .week: .weekOfYear
+        case .month: .month
+        case .year: .year
+        }
+        let calendar = Calendar.current
+        let start = calendar.date(byAdding: component, value: -1, to: interval.start) ?? interval.start
+        let end = calendar.date(byAdding: component, value: -1, to: interval.end) ?? interval.end
+        return DateInterval(start: start, end: end)
+    }
+
     func title(for interval: DateInterval) -> String {
         switch self {
         case .day: interval.start.formatted(.dateTime.day().month(.abbreviated))

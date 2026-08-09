@@ -2,6 +2,27 @@
 
 ## 2026-08-09
 
+### Validation now targets the owner’s iPhone model
+
+- LifeLog’s development workflow now defaults device checks to the owner’s iPhone 17 Pro Max, so layout and behaviour are verified on the device the app is actually used on.
+
+### Insights now explains every period on a like-for-like basis
+
+- The Highlights carousel now appears for Day, Week, Month and Year. Days retain their step and sleep comparisons; every period can also call out its biggest activity change and the place where the most time was spent. The strongest comparison stays first, while supporting cards rotate predictably by period instead of jumping around during a refresh.
+- A day still in progress now compares its steps with the same elapsed part of recent matching weekdays, rather than with their finished totals. Month and year comparisons now use the preceding calendar month or year instead of a same-length slice that can drift at calendar boundaries.
+
+### Insights maps keep nearby place names readable
+
+- Place names no longer sit permanently over the map as overlapping tags. Each location is a normal tappable map marker, with its name available in the native callout instead.
+
+### Weekly rhythm is useful from every Insights window
+
+- The weekly-rhythm chart no longer disappears when viewing one day. It now uses the same trailing twelve completed weeks as the trend charts and averages each weekday, so its bars describe a usual week rather than the size of the selected date range.
+
+### The todo list now contains only open work
+
+- Removed completed items from the active todo list, leaving the remaining work and its validation notes easier to review.
+
 ### Arrivals now need motion-confirmed evidence, not one GPS fix
 
 - Opening LifeLog no longer turns a single noisy location fix into a visit just because its reported speed looks slow or is missing. It takes up to three live Core Location samples for at most fifteen seconds and creates an arrival only after two recent samples say the phone is stationary. Delayed visit callbacks receive the same check, so an old or drifted callback cannot create a current stay on its own. Diagnostics records the short burst and any reduced-accuracy, unavailable-location or not-in-use signal it receives.

@@ -85,11 +85,7 @@ struct InsightsSnapshot {
         let analysisInterval = interval.contains(now)
             ? DateInterval(start: interval.start, end: min(interval.end, now))
             : interval
-        let previousStart = interval.start.addingTimeInterval(-interval.duration)
-        let previousInterval = DateInterval(
-            start: previousStart,
-            end: min(interval.start, previousStart.addingTimeInterval(analysisInterval.duration))
-        )
+        let previousInterval = window.previousComparisonInterval(for: analysisInterval)
 
         // Location visits are prepared once and reused by both periods. This avoids an
         // all-history scan for each individual walking or travel record.
@@ -172,6 +168,17 @@ struct InsightsSnapshot {
             totals[segment.category, default: 0] += segment.hours
         }
         return totals
+    }
+
+    /// Builds the weekday chart from history independent of the Insights window.
+    /// Each weekday is averaged over the number of occurrences in `range`, so the
+    /// chart describes a usual week rather than making a month look four times busier
+    /// than a week simply because it contains four Mondays.
+    static func weekdayPatterns(visits: [Visit], range: DateInterval, now: Date) -> [WeekdayPattern] {
+        let locationVisits = visits.filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
+        let segments = makeSegments(visits: visits, locationVisits: locationVisits,
+                                    range: range, now: now)
+        return makeWeekdayPatterns(from: segments, weekdayOccurrences: weekdayOccurrences(in: range))
     }
 
     private static func makeSegments(visits: [Visit], locationVisits: [Visit],
@@ -295,7 +302,8 @@ struct InsightsSnapshot {
     ///
     /// Grouped by category rather than by activity so the bars carry the same colours
     /// as the donut and Top Activities, and one day's "Shopping" stacks with another's.
-    private static func makeWeekdayPatterns(from segments: [InsightSegment]) -> [WeekdayPattern] {
+    private static func makeWeekdayPatterns(from segments: [InsightSegment],
+                                            weekdayOccurrences: [Int]? = nil) -> [WeekdayPattern] {
         let calendar = Calendar.current
         var totals = Array(repeating: 0.0, count: 7)
         var activities = Array(repeating: [String: Double](), count: 7)
@@ -305,15 +313,29 @@ struct InsightsSnapshot {
             activities[weekday][segment.category, default: 0] += segment.hours
         }
         return (0..<7).map { index in
-            let top = activities[index].max { $0.value < $1.value }
-            let breakdown = activities[index]
+            let divisor = Double(weekdayOccurrences?[index] ?? 1)
+            let averageActivities = activities[index].mapValues { $0 / max(divisor, 1) }
+            let top = averageActivities.max { $0.value < $1.value }
+            let breakdown = averageActivities
                 .map { WeekdayActivity(weekday: index + 1, category: $0.key, hours: $0.value) }
                 .filter { $0.hours > 0.01 }
                 .sorted { $0.hours > $1.hours }
-            return WeekdayPattern(weekday: index + 1, hours: totals[index],
+            return WeekdayPattern(weekday: index + 1, hours: totals[index] / max(divisor, 1),
                                   topActivity: top?.key ?? "Visiting", topHours: top?.value ?? 0,
                                   activities: breakdown)
         }
+    }
+
+    private static func weekdayOccurrences(in range: DateInterval, calendar: Calendar = .current) -> [Int] {
+        var counts = Array(repeating: 0, count: 7)
+        var day = calendar.startOfDay(for: range.start)
+        while day < range.end {
+            let weekday = calendar.component(.weekday, from: day) - 1
+            counts[weekday] += 1
+            guard let nextDay = calendar.date(byAdding: .day, value: 1, to: day) else { break }
+            day = nextDay
+        }
+        return counts
     }
 
     private static func makeMapRegion(for places: [PlaceTotal]) -> MKCoordinateRegion {
