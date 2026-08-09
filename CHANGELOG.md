@@ -2,6 +2,10 @@
 
 ## 2026-08-09
 
+### Arrivals now need motion-confirmed evidence, not one GPS fix
+
+- Opening LifeLog no longer turns a single noisy location fix into a visit just because its reported speed looks slow or is missing. It takes up to three live Core Location samples for at most fifteen seconds and creates an arrival only after two recent samples say the phone is stationary. Delayed visit callbacks receive the same check, so an old or drifted callback cannot create a current stay on its own. Diagnostics records the short burst and any reduced-accuracy, unavailable-location or not-in-use signal it receives.
+
 ### A car journey no longer loses its middle when motion classification blinks
 
 - The phone was already recognising driving, but a real forty-three-minute trip arrived as four separate 3–8 minute fragments whenever Core Motion briefly stopped calling it automotive. The gaps made most of the trip appear to be absent. Short automotive gaps are now rejoined into one journey, while walking keeps its much stricter gap so steps before and after a drive cannot become one long walk. Existing fragments are repaired once and future rolling imports replace them instead of leaving duplicates behind.

@@ -3,6 +3,37 @@ import MapKit
 import SwiftData
 import Observation
 
+/// A deliberately short-lived decision window. `stationary` comes from Core
+/// Location's motion fusion; deriving the same answer from one location's speed
+/// caused launch-time GPS noise to become a durable visit.
+struct LocationArrivalConfirmation {
+    struct Sample: Equatable {
+        let location: CLLocation
+        let stationary: Bool
+    }
+
+    static let requiredStationarySamples = 2
+    static let maximumSamples = 3
+    static let timeout: Duration = .seconds(15)
+
+    let startedAt = Date.now
+    private(set) var samples: [Sample] = []
+
+    mutating func append(location: CLLocation, stationary: Bool) {
+        guard samples.count < Self.maximumSamples else { return }
+        samples.append(.init(location: location, stationary: stationary))
+    }
+
+    var hasReachedSampleLimit: Bool { samples.count == Self.maximumSamples }
+    var confirmedLocation: CLLocation? {
+        guard samples.count >= Self.requiredStationarySamples,
+              samples.suffix(Self.requiredStationarySamples).allSatisfy(\.stationary) else {
+            return nil
+        }
+        return samples.last?.location
+    }
+}
+
 @MainActor @Observable
 final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegate {
     private enum PreferenceKey {
@@ -19,9 +50,17 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     private var placeMonitor: CLMonitor?
     private var placeMonitorTask: Task<Void, Never>?
     private var monitoredPlaces: [String: MonitoredPlaces.Ranked] = [:]
-    /// Limits immediate-place creation to samples explicitly requested by LifeLog.
-    /// Significant-change callbacks can arrive while travelling and must not become visits.
-    private var shouldSeedCurrentLocation = false
+    private struct PendingArrival {
+        let coordinate: CLLocationCoordinate2D?
+        let arrival: Date
+        let callbackType: String
+        let accuracy: CLLocationAccuracy
+    }
+
+    private var liveLocationBurstTask: Task<Void, Never>?
+    private var liveLocationBurstTimeoutTask: Task<Void, Never>?
+    private var locationConfirmation: LocationArrivalConfirmation?
+    private var pendingArrival: PendingArrival?
     var authorization: CLAuthorizationStatus = .notDetermined
     var isBackgroundLoggingEnabled = false
     var lastError: String?
@@ -67,9 +106,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             if authorization == .notDetermined { requestPermission() }
             return
         }
-        guard !shouldSeedCurrentLocation else { return }
-        shouldSeedCurrentLocation = true
-        manager.requestLocation()
+        beginLocationConfirmation()
     }
 
     func disableBackgroundLogging() {
@@ -87,6 +124,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         serviceSession?.invalidate()
         serviceSession = nil
         serviceSessionRequirement = nil
+        cancelLocationConfirmation()
     }
 
     private func startBackgroundWorkflow() {
@@ -153,8 +191,13 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                                message: "A visit arrived later than expected (\(Int(callbackDelay / 60)) minutes).")
         }
         if visit.departureDate == .distantFuture {
-            createVisit(at: visit.coordinate, arrival: visit.arrivalDate,
-                        callbackType: "visit-arrival", accuracy: visit.horizontalAccuracy)
+            // A late CLVisit is useful evidence, but not proof that the phone is
+            // still there. Confirm it against the same motion-fused burst used at
+            // launch before writing a new durable arrival.
+            beginLocationConfirmation(
+                pendingArrival: .init(coordinate: visit.coordinate, arrival: visit.arrivalDate,
+                                      callbackType: "visit-arrival", accuracy: visit.horizontalAccuracy)
+            )
         } else {
             closeVisit(at: visit.coordinate, arrival: visit.arrivalDate, departure: visit.departureDate,
                        callbackType: "visit-departure", accuracy: visit.horizontalAccuracy)
@@ -167,28 +210,127 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
               location.horizontalAccuracy >= 0,
               location.horizontalAccuracy <= 1_000,
               abs(location.timestamp.timeIntervalSinceNow) <= 5 * 60 else { return }
+        recordLocationEvidence(location, callbackType: "location-update")
+    }
+
+    private func recordLocationEvidence(_ location: CLLocation, callbackType: String,
+                                        transition: LocationJournal.Transition = .none) {
         latestLocationTimestamp = location.timestamp
-        let seeding = shouldSeedCurrentLocation
-        if shouldSeedCurrentLocation {
-            shouldSeedCurrentLocation = false
-            seedCurrentVisit(from: location)
-        }
         identifyRecentUnknown(near: location)
         // The ordinary fixes, which create nothing on their own but are the evidence a
         // stay was or was not where it claims. Their accuracy is the field that matters:
         // a stay built on a 200 m fix and one built on a 5 m fix look identical
         // afterwards, and only this says which it was.
         if let context {
-            LocationJournal.record("location-update", at: location.coordinate,
+            LocationJournal.record(callbackType, at: location.coordinate,
                                    callbackAt: location.timestamp,
                                    accuracy: location.horizontalAccuracy,
-                                   transition: seeding ? .created : .none,
+                                   transition: transition,
                                    openVisit: latestLocationVisit(in: context), context: context)
         }
     }
 
+    private func beginLocationConfirmation(pendingArrival: PendingArrival? = nil) {
+        // A CLVisit arrival supersedes an in-flight launch check: it carries a
+        // historical arrival to preserve once the phone confirms it is still nearby.
+        if let pendingArrival, self.pendingArrival == nil, locationConfirmation != nil {
+            cancelLocationConfirmation()
+        }
+        guard locationConfirmation == nil else { return }
+
+        locationConfirmation = .init()
+        self.pendingArrival = pendingArrival
+        liveLocationBurstTask = Task { [weak self] in
+            do {
+                for try await update in CLLocationUpdate.liveUpdates() {
+                    guard !Task.isCancelled else { return }
+                    self?.receiveLiveLocationUpdate(update)
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                self?.finishLocationConfirmation(reason: "stream failed")
+            }
+        }
+        liveLocationBurstTimeoutTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: LocationArrivalConfirmation.timeout)
+                guard !Task.isCancelled else { return }
+                self?.finishLocationConfirmation(reason: "timed out")
+            } catch is CancellationError {
+                return
+            } catch {
+                return
+            }
+        }
+    }
+
+    private func receiveLiveLocationUpdate(_ update: CLLocationUpdate) {
+        if update.accuracyLimited || update.insufficientlyInUse || update.locationUnavailable {
+            let conditions = [
+                update.accuracyLimited ? "accuracy limited" : nil,
+                update.insufficientlyInUse ? "insufficiently in use" : nil,
+                update.locationUnavailable ? "location unavailable" : nil
+            ].compactMap { $0 }.joined(separator: ", ")
+            Diagnostics.record(context, subsystem: "Core Location",
+                               message: "Live location confirmation: \(conditions).")
+        }
+        guard let location = update.location,
+              location.horizontalAccuracy >= 0,
+              location.horizontalAccuracy <= 1_000,
+              abs(location.timestamp.timeIntervalSinceNow) <= 5 * 60,
+              var confirmation = locationConfirmation else { return }
+
+        confirmation.append(location: location, stationary: update.stationary)
+        locationConfirmation = confirmation
+        Diagnostics.record(context, subsystem: "Core Location",
+                           message: "Live location sample \(confirmation.samples.count)/\(LocationArrivalConfirmation.maximumSamples): stationary=\(update.stationary), accuracy=\(Int(location.horizontalAccuracy.rounded())) m, elapsed=\(Int(Date.now.timeIntervalSince(confirmation.startedAt).rounded())) s.",
+                           severity: "info")
+        recordLocationEvidence(location, callbackType: "live-location-sample")
+        if confirmation.hasReachedSampleLimit {
+            finishLocationConfirmation(reason: "sample limit")
+        }
+    }
+
+    private func finishLocationConfirmation(reason: String) {
+        guard let confirmation = locationConfirmation else { return }
+        let arrival = pendingArrival
+        cancelLocationConfirmation()
+        guard let location = confirmation.confirmedLocation else {
+            Diagnostics.record(context, subsystem: "Core Location",
+                               message: "Live location confirmation \(reason) without stationary evidence (\(confirmation.samples.count) sample(s)).",
+                               severity: "info")
+            return
+        }
+        if let expected = arrival?.coordinate {
+            let expectedLocation = CLLocation(latitude: expected.latitude, longitude: expected.longitude)
+            let tolerance = max(150, max(arrival?.accuracy ?? 0, location.horizontalAccuracy) * 2)
+            guard expectedLocation.distance(from: location) <= tolerance else {
+                Diagnostics.record(context, subsystem: "Core Location",
+                                   message: "A visit arrival did not match its live confirmation.")
+                return
+            }
+        }
+        recordLocationEvidence(location, callbackType: "live-location-confirmed", transition: .created)
+        if let arrival {
+            createVisit(at: location.coordinate, arrival: arrival.arrival,
+                        callbackType: arrival.callbackType, accuracy: location.horizontalAccuracy)
+        } else {
+            seedConfirmedCurrentVisit(from: location)
+        }
+    }
+
+    private func cancelLocationConfirmation() {
+        liveLocationBurstTask?.cancel()
+        liveLocationBurstTask = nil
+        liveLocationBurstTimeoutTask?.cancel()
+        liveLocationBurstTimeoutTask = nil
+        locationConfirmation = nil
+        pendingArrival = nil
+    }
+
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        shouldSeedCurrentLocation = false
+        cancelLocationConfirmation()
         _ = error
         lastError = "Location updates are temporarily unavailable."
         Diagnostics.record(context, subsystem: "Core Location", message: "A location update failed.")
@@ -337,10 +479,10 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                                    durationMs: Int((Date.now.timeIntervalSince(resolutionStartedAt) * 1000).rounded()))
     }
 
-    private func seedCurrentVisit(from location: CLLocation) {
-        // A fast sample represents movement, not a destination. Unknown speed (-1) is
-        // accepted because stationary one-shot fixes commonly omit speed on launch.
-        guard location.speed < 0 || location.speed <= 2.5 else { return }
+    private func seedConfirmedCurrentVisit(from location: CLLocation) {
+        // This method is only reached after the live burst saw two recent stationary
+        // updates. Do not reintroduce speed here: a missing or stale speed is exactly
+        // why one-shot launch fixes used to manufacture visits.
         guard let context else { return }
         if let current = latestLocationVisit(in: context), current.departure == nil {
             let recorded = CLLocation(latitude: current.latitude, longitude: current.longitude)
