@@ -85,6 +85,19 @@ struct ActivityArtworkBoundsTests {
         #expect(all.count == Set(all).count)
     }
 
+    @Test("Timeline uses the activity icon selected in Activities")
+    func timelineUsesStoredActivityIcon() throws {
+        let defaults = try #require(UserDefaults(suiteName: UUID().uuidString))
+        ActivityCatalog.withStorage(defaults) {
+            ActivityCatalog.save([
+                ActivityDefinition(name: "Reading", category: "Education", symbol: "book.fill")
+            ])
+
+            let icon = ActivityIcon(activity: "Reading", color: .blue)
+            #expect(icon.symbolForTesting == "book.fill")
+        }
+    }
+
     @Test("Current activity artwork has a bounded fixed footprint")
     func layoutIsBounded() {
         #expect(ActivityArtworkLayout.width == 170)

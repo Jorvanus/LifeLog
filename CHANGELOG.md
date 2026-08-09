@@ -2,6 +2,10 @@
 
 ## 2026-08-09
 
+### Timeline honours chosen activity icons
+
+- Timeline activity icons now use the saved icon from the Activities catalogue before falling back to keyword inference for uncatalogued labels.
+
 ### Diagnostics and Journal Storage UI coverage
 
 - Added deterministic UI coverage for empty journal history, backup and protected-report failures, Accessibility XXXL layout, dark appearance, and VoiceOver-facing labels on Diagnostics and Journal Storage.

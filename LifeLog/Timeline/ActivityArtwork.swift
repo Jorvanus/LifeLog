@@ -25,6 +25,14 @@ struct ActivityIcon: View {
     }
     private var symbol: String {
         let text = "\(activity) \(context)".lowercased()
+        // The catalogue is the user's source of truth. Keyword inference remains a
+        // useful fallback for imported labels that have not been adopted yet, but it
+        // must not override an icon chosen in Activities.
+        if let definition = ActivityCatalog.load().first(where: {
+            $0.name.caseInsensitiveCompare(activity.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame
+        }) {
+            return definition.symbol
+        }
         if text.contains("travel") || text.contains("transit") { return "car.fill" }
         if text.contains("home") { return "house.fill" }
         if text.contains("work") || text.contains("office") { return "building.2.fill" }
@@ -38,6 +46,8 @@ struct ActivityIcon: View {
         if text.contains("shop") { return "bag.fill" }
         return "mappin"
     }
+
+    var symbolForTesting: String { symbol }
 
     /// The illustration for the current-activity card, or nothing when there isn't one.
     ///
