@@ -193,13 +193,58 @@ struct InsightsView: View {
         if let highlight = DayHighlights.activity(from: snapshot.comparisons, window: window) {
             found.append(highlight)
         }
-        if let place = snapshot.placeTotals.first,
-           let highlight = DayHighlights.leadingPlace(place, window: window) {
+        if let place = snapshot.placeTotals.first {
+            if let highlight = DayHighlights.leadingPlace(place, window: window) {
+                found.append(highlight)
+            }
+            let history = placeHistory(matching: place.name)
+            if let highlight = ArchiveRetrospectives.firstVisitToPlace(
+                place, history: history, windowStart: interval.start, window: window
+            ) {
+                found.append(highlight)
+            }
+            if let highlight = ArchiveRetrospectives.longestAbsenceFromPlace(
+                place, history: history, windowStart: interval.start
+            ) {
+                found.append(highlight)
+            }
+        }
+        if let highlight = yearOverYearHighlight() {
             found.append(highlight)
         }
         guard !Task.isCancelled else { return }
         highlights = variedHighlights(found)
         highlightPage = min(highlightPage, max(0, found.count - 1))
+    }
+
+    /// Every visit to places matching this name, unscoped by date — the archive
+    /// retrospectives need to know what happened before the window being looked
+    /// at, not just within it. Automatic/manual only, the same location-visit
+    /// sources `leadingPlace` itself is built from; device activity carries no
+    /// place worth matching against.
+    private func placeHistory(matching name: String) -> [Visit] {
+        let descriptor = FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.source == "automatic" || $0.source == "manual" }
+        )
+        let all = (try? context.fetch(descriptor)) ?? []
+        return all.filter { NameKey.matching($0.placeName) == NameKey.matching(name) }
+    }
+
+    /// This period's total against the same period a year ago. A fetch of its own,
+    /// scoped tightly to that one historical window rather than the whole archive.
+    private func yearOverYearHighlight() -> DayHighlight? {
+        guard let yearAgoAnchor = Calendar.current.date(byAdding: .year, value: -1, to: anchorDate) else { return nil }
+        let yearAgoInterval = window.interval(containing: yearAgoAnchor)
+        let start = yearAgoInterval.start
+        let end = yearAgoInterval.end
+        let descriptor = FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.source != "imported-journal" && $0.arrival < end && ($0.departure ?? end) >= start }
+        )
+        guard let visits = try? context.fetch(descriptor) else { return nil }
+        let yearAgoHours = InsightsSnapshot.categoryHours(visits: visits, range: yearAgoInterval, now: now)
+            .values.reduce(0, +)
+        return ArchiveRetrospectives.yearOverYear(loggedHours: snapshot.loggedHours,
+                                                   yearAgoHours: yearAgoHours, window: window)
     }
 
     /// Keep the strongest comparison first, but rotate supporting cards by the

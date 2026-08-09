@@ -6,34 +6,27 @@ forward as if they were current, and hardware items remain only where the code
 exists but has not yet been proven on the owner’s iPhone. LifeLog is still a
 private, single-phone app; the App Store work is deliberately separate below.
 
-## The next five code changes
+## The next four code changes
 
-1. [x] **Finish the place-score lifecycle, not just the first score.** A score
-   is calculated while an arrival is still open, so its dwell component is near
-   zero and it is not recalculated when the visit closes or a person corrects
-   it. Re-score at departure and after a correction, retain the inputs used,
-   and make the decision threshold and score change inspectable in Diagnostics.
-   A score must inform a suggestion, never overwrite a confirmed choice.
-
-2. [ ] **Make location resolution an invariant of every store mutation.** Run
+1. [ ] **Make location resolution an invariant of every store mutation.** Run
    the resolver after arrivals, departures, corrections, Saved Place edits and
    relaunch recovery. Add one diagnostic validator for: at most one current
    resolved visit, no resolved overlaps or negative durations, no superseded
    visit in Timeline/Insights, and no automation replacing a user correction.
 
-3. [ ] **Move Visit identity to Maps identifiers in a V6 migration.**
+2. [ ] **Move Visit identity to Maps identifiers in a V6 migration.**
    `SavedPlace` already keeps an `MKMapItem.identifier`; `Visit` does not.
    Persist visit identifier plus field provenance, match identifier-first where
    available, and retain `NameKey` only as a carefully documented fallback for
    old or identifier-less records. Do not break existing backup restore.
 
-4. [ ] **Make Saved Place learning conservative and reversible.** Do not turn
+3. [ ] **Make Saved Place learning conservative and reversible.** Do not turn
    one high scoring Maps result into a permanent Saved Place. Require repeated
    corroborating visits or a correction, preserve competing evidence, and add
    an alias/cluster rule for GPS drift around large venues without merging two
    genuinely different businesses.
 
-5. [ ] **Make the archive searchable at archive scale.** Provide one scoped
+4. [ ] **Make the archive searchable at archive scale.** Provide one scoped
    search over place, activity and note, surface note-bearing visits in the
    results and Timeline, and keep the query/index work off the main actor so
    nine years of data stays responsive.
@@ -124,30 +117,6 @@ private, single-phone app; the App Store work is deliberately separate below.
   colour/icon choices need to remain understandable without a second route.
 
 ## Insight enhancements
-
-- [x] **Move trend/habit aggregation off the main actor or pre-aggregate it, then
-  safely widen the current twelve-week horizon to a year where it genuinely
-  improves the answer.** Done 2026-08-09 with both halves, not just the bigger
-  number. `InsightsTrendAggregator`, a `@ModelActor` mirroring `ActivityImportActor`'s
-  own isolation, fetches and resolves the season entirely off the main actor; only
-  the `Sendable` `WeeklyTotals`/`WeekdayPattern` results cross back. That's what
-  makes the wider window affordable: `InsightsTrends.habitWeeks` (52) is what
-  `habits` now reads, while the trend lines and weekly rhythm stay at the original
-  `weeks` (12) — a line chart or weekday average over a year reads worse than one
-  scoped to a season, and neither needed to widen for `habits`' "first this year"
-  claims to become honest. Also fixed the redundant O(weeks × N) cost this would
-  otherwise have made ~4x worse: `CommuteDetection.commutes` doesn't depend on which
-  week is being segmented, but was being recomputed identically once per week (and
-  a third time for the weekday chart) — now resolved once per load and threaded
-  through. Regression test (`widerWindowFindsAReturnANarrowerWindowMisses`)
-  reproduces the exact failure mode: a real return 20 weeks back reads as "First
-  entertainment in 12 weeks" (implying no history) with the old window, "Back to
-  entertainment" (correct) with the new one.
-
-- [ ] Add only useful archive retrospectives: first/last visit to a place,
-  notable longest absence, and restrained year-over-year comparison. “On this
-  day” already exists; avoid duplicating period-over-period views that activity
-  detail already answers.
 
 - [ ] Finish data curation before learning from it: correct the highest-value
   imported place history, adopt active activity labels, then infer activities

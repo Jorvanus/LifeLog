@@ -2,6 +2,10 @@
 
 ## 2026-08-09
 
+### Three new archive retrospectives, only when they have something to say
+
+- Insights can now notice a genuinely first-ever visit to a place, the longest a familiar place has ever gone unvisited when that record is set inside the period you're looking at, and one restrained comparison of this period's total against the same period a year ago. Each stays silent rather than stating the obvious: a place seen only once or twice has no meaningful gap to report, and a small year-over-year shift isn't called out as a change.
+
 ### Habits can now say "back to" instead of overstating "first ever"
 
 - The habits card only ever saw twelve weeks of history, because resolving that history ran on the main actor beside the whole archive — a wider window meant a slower screen. It now runs entirely off the main actor, so habits reads a full year instead: a real return after months away used to read as "First entertainment in 12 weeks" (implying it had never happened before) and now correctly reads "Back to entertainment". Trend lines and the weekly rhythm chart stay at twelve weeks on purpose — a year on a line chart reads worse than a season, and neither needed the wider window to begin with. Also removed a redundant recomputation that would have made the wider window meaningfully slower: one piece of the aggregation (commute detection) doesn't depend on which week is being looked at, but was being redone identically once per week regardless.
