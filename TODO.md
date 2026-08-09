@@ -118,6 +118,13 @@ private, single-phone app; the App Store work is deliberately separate below.
 
 ## Insight enhancements
 
+- [ ] **Implement Waking Life Balance Ratio**: Add a 4-part segmented balance visual (Work, Fitness, Social, Home) with ratio baseline comparison.
+- [ ] **Add Commute Overhead & Transit Impact Trend**: Surface weekly commuting hours and trend changes derived from `CommuteDetection`.
+- [ ] **Track Exploration & Novelty Index**: Calculate percentage of time spent at new/unfamiliar places vs. routine locations.
+- [ ] **Calculate Peak Dwell & Focus Duration**: Display average stay length per venue category and place type.
+- [ ] **Embed Contextual Micro-Insights Across App**: Show badges on Timeline visit cards (*First time here*, *Milestone visit*, *Longest stay*) and Place History headers (*Peak visit hour*, *Average stay*, *Lifetime hours*).
+- [ ] **Segment Insights View into Focused Tabs**: Group the 13 long scrollable cards in `InsightsView` into `[ Overview | Habits & Trends | Places ]` tabs.
+
 - [ ] Correct the highest-value imported place history and adopt active
   activity labels. Inference from place and time band, weighted toward
   corrections and LifeLog-created entries over bulk-imported defaults, now

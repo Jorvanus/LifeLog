@@ -1,5 +1,11 @@
 # Change log
 
+## 2026-08-10
+
+### Roadmap updated with Insights enhancement items
+
+- Added detailed actionable Insights items to `TODO.md` covering Waking Life Balance Ratio, Commute Overhead trends, Exploration & Novelty scores, Peak Dwell duration metrics, Timeline micro-insight badges, and Insights tab segmentation.
+
 ## 2026-08-09
 
 ### A new arrival can now guess its activity from what this place has meant before
