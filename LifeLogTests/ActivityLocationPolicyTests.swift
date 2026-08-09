@@ -1095,6 +1095,52 @@ struct ActivityLocationPolicyTests {
         #expect(travel.recognitionConfidence == "learned")
     }
 
+    @Test("Archive repair rejoins fragmented driving but respects a destination in the gap")
+    func archiveRepairRejoinsTravelWithoutCrossingAStay() throws {
+        let context = try makeContext()
+        let first = Visit(
+            arrival: base, departure: base.addingTimeInterval(8 * 60), latitude: 0, longitude: 0,
+            placeName: "In transit", inferredActivity: "Travelling", userActivity: "Travelling", source: "motion"
+        )
+        let second = Visit(
+            arrival: base.addingTimeInterval(9 * 60), departure: base.addingTimeInterval(16 * 60), latitude: 0, longitude: 0,
+            placeName: "In transit", inferredActivity: "Travelling", userActivity: "Travelling", source: "motion"
+        )
+        let later = Visit(
+            arrival: base.addingTimeInterval(22 * 60), departure: base.addingTimeInterval(30 * 60), latitude: 0, longitude: 0,
+            placeName: "In transit", inferredActivity: "Travelling", userActivity: "Travelling", source: "motion"
+        )
+        context.insert(first)
+        context.insert(second)
+        context.insert(later)
+        try context.save()
+
+        ActivityLocationPolicy.coalesceFragmentedTravel(in: [first, second, later], context: context, now: base.addingTimeInterval(60 * 60))
+        try context.save()
+        var travel = try context.fetch(FetchDescriptor<Visit>()).filter { $0.source == "motion" }
+        #expect(travel.count == 1)
+        #expect(travel.first?.departure == base.addingTimeInterval(30 * 60))
+
+        let next = Visit(
+            arrival: base.addingTimeInterval(39 * 60), departure: base.addingTimeInterval(43 * 60), latitude: 0, longitude: 0,
+            placeName: "In transit", inferredActivity: "Travelling", userActivity: "Travelling", source: "motion"
+        )
+        let shop = Visit(
+            arrival: base.addingTimeInterval(32 * 60), departure: base.addingTimeInterval(38 * 60),
+            latitude: -27.47, longitude: 153.03, placeName: "Shops", inferredActivity: "Shopping", source: "automatic"
+        )
+        context.insert(next)
+        context.insert(shop)
+        try context.save()
+
+        travel = try context.fetch(FetchDescriptor<Visit>()).filter { $0.source == "motion" }
+        ActivityLocationPolicy.coalesceFragmentedTravel(in: travel + [shop], context: context,
+                                                         now: base.addingTimeInterval(60 * 60))
+        try context.save()
+        #expect(try context.fetch(FetchDescriptor<Visit>()).filter { $0.source == "motion" }.count == 2,
+                "a recorded destination keeps separate drives separate")
+    }
+
     @Test("A manually named travel activity is preserved")
     func preservesManualTravelActivity() throws {
         let context = try makeContext()

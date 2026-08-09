@@ -2,6 +2,10 @@
 
 ## 2026-08-09
 
+### A car journey no longer loses its middle when motion classification blinks
+
+- The phone was already recognising driving, but a real forty-three-minute trip arrived as four separate 3–8 minute fragments whenever Core Motion briefly stopped calling it automotive. The gaps made most of the trip appear to be absent. Short automotive gaps are now rejoined into one journey, while walking keeps its much stricter gap so steps before and after a drive cannot become one long walk. Existing fragments are repaired once and future rolling imports replace them instead of leaving duplicates behind.
+
 ### Apple Maps categories now drive activity inference directly
 
 - A place's Apple Maps point-of-interest category is now mapped straight to LifeLog's activity groups instead of being converted to broad prose and guessed from keywords again, so places such as pharmacies, cafes and cinemas can classify correctly even when their names do not contain those words.

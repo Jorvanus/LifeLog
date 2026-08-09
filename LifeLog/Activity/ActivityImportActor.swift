@@ -97,6 +97,7 @@ actor ActivityImportActor {
                     // A replayed workout can carry a route the first import did not
                     // have, but an absent route never erases one already recorded.
                     if !record.route.isEmpty { existing.route = record.route }
+                    collapseReplayedTravelFragments(inside: segment, keeping: existing, record: record)
                     continue
                 }
                 if record.source == "motion", overlaps(segment, visits: healthVisits) { continue }
@@ -122,6 +123,26 @@ actor ActivityImportActor {
         }
         if modelContext.hasChanges { try modelContext.save() }
         return inserted
+    }
+
+    /// Core Motion is read from a rolling window. Once the reader learns that several
+    /// automotive fragments were one drive, its replay must replace the old fragments
+    /// instead of leaving them alongside the expanded first row. Confirmed edits are
+    /// intentionally left untouched: the device is allowed to revise its own guess,
+    /// never the person's correction.
+    private func collapseReplayedTravelFragments(inside interval: DateInterval, keeping: Visit,
+                                                  record: ActivityImportRecord) {
+        guard record.source == "motion",
+              ActivityLocationPolicy.describesTravel("\(record.activity) \(record.name)") else { return }
+        let redundant = visitsBySource["motion", default: []].filter { visit in
+            visit !== keeping && visit.recognitionConfidence != "confirmed" &&
+                ActivityLocationPolicy.describesTravel("\(visit.activity) \(visit.placeName)") &&
+                visit.arrival >= interval.start && (visit.departure ?? .distantFuture) <= interval.end
+        }
+        guard !redundant.isEmpty else { return }
+        let IDs = Set(redundant.map(\.persistentModelID))
+        for visit in redundant { modelContext.delete(visit) }
+        visitsBySource["motion"]?.removeAll { IDs.contains($0.persistentModelID) }
     }
 
     /// Removes imported visits whose originating HealthKit sample was deleted in the

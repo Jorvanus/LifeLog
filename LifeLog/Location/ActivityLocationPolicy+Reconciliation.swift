@@ -130,13 +130,15 @@ extension ActivityLocationPolicy {
     /// Cleans timelines created by earlier app versions when the model container opens.
     static func reconcileAll(context: ModelContext, now: Date = .now) throws {
         let visits = try fetchPolicyVisits(context: context)
+        coalesceFragmentedTravel(in: visits, context: context, now: now)
+        let afterTravelCoalescing = try fetchPolicyVisits(context: context)
         // Before anything else: a health-walking or motion record a workout already
         // explains is not independent evidence of a second walk. Run first and re-fetch
         // afterward, rather than filter the in-memory list by hand, so a record this
         // deletes is never seen again by the passes below that further mutate whatever
         // they are handed.
-        let sessions = visits.filter(isWorkoutSession).compactMap { WorkoutJourneys.WorkoutSession($0, now: now) }
-        WorkoutJourneys.recordAbsorbedMovement(during: sessions, activities: visits.filter(isMovementActivity),
+        let sessions = afterTravelCoalescing.filter(isWorkoutSession).compactMap { WorkoutJourneys.WorkoutSession($0, now: now) }
+        WorkoutJourneys.recordAbsorbedMovement(during: sessions, activities: afterTravelCoalescing.filter(isMovementActivity),
                                                context: context, now: now)
         let remaining = try fetchPolicyVisits(context: context)
         let activities = remaining.filter(isMovementActivity)
@@ -151,6 +153,35 @@ extension ActivityLocationPolicy {
             context: context,
             now: now
         )
+    }
+
+    /// Repairs older rolling-motion imports that split a car trip whenever Core Motion
+    /// briefly stopped calling it automotive. A location stay in the gap is a real
+    /// destination, not a classifier blip, so it keeps the trips separate.
+    static func coalesceFragmentedTravel(in visits: [Visit], context: ModelContext,
+                                         now: Date = .now) {
+        let locations = visits.filter { isLocationVisit($0) && !isSupersededLocation($0) }
+        let travel = visits.filter {
+            $0.source == "motion" && $0.recognitionConfidence != "confirmed" && isTravelActivity($0)
+        }.sorted { $0.arrival < $1.arrival }
+        var leader: Visit?
+        for candidate in travel {
+            guard let end = candidate.departure, end > candidate.arrival else { continue }
+            guard let previous = leader, let previousEnd = previous.departure else {
+                leader = candidate
+                continue
+            }
+            let gap = candidate.arrival.timeIntervalSince(previousEnd)
+            let gapHasDestination = locations.contains { stay in
+                stay.arrival < candidate.arrival && (stay.departure ?? now) > previousEnd
+            }
+            guard gap >= 0, gap <= 10 * 60, !gapHasDestination else {
+                leader = candidate
+                continue
+            }
+            previous.departure = end
+            context.delete(candidate)
+        }
     }
 
     static func fetchPolicyVisits(context: ModelContext) throws -> [Visit] {

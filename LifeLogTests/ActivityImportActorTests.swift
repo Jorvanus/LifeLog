@@ -4,6 +4,62 @@ import Testing
 @testable import LifeLog
 
 struct ActivityImportActorTests {
+    @Test("Automotive classifier gaps become one drive, without joining walking")
+    func coalescesAutomotiveClassifierGaps() {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let drive = ActivitySampleReader.makeMotionRecords(segments: [
+            .init(activity: "Travelling", start: start, end: start.addingTimeInterval(8 * 60)),
+            .init(activity: "Travelling", start: start.addingTimeInterval(9 * 60), end: start.addingTimeInterval(16 * 60)),
+            .init(activity: "Travelling", start: start.addingTimeInterval(22 * 60), end: start.addingTimeInterval(30 * 60)),
+            .init(activity: "Travelling", start: start.addingTimeInterval(39 * 60), end: start.addingTimeInterval(43 * 60))
+        ])
+        let walks = ActivitySampleReader.makeMotionRecords(segments: [
+            .init(activity: "Walking", start: start, end: start.addingTimeInterval(4 * 60)),
+            .init(activity: "Walking", start: start.addingTimeInterval(6 * 60), end: start.addingTimeInterval(10 * 60))
+        ])
+
+        #expect(drive.count == 1)
+        #expect(drive.first?.start == start)
+        #expect(drive.first?.end == start.addingTimeInterval(43 * 60))
+        #expect(walks.count == 2, "walking must not bridge a likely car trip")
+    }
+
+    @Test("A replayed complete drive replaces its older motion fragments")
+    func replayedTravelCollapsesFragments() async throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(
+            for: Visit.self, SavedPlace.self, VisitCorrection.self,
+            configurations: configuration
+        )
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let setup = ModelContext(container)
+        for (offset, duration) in [(0.0, 8.0), (9.0, 7.0), (22.0, 8.0), (39.0, 4.0)] {
+            setup.insert(Visit(
+                arrival: start.addingTimeInterval(offset * 60),
+                departure: start.addingTimeInterval((offset + duration) * 60),
+                latitude: 0, longitude: 0, placeName: "In transit",
+                inferredActivity: "Travelling", userActivity: "Travelling",
+                source: "motion", recognitionConfidence: "device"
+            ))
+        }
+        try setup.save()
+
+        let writer = ActivityImportActor(modelContainer: container)
+        try await writer.prepare()
+        let inserted = try await writer.insertBatch([
+            .init(name: "In transit", activity: "Travelling", source: "motion",
+                  start: start, end: start.addingTimeInterval(43 * 60))
+        ])
+        try await writer.finish()
+
+        let visits = try ModelContext(container).fetch(FetchDescriptor<Visit>())
+            .filter { $0.source == "motion" }
+        #expect(inserted == 0)
+        #expect(visits.count == 1)
+        #expect(visits.first?.arrival == start)
+        #expect(visits.first?.departure == start.addingTimeInterval(43 * 60))
+    }
+
     @Test("Import progress reports bounded completion")
     func reportsProgress() {
         let progress = ActivityImportProgress(

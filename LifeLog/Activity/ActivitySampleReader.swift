@@ -54,6 +54,14 @@ struct ActivityAnchorResult: Sendable {
     let deletedSampleIDs: [UUID]
 }
 
+/// A classified Core Motion interval, kept separate from the framework object so the
+/// coalescing rule can be tested without motion hardware.
+struct MotionActivitySegment: Sendable, Equatable {
+    let activity: String
+    let start: Date
+    let end: Date
+}
+
 /// Health and Motion history is read away from the main actor and converted into
 /// small Sendable records before any database work begins.
 actor ActivitySampleReader {
@@ -230,18 +238,32 @@ actor ActivitySampleReader {
     private nonisolated static func makeMotionRecords(
         _ activities: [CMMotionActivity], interval: DateInterval
     ) -> [ActivityImportRecord] {
-        var segments: [(activity: String, start: Date, end: Date)] = []
-        for (index, event) in activities.enumerated() {
-            guard event.confidence != .low, let activity = motionActivity(event) else { continue }
+        let segments = activities.enumerated().compactMap { index, event -> MotionActivitySegment? in
+            guard event.confidence != .low, let activity = motionActivity(event) else { return nil }
             let end = index + 1 < activities.count ? activities[index + 1].startDate : interval.end
-            let minimumDuration: TimeInterval = activity == "Travelling" ? 3 * 60 : 2 * 60
-            guard end.timeIntervalSince(event.startDate) >= minimumDuration else { continue }
+            return MotionActivitySegment(activity: activity, start: event.startDate, end: end)
+        }
+        return makeMotionRecords(segments: segments)
+    }
+
+    /// Automotive classification often briefly drops while the car is still moving.
+    /// Treating those short unclassified windows as the end of the journey split one
+    /// observed 43-minute drive into four rows and erased seventeen minutes of it.
+    /// Walking deliberately keeps its much tighter gap: it must not bridge a car ride
+    /// between two short bouts of steps.
+    nonisolated static func makeMotionRecords(segments input: [MotionActivitySegment]) -> [ActivityImportRecord] {
+        var segments: [MotionActivitySegment] = []
+        for event in input where event.end > event.start {
+            let minimumDuration: TimeInterval = event.activity == "Travelling" ? 3 * 60 : 2 * 60
+            guard event.end.timeIntervalSince(event.start) >= minimumDuration else { continue }
             if let last = segments.last,
-               last.activity == activity,
-               event.startDate.timeIntervalSince(last.end) <= 90 {
-                segments[segments.count - 1].end = end
+               last.activity == event.activity,
+               event.start.timeIntervalSince(last.end) <= motionMergeGap(for: event.activity) {
+                segments[segments.count - 1] = MotionActivitySegment(
+                    activity: last.activity, start: last.start, end: event.end
+                )
             } else {
-                segments.append((activity, event.startDate, end))
+                segments.append(event)
             }
         }
         return segments.map { segment in
@@ -252,6 +274,10 @@ actor ActivitySampleReader {
                 source: "motion", start: segment.start, end: segment.end
             )
         }
+    }
+
+    private nonisolated static func motionMergeGap(for activity: String) -> TimeInterval {
+        activity == "Travelling" ? 10 * 60 : 90
     }
 
     private func merge(_ intervals: [DateInterval], maximumGap: TimeInterval) -> [DateInterval] {

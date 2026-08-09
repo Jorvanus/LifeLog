@@ -41,7 +41,9 @@ struct TimelineView: View {
     // departure ahead of the workout itself (2026-08-09) — the same backlog reasoning
     // as v10 applies: a walk from days ago that opened a few minutes early under the
     // old rule needs this pass to run again, not just the recent-day re-apply.
-    @AppStorage("location-policy-reconciled-v11") private var locationPolicyReconciled = false
+    // v12: Core Motion can briefly stop calling an ongoing drive automotive. Rejoin
+    // those short gaps once so old trips do not remain as several fragments.
+    @AppStorage("location-policy-reconciled-v12") private var locationPolicyReconciled = false
     // Undoes the stays v3 split in two before reconciliation runs again.
     @AppStorage("stay-splits-rejoined-v1") private var staySplitsRejoined = false
     // Puts back together the workouts the import path used to cut up at stay boundaries.
