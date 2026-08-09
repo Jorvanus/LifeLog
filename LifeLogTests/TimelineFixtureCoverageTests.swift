@@ -809,6 +809,34 @@ struct TimelineFixtureCoverageTests {
         #expect(evaluation.breakdown.priorCorrections == 5)
     }
 
+    @Test("Place scores gain dwell evidence when a stay closes without replacing confirmation")
+    func rescoringClosedStayRaisesDwellWithoutOverwritingConfirmedChoice() {
+        let arrival = base.addingTimeInterval(9 * 3_600)
+        let visit = Visit(arrival: arrival, departure: arrival.addingTimeInterval(3_600),
+                          latitude: -23.37, longitude: 150.51, placeName: "Home",
+                          inferredActivity: "At home", source: "automatic",
+                          recognitionConfidence: "confirmed")
+        let suggestion = PlaceSuggestion(name: "Home", latitude: -23.37, longitude: 150.51,
+                                         suggestedActivity: "At home", distance: 5,
+                                         mapsIdentifier: "home-id", mapsCategory: "home")
+
+        let arrivalScore = PlaceScoringPipeline.evaluate(
+            visit: visit, savedPlaces: [], suggestions: [suggestion], accuracy: 10,
+            geofenceTriggered: false, visits: [], corrections: [], stage: "arrival", now: arrival
+        )
+        let departureScore = PlaceScoringPipeline.evaluate(
+            visit: visit, savedPlaces: [], suggestions: [suggestion], accuracy: 10,
+            geofenceTriggered: false, visits: [], corrections: [], stage: "departure", now: arrival.addingTimeInterval(3_600)
+        )
+
+        #expect(arrivalScore.breakdown.dwellDuration == 0)
+        #expect(departureScore.breakdown.dwellDuration == 15)
+        #expect(departureScore.breakdown.total > arrivalScore.breakdown.total)
+        #expect(departureScore.breakdown.lifecycleStage == "departure")
+        #expect(departureScore.breakdown.decisionThreshold == PlaceScoreLifecycle.suggestionThreshold)
+        #expect(PlaceScoreLifecycle.canSuggest(for: visit, evaluation: departureScore) == false)
+    }
+
     @Test("Place score survives the existing candidate payload")
     func storesPlaceScoreAlongsideCandidates() {
         let visit = Visit(arrival: base, latitude: -23.37, longitude: 150.51)

@@ -2,6 +2,14 @@
 
 ## 2026-08-09
 
+### Location resolution now protects every timeline mutation
+
+- Arrivals, departures, corrections, Saved Place changes, and relaunch recovery now run one location resolver before data is displayed. Diagnostics validate one current resolved stay, non-overlapping positive durations, hidden superseded callbacks, and preserved manual corrections.
+
+### Place scores follow the complete visit lifecycle
+
+- Place scores now start with zero dwell on arrival, then refresh at Maps lookup, departure, and a manual correction. Each refreshed score retains its inputs and stage, records its threshold and score delta in Diagnostics, and cannot replace a confirmed choice.
+
 ### Current roadmap and future release work clarified
 
 - Re-audited LifeLog’s open work against the current implementation, removing shipped items, prioritising the next five code changes, and separating private-app improvements from the additional privacy, quality and distribution work needed for an App Store release.

@@ -50,6 +50,8 @@ enum SavedPlaceLearning {
             changed += 1
         }
         try context.save()
+        _ = try ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "Saved Place ignored state")
+        try context.save()
         return changed
     }
     enum Change: Equatable {
@@ -161,6 +163,9 @@ enum SavedPlaceLearning {
             )
             let visitLocation = CLLocation(latitude: visit.latitude, longitude: visit.longitude)
             guard savedLocation.distance(from: visitLocation) <= place.radius else { continue }
+            // A Saved Place is helpful evidence for unresolved history, but it is
+            // never allowed to silently revise a label the person explicitly chose.
+            guard visit.recognitionConfidence?.lowercased() != "confirmed" else { continue }
             visit.placeName = place.name
             // A saved-place default is a future suggestion, not a permanent label —
             // the same location can be Breakfast one day and Lunch the next — so
@@ -173,7 +178,7 @@ enum SavedPlaceLearning {
             CorrectionHistory.record(visit: visit, from: previous, context: context,
                                      reason: "Saved Place learned")
         }
-        try ActivityLocationPolicy.updateTravelDescriptions(context: context)
+        _ = try ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "Saved Place edit")
     }
 
     /// Adds Core Location detail to imported journal rows without changing their

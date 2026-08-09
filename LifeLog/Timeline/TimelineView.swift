@@ -164,7 +164,7 @@ struct TimelineView: View {
             .task {
                 loadEarliestDay()
                 do {
-                    let repaired = try ActivityLocationPolicy.resolveLocationCallbacks(context: context)
+                    let repaired = try ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "Timeline relaunch recovery")
                     if repaired > 0 {
                         try context.save()
                         Diagnostics.record(context, subsystem: "Core Location",

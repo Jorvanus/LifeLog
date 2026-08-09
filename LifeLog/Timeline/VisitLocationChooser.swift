@@ -255,6 +255,7 @@ struct LocationDetailView: View {
             Button("Delete", role: .destructive) {
                 if let savedPlace {
                     context.delete(savedPlace)
+                    _ = try? ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "Saved Place deletion")
                     try? context.save()
                     InsightsInvalidation.invalidate(reason: "Saved place deleted", context: context)
                 }
@@ -288,6 +289,7 @@ private extension LocationDetailView {
             visit.placeName = target.name
         }
         context.delete(source)
+        _ = try? ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "Saved Place merge")
         try? context.save()
         InsightsInvalidation.invalidate(reason: "Saved places merged", context: context)
         name = target.name

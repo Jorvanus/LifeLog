@@ -10,6 +10,66 @@ import CoreLocation
 /// sites — only the text moved.
 extension ActivityLocationPolicy {
 
+    /// Runs immediately after a location-affecting store mutation. Keeping this at
+    /// the data boundary means every consumer reads the same resolved timeline,
+    /// instead of Timeline, Insights, and exports each attempting a partial repair.
+    @discardableResult
+    static func resolveAfterLocationMutation(context: ModelContext, reason: String) throws -> Int {
+        let repairs = try resolveLocationCallbacks(context: context)
+        try updateTravelDescriptions(context: context)
+        let report = try validateLocationResolution(context: context)
+        report.record(context: context, reason: reason, repairs: repairs)
+        return repairs
+    }
+
+    /// Read-only validation for the resolved location timeline. Raw, superseded
+    /// callbacks intentionally remain in the store for diagnostics, but no consumer
+    /// may treat them as a visible resolved visit.
+    static func validateLocationResolution(context: ModelContext, now: Date = .now) throws -> LocationResolutionValidation {
+        let visits = try context.fetch(FetchDescriptor<Visit>(sortBy: [SortDescriptor(\.arrival)]))
+        let locations = visits.filter(isLocationVisit)
+        let resolved = locations.filter { $0.resolutionState == .resolved }
+        let currentCount = resolved.filter { $0.departure == nil }.count
+        let negativeDurations = resolved.filter { ($0.departure ?? $0.arrival) < $0.arrival }.count
+
+        var overlaps = 0
+        for (index, visit) in resolved.enumerated() where index > 0 {
+            let preceding = resolved[index - 1]
+            let precedingEnd = preceding.departure ?? now
+            if precedingEnd > visit.arrival { overlaps += 1 }
+        }
+
+        let visibleSuperseded = locations.filter { visit in
+            guard visit.resolutionState == .superseded else { return false }
+            // Both presentation policies must reject superseded callbacks. This
+            // catches an accidental future policy regression in Diagnostics.
+            return shouldShowInTimeline(visit, locationVisits: resolved, now: now) ||
+                shouldShowInInsights(visit, locationVisits: resolved, now: now)
+        }.count
+
+        let manualCorrections = try context.fetch(FetchDescriptor<VisitCorrection>())
+            .filter { $0.reason.localizedCaseInsensitiveContains("manual") }
+        let automationReplacements = manualCorrections.filter { correction in
+            guard let visit = locations.first(where: { visit in
+                abs(visit.arrival.timeIntervalSince(correction.visitArrival)) < 1 &&
+                abs(visit.latitude - correction.latitude) < 0.00001 &&
+                abs(visit.longitude - correction.longitude) < 0.00001
+            }) else { return false }
+            // A user activity takes precedence over an inferred activity. If neither
+            // the confirmed place nor their effective activity still agrees, some
+            // later automation has replaced the correction.
+            return visit.placeName != correction.newPlaceName || visit.activity != correction.newActivity
+        }.count
+
+        return LocationResolutionValidation(
+            currentResolvedVisits: currentCount,
+            resolvedOverlaps: overlaps,
+            negativeDurations: negativeDurations,
+            visibleSupersededVisits: visibleSuperseded,
+            automationReplacements: automationReplacements
+        )
+    }
+
     /// Single resolver for callback order and overlap. Raw callbacks remain
     /// stored; duplicates are marked superseded and older open stays bounded.
     @discardableResult
@@ -239,5 +299,28 @@ extension ActivityLocationPolicy {
                                        context: context)
         }
         return repaired
+    }
+}
+
+/// Compact store health result for diagnostics and focused fixtures. It names the
+/// invariant failures rather than trying to conceal them in a UI-only filter.
+struct LocationResolutionValidation: Equatable {
+    let currentResolvedVisits: Int
+    let resolvedOverlaps: Int
+    let negativeDurations: Int
+    let visibleSupersededVisits: Int
+    let automationReplacements: Int
+
+    var isValid: Bool {
+        currentResolvedVisits <= 1 && resolvedOverlaps == 0 && negativeDurations == 0 &&
+            visibleSupersededVisits == 0 && automationReplacements == 0
+    }
+
+    @MainActor
+    func record(context: ModelContext, reason: String, repairs: Int) {
+        guard repairs > 0 || !isValid else { return }
+        let message = "Resolution \(reason): \(repairs) repair(s); current \(currentResolvedVisits), overlaps \(resolvedOverlaps), negative durations \(negativeDurations), visible superseded \(visibleSupersededVisits), correction replacements \(automationReplacements)."
+        Diagnostics.record(context, subsystem: "Location resolver", message: message,
+                           severity: isValid ? "info" : "warning", category: LocationDiagnostics.category)
     }
 }

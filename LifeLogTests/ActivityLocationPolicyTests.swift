@@ -1888,6 +1888,44 @@ struct ActivityLocationPolicyTests {
         #expect(walking.count == 1)
     }
 
+    @Test("Store mutation resolution leaves one non-overlapping current location")
+    func resolvesAndValidatesLocationStoreAfterMutation() throws {
+        let context = try makeContext()
+        let home = Visit(arrival: base, latitude: -23.37, longitude: 150.51,
+                         placeName: "Home", inferredActivity: "At home",
+                         source: "automatic", recognitionConfidence: "learned")
+        let shops = Visit(arrival: base.addingTimeInterval(30 * 60), latitude: -23.43,
+                          longitude: 150.46, placeName: "Shops", inferredActivity: "Shopping",
+                          source: "automatic", recognitionConfidence: "learned")
+        [home, shops].forEach(context.insert)
+
+        _ = try ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "fixture")
+        try context.save()
+
+        let report = try ActivityLocationPolicy.validateLocationResolution(context: context)
+        #expect(report.isValid)
+        #expect(home.departure == shops.arrival)
+        #expect(report.currentResolvedVisits == 1)
+    }
+
+    @Test("Resolution validator reports an automation that replaced a manual correction")
+    func reportsAutomationReplacingManualCorrection() throws {
+        let context = try makeContext()
+        let visit = Visit(arrival: base, departure: base.addingTimeInterval(30 * 60),
+                          latitude: -23.37, longitude: 150.51, placeName: "Maps Guess",
+                          inferredActivity: "Visiting", source: "automatic",
+                          recognitionConfidence: "learned")
+        context.insert(visit)
+        context.insert(VisitCorrection(visitArrival: base, latitude: -23.37, longitude: 150.51,
+                                       previousPlaceName: "Unknown place", newPlaceName: "Home",
+                                       previousActivity: "Visiting", newActivity: "At home"))
+        try context.save()
+
+        let report = try ActivityLocationPolicy.validateLocationResolution(context: context)
+        #expect(report.automationReplacements == 1)
+        #expect(!report.isValid)
+    }
+
     private func makeContext() throws -> ModelContext {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(

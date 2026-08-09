@@ -127,6 +127,7 @@ struct ManualVisitView: View {
                              userActivity: safeActivity.isEmpty ? nil : safeActivity, source: "manual",
                              recognitionConfidence: resolution.confidence))
         do {
+            _ = try ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "manual visit")
             try context.save()
             InsightsInvalidation.invalidate(reason: "Manual visit added", context: context)
             dismiss()

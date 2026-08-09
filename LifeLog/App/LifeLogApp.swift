@@ -70,6 +70,12 @@ struct LifeLogApp: App {
             configurations: [configuration]
         )
         StoreProtection.prepareForBackgroundAccess(storeURL: configuration.url)
+        // A background callback may have been persisted just before termination.
+        // Resolve before any screen reads the store so relaunch cannot resurrect an
+        // older open stay or an overlap that Timeline would need to hide.
+        let context = ModelContext(container)
+        _ = try ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "relaunch recovery")
+        try context.save()
         return container
     }
 

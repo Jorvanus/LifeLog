@@ -17,6 +17,41 @@ struct PlaceScoreBreakdown: Codable, Equatable, Sendable {
     let priorCorrections: Int
     let selectedPlaceName: String?
     let mapsIdentifier: String?
+    /// Lifecycle metadata is optional so score payloads written before the
+    /// lifecycle existed remain readable without a SwiftData migration.
+    let lifecycleStage: String?
+    let decisionThreshold: Int?
+    let candidateCount: Int?
+    let observedDwellSeconds: Int?
+    let accuracyMeters: Int?
+    let geofenceTriggered: Bool?
+
+    init(recordedAt: Date, total: Int, savedPlaceGeofence: Int, poiDistance: Int,
+         poiCategory: Int, dwellDuration: Int, horizontalAccuracy: Int,
+         recurrence: Int, timeOfDay: Int, priorCorrections: Int,
+         selectedPlaceName: String?, mapsIdentifier: String?,
+         lifecycleStage: String? = nil, decisionThreshold: Int? = nil,
+         candidateCount: Int? = nil, observedDwellSeconds: Int? = nil,
+         accuracyMeters: Int? = nil, geofenceTriggered: Bool? = nil) {
+        self.recordedAt = recordedAt
+        self.total = total
+        self.savedPlaceGeofence = savedPlaceGeofence
+        self.poiDistance = poiDistance
+        self.poiCategory = poiCategory
+        self.dwellDuration = dwellDuration
+        self.horizontalAccuracy = horizontalAccuracy
+        self.recurrence = recurrence
+        self.timeOfDay = timeOfDay
+        self.priorCorrections = priorCorrections
+        self.selectedPlaceName = selectedPlaceName
+        self.mapsIdentifier = mapsIdentifier
+        self.lifecycleStage = lifecycleStage
+        self.decisionThreshold = decisionThreshold
+        self.candidateCount = candidateCount
+        self.observedDwellSeconds = observedDwellSeconds
+        self.accuracyMeters = accuracyMeters
+        self.geofenceTriggered = geofenceTriggered
+    }
 
     var confidence: String {
         switch total {
@@ -27,13 +62,20 @@ struct PlaceScoreBreakdown: Codable, Equatable, Sendable {
     }
 
     var lines: [String] {
-        [
+        var values = [
             "Place score: \(total)/100 (\(confidence))",
             "Saved Place/geofence \(savedPlaceGeofence)/35 · Apple Maps distance \(poiDistance)/15",
             "Apple Maps category \(poiCategory)/10 · dwell \(dwellDuration)/15",
             "Location accuracy \(horizontalAccuracy)/10 · recurrence \(recurrence)/10",
             "Time of day \(timeOfDay)/5 · prior corrections \(priorCorrections)/10"
         ]
+        if let lifecycleStage, let decisionThreshold {
+            values.append("Scored at \(lifecycleStage) · suggestion threshold \(decisionThreshold)/100")
+        }
+        if let candidateCount, let observedDwellSeconds, let accuracyMeters {
+            values.append("Inputs: \(candidateCount) candidate(s) · dwell \(observedDwellSeconds / 60) min · accuracy \(accuracyMeters) m\(geofenceTriggered == true ? " · geofence event" : "")")
+        }
+        return values
     }
 }
 
@@ -48,7 +90,11 @@ enum PlaceScoringPipeline {
     static func evaluate(visit: Visit, savedPlaces: [SavedPlace],
                          suggestions: [PlaceSuggestion], accuracy: CLLocationAccuracy,
                          geofenceTriggered: Bool, visits: [Visit],
-                         corrections: [VisitCorrection], now: Date = .now) -> PlaceScoreEvaluation {
+                         corrections: [VisitCorrection], stage: String = "arrival",
+                         // Keep this literal nonisolated so score-only callers can run
+                         // outside the UI actor; PlaceScoreLifecycle owns the shared value.
+                         decisionThreshold: Int = 75,
+                         now: Date = .now) -> PlaceScoreEvaluation {
         let candidates = suggestions.isEmpty
             ? savedPlaces.map {
                 PlaceSuggestion(name: $0.name, latitude: $0.latitude, longitude: $0.longitude,
@@ -60,13 +106,15 @@ enum PlaceScoringPipeline {
         let scored = candidates.map { candidate in
             score(candidate: candidate, visit: visit, savedPlaces: savedPlaces,
                   accuracy: accuracy, geofenceTriggered: geofenceTriggered,
-                  visits: visits, corrections: corrections, now: now)
+                  visits: visits, corrections: corrections, stage: stage,
+                  decisionThreshold: decisionThreshold, candidateCount: candidates.count, now: now)
         }
         guard let best = scored.max(by: { $0.breakdown.total < $1.breakdown.total }) else {
             return PlaceScoreEvaluation(selected: nil, breakdown: score(candidate: nil,
                 visit: visit, savedPlaces: savedPlaces, accuracy: accuracy,
                 geofenceTriggered: geofenceTriggered, visits: visits,
-                corrections: corrections, now: now).breakdown)
+                corrections: corrections, stage: stage, decisionThreshold: decisionThreshold,
+                candidateCount: candidates.count, now: now).breakdown)
         }
         return best
     }
@@ -74,7 +122,9 @@ enum PlaceScoringPipeline {
     private static func score(candidate: PlaceSuggestion?, visit: Visit,
                               savedPlaces: [SavedPlace], accuracy: CLLocationAccuracy,
                               geofenceTriggered: Bool, visits: [Visit],
-                              corrections: [VisitCorrection], now: Date) -> PlaceScoreEvaluation {
+                              corrections: [VisitCorrection], stage: String,
+                              decisionThreshold: Int, candidateCount: Int,
+                              now: Date) -> PlaceScoreEvaluation {
         let candidateLocation = candidate.map { CLLocation(latitude: $0.latitude, longitude: $0.longitude) }
         let saved = candidate.flatMap { candidate in
             savedPlaces.first { place in
@@ -92,7 +142,10 @@ enum PlaceScoringPipeline {
             Int(max(0, 35 * (1 - min(savedDistance ?? 500, 500) / 500))))
         let poiDistance = candidate.map { Int(max(0, 15 * (1 - min($0.distance, 250) / 250))) } ?? 0
         let poiCategory = candidate?.mapsCategory.map { $0.isEmpty ? 0 : 10 } ?? 0
-        let dwell = min(15, Int(max(0, visit.duration / 1_800 * 15).rounded()))
+        // A new arrival does not yet prove a dwell. Its eventual duration is
+        // deliberately re-evaluated at departure by PlaceScoreLifecycle.
+        let observedDwell = stage == "arrival" ? 0 : max(0, visit.duration)
+        let dwell = min(15, Int((observedDwell / 1_800 * 15).rounded()))
         let horizontalAccuracy: Int
         if accuracy < 0 { horizontalAccuracy = 0 }
         else { horizontalAccuracy = min(10, Int(max(0, 10 * (1 - min(accuracy, 200) / 200)).rounded())) }
@@ -120,7 +173,12 @@ enum PlaceScoringPipeline {
                 dwellDuration: dwell, horizontalAccuracy: horizontalAccuracy,
                 recurrence: recurrence, timeOfDay: timeOfDay,
                 priorCorrections: priorCorrections,
-                selectedPlaceName: candidate?.name, mapsIdentifier: candidate?.mapsIdentifier
+                selectedPlaceName: candidate?.name, mapsIdentifier: candidate?.mapsIdentifier,
+                lifecycleStage: stage, decisionThreshold: decisionThreshold,
+                candidateCount: candidateCount,
+                observedDwellSeconds: Int(observedDwell.rounded()),
+                accuracyMeters: accuracy < 0 ? nil : Int(accuracy.rounded()),
+                geofenceTriggered: geofenceTriggered
             )
         )
     }

@@ -8,7 +8,7 @@ private, single-phone app; the App Store work is deliberately separate below.
 
 ## The next five code changes
 
-1. [ ] **Finish the place-score lifecycle, not just the first score.** A score
+1. [x] **Finish the place-score lifecycle, not just the first score.** A score
    is calculated while an arrival is still open, so its dwell component is near
    zero and it is not recalculated when the visit closes or a person corrects
    it. Re-score at departure and after a correction, retain the inputs used,

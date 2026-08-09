@@ -100,6 +100,7 @@ struct PlacesView: View {
 
     private func delete(at offsets: IndexSet) {
         for index in offsets { context.delete(places[index]) }
+        _ = try? ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "Saved Place deletion")
         try? context.save()
         recorder.invalidateSavedPlaceCache()
     }

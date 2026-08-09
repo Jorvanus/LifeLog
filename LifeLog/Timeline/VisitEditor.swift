@@ -585,18 +585,36 @@ struct VisitEditor: View {
         if corrected, ActivityLocationPolicy.isDeviceActivity(visit) {
             visit.recognitionConfidence = "confirmed"
         }
+        if corrected, ActivityLocationPolicy.isLocationVisit(visit) {
+            // A manual location/activity correction is stronger evidence than a
+            // delayed callback, Maps result, or Saved Place default.
+            visit.recognitionConfidence = "confirmed"
+        }
         if forceLearning || corrected {
             let result = try SavedPlaceLearning.upsert(
                 from: visit,
                 previousPlaceName: correctionBaseline?.placeName,
                 context: context
             )
-            if result == nil {
+            // A correction can also create a Saved Place. That useful side effect
+            // must not erase the audit row that prevents later automation from
+            // appearing to be the person's choice.
+            if corrected {
+                CorrectionHistory.record(visit: visit, from: correctionBaseline ?? currentSnapshot,
+                                         context: context, reason: "Manual correction")
+            } else if result == nil {
                 CorrectionHistory.record(visit: visit, from: correctionBaseline ?? currentSnapshot,
                                          context: context, reason: "Manual correction")
                 try context.save()
             }
         } else {
+            try context.save()
+        }
+        if corrected || forceLearning {
+            // The correction is now part of the evidence set. Re-score after it
+            // has been recorded, but keep the confirmed choice untouched.
+            _ = PlaceScoreLifecycle.rescore(visit, stage: .correction, context: context)
+            _ = try ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "manual correction")
             try context.save()
         }
         InsightsInvalidation.invalidate(reason: corrected ? "visit correction" : "visit edit", context: context)

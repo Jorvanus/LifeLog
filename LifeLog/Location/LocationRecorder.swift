@@ -355,6 +355,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             duplicate.arrival = min(duplicate.arrival, safeArrival)
             if duplicate.needsCategorisation { identifyPlace(duplicate, accuracy: accuracy) }
             reconcileActivity(with: duplicate, context: context)
+            _ = try? ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "arrival merge")
             save(context)
             LocationJournal.record(callbackType, at: coordinate, callbackAt: arrival,
                                    arrival: safeArrival, accuracy: accuracy,
@@ -371,7 +372,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 // the one-shot sample used to make the current location visible immediately.
                 latest.arrival = min(latest.arrival, safeArrival)
                 reconcileActivity(with: latest, context: context)
-                try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
+                _ = try? ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "arrival refresh")
                 save(context)
                 LocationJournal.record(callbackType, at: coordinate, callbackAt: arrival,
                                        arrival: safeArrival, accuracy: accuracy,
@@ -413,19 +414,16 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                          latitude: coordinate.latitude, longitude: coordinate.longitude,
                          placeName: name, inferredActivity: activity,
                          recognitionConfidence: saved == nil ? nil : "learned")
-        let priorVisits = (try? context.fetch(FetchDescriptor<Visit>())) ?? []
-        let corrections = (try? context.fetch(FetchDescriptor<VisitCorrection>())) ?? []
-        item.placeScoreBreakdown = PlaceScoringPipeline.evaluate(
-            visit: item, savedPlaces: savedPlaceCache, suggestions: [],
-            accuracy: accuracy, geofenceTriggered: callbackType == "geofence-entry",
-            visits: priorVisits, corrections: corrections
-        ).breakdown
         context.insert(item)
+        _ = PlaceScoreLifecycle.rescore(
+            item, stage: .arrival, context: context, savedPlaces: savedPlaceCache,
+            accuracy: accuracy, geofenceTriggered: callbackType == "geofence-entry"
+        )
         WiFiAnchor.save(nil)
         sampleWiFiAnchor()
         reconcileActivity(with: item, context: context)
         try? SavedPlaceLearning.enrichImportedVisits(with: item, context: context)
-        try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
+        _ = try? ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "arrival")
         save(context)
         // Reported against the visit this callback produced, so the journal points at
         // the stay it is explaining rather than the one it replaced.
@@ -488,9 +486,12 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             return
         }
         matched.departure = max(matched.arrival, min(departure, .now))
+        _ = PlaceScoreLifecycle.rescore(
+            matched, stage: .departure, context: context, savedPlaces: savedPlaceCache,
+            accuracy: accuracy
+        )
         reconcileActivity(with: matched, context: context)
-        _ = try? ActivityLocationPolicy.resolveLocationCallbacks(context: context)
-        try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
+        _ = try? ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "departure")
         save(context)
         LocationJournal.record(callbackType, at: coordinate, callbackAt: departure,
                                arrival: arrival, departure: matched.departure, accuracy: accuracy,
@@ -629,9 +630,13 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         guard let context, let open = latestLocationVisit(in: context), open.departure == nil,
               open.placeName.caseInsensitiveCompare(name) == .orderedSame else { return }
         open.departure = max(open.arrival, min(departure, .now))
+        _ = PlaceScoreLifecycle.rescore(
+            open, stage: .departure, context: context, savedPlaces: savedPlaceCache,
+            geofenceTriggered: true
+        )
         WiFiAnchor.save(nil)
         reconcileActivity(with: open, context: context)
-        _ = try? ActivityLocationPolicy.resolveLocationCallbacks(context: context)
+        _ = try? ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "geofence departure")
         let didSave = save(context)
         if let coordinate {
             LocationJournal.record("geofence-exit", at: coordinate, callbackAt: departure,
@@ -683,16 +688,11 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 // The user may label Home or Work while Maps is still searching. Never let
                 // a late public-place result overwrite that explicit correction.
                 guard visit.needsCategorisation else { return }
-                let visits = (try? context.fetch(FetchDescriptor<Visit>())) ?? []
-                let corrections = (try? context.fetch(FetchDescriptor<VisitCorrection>())) ?? []
-                let evaluation = PlaceScoringPipeline.evaluate(
-                    visit: visit, savedPlaces: self.savedPlaceCache,
-                    suggestions: result.suggestions, accuracy: accuracy,
-                    geofenceTriggered: false, visits: visits,
-                    corrections: corrections
-                )
                 visit.placeSuggestions = result.suggestions
-                visit.placeScoreBreakdown = evaluation.breakdown
+                guard let evaluation = PlaceScoreLifecycle.rescore(
+                    visit, stage: .mapsLookup, context: context, savedPlaces: self.savedPlaceCache,
+                    accuracy: accuracy, geofenceTriggered: false
+                ) else { return }
                 visit.recognitionConfidence = evaluation.breakdown.confidence
 
                 LocationDiagnostics.recordLookup(
@@ -702,7 +702,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                     confidence: evaluation.breakdown.confidence,
                     fallback: result.suggestions.isEmpty ? "reverse geocoding" : nil,
                     context: context)
-                if evaluation.breakdown.confidence == "high", let match = evaluation.selected,
+                if PlaceScoreLifecycle.canSuggest(for: visit, evaluation: evaluation), let match = evaluation.selected,
                    !Visit.isPlaceholderName(match.name) {
                     visit.placeName = match.name
                     visit.inferredActivity = match.suggestedActivity
@@ -714,7 +714,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                     reverseGeocode(visit)
                     return
                 }
-                try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
+                _ = try? ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "Maps lookup")
                 save(context)
             } catch {
                 if Task.isCancelled { return }
@@ -764,7 +764,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                                            evidence: visit.placeName, context: context)
                 visit.inferredActivity = InferenceEngine.activity(placeName: visit.placeName,
                                                                    arrival: visit.arrival)
-                try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
+                _ = try? ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "reverse geocoding")
                 save(context)
             } catch {
                 Diagnostics.record(context, subsystem: "MapKit",
@@ -779,7 +779,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         visit.placeName = Visit.unknownPlaceName
         visit.recognitionConfidence = "low"
         visit.inferredActivity = "Visiting"
-        try? ActivityLocationPolicy.updateTravelDescriptions(context: context)
+        _ = try? ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "unknown place")
         save(context)
     }
 
