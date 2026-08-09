@@ -2,6 +2,10 @@
 
 ## 2026-08-09
 
+### Short walks scattered through a day at home are absorbed, not left stranded
+
+- Nine separate "walking" rows could appear through one day spent entirely at home, none of them merged into the Home stay they happened inside of, even though moving around inside a place you haven't left is already supposed to count as being at that place. The cause: Health's walking data isn't read incrementally, it's re-scanned from a rolling window on every import, so a short burst can be written to the timeline before Home itself has been recorded arriving. Once Home exists, the next re-scan correctly works out that burst shouldn't be there any more — but nothing was going back to remove the copy already written from the first pass, so it stayed stranded. The same repair that already runs on every appearance and after every import for other timing fixes now also cleans this up.
+
 ### Home no longer overlaps the place visited straight after it
 
 - Home would sometimes show as still open two minutes after Gracemere Shopping World had already been recorded arriving — a Core Location departure callback for Home can be delayed and is only ever clamped against "now", so a late one could land after a different place had already opened. A person can't be at two places at once, so an already-closed stay's departure is now trimmed back to a later arrival at a different place, the same way an open stay is already closed by one.

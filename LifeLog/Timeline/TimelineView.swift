@@ -260,6 +260,15 @@ struct TimelineView: View {
                 } catch {
                     // Retried on the next appearance, like every other repair here.
                 }
+                do {
+                    if try ActivityLocationPolicy.reapplyRecentOpenStayAbsorption(context: context) {
+                        Diagnostics.record(context, subsystem: "Timeline",
+                                           message: "Absorbed a burst orphaned by an import that ran before its stay existed.",
+                                           severity: "info")
+                    }
+                } catch {
+                    // Retried on the next appearance, like every other repair here.
+                }
                 guard !locationPolicyReconciled else { return }
                 do {
                     // Journal-only imports do not contain device activity, so there is
@@ -327,6 +336,15 @@ struct TimelineView: View {
                     if try ActivityLocationPolicy.reapplyRecentJourneyTiming(context: context) {
                         Diagnostics.record(context, subsystem: "Timeline",
                                            message: "Re-applied journey timing after an import.",
+                                           severity: "info")
+                    }
+                } catch {
+                    // Retried on the next import or appearance.
+                }
+                do {
+                    if try ActivityLocationPolicy.reapplyRecentOpenStayAbsorption(context: context) {
+                        Diagnostics.record(context, subsystem: "Timeline",
+                                           message: "Absorbed a burst orphaned by an import that ran before its stay existed, after an import.",
                                            severity: "info")
                     }
                 } catch {

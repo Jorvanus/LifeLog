@@ -96,6 +96,37 @@ extension ActivityLocationPolicy {
         return changed > 0
     }
 
+    /// Re-applies stay-vs-activity absorption to the last day, every time, cheaply — the
+    /// same shape as the two reapplies above, for a gap neither covers.
+    ///
+    /// HealthKit's walking/motion queries are not anchored — they re-scan a rolling
+    /// window on every import rather than reading only what's new. If a burst is first
+    /// imported before the stay it happened inside exists yet (Core Location arrival
+    /// detection routinely lags 20+ minutes behind the phone actually being there), it's
+    /// inserted untrimmed. The next import re-scans, finds the stay now open, and
+    /// `remainingSegments` correctly recomputes an empty segment list for it — but an
+    /// empty result only tells `insertBatch` to insert nothing more; nothing goes back to
+    /// retract the row already sitting in the store from the first pass. It stays
+    /// orphaned, scattered across the day as though it happened nowhere in particular.
+    ///
+    /// `reconcile(locationVisit:)` would catch this — it runs the same underlying
+    /// absorption — but only fires from a live Core Location callback, and a stay left
+    /// open all day with nothing else happening never gets a further one. This calls the
+    /// same general absorption `reconcileAll` runs once at launch, scoped to a day so it
+    /// costs a filter over recent records rather than a pass over the archive.
+    @discardableResult
+    static func reapplyRecentOpenStayAbsorption(context: ModelContext, now: Date = .now) throws -> Bool {
+        let visits = try fetchPolicyVisits(context: context)
+        let since = now.addingTimeInterval(-24 * 60 * 60)
+        let recent = visits.filter { isMovementActivity($0) && ($0.departure ?? now) >= since }
+        guard !recent.isEmpty else { return false }
+        let live = visits.filter { isLocationVisit($0) && !isSupersededLocation($0) }
+        try reconcile(activities: recent, against: live, context: context, now: now)
+        let changed = context.hasChanges
+        if changed { try context.save() }
+        return changed
+    }
+
     /// Cleans timelines created by earlier app versions when the model container opens.
     static func reconcileAll(context: ModelContext, now: Date = .now) throws {
         let visits = try fetchPolicyVisits(context: context)

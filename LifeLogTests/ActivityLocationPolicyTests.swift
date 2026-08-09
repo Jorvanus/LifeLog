@@ -1559,6 +1559,35 @@ struct ActivityLocationPolicyTests {
         #expect(home.arrival == base.addingTimeInterval(53 * 60))
     }
 
+    @Test("A walking burst orphaned inside an open stay by an earlier import is absorbed on the next appearance")
+    func reappliesOpenStayAbsorptionToAnOrphanedBurst() throws {
+        let context = try makeContext()
+        // HealthKit's walking query is not anchored — it re-scans a rolling window on
+        // every import, so a burst can land in the store before the stay it happened
+        // inside exists yet. Once Home does exist, nothing but this pass ever goes back
+        // to retract it: `reconcile(locationVisit:)` only runs from a live Core Location
+        // callback, and a stay that stays open all day with nothing else happening never
+        // gets a further one.
+        let home = Visit(arrival: base.addingTimeInterval(-2 * 60 * 60), departure: nil,
+                         latitude: -23.37, longitude: 150.51,
+                         placeName: "Home", inferredActivity: "At home", source: "automatic",
+                         recognitionConfidence: "learned")
+        let orphanedBurst = Visit(arrival: base.addingTimeInterval(-60 * 60),
+                                  departure: base.addingTimeInterval(-55 * 60),
+                                  latitude: 0, longitude: 0, placeName: "Walking",
+                                  inferredActivity: "Walking", userActivity: "Walking",
+                                  source: "health-walking")
+        [home, orphanedBurst].forEach(context.insert)
+        try context.save()
+
+        let changed = try ActivityLocationPolicy.reapplyRecentOpenStayAbsorption(context: context, now: base)
+
+        #expect(changed == true)
+        let remaining = try context.fetch(FetchDescriptor<Visit>())
+        #expect(remaining.filter { $0.source == "health-walking" }.isEmpty)
+        #expect(remaining.contains { $0.placeName == "Home" && $0.departure == nil })
+    }
+
     @Test("Steps taken at home before starting a workout stay at home, and the workout is the whole walk")
     func stepsBeforeAWorkoutStayAtHome() throws {
         let context = try makeContext()
