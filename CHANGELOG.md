@@ -2,6 +2,14 @@
 
 ## 2026-08-09
 
+### One clear action on Timeline and Insights
+
+- Timeline review cards now use their orange **Check** or **Categorise** cue without a redundant chevron. Insights uses the date shown between its arrows as its single date-picker control, removing the duplicate toolbar calendar button.
+
+### Insights highlights now point to useful actions
+
+- Insights no longer presents the catch-all **Other** category as a standout activity change, and day headings now use a full localized date. When Health is not connected, a dedicated Apple Health setup card offers the relevant permission action above the chart; the chart centre simply reports that no step data is available.
+
 ### Apple Health and Motion Activity now have separate setup paths
 
 - Settings now gives Apple Health and Motion Activity their own status, explanation, and recovery controls. Apple Health opens its permissions in the Health app and can re-import its history independently; Motion Activity can be enabled with its own prompt, refreshed independently, or recovered through iPhone Settings when denied.

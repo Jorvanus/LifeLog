@@ -395,7 +395,9 @@ final class LifeLogUITests: XCTestCase {
         app.tabBars.buttons["Insights"].tap()
         XCTAssertTrue(element("insights-screen").waitForExistence(timeout: 10))
 
-        app.buttons["Choose a date"].tap()
+        let datePicker = element("insights-period-picker")
+        XCTAssertTrue(datePicker.waitForExistence(timeout: 5))
+        datePicker.tap()
         XCTAssertTrue(app.navigationBars["Choose Date"].waitForExistence(timeout: 5))
 
         app.buttons["Done"].tap()

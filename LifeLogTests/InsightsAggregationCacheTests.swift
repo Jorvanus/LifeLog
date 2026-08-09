@@ -90,6 +90,15 @@ struct DayHighlightTests {
         let comparisons = [TrendComparison(name: "Work", hours: 6, previousHours: 6.1, delta: -0.1)]
         #expect(DayHighlights.activity(from: comparisons, window: .day) == nil)
     }
+
+    @Test("A catch-all Other comparison is not presented as an insight")
+    func activitySuppressesOther() {
+        let comparisons = [
+            TrendComparison(name: "Other", hours: 8, previousHours: 1, delta: 7),
+            TrendComparison(name: "Work", hours: 4, previousHours: 3, delta: 1)
+        ]
+        #expect(DayHighlights.activity(from: comparisons, window: .day) == nil)
+    }
 }
 
 @MainActor

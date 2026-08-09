@@ -426,11 +426,10 @@ struct TimelineView: View {
                 Label(dynamicTypeSize.isAccessibilitySize ? "Review" : "Review Queue",
                       systemImage: "exclamationmark.triangle.fill")
                     .font(.headline).foregroundStyle(.orange)
-                // At accessibility sizes the icon, the action pill and the chevron left
-                // the text column so narrow that "Is this right?" wrapped one word to a
-                // line and ran off the bottom of the screen. The icon and chevron are
-                // decoration on a row that is already a link, so above the threshold
-                // they step aside and the action moves below the text at full width.
+                // At accessibility sizes the icon and action pill left the text column
+                // so narrow that "Is this right?" wrapped one word to a line and ran
+                // off the bottom of the screen. The card is already one link, so its
+                // orange action cue is enough; the former chevron only duplicated it.
                 let stacked = dynamicTypeSize.isAccessibilitySize
                 let details = VStack(alignment: .leading, spacing: 4) {
                     // Each reason asks a different question. Agreeing with a weak
@@ -463,7 +462,6 @@ struct TimelineView: View {
                         details
                         Spacer()
                         action
-                        Image(systemName: "chevron.right").foregroundStyle(.orange)
                     }
                 }
             }

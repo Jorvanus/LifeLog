@@ -108,7 +108,11 @@ enum DayHighlights {
     /// deciding how they ought to have spent it.
     static func activity(from comparisons: [TrendComparison], window: InsightWindow) -> DayHighlight? {
         guard let largest = comparisons.max(by: { abs($0.delta) < abs($1.delta) }),
-              abs(largest.delta) > 0.25 else { return nil }
+              abs(largest.delta) > 0.25,
+              largest.name.caseInsensitiveCompare("Other") != .orderedSame else { return nil }
+        // `Other` is a catch-all, not an activity someone can act on or recognise.
+        // Until the underlying visits have a real adopted label, silence is clearer
+        // than a prominent card implying that "Other" explains their day.
         return DayHighlight(
             id: "activity-\(largest.name)",
             symbol: insightSymbol(for: largest.name),

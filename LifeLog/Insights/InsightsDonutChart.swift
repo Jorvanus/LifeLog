@@ -162,13 +162,12 @@ struct InsightsDonutChart: View {
                     } else {
                         Text("—").font(.title.bold()).monospacedDigit()
                         Text("steps").font(.subheadline).foregroundStyle(.secondary)
-                        Text("Connect Apple Health").font(.caption).foregroundStyle(.tertiary)
+                        Text("No step data").font(.caption).foregroundStyle(.tertiary)
                     }
                 }
                 // Bounded to the widest line that fits the hole. The ring's inner radius
                 // is a ratio of its size, so a square inside that circle is narrower
-                // still. Unbounded, "Connect Apple Health" set one line straight across
-                // the segments.
+                // still. Health setup deliberately lives in the readable card above it.
                 .frame(maxWidth: centreWidth)
                 .multilineTextAlignment(.center)
                 .allowsHitTesting(false)

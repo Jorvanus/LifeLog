@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import Charts
 import MapKit
+import UIKit
 
 struct InsightsView: View {
     @Environment(\.modelContext) private var context
@@ -41,6 +42,7 @@ struct InsightsView: View {
                     LazyVStack(spacing: 22) {
                         controls
                         highlightsSection
+                        healthSetupSection
                         donutSection
                         if window == .day { dailyTimelineSection }
                         awayFromHomeSection
@@ -59,14 +61,6 @@ struct InsightsView: View {
             }
             .accessibilityIdentifier("insights-screen")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { choosingDate = true } label: {
-                        Image(systemName: "calendar")
-                    }
-                    .accessibilityLabel("Choose a date")
-                }
-            }
             .sheet(isPresented: $choosingDate) {
                 NavigationStack {
                     DatePicker("Choose date", selection: $anchorDate, displayedComponents: .date)
@@ -207,6 +201,48 @@ struct InsightsView: View {
         let offset = abs(periodNumber) % supporting.count
         let rotated = Array(supporting[offset...]) + Array(supporting[..<offset])
         return [primary] + rotated
+    }
+
+    /// The donut's centre is intentionally non-interactive and geometry-constrained.
+    /// Health recovery therefore belongs in an ordinary card where its action remains
+    /// obvious, tappable, and readable at larger text sizes.
+    @ViewBuilder private var healthSetupSection: some View {
+        if needsHealthSetup {
+            VStack(alignment: .leading, spacing: 10) {
+                Label("Apple Health", systemImage: "heart.text.square")
+                    .font(.headline)
+                Text("Connect Apple Health to add steps, sleep, and Apple Watch workouts to Insights.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                if !activityData.unaskedHealthTypes.isEmpty {
+                    Button("Connect Apple Health") {
+                        Task { await activityData.requestHealthAccess() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("connect-health-from-insights")
+                } else {
+                    Button("Open Apple Health") { openAppleHealth() }
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier("open-health-from-insights")
+                    Text("In Health, go to Sharing → Apps → LifeLog to review what LifeLog can read.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(18)
+            .lifeCard()
+            .accessibilityIdentifier("insights-health-setup")
+        }
+    }
+
+    private var needsHealthSetup: Bool {
+        activityData.healthStatus != "Connected" && activityData.healthStatus != "Unavailable on this device"
+    }
+
+    private func openAppleHealth() {
+        guard let healthURL = URL(string: "x-apple-health://") else { return }
+        UIApplication.shared.open(healthURL)
     }
 
     /// Loads the season of history the trend lines are drawn from.
@@ -357,6 +393,7 @@ struct InsightsView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("\(periodTitle), \(periodSubtitle)")
                 .accessibilityHint("Choose a different date")
+                .accessibilityIdentifier("insights-period-picker")
                 Spacer()
                 Button { move(1) } label: {
                     Image(systemName: "chevron.right").font(.title3.bold())

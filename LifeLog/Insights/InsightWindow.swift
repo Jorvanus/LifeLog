@@ -50,7 +50,7 @@ enum InsightWindow: String, CaseIterable, Identifiable, Hashable {
 
     func subtitle(for interval: DateInterval) -> String {
         switch self {
-        case .day: interval.start.formatted(.dateTime.weekday(.wide).year())
+        case .day: interval.start.formatted(.dateTime.weekday(.wide).day().month(.wide).year())
         case .week: "\(interval.start.formatted(.dateTime.day().month(.abbreviated))) – \(interval.end.addingTimeInterval(-1).formatted(.dateTime.day().month(.abbreviated).year()))"
         case .month: "\(Int(interval.duration / 86400)) days"
         case .year: "January – December"
