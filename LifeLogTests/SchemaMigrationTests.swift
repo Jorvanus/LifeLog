@@ -3,9 +3,9 @@ import SwiftData
 import Testing
 @testable import LifeLog
 
-/// These tests deliberately write with the unversioned schema used by the current
-/// on-device release, then reopen the same SQLite copy through the versioned plan.
-/// Keep this fixture representative when the schema grows.
+/// These tests deliberately write with the unversioned schema shipped immediately
+/// before LifeLog adopted versioned schemas, then reopen the same SQLite copy through
+/// the versioned plan. Keep this fixture representative when the schema grows.
 // Historical schemas intentionally contain different model classes with the same
 // entity names. SwiftData registers model metadata process-wide, so these fixture
 // migrations must not be constructed concurrently by Swift Testing.
@@ -184,13 +184,18 @@ struct SchemaMigrationTests {
         do {
             let container = try ModelContainer(for: v4Schema, configurations: [v4Configuration])
             let context = ModelContext(container)
-            let visit = Visit(arrival: arrival, departure: arrival.addingTimeInterval(1_800),
-                              latitude: -23.4455, longitude: 150.4522, placeName: "Home",
-                              inferredActivity: "At home", note: "V4 fixture", source: "automatic")
+            let visit = LifeLogSchemaV4.Visit(
+                arrival: arrival, latitude: -23.4455, longitude: 150.4522,
+                placeName: "Home", inferredActivity: "At home",
+                note: "V4 fixture", source: "automatic"
+            )
             context.insert(visit)
-            context.insert(SavedPlace(name: "Home", latitude: -23.4455, longitude: 150.4522,
-                                      radius: 85, defaultActivity: "At home",
-                                      mapsIdentifier: "I1234567890ABCDEF"))
+            let place = LifeLogSchemaV4.SavedPlace(
+                name: "Home", latitude: -23.4455, longitude: 150.4522,
+                radius: 85, defaultActivity: "At home"
+            )
+            place.mapsIdentifier = "I1234567890ABCDEF"
+            context.insert(place)
             try context.save()
         }
 
@@ -256,7 +261,15 @@ struct SchemaMigrationTests {
     }
 
     private func seedCurrentStore(at url: URL) throws {
-        let schema = Schema([Visit.self, SavedPlace.self, VisitCorrection.self, DiagnosticEvent.self])
+        // This is the exact unversioned model set used immediately before V1 was
+        // introduced. Using today's live types here would create an unrecognisable
+        // store and would not test the real upgrade path.
+        let schema = Schema([
+            LifeLogSchemaV1.Visit.self,
+            LifeLogSchemaV1.SavedPlace.self,
+            LifeLogSchemaV1.VisitCorrection.self,
+            LifeLogSchemaV1.DiagnosticEvent.self
+        ])
         let configuration = ModelConfiguration(
             "LifeLogMigrationFixture", schema: schema, url: url,
             allowsSave: true, cloudKitDatabase: .none
@@ -264,24 +277,33 @@ struct SchemaMigrationTests {
         let container = try ModelContainer(for: schema, configurations: [configuration])
         let context = ModelContext(container)
         let arrival = Date(timeIntervalSince1970: 1_800_000_000)
-        context.insert(Visit(
-            arrival: arrival, departure: arrival.addingTimeInterval(3600),
+        let visit = LifeLogSchemaV1.Visit(
+            arrival: arrival,
             latitude: -27.47, longitude: 153.03,
             placeName: "Home",
-            inferredActivity: "At home", userActivity: "At home",
-            note: "Current store fixture", source: "automatic",
-            recognitionConfidence: "confirmed", candidateData: Data([1, 2, 3])
-        ))
-        context.insert(SavedPlace(
+            placeCategory: "Home", inferredActivity: "At home",
+            note: "Current store fixture", source: "automatic"
+        )
+        visit.departure = arrival.addingTimeInterval(3600)
+        visit.userActivity = "At home"
+        visit.recognitionConfidence = "confirmed"
+        visit.candidateData = Data([1, 2, 3])
+        context.insert(visit)
+        context.insert(LifeLogSchemaV1.SavedPlace(
             name: "Home", latitude: -27.47, longitude: 153.03,
-            defaultActivity: "At home"
+            radius: 100, category: "Home", defaultActivity: "At home"
         ))
-        context.insert(VisitCorrection(
-            visitArrival: arrival, latitude: -27.47, longitude: 153.03,
+        context.insert(LifeLogSchemaV1.VisitCorrection(
+            changedAt: arrival.addingTimeInterval(60), visitArrival: arrival,
+            latitude: -27.47, longitude: 153.03,
             previousPlaceName: "Unknown", newPlaceName: "Home",
-            previousActivity: "Visiting", newActivity: "At home"
+            previousActivity: "Visiting", newActivity: "At home",
+            previousConfidence: "pending", newConfidence: "confirmed",
+            reason: "Migration test"
         ))
-        context.insert(DiagnosticEvent(subsystem: "Migration test", message: "Fixture"))
+        context.insert(LifeLogSchemaV1.DiagnosticEvent(
+            createdAt: arrival, subsystem: "Migration test", severity: "info", message: "Fixture"
+        ))
         try context.save()
     }
 

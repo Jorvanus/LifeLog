@@ -2,6 +2,11 @@
 
 ## 2026-08-09
 
+### Schema migration fixtures now test the real model versions
+
+- Corrected the V4 fixture to insert frozen V4 model types instead of current models, and rebuilt the legacy-store fixture from the exact unversioned V1 shape. Frozen V1 correction and diagnostic models now preserve the pre-versioning schema metadata, preventing a false “environmental” crash from hiding migration failures.
+- Updated the migration notes to describe the shipped V6 baseline and the remaining need to validate a copied pre-versioned device store.
+
 ### Five regressions from the last diagnostics/performance pass, found and fixed
 
 - **A budget sample stopped recording whether it passed.** The previous "reduce diagnostics noise" change made `Diagnostics.budget` silent unless an operation ran over budget, and removed the unconditional "Reconciliation check" log from Timeline's own appearance. Both broke the same thing on purpose-built to prevent: telling "this ran and was fine" apart from "this never ran at all", which cost four wasted builds the first time it was lost. Both are restored; there's an existing test (`budgetRecordsEveryTime`) that would have caught this had it been run before that change shipped.
@@ -10,7 +15,7 @@
 - **A place-scoring test asked for dwell duration at the wrong lifecycle stage.** Scores deliberately read zero dwell on arrival — the eventual duration is re-evaluated at departure — and a test fixture with a real departure never asked for that stage. Fixed the test.
 - **A UI test scrolled the wrong direction, then the right direction too many times.** Swapped a fixed `swipeDown()` loop for the same "swipe until found" pattern already used everywhere else in the file.
 
-None of these were caught before shipping because the previous commit touched no test files. Full suite verified clean afterward (fresh simulator; a separate pre-existing `SchemaMigrationTests` cold-launch flake is unrelated and documented in TODO.md).
+None of these were caught before shipping because the previous commit touched no test files. Full suite verified clean afterward on a fresh simulator. The separate SchemaMigrationTests issue was investigated independently and is covered by the migration-fixture entry above.
 
 ### The routine Health refresh stops re-reading a month of steps every time
 

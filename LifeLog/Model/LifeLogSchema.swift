@@ -61,6 +61,55 @@ enum LifeLogSchemaV1: VersionedSchema {
             self.defaultActivity = defaultActivity
         }
     }
+
+    @Model
+    final class VisitCorrection {
+        var changedAt: Date
+        var visitArrival: Date
+        var latitude: Double
+        var longitude: Double
+        var previousPlaceName: String
+        var newPlaceName: String
+        var previousActivity: String
+        var newActivity: String
+        var previousConfidence: String
+        var newConfidence: String
+        var reason: String
+
+        init(changedAt: Date, visitArrival: Date, latitude: Double, longitude: Double,
+             previousPlaceName: String, newPlaceName: String, previousActivity: String,
+             newActivity: String, previousConfidence: String, newConfidence: String,
+             reason: String) {
+            self.changedAt = changedAt
+            self.visitArrival = visitArrival
+            self.latitude = latitude
+            self.longitude = longitude
+            self.previousPlaceName = previousPlaceName
+            self.newPlaceName = newPlaceName
+            self.previousActivity = previousActivity
+            self.newActivity = newActivity
+            self.previousConfidence = previousConfidence
+            self.newConfidence = newConfidence
+            self.reason = reason
+        }
+    }
+
+    // The first released store did not yet have diagnostic retention categories.
+    // Keep this model frozen so the unversioned store from that release matches V1.
+    @Model
+    final class DiagnosticEvent {
+        var createdAt: Date
+        var subsystem: String
+        var severity: String
+        var message: String
+
+        init(createdAt: Date, subsystem: String, severity: String, message: String) {
+            self.createdAt = createdAt
+            self.subsystem = subsystem
+            self.severity = severity
+            self.message = message
+        }
+    }
 }
 
 /// V2 drops `Visit.placeCategory` and `SavedPlace.category`. LifeLog no longer

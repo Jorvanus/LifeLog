@@ -148,7 +148,7 @@ private, single-phone app; the App Store work is deliberately separate below.
 
 ## Other things to consider and improve
 
-- [ ] **`SchemaMigrationTests` crashes on the very first cold launch of a test process, every time, then passes reliably on retry** — confirmed 2026-08-09, reproduces even running the suite completely alone with nothing else in flight. `xcodebuild test`'s own crash-and-relaunch handling absorbs it silently in an ordinary multi-suite run, which is why it wasn't noticed; run in isolation it's just reported as a failure despite the retry succeeding. The migration logic itself is not in question — it demonstrably works once the process is warm. Looks like a SwiftData/Xcode 27 beta quirk around registering several `VersionedSchema` types' model metadata (process-wide, per the test's own comment) on a cold process rather than anything wrong with `LifeLogMigrationPlan`. Worth a retry wrapper or an Apple bug report if it survives past the beta; not worth more time chasing right now.
+- [ ] **Validate a copied pre-versioned device store.** The synthetic migration suite now passes after correcting its V4 model-type mismatch and rebuilding the legacy fixture from the exact unversioned V1 shape. That proves the declared migration stages, but only a copied store from before versioning can prove the real on-device upgrade path. Keep the original protected store untouched.
 
 - [ ] Make MapKit lookup work testable: inject the search transport, test cache
   expiry/cancellation/retry paths without live Maps, keep candidate payloads
