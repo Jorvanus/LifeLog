@@ -9,6 +9,7 @@ import Charts
 /// one thing" — how often, how long, where, and whether it is going up or down.
 struct ActivitiesTabView: View {
     @Environment(\.modelContext) private var context
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Query(sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
     /// Held rather than computed in `body`. As a computed property this was rebuilt on
     /// every render, and each rebuild walked the whole timeline once per activity.
@@ -82,30 +83,21 @@ struct ActivitiesTabView: View {
                         NavigationLink {
                             ActivityDetailView(activityName: row.name, symbol: row.symbol)
                         } label: {
-                            HStack(spacing: 14) {
-                                Image(systemName: row.symbol)
-                                    .font(.title3)
-                                    .foregroundStyle(activityColor(row.name))
-                                    .frame(width: 30)
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(row.name).font(.headline)
-                                    Text(subtitle(for: row.statistics))
-                                        .font(.caption).foregroundStyle(.secondary)
-                                    if !row.isAdopted {
-                                        // Says why this row behaves differently from the
-                                        // one above it, rather than leaving the person to
-                                        // discover it in Settings.
-                                        Label("From your history · not yet an activity",
-                                              systemImage: "clock.arrow.trianglehead.counterclockwise.rotate.90")
-                                            .font(.caption2).foregroundStyle(.orange)
-                                    }
+                            HStack(alignment: .top, spacing: 14) {
+                                activityIcon(for: row)
+                                activityDescription(for: row)
+                                Spacer(minLength: dynamicTypeSize.isAccessibilitySize ? 0 : 8)
+                                // A tiny chart cannot retain useful geometry beside text
+                                // several lines tall. The detail page still carries the
+                                // full history, so accessibility sizes give the words the
+                                // complete row instead of crushing both into fragments.
+                                if !dynamicTypeSize.isAccessibilitySize {
+                                    WeekSparkline(days: row.statistics.recentDays,
+                                                  color: activityColor(row.name))
+                                        .frame(width: 78, height: 30)
                                 }
-                                Spacer(minLength: 8)
-                                WeekSparkline(days: row.statistics.recentDays,
-                                              color: activityColor(row.name))
-                                    .frame(width: 78, height: 30)
                             }
-                            .padding(.vertical, 2)
+                            .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 8 : 2)
                         }
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                             if !row.isAdopted {
@@ -132,6 +124,33 @@ struct ActivitiesTabView: View {
     }
 
     private var unadoptedCount: Int { rows.count { !$0.isAdopted } }
+
+    private func activityIcon(for row: Row) -> some View {
+        Image(systemName: row.symbol)
+            .font(.title3)
+            .foregroundStyle(activityColor(row.name))
+            // The row is the control, but a stable icon column prevents its text from
+            // being squeezed by a symbol that grows independently with Dynamic Type.
+            .frame(width: dynamicTypeSize.isAccessibilitySize ? 44 : 30,
+                   height: dynamicTypeSize.isAccessibilitySize ? 44 : nil)
+    }
+
+    private func activityDescription(for row: Row) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(row.name).font(.headline)
+            Text(subtitle(for: row.statistics))
+                .font(.caption).foregroundStyle(.secondary)
+            if !row.isAdopted {
+                // Says why this row behaves differently from the one above it, rather
+                // than leaving the person to discover it in Settings.
+                Label("From your history · not yet an activity",
+                      systemImage: "clock.arrow.trianglehead.counterclockwise.rotate.90")
+                    .font(.caption2).foregroundStyle(.orange)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+    }
 
     private func subtitle(for statistics: ActivityStatistics.Summary) -> String {
         guard !statistics.isEmpty else { return "Not used yet" }

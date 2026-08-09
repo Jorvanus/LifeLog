@@ -368,14 +368,22 @@ struct TimelineView: View {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 5) {
                     Group {
-                        Text(greeting)
-                            .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                            // Two lines with a lower floor: now that the greeting scales
-                            // with Dynamic Type, a single line would ellipsize at
-                            // accessibility sizes rather than wrap.
-                            .lineLimit(2).minimumScaleFactor(0.7)
-                        Text(headerDate)
-                            .font(.title3).foregroundStyle(.secondary)
+                        if dynamicTypeSize.isAccessibilitySize {
+                            // The greeting is decorative. At accessibility sizes the date is
+                            // enough orientation and leaves the review and journey reachable.
+                            Text(headerDate)
+                                .font(.headline)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text(greeting)
+                                .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                                // Two lines with a lower floor: now that the greeting scales
+                                // with Dynamic Type, a single line would ellipsize at
+                                // accessibility sizes rather than wrap.
+                                .lineLimit(2).minimumScaleFactor(0.7)
+                            Text(headerDate)
+                                .font(.title3).foregroundStyle(.secondary)
+                        }
                     }
                     // The greeting and the date are decoration — they say nothing the
                     // person does not already know. At the largest accessibility sizes
@@ -399,19 +407,24 @@ struct TimelineView: View {
                 Button { adding = true } label: {
                     Image(systemName: "plus")
                         .font(.title2)
-                        .frame(width: addButtonDiameter, height: addButtonDiameter)
+                        // Keep this a comfortable control, not a second headline. The
+                        // glyph and circle still scale together up to this useful ceiling.
+                        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+                        .frame(width: min(addButtonDiameter, 64),
+                               height: min(addButtonDiameter, 64))
                         .background(.regularMaterial, in: Circle())
                         .shadow(color: .black.opacity(0.04), radius: 12, y: 5)
                 }.accessibilityLabel("Add visit")
             }
-        }.padding(.top, 20)
+        }.padding(.top, dynamicTypeSize.isAccessibilitySize ? 8 : 20)
     }
 
     private func reviewCard(_ entry: ReviewQueue.Entry) -> some View {
         let visit = entry.visit
         return NavigationLink { VisitEditor(visit: visit) } label: {
             VStack(alignment: .leading, spacing: 17) {
-                Label("Review Queue", systemImage: "exclamationmark.triangle.fill")
+                Label(dynamicTypeSize.isAccessibilitySize ? "Review" : "Review Queue",
+                      systemImage: "exclamationmark.triangle.fill")
                     .font(.headline).foregroundStyle(.orange)
                 // At accessibility sizes the icon, the action pill and the chevron left
                 // the text column so narrow that "Is this right?" wrapped one word to a
@@ -457,7 +470,12 @@ struct TimelineView: View {
             .padding(18)
             .background(Color.orange.opacity(0.065), in: RoundedRectangle(cornerRadius: 22))
             .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color.orange.opacity(0.3)))
-        }.buttonStyle(.plain).accessibilityIdentifier("uncategorised-location-card")
+        }
+        // This still supports roughly 200% text, while preventing one review card from
+        // becoming several screens tall before the day's actual journey can begin.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility2)
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("uncategorised-location-card")
     }
 
     private func currentCard(_ visit: Visit) -> some View {
@@ -754,6 +772,7 @@ private func dayQualifiedTime(_ date: Date) -> String {
 }
 
 private struct JourneyRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let visit: Visit
     let isCurrent: Bool
     let isFirst: Bool
@@ -762,51 +781,74 @@ private struct JourneyRow: View {
 
     var body: some View {
         NavigationLink { VisitEditor(visit: visit) } label: {
-            HStack(spacing: 0) {
-                ZStack {
-                    if !isFirst {
-                        Rectangle().fill(Color.secondary.opacity(0.28)).frame(width: 2, height: 62).offset(y: -31)
-                    }
-                    if !isLast {
-                        Rectangle().fill(Color.secondary.opacity(0.28)).frame(width: 2, height: 62).offset(y: 31)
-                    }
-                    Circle().fill(Color.lifeBackground).frame(width: 18, height: 18)
-                        .overlay(Circle().stroke(color, lineWidth: 2))
-                        .overlay(Circle().fill(color).frame(width: 8, height: 8))
-                }.frame(width: 38, height: 108)
-                HStack(spacing: 14) {
+            if dynamicTypeSize.isAccessibilitySize {
+                HStack(alignment: .top, spacing: 12) {
                     ActivityIcon(activity: visit.suspectedActivity, context: visit.displayPlaceName,
-                                 color: color, size: 58)
-                    VStack(alignment: .leading, spacing: 4) {
-                        if visit.needsCategorisation {
-                            Text("Uncategorised location").font(.headline.weight(.semibold)).foregroundStyle(.primary)
-                            Text("Suspected: \(visit.inferredActivity)")
-                                .font(.subheadline).foregroundStyle(.secondary)
-                        } else {
-                            Text(visit.activity).font(.headline.weight(.semibold)).foregroundStyle(.primary)
-                            // A journey is described by how far it went. Its place name
-                            // is only ever "Walking workout", which says nothing.
-                            Text(visit.hasRoute ? formattedDistance(visit.routeDistance) : visit.placeName)
-                                .font(.subheadline).foregroundStyle(.secondary)
-                        }
-                        Text(timeDescription).font(.subheadline).foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 8)
-                    VStack(alignment: .trailing, spacing: 8) {
+                                 color: color, size: 48)
+                    VStack(alignment: .leading, spacing: 10) {
+                        journeyDetails
                         Text(durationDescription)
                             .font(.subheadline.monospacedDigit())
                             .foregroundStyle(.secondary)
                         status
                     }
-                    Image(systemName: "chevron.right")
-                        .font(.subheadline.weight(.semibold)).foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(.horizontal, 14).frame(height: 108)
+                .padding(16)
                 .lifeCard()
+            } else {
+                HStack(spacing: 0) {
+                    ZStack {
+                        if !isFirst {
+                            Rectangle().fill(Color.secondary.opacity(0.28)).frame(width: 2, height: 62).offset(y: -31)
+                        }
+                        if !isLast {
+                            Rectangle().fill(Color.secondary.opacity(0.28)).frame(width: 2, height: 62).offset(y: 31)
+                        }
+                        Circle().fill(Color.lifeBackground).frame(width: 18, height: 18)
+                            .overlay(Circle().stroke(color, lineWidth: 2))
+                            .overlay(Circle().fill(color).frame(width: 8, height: 8))
+                    }.frame(width: 38, height: 108)
+                    HStack(spacing: 14) {
+                        ActivityIcon(activity: visit.suspectedActivity, context: visit.displayPlaceName,
+                                     color: color, size: 58)
+                        journeyDetails
+                        Spacer(minLength: 8)
+                        VStack(alignment: .trailing, spacing: 8) {
+                            Text(durationDescription)
+                                .font(.subheadline.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                            status
+                        }
+                        Image(systemName: "chevron.right")
+                            .font(.subheadline.weight(.semibold)).foregroundStyle(.tertiary)
+                    }
+                    .padding(.horizontal, 14).frame(height: 108)
+                    .lifeCard()
+                }
             }
         }
         .accessibilityValue("Category colour \(categoryColorHex(forCategory: visit.insightCategory))")
         .buttonStyle(.plain)
+    }
+
+    private var journeyDetails: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if visit.needsCategorisation {
+                Text("Uncategorised location").font(.headline.weight(.semibold)).foregroundStyle(.primary)
+                Text("Suspected: \(visit.inferredActivity)")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            } else {
+                Text(visit.activity).font(.headline.weight(.semibold)).foregroundStyle(.primary)
+                // A journey is described by how far it went. Its place name is only
+                // ever "Walking workout", which says nothing.
+                Text(visit.hasRoute ? formattedDistance(visit.routeDistance) : visit.placeName)
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            Text(timeDescription).font(.subheadline).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     @ViewBuilder private var status: some View {

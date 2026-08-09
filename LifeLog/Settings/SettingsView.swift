@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @Environment(\.modelContext) private var context
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     // Settings only needs the current recorded location; imported journal history
     // is intentionally kept out of this screen's query so controls stay responsive.
     @Query(filter: #Predicate<Visit> { $0.source == "automatic" || $0.source == "manual" },
@@ -22,8 +23,8 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section("Location logging") {
-                    LabeledContent("Permission", value: permissionName)
-                    Toggle("Background location logging", isOn: backgroundLoggingBinding)
+                    adaptiveValue("Permission", value: permissionName)
+                    adaptiveToggle("Background location logging", isOn: backgroundLoggingBinding)
                     if recorder.authorization == .notDetermined {
                         Button("Allow while using") { recorder.requestPermission() }
                     }
@@ -40,10 +41,18 @@ struct SettingsView: View {
                     // review queue. Settings is for places you have saved, not for the
                     // visit happening now.
                     NavigationLink { PlacesView(recorder: recorder) } label: {
-                        LabeledContent {
-                            Text("\(savedPlaces.count)")
-                        } label: {
-                            Label("Locations", systemImage: "house.and.flag.fill")
+                        if dynamicTypeSize.isAccessibilitySize {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Label("Locations", systemImage: "house.and.flag.fill")
+                                Text("\(savedPlaces.count)").foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        } else {
+                            LabeledContent {
+                                Text("\(savedPlaces.count)")
+                            } label: {
+                                Label("Locations", systemImage: "house.and.flag.fill")
+                            }
                         }
                     }.accessibilityIdentifier("saved-places-link")
                     // "Activity Labels", not "Activities": the Activities tab reports on
@@ -62,8 +71,8 @@ struct SettingsView: View {
                     Text("Set locations as Home, Work, or another place. LifeLog will reuse the label, category, and activity whenever you return.")
                 }
                 Section {
-                    LabeledContent("Apple Health", value: activityData.healthStatus)
-                    LabeledContent("Motion Activity", value: activityData.motionStatus)
+                    adaptiveValue("Apple Health", value: activityData.healthStatus)
+                    adaptiveValue("Motion Activity", value: activityData.motionStatus)
                     // Both sources are asked for on first run and collected from then
                     // on, so there is no connect button in the ordinary case. It
                     // appears only when Health is not connected, because that state
@@ -131,7 +140,7 @@ struct SettingsView: View {
                         .accessibilityIdentifier("activity-import-progress")
                     }
                     if let imported = activityData.lastImport {
-                        LabeledContent("Last import", value: imported.formatted(date: .abbreviated, time: .shortened))
+                        adaptiveValue("Last import", value: imported.formatted(date: .abbreviated, time: .shortened))
                     }
                 } header: {
                     Text("iPhone & Apple Watch")
@@ -139,7 +148,7 @@ struct SettingsView: View {
                     Text("Collected automatically, in small batches, while you use LifeLog and when Apple Health has something new. Sleep, Apple Watch workouts, and Watch walking come from Apple Health. Walking, running, cycling, and vehicle travel come from the iPhone’s motion history, which the iPhone keeps for about a week — so LifeLog gathers it regularly rather than waiting to be asked.")
                 }
                 Section {
-                    Toggle("Detailed location diagnostics", isOn: $detailedLocationDiagnostics)
+                    adaptiveToggle("Detailed location diagnostics", isOn: $detailedLocationDiagnostics)
                         .onChange(of: detailedLocationDiagnostics) { _, enabled in
                             LocationDiagnostics.isDetailed = enabled
                         }
@@ -150,7 +159,7 @@ struct SettingsView: View {
                     Text("Records why each location was merged, closed or renamed, which places Apple Maps offered for it, and a journal of the raw Core Location callbacks behind them — including their coordinates and accuracy. That is a precise record of where you have been, so it stays on this iPhone, is trimmed like the rest of Diagnostics, and is off unless you turn it on. The journal is under Diagnostics, where it can also be emptied.")
                 }
                 Section {
-                    LabeledContent("On-device model", value: SmartActivityClassifier.availabilityDescription)
+                    adaptiveValue("On-device model", value: SmartActivityClassifier.availabilityDescription)
                 } header: {
                     Text("Smart classification")
                 } footer: {
@@ -200,7 +209,7 @@ struct SettingsView: View {
                     Text("View service timing and failure diagnostics in a separate screen.")
                 }
                 Section("About") {
-                    LabeledContent("Version", value: appVersion)
+                    adaptiveValue("Version", value: appVersion)
                 }
             }.navigationTitle("Settings").accessibilityIdentifier("settings-screen")
                 .task { ActivityCatalog.seed() }
@@ -222,6 +231,36 @@ struct SettingsView: View {
                 } message: {
                     Text(importMessage ?? "")
                 }
+        }
+    }
+
+    @ViewBuilder
+    private func adaptiveValue(_ label: String, value: String) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(label)
+                Text(value).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+        } else {
+            LabeledContent(label, value: value)
+        }
+    }
+
+    @ViewBuilder
+    private func adaptiveToggle(_ label: String, isOn: Binding<Bool>) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(label)
+                Toggle(label, isOn: isOn)
+                    .labelsHidden()
+                    .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+                    .accessibilityLabel(label)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            Toggle(label, isOn: isOn)
         }
     }
 

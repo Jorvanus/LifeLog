@@ -2,6 +2,16 @@
 
 ## 2026-08-09
 
+### Largest text sizes keep the important controls readable
+
+- Activities gives its text the full row and removes the decorative seven-day sparkline at accessibility sizes, instead of breaking names and statistics into narrow fragments.
+- Settings stacks labels, values and toggles vertically when text is enlarged, keeping each control readable and comfortably tappable.
+- Timeline drops its decorative greeting at accessibility sizes, caps the floating add control and keeps review text large but bounded, bringing the day’s journey into reach much sooner. Journey entries also replace their fixed-height horizontal card with a flexible vertical reading order, so the newly reachable content is not clipped.
+
+### The visual review is saved as an actionable checklist
+
+- Added the iPhone 17 Pro Max visual-review findings to the active todo list, prioritising large-text reflow before navigation, wording and lower-friction refinements.
+
 ### Validation now targets the owner’s iPhone model
 
 - LifeLog’s development workflow now defaults device checks to the owner’s iPhone 17 Pro Max, so layout and behaviour are verified on the device the app is actually used on.
