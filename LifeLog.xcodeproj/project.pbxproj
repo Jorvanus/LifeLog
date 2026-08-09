@@ -86,6 +86,7 @@
 		BE6F66A8A02D8118CA0F1D5B /* LocalBackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AA3D7B84667404F9B27D037 /* LocalBackupService.swift */; };
 		C5D90D6549DDED454C7A352D /* InsightsTrendAggregator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86930351BA999975C9D617AD /* InsightsTrendAggregator.swift */; };
 		CB15B97417DC0A3EFCEA9597 /* TimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F04598A86CF649E23443B8E5 /* TimelineView.swift */; };
+		59F0C8244139429B8BE41380 /* VisitMicroInsight.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3232F55DCF4198CCE3CEB564 /* VisitMicroInsight.swift */; };
 		D3A1974A4EF694835FB11A45 /* ActivityLocationPolicy+Travel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE87D23ADFA9354B7274AA9F /* ActivityLocationPolicy+Travel.swift */; };
 		D4E10A0CF515267F1519F090 /* ActivityGroupsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A4A988EA9373A6B2EDDBFDA /* ActivityGroupsView.swift */; };
 		D5919F29402485F86391FB7E /* ActivitySampleReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C4306D8291AFEE730A6A5F3 /* ActivitySampleReader.swift */; };
@@ -228,6 +229,7 @@
 		EEFDDF4EACA429A5EF239A02 /* InsightsAggregationCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsAggregationCache.swift; sourceTree = "<group>"; };
 		F00A33A60B150AFDBD347BC6 /* SchemaMigrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemaMigrationTests.swift; sourceTree = "<group>"; };
 		F04598A86CF649E23443B8E5 /* TimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineView.swift; sourceTree = "<group>"; };
+		3232F55DCF4198CCE3CEB564 /* VisitMicroInsight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitMicroInsight.swift; sourceTree = "<group>"; };
 		F0AFA0A4040E0B9433BD29B7 /* ActivityArtwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityArtwork.swift; sourceTree = "<group>"; };
 		F19A48B6168901A38C9ECBE1 /* ActivityImportActor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityImportActor.swift; sourceTree = "<group>"; };
 		F231EF6FF81FF1DE207D2222 /* CorrectionHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorrectionHistory.swift; sourceTree = "<group>"; };
@@ -412,6 +414,7 @@
 				F04598A86CF649E23443B8E5 /* TimelineView.swift */,
 				986DB059F34DBA2E238F436C /* VisitEditor.swift */,
 				28D8C02BA1BC5C7F515F3CEE /* VisitLocationChooser.swift */,
+				3232F55DCF4198CCE3CEB564 /* VisitMicroInsight.swift */,
 			);
 			path = Timeline;
 			sourceTree = "<group>";
@@ -658,6 +661,7 @@
 				99D7D6A74C9D15B7BFC26D9B /* StoreRecoveryView.swift in Sources */,
 				FF248E1B51F0BAAB79DCA2E0 /* TextSafety.swift in Sources */,
 				CB15B97417DC0A3EFCEA9597 /* TimelineView.swift in Sources */,
+				59F0C8244139429B8BE41380 /* VisitMicroInsight.swift in Sources */,
 				27B507583EF0B2F7F4AC50B4 /* TrendExport.swift in Sources */,
 				4D8B332764341D209A0C4455 /* UITestFailureInjection.swift in Sources */,
 				EA62D01B19AE99E4AF74BEB1 /* UITestSeedData.swift in Sources */,

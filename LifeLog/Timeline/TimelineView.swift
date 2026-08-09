@@ -147,6 +147,15 @@ struct TimelineView: View {
         visits.first { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored && $0.departure == nil }
     }
 
+    /// Every automatic/manual visit with a real place name, for `VisitMicroInsights`
+    /// to judge a card's visit against. `visits` above already holds the whole
+    /// non-imported-journal archive (it carries no date bound yet), so this is a
+    /// filter over data already in memory rather than a second fetch — the same
+    /// automatic/manual restriction `InsightsView.placeHistory` applies.
+    private var placeHistory: [Visit] {
+        visits.filter { $0.source == "automatic" || $0.source == "manual" }
+    }
+
     private var isWaitingForVisitConfirmation: Bool {
         guard current == nil, recorder.latestLocationTimestamp != nil else { return false }
         return recorder.authorization == .authorizedAlways || recorder.authorization == .authorizedWhenInUse
@@ -544,10 +553,12 @@ struct TimelineView: View {
     /// the same as opening yesterday.
     private struct PastDayJourney: View {
         let day: Date
+        let placeHistory: [Visit]
         @Query private var visits: [Visit]
 
-        init(day: Date) {
+        init(day: Date, placeHistory: [Visit]) {
             self.day = day
+            self.placeHistory = placeHistory
             let interval = TimelineView.interval(of: day)
             let end = interval.end
             // A stay is shown on every day it covers, so one that began earlier has to
@@ -578,7 +589,8 @@ struct TimelineView: View {
                 VStack(spacing: 12) {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { index, visit in
                         JourneyRow(visit: visit, isCurrent: false,
-                                   isFirst: index == 0, isLast: index == rows.count - 1)
+                                   isFirst: index == 0, isLast: index == rows.count - 1,
+                                   placeHistory: placeHistory)
                     }
                 }
             }
@@ -680,7 +692,7 @@ struct TimelineView: View {
                 // A past day owns its own fetch: the query above deliberately excludes
                 // the imported journal to keep launch light, and that archive is exactly
                 // what a past day is made of.
-                PastDayJourney(day: selectedDay)
+                PastDayJourney(day: selectedDay, placeHistory: placeHistory)
             } else if today.isEmpty && current == nil && !isWaitingForVisitConfirmation {
                 VStack(spacing: 14) {
                     Image(systemName: "location.slash").font(.largeTitle).foregroundStyle(.secondary)
@@ -699,7 +711,8 @@ struct TimelineView: View {
                     ForEach(Array(historicalVisits.enumerated()), id: \.element.id) { index, visit in
                         JourneyRow(visit: visit, isCurrent: false,
                                    isFirst: current == nil && !isWaitingForVisitConfirmation && index == 0,
-                                   isLast: index == historicalVisits.count - 1)
+                                   isLast: index == historicalVisits.count - 1,
+                                   placeHistory: placeHistory)
                     }
                 }
             }
@@ -803,7 +816,9 @@ private struct JourneyRow: View {
     let isCurrent: Bool
     let isFirst: Bool
     let isLast: Bool
+    let placeHistory: [Visit]
     private var color: Color { visit.needsCategorisation ? .orange : activityColor(visit.activity) }
+    private var badges: [VisitMicroInsight] { VisitMicroInsights.badges(for: visit, history: placeHistory) }
 
     var body: some View {
         NavigationLink { VisitEditor(visit: visit) } label: {
@@ -849,7 +864,7 @@ private struct JourneyRow: View {
                         Image(systemName: "chevron.right")
                             .font(.subheadline.weight(.semibold)).foregroundStyle(.tertiary)
                     }
-                    .padding(.horizontal, 14).frame(height: 108)
+                    .padding(.horizontal, 14).frame(minHeight: 108)
                     .lifeCard()
                 }
             }
@@ -870,11 +885,29 @@ private struct JourneyRow: View {
                 // ever "Walking workout", which says nothing.
                 Text(visit.hasRoute ? formattedDistance(visit.routeDistance) : visit.placeName)
                     .font(.subheadline).foregroundStyle(.secondary)
+                if !badges.isEmpty { badgeRow }
             }
             Text(timeDescription).font(.subheadline).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// One badge is common, two is the ceiling in practice — a place cannot be
+    /// both a first visit and a milestone visit at once, so this is at most
+    /// "first/milestone" plus "longest stay". A `HStack` rather than a `Label`
+    /// grid keeps it to the single lightweight row the card has room for.
+    private var badgeRow: some View {
+        HStack(spacing: 6) {
+            ForEach(badges) { badge in
+                Label(badge.label, systemImage: badge.symbol)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Color.orange.opacity(0.12), in: Capsule())
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder private var status: some View {
