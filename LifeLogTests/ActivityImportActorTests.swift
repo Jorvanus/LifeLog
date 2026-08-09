@@ -94,6 +94,53 @@ struct ActivityImportActorTests {
         #expect(workouts.first?.departure == start.addingTimeInterval(34 * 60))
     }
 
+    @Test("A main-context correction to a stay survives a batch prepared before it landed")
+    func importBatchDoesNotOverwriteAConcurrentStayCorrection() async throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(
+            for: Visit.self, SavedPlace.self, VisitCorrection.self,
+            configurations: configuration
+        )
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let setupContext = ModelContext(container)
+        let home = Visit(
+            arrival: start, departure: start.addingTimeInterval(20 * 60),
+            latitude: -27.47, longitude: 153.03,
+            placeName: "Home", inferredActivity: "At home", source: "automatic"
+        )
+        setupContext.insert(home)
+        try setupContext.save()
+
+        // The actor loads its own copy of Home before the main context's correction
+        // below lands — the exact ordering behind the 07:16:22/07:02:44 capture.
+        let writer = ActivityImportActor(modelContainer: container)
+        try await writer.prepare()
+
+        // A main-context repair (Timeline reconciliation, in production) corrects
+        // Home's departure a moment later, to a value the import batch below never sees.
+        home.departure = start.addingTimeInterval(5 * 60)
+        try setupContext.save()
+
+        // The batch bounds a walk against its own, now-stale view of Home (would land
+        // Home's departure at 6 minutes, not 5) and saves. Before the fix, that save
+        // silently reverted the main context's correction to the import's own answer.
+        let inserted = try await writer.insertBatch([
+            ActivityImportRecord(
+                name: "Walking", activity: "Walking", source: "health-walking",
+                start: start.addingTimeInterval(6 * 60), end: start.addingTimeInterval(30 * 60)
+            )
+        ])
+        try await writer.finish()
+
+        let verificationContext = ModelContext(container)
+        let stays = try verificationContext.fetch(FetchDescriptor<Visit>())
+            .filter { $0.source == "automatic" }
+        #expect(inserted == 1, "the walk still gets written, bounded against the actor's own view of Home")
+        #expect(stays.count == 1)
+        #expect(stays.first?.departure == start.addingTimeInterval(5 * 60),
+               "the main context's correction survives the import's save")
+    }
+
     @Test("A stay the imported walk passed through is withdrawn before it can split anything")
     func passingStayIsWithdrawnDuringImport() async throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)

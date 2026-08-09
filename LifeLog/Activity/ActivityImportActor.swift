@@ -27,6 +27,20 @@ struct ActivityImportProgress: Equatable, Sendable {
 actor ActivityImportActor {
     private var visitsBySource: [String: [Visit]] = [:]
     private var locations: [Visit] = []
+    // A detached copy of `locations`, index-paired with it, that `boundStay` is free to
+    // mutate. Two independent `ModelContext`s — this actor's and the main context's —
+    // routinely hold and correct the same stay within the same second: on 2026-08-08 a
+    // departure written as 07:16:22 by the main context read back as 07:02:44, the
+    // import actor's own stale value, because `boundStay` used to mutate `locations`
+    // itself and `context.save()` persisted whatever it landed on regardless of what the
+    // main context had just written to the same row. These copies are never inserted
+    // into `modelContext`, so mutating them can never be swept into a save — the main
+    // context remains the only writer of a stay's own recorded departure, and re-applies
+    // the same correction itself right after this import announces it has finished
+    // (`ActivityLocationPolicy.reapplyRecentJourneyTiming`). This array exists solely so
+    // this session's own segment math sees a bounded stay's shortened window immediately,
+    // the same way it always has.
+    private var boundableStays: [Visit] = []
     private var healthVisits: [Visit] = []
 
     func prepare() throws {
@@ -36,7 +50,14 @@ actor ActivityImportActor {
         ))
         visitsBySource = Dictionary(grouping: existing, by: \.source)
         locations = existing.filter { $0.source == "automatic" || $0.source == "manual" }
+        boundableStays = locations.map(Self.detachedCopy)
         healthVisits = existing.filter { $0.source.hasPrefix("health-") }
+    }
+
+    private static func detachedCopy(of stay: Visit) -> Visit {
+        Visit(arrival: stay.arrival, departure: stay.departure,
+             latitude: stay.latitude, longitude: stay.longitude,
+             placeName: stay.placeName, source: stay.source)
     }
 
     func insertBatch(_ records: [ActivityImportRecord]) throws -> Int {
@@ -148,6 +169,7 @@ actor ActivityImportActor {
     private func clearSession() {
         visitsBySource.removeAll(keepingCapacity: false)
         locations.removeAll(keepingCapacity: false)
+        boundableStays.removeAll(keepingCapacity: false)
         healthVisits.removeAll(keepingCapacity: false)
     }
 
@@ -155,11 +177,13 @@ actor ActivityImportActor {
     /// that stay before the stay is subtracted from the record. Without this, a stay
     /// Core Location has not closed yet covers the whole walk and it is never written
     /// at all — the import path's equivalent of the deletion `reconcile` performs.
+    ///
+    /// Mutates `boundableStays`, never `locations` — see the property comment above.
     private func boundStay(departedWith interval: DateInterval, record: ActivityImportRecord) {
         let text = "\(record.activity) \(record.name)"
         guard ActivityLocationPolicy.describesWalking(record.activity) ||
                 ActivityLocationPolicy.describesTravel(text) else { return }
-        ActivityLocationPolicy.boundStay(departedWith: interval, stays: locations)
+        ActivityLocationPolicy.boundStay(departedWith: interval, stays: boundableStays)
     }
 
     /// The stretches of a record that survive the places it overlapped.
@@ -182,6 +206,12 @@ actor ActivityImportActor {
 
     /// Applies the passing-stay rule for every workout in the batch, then drops the
     /// withdrawn stays from the cache the splitting reads, so they cannot cut anything.
+    ///
+    /// `passingStays` is asked against `locations`, never `boundableStays`: it reads
+    /// `isIgnored`, which resolves against the ignore registry by `persistentModelID`
+    /// and always reads as false for a detached copy that was never inserted into any
+    /// context. `locations` and `boundableStays` are index-paired, so the same indices
+    /// withdrawn from one are withdrawn from the other, keeping the pairing intact.
     private func supersedeStaysPassedDuringWorkouts(in records: [ActivityImportRecord]) {
         let sessions = records.compactMap { record -> WorkoutJourneys.WorkoutSession? in
             guard record.source == "health-workout", record.end > record.start else { return nil }
@@ -192,11 +222,13 @@ actor ActivityImportActor {
         let passed = WorkoutJourneys.passingStays(during: sessions, stays: locations)
         guard !passed.isEmpty else { return }
         let withdrawn = Set(passed.map(\.stay.persistentModelID))
-        locations.removeAll { withdrawn.contains($0.persistentModelID) }
+        let kept = locations.indices.filter { !withdrawn.contains(locations[$0].persistentModelID) }
+        locations = kept.map { locations[$0] }
+        boundableStays = kept.map { boundableStays[$0] }
     }
 
     private func remainingSegments(for activity: DateInterval) -> [DateInterval] {
-        let occupied = locations.compactMap { visit -> DateInterval? in
+        let occupied = boundableStays.compactMap { visit -> DateInterval? in
             let end = visit.departure ?? .now
             guard end > visit.arrival else { return nil }
             return DateInterval(start: visit.arrival, end: end)

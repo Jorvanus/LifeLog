@@ -2,6 +2,10 @@
 
 ## 2026-08-09
 
+### A correction made right after an import finishes can no longer be silently reverted by it
+
+- The background import and the screen you're looking at were both able to write to the same stay at the same time, and the import always won without saying so — a departure time corrected a moment earlier could quietly revert to whatever the import's own, older understanding of that stay was. Confirmed with the exact capture that first surfaced it: a departure corrected to 07:02:44 read back as 07:16:22, the import's stale answer, in the same second. The import no longer holds a stay it doesn't own — it keeps its own working copy for placing new records correctly, but only ever writes new records to the store, never a correction to a stay someone else might be correcting at the same time.
+
 ### Short walks scattered through a day at home are absorbed, not left stranded
 
 - Nine separate "walking" rows could appear through one day spent entirely at home, none of them merged into the Home stay they happened inside of, even though moving around inside a place you haven't left is already supposed to count as being at that place. The cause: Health's walking data isn't read incrementally, it's re-scanned from a rolling window on every import, so a short burst can be written to the timeline before Home itself has been recorded arriving. Once Home exists, the next re-scan correctly works out that burst shouldn't be there any more — but nothing was going back to remove the copy already written from the first pass, so it stayed stranded. The same repair that already runs on every appearance and after every import for other timing fixes now also cleans this up.
