@@ -7,9 +7,14 @@ struct TimelineView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let recorder: LocationRecorder
-    // Imported journal rows are used by Insights, but are not automatic locations
-    // or review items. Excluding them keeps the launch timeline query lightweight.
-    @Query(filter: #Predicate<Visit> { $0.source != "imported-journal" },
+    // Timeline is destination-first: passive motion/walking samples are used by
+    // Insights and reconciliation, but are normally absorbed into a destination.
+    // Keeping them out of this query avoids loading tens of thousands of samples
+    // merely to render one day. Explicit workouts and sleep remain first-class cards.
+    @Query(filter: #Predicate<Visit> {
+        $0.source != "imported-journal" && $0.source != "motion" &&
+        $0.source != "health-walking"
+    },
            sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
     @State private var adding = false
     @State private var clock = Date.now
@@ -163,6 +168,9 @@ struct TimelineView: View {
             .sheet(isPresented: $jumpingToDate) { jumpToDateSheet }
             .task {
                 loadEarliestDay()
+                // Let SwiftUI paint the first interactive frame before historical
+                // resolver and catch-up work resumes when returning from another tab.
+                await Task.yield()
                 do {
                     let repaired = try ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "Timeline relaunch recovery")
                     if repaired > 0 {
@@ -215,27 +223,15 @@ struct TimelineView: View {
                 // every appearance. Large journal imports made that noticeable, so run
                 // it once per installation/version; new visits are reconciled as they
                 // arrive by LocationRecorder.
-                // Before the guard, not after it. The first attempt at this reported
-                // from inside the branch the marker protects, so an already-completed
-                // marker returned in silence — indistinguishable from the block never
-                // being reached, which is the one thing it was meant to tell apart.
-                // Reports the value itself, not just whether the pass ran. The repair is
-                // now known to apply and save — the log says so — and to be gone
-                // afterwards, so what matters is *when* it reverts. Printing the stay's
-                // departure on every appearance turns that into something watchable
-                // instead of something to reason about.
-                let watched = visits
-                    .filter { ActivityLocationPolicy.isLocationVisit($0) && $0.departure != nil }
-                    .max { ($0.departure ?? .distantPast) < ($1.departure ?? .distantPast) }
-                let watchedEnd = watched?.departure.map {
-                    $0.formatted(date: .omitted, time: .standard)
-                } ?? "none"
-                Diagnostics.record(context, subsystem: "Timeline",
-                                   message: "Reconciliation check: marker \(locationPolicyReconciled ? "set" : "unset"), "
-                                          + "\(visits.count) visits, "
-                                          + "\(visits.filter(ActivityLocationPolicy.isDeviceActivity).count) from a device, "
-                                          + "latest closed stay ends \(watchedEnd).",
-                                   severity: "info")
+                // A completed reconciliation is expected on every later appearance.
+                // Keep the journal focused on first-run recovery or a future retry;
+                // repeating a full inventory here made useful resolver warnings hard
+                // to spot without adding diagnostic value.
+                if !locationPolicyReconciled {
+                    Diagnostics.record(context, subsystem: "Timeline",
+                                       message: "Reconciliation check: marker unset; retrying location policy.",
+                                       severity: "info")
+                }
                 // Always, not once. A one-shot repair loses to the import actor's own
                 // context, which saves stale copies of the same visits a moment later.
                 //

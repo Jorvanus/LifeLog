@@ -2,6 +2,14 @@
 
 ## 2026-08-09
 
+### Diagnostics focus on actionable slow paths
+
+- Fast Insights budget passes and completed Timeline reconciliation checks are no longer persisted on every tab appearance. Slow budget samples, recovery attempts, and resolver warnings remain visible, while correction validation now evaluates only the latest manual edit for an arrival.
+
+### Timeline returns to an interactive frame sooner
+
+- Timeline no longer loads passive motion and walking samples just to render destination cards. Sleep and deliberate workouts remain visible, while catch-up repairs yield to the first frame when returning to the tab.
+
 ### Maps identity is now retained on visits
 
 - Migrated the local timeline to V6 so Maps-resolved visits preserve Apple Maps identifiers and their source. Matching now prefers those identifiers, while older, manually pinned, and identifier-less records safely retain the existing name fallback and local backups round-trip both forms.

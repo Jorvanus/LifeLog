@@ -214,11 +214,15 @@ enum Diagnostics {
     static func budget(_ context: ModelContext?, subsystem: String, operation: String,
                        startedAt: Date, budget: TimeInterval, itemCount: Int? = nil) {
         let elapsed = Date.now.timeIntervalSince(startedAt)
-        let status = elapsed <= budget ? "pass" : "over budget"
+        // A passing budget is the normal path and is already represented by the
+        // screen loading successfully. Persist only slow samples so the journal
+        // remains useful after a long history or repeated tab switches.
+        guard elapsed > budget else { return }
+        let status = "over budget"
         let countText = itemCount.map { ", \($0) items" } ?? ""
         record(context, subsystem: subsystem,
                message: "Budget \(status): \(operation), \(Int((elapsed * 1000).rounded())) ms / \(Int((budget * 1000).rounded())) ms\(countText)",
-               severity: elapsed <= budget ? "info" : "warning", category: Category.performance)
+               severity: "warning", category: Category.performance)
     }
 
     /// Stores structured-but-human-readable location metrics in the existing

@@ -50,11 +50,24 @@ extension ActivityLocationPolicy {
         let manualCorrections = try context.fetch(FetchDescriptor<VisitCorrection>())
             .filter { $0.reason.localizedCaseInsensitiveContains("manual") }
         let automationReplacements = manualCorrections.filter { correction in
-            guard let visit = locations.first(where: { visit in
+            // A visit can have several manual edits. Validate only the latest edit
+            // for that arrival; comparing an older history row with the newer value
+            // would report a replacement even when the user simply edited it again.
+            let hasNewerCorrection = manualCorrections.contains { newer in
+                newer.changedAt > correction.changedAt &&
+                    abs(newer.visitArrival.timeIntervalSince(correction.visitArrival)) < 1 &&
+                    abs(newer.latitude - correction.latitude) < 0.00001 &&
+                    abs(newer.longitude - correction.longitude) < 0.00001
+            }
+            guard !hasNewerCorrection,
+                  let visit = locations
+                    .filter({ $0.resolutionState != .superseded })
+                    .filter({ visit in
                 abs(visit.arrival.timeIntervalSince(correction.visitArrival)) < 1 &&
                 abs(visit.latitude - correction.latitude) < 0.00001 &&
                 abs(visit.longitude - correction.longitude) < 0.00001
-            }) else { return false }
+                    })
+                    .last else { return false }
             // A user activity takes precedence over an inferred activity. If neither
             // the confirmed place nor their effective activity still agrees, some
             // later automation has replaced the correction.
