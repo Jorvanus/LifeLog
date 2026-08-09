@@ -2,6 +2,14 @@
 
 ## 2026-08-09
 
+### Apple Maps categories now drive activity inference directly
+
+- A place's Apple Maps point-of-interest category is now mapped straight to LifeLog's activity groups instead of being converted to broad prose and guessed from keywords again, so places such as pharmacies, cafes and cinemas can classify correctly even when their names do not contain those words.
+
+### Trend export filenames now use Swift's ISO 8601 format style directly
+
+- CSV and JSON trend exports still get timestamped filenames, but the timestamp now comes from Foundation's Swift format-style API instead of creating an `ISO8601DateFormatter` and patching its output afterwards.
+
 ### A correction made right after an import finishes can no longer be silently reverted by it
 
 - The background import and the screen you're looking at were both able to write to the same stay at the same time, and the import always won without saying so — a departure time corrected a moment earlier could quietly revert to whatever the import's own, older understanding of that stay was. Confirmed with the exact capture that first surfaced it: a departure corrected to 07:02:44 read back as 07:16:22, the import's stale answer, in the same second. The import no longer holds a stay it doesn't own — it keeps its own working copy for placing new records correctly, but only ever writes new records to the store, never a correction to a stay someone else might be correcting at the same time.

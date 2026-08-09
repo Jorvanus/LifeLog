@@ -101,14 +101,14 @@ enum PlaceLookupService {
             let name = TextSafety.clean(rawName, maximumLength: 100)
             guard !name.isEmpty else { return nil }
             let location = item.location
-            // The Maps point-of-interest wording only feeds inference here; it is
-            // never stored on the suggestion or the visit.
-            let mapsHint = mapsHint(from: item.pointOfInterestCategory)
+            // The Maps category only feeds inference here; it is never stored on the
+            // suggestion or the visit.
+            let mapsCategory = item.pointOfInterestCategory
             return PlaceSuggestion(
                 name: name,
                 latitude: location.coordinate.latitude,
                 longitude: location.coordinate.longitude,
-                suggestedActivity: InferenceEngine.activity(placeName: name, mapsHint: mapsHint),
+                suggestedActivity: InferenceEngine.activity(placeName: name, mapsCategory: mapsCategory),
                 distance: origin.distance(from: location),
                 mapsIdentifier: item.identifier?.rawValue
             )
@@ -121,7 +121,7 @@ enum PlaceLookupService {
         if let first = suggestions.first,
            let smart = await SmartActivityClassifier.classify(
                placeName: first.name,
-               mapCategory: mapsHint(from: response.mapItems.first { $0.name == first.name }?.pointOfInterestCategory),
+               mapCategory: InferenceEngine.mapsHint(for: response.mapItems.first { $0.name == first.name }?.pointOfInterestCategory),
                arrival: arrival
            ), smart.confidence >= 60 {
             suggestions[0] = PlaceSuggestion(
@@ -182,32 +182,4 @@ enum PlaceLookupService {
         }
     }
 
-    private static func mapsHint(from category: MKPointOfInterestCategory?) -> String {
-        let value = category?.rawValue.lowercased() ?? ""
-        if value.contains("cinema") || value.contains("movie") || value.contains("theater") || value.contains("theatre") {
-            return "Entertainment"
-        }
-        if value.contains("restaurant") || value.contains("cafe") || value.contains("bakery") || value.contains("brewery") {
-            return "Food & Drink"
-        }
-        if value.contains("store") || value.contains("market") || value.contains("laundry") || value.contains("bank") {
-            return "Shopping"
-        }
-        if value.contains("fitness") || value.contains("stadium") || value.contains("park") || value.contains("beach") {
-            return "Fitness"
-        }
-        if value.contains("hospital") || value.contains("pharmacy") || value.contains("health") {
-            return "Healthcare"
-        }
-        if value.contains("school") || value.contains("university") || value.contains("library") {
-            return "Education"
-        }
-        if value.contains("airport") || value.contains("transport") || value.contains("hotel") || value.contains("marina") {
-            return "Travel"
-        }
-        if value.contains("nightlife") || value.contains("museum") || value.contains("music") {
-            return "Social"
-        }
-        return "Other"
-    }
 }

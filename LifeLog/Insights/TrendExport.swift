@@ -38,7 +38,7 @@ enum TrendExport {
                     confidence: visit.confidenceLabel
                 )
             }
-        let stamp = ISO8601DateFormatter().string(from: .now).replacingOccurrences(of: ":", with: "-")
+        let stamp = Date.now.formatted(.iso8601.timeSeparator(.omitted).timeZone(separator: .omitted))
         let filename = "lifelog-trends-\(stamp).\(format)"
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
         do {
