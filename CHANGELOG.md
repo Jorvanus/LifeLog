@@ -2,6 +2,16 @@
 
 ## 2026-08-09
 
+### Five regressions from the last diagnostics/performance pass, found and fixed
+
+- **A budget sample stopped recording whether it passed.** The previous "reduce diagnostics noise" change made `Diagnostics.budget` silent unless an operation ran over budget, and removed the unconditional "Reconciliation check" log from Timeline's own appearance. Both broke the same thing on purpose-built to prevent: telling "this ran and was fine" apart from "this never ran at all", which cost four wasted builds the first time it was lost. Both are restored; there's an existing test (`budgetRecordsEveryTime`) that would have caught this had it been run before that change shipped.
+- **A genuine walk between two places could no longer show on Timeline.** The same pass excluded all `motion`/`health-walking` records from Timeline's query outright, to avoid loading an archive's worth of samples just to render one day. But Timeline already asks `shouldShowInTimeline` that exact question per row — which can tell a walk absorbed into a stay apart from a real journey between two places — and a query-level exclusion discards a row before that check ever runs. Reverted; the archive-scale cost this was trying to avoid is real and still worth solving, but with a date-scoped fetch, not by source.
+- **`ActivityIcon`/`ActivityScene`'s pure lookup properties crashed when called from a non-`@MainActor` context.** Both conform to `View`, so SwiftUI infers `@MainActor` on every member by default, including properties that touch no UI state at all. Marked `nonisolated` explicitly.
+- **A place-scoring test asked for dwell duration at the wrong lifecycle stage.** Scores deliberately read zero dwell on arrival — the eventual duration is re-evaluated at departure — and a test fixture with a real departure never asked for that stage. Fixed the test.
+- **A UI test scrolled the wrong direction, then the right direction too many times.** Swapped a fixed `swipeDown()` loop for the same "swipe until found" pattern already used everywhere else in the file.
+
+None of these were caught before shipping because the previous commit touched no test files. Full suite verified clean afterward (fresh simulator; a separate pre-existing `SchemaMigrationTests` cold-launch flake is unrelated and documented in TODO.md).
+
 ### The routine Health refresh stops re-reading a month of steps every time
 
 - Walking data isn't read incrementally the way sleep and workouts are — it has no anchored-query equivalent, so it re-scans whatever window it's given from scratch every time. The routine refresh, throttled to once every two minutes, was handing it a flat 30-day window regardless, so every foreground reprocessed roughly a month of step-count samples: a real capture showed 18 imports in under three hours averaging ~700ms, one at 1.9s, with item counts flat around 392-421 rather than trending toward the handful of genuinely new samples since the last read. The window is now sized to the actual gap since the last successful read — two days during ordinary, frequent use, widening automatically to cover a real absence instead of a flat number either too small (silently losing history) or too large (re-reading it needlessly).

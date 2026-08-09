@@ -208,21 +208,24 @@ enum Diagnostics {
                severity: "info", category: Category.performance)
     }
 
-    /// Retains one privacy-safe timing sample for a budgeted operation. The
-    /// record contains only elapsed time, the budget, and an aggregate count;
-    /// it never includes places, coordinates, notes, or health values.
+    /// Retains one privacy-safe timing sample for a budgeted operation, whether it
+    /// passed or not. The record contains only elapsed time, the budget, and an
+    /// aggregate count; it never includes places, coordinates, notes, or health values.
+    ///
+    /// Unconditional on purpose, unlike `performance` above: a timing sample answers
+    /// "was this slow", but only an unconditional record answers "did this run at
+    /// all". Conflating the two cost four builds on 8 August, when a repair that ran
+    /// and a repair that never ran left the same silence behind — see
+    /// `budgetRecordsEveryTime` in `DiagnosticsTests.swift`, which failed the one time
+    /// this was made conditional and caught it.
     static func budget(_ context: ModelContext?, subsystem: String, operation: String,
                        startedAt: Date, budget: TimeInterval, itemCount: Int? = nil) {
         let elapsed = Date.now.timeIntervalSince(startedAt)
-        // A passing budget is the normal path and is already represented by the
-        // screen loading successfully. Persist only slow samples so the journal
-        // remains useful after a long history or repeated tab switches.
-        guard elapsed > budget else { return }
-        let status = "over budget"
+        let status = elapsed <= budget ? "pass" : "over budget"
         let countText = itemCount.map { ", \($0) items" } ?? ""
         record(context, subsystem: subsystem,
                message: "Budget \(status): \(operation), \(Int((elapsed * 1000).rounded())) ms / \(Int((budget * 1000).rounded())) ms\(countText)",
-               severity: "warning", category: Category.performance)
+               severity: elapsed <= budget ? "info" : "warning", category: Category.performance)
     }
 
     /// Stores structured-but-human-readable location metrics in the existing

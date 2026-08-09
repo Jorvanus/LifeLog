@@ -139,7 +139,11 @@ final class LifeLogUITests: XCTestCase {
 
         XCTAssertTrue(element("diagnostics-screen").waitForExistence(timeout: 10))
         let report = element("create-performance-report")
-        for _ in 0..<8 { app.swipeDown() }
+        var attempts = 0
+        while !report.exists && attempts < 8 {
+            app.swipeUp()
+            attempts += 1
+        }
         XCTAssertTrue(report.waitForExistence(timeout: 5))
         XCTAssertEqual(report.label, "Create performance report", "report action must have a VoiceOver label")
         report.tap()

@@ -23,7 +23,13 @@ struct ActivityIcon: View {
         .frame(width: size, height: size)
         .shadow(color: color.opacity(0.16), radius: 7, y: 4)
     }
-    private var symbol: String {
+    // Pure lookups over the two initializer parameters, with no dependency on being
+    // on the main actor — but `ActivityIcon` conforms to `View`, so SwiftUI infers
+    // @MainActor on every member by default, including these. A test that isn't
+    // itself @MainActor calling one directly traps at runtime with an isolation
+    // violation the compiler only warns about (`ActivityArtworkBoundsTests`,
+    // `timelineUsesStoredActivityIcon`). `nonisolated` opts them out explicitly.
+    nonisolated private var symbol: String {
         let text = "\(activity) \(context)".lowercased()
         // The catalogue is the user's source of truth. Keyword inference remains a
         // useful fallback for imported labels that have not been adopted yet, but it
@@ -47,7 +53,7 @@ struct ActivityIcon: View {
         return "mappin"
     }
 
-    var symbolForTesting: String { symbol }
+    nonisolated var symbolForTesting: String { symbol }
 
     /// The illustration for the current-activity card, or nothing when there isn't one.
     ///
@@ -60,7 +66,7 @@ struct ActivityIcon: View {
     /// string is "exercis-ing", so the app's own default activity missed its own
     /// artwork for as long as both have existed. `commuting` missed `ActivityDriving`
     /// the same way.
-    fileprivate var resolvedAssetName: String? {
+    nonisolated fileprivate var resolvedAssetName: String? {
         let text = "\(activity) \(context)".lowercased()
         if text.contains("blood") { return "ActivityDonateBlood" }
         if text.contains("work trip") || text.contains("business trip") { return "ActivityWorkTrip" }
@@ -154,14 +160,17 @@ struct ActivityScene: View {
         }
     }
 
-    private var assetName: String? {
+    // Same reasoning as ActivityIcon's pure properties above: `ActivityScene` is
+    // also a `View`, so these need `nonisolated` explicitly to be callable from a
+    // non-@MainActor test context without trapping.
+    nonisolated private var assetName: String? {
         ActivityIcon(activity: activity, context: context, color: .clear).resolvedAssetName
     }
 
     /// The chosen asset, so a test can check an activity reaches artwork that is
     /// actually in the bundle. Reading it back through the rendered view is not
     /// possible, and these rules have already shipped two silent misses.
-    var assetNameForTesting: String? { assetName }
+    nonisolated var assetNameForTesting: String? { assetName }
 }
 
 /// Stable bounds for the decorative scene on the current-activity card. Keeping

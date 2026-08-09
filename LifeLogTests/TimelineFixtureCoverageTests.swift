@@ -791,10 +791,14 @@ struct TimelineFixtureCoverageTests {
                                          previousPlaceName: "House", newPlaceName: "Home",
                                          previousActivity: "Visiting", newActivity: "At home")
 
+        // "arrival" (the default stage) deliberately zeroes dwell — a new arrival
+        // doesn't yet prove one. This fixture's visit already carries a departure, so
+        // score it at the stage that actually reads dwell, matching PlaceScoringPipeline
+        // .evaluate's own two-stage lifecycle (re-scored at departure).
         let evaluation = PlaceScoringPipeline.evaluate(
             visit: visit, savedPlaces: [place], suggestions: [suggestion], accuracy: 8,
             geofenceTriggered: true, visits: previous + [visit], corrections: [correction],
-            now: base
+            stage: "departure", now: base
         )
 
         #expect(evaluation.selected?.mapsIdentifier == "home-id")
