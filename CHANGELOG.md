@@ -2,6 +2,18 @@
 
 ## 2026-08-09
 
+### Diagnostics and Journal Storage UI coverage
+
+- Added deterministic UI coverage for empty journal history, backup and protected-report failures, Accessibility XXXL layout, dark appearance, and VoiceOver-facing labels on Diagnostics and Journal Storage.
+
+### Test suite audit closes weak-test checklist item
+
+- Audited UI and unit tests for conditional assertions and disconnected fixtures. Required UI elements now assert unconditionally, the 20,000-row archive benchmark proves its rows land inside the year and produce totals, and the activity-location rules have end-to-end UI coverage alongside direct unit tests.
+
+### Primary-tab screenshot coverage
+
+- Added a kept XCTest screenshot matrix for Timeline, Insights, Activities, and Settings at normal and Accessibility XXXL text sizes in both light and dark appearances. Seeded captures include the review card, activity sections, and initial location permission state.
+
 ### Settings uses accurate saved-place wording
 
 - The Places footer now describes labels, categories, and activities without promising Home or Work roles before those roles exist.

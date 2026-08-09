@@ -123,6 +123,70 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(clear.isHittable)
     }
 
+    /// A protected-report failure must remain understandable at the largest text size
+    /// in dark mode. The explicit labels also guard the controls
+    /// VoiceOver users need; screenshots alone cannot tell us whether a glyph-only
+    /// action lost its spoken name.
+    func testDiagnosticsProtectedWriteFailureAtLargeDarkType() {
+        app.terminate()
+        app.launchArguments = [
+            "-uiTesting", "-ui-test-fail-protected-report",
+            "-ui-test-open-diagnostics",
+            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
+            "-AppleInterfaceStyle", "Dark"
+        ]
+        app.launch()
+
+        XCTAssertTrue(element("diagnostics-screen").waitForExistence(timeout: 10))
+        let report = element("create-performance-report")
+        for _ in 0..<8 { app.swipeDown() }
+        XCTAssertTrue(report.waitForExistence(timeout: 5))
+        XCTAssertEqual(report.label, "Create performance report", "report action must have a VoiceOver label")
+        report.tap()
+
+        XCTAssertTrue(app.alerts["Diagnostics"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["LifeLog couldn’t write the performance report."].exists)
+        app.buttons["OK"].tap()
+    }
+
+    /// Journal Storage starts empty in a seeded launch. The cleanup action must be
+    /// disabled, while the separate backup action exposes its failure recovery alert.
+    /// This runs at Accessibility XXXL in dark mode so labels and disabled state are
+    /// exercised under the same conditions as the visual review.
+    func testJournalStorageEmptyHistoryAndBackupFailure() {
+        app.terminate()
+        app.launchArguments = [
+            "-uiTesting", "-ui-test-open-journal-storage",
+            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
+            "-AppleInterfaceStyle", "Dark"
+        ]
+        app.launch()
+
+        XCTAssertTrue(element("journal-storage-screen").waitForExistence(timeout: 10))
+        XCTAssertTrue(app.navigationBars["Journal Storage"].exists, "journal storage must expose its spoken title")
+        XCTAssertTrue(app.staticTexts["Records"].waitForExistence(timeout: 5))
+        XCTAssertTrue(element("journal-record-count").label.contains("0"), "seeded journal storage must be empty")
+        XCTAssertTrue(element("journal-empty-state").waitForExistence(timeout: 5))
+    }
+
+    func testSettingsBackupFailure() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-fail-backup", "-AppleInterfaceStyle", "Dark"]
+        app.launch()
+        app.tabBars.buttons["Settings"].tap()
+        XCTAssertTrue(element("settings-screen").waitForExistence(timeout: 10))
+        let backup = element("create-backup")
+        var attempts = 0
+        while !backup.exists && attempts < 12 {
+            app.swipeUp()
+            attempts += 1
+        }
+        XCTAssertTrue(backup.waitForExistence(timeout: 5))
+        backup.tap()
+        XCTAssertTrue(app.alerts["Journal import"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["LifeLog couldn’t create a backup."].exists)
+    }
+
     /// The usage count has to lead somewhere: opening an activity should list the
     /// visits it covers, and each should open for individual correction.
     func testActivityVisitsAreListedAndEditable() {
@@ -412,5 +476,73 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Choose Date"].waitForExistence(timeout: 5))
         app.buttons["Done"].tap()
         XCTAssertFalse(app.navigationBars["Choose Date"].exists)
+    }
+
+    /// Keep visual evidence for the four primary tabs at the combinations that have
+    /// actually exposed layout regressions: the normal and largest accessibility text
+    /// sizes in both interface styles. XCTest's frame assertions cannot see text
+    /// overlapping, clipping, or breaking into unreadable fragments, so these are kept
+    /// as named attachments in the test result bundle for visual comparison.
+    func testPrimaryTabsScreenshotMatrix() {
+        let configurations: [(name: String, size: String?)] = [
+            ("normal", nil),
+            ("accessibility-xxxl", "UICTContentSizeCategoryAccessibilityXXXL")
+        ]
+        let appearances = [
+            (name: "light", value: "Light"),
+            (name: "dark", value: "Dark")
+        ]
+        let tabs = [
+            (name: "timeline", identifier: "timeline-screen"),
+            (name: "insights", identifier: "insights-screen"),
+            (name: "activities", identifier: "activities-tab-screen"),
+            (name: "settings", identifier: "settings-screen")
+        ]
+
+        for configuration in configurations {
+            for appearance in appearances {
+                app.terminate()
+                app = XCUIApplication()
+                app.launchArguments = [
+                    "-uiTesting", "-ui-test-seed", "-AppleInterfaceStyle", appearance.value
+                ]
+                if let size = configuration.size {
+                    app.launchArguments += ["-UIPreferredContentSizeCategoryName", size]
+                }
+                app.launch()
+
+                for (index, tab) in tabs.enumerated() {
+                    if index > 0 {
+                        app.tabBars.buttons[tab.name.capitalized].tap()
+                    }
+                    XCTAssertTrue(element(tab.identifier).waitForExistence(timeout: 10),
+                                  "\(tab.name) did not load for \(configuration.name)/\(appearance.name)")
+                    if tab.name == "timeline" {
+                        XCTAssertTrue(element("uncategorised-location-card").waitForExistence(timeout: 5),
+                                      "seeded review card is missing from the Timeline capture")
+                    } else if tab.name == "activities" {
+                        XCTAssertTrue(app.staticTexts["Recently used"].waitForExistence(timeout: 5))
+                        // At Accessibility XXXL the purpose sections are deliberately
+                        // readable rather than compressed into one row, so the history
+                        // section may be below the first viewport. Scroll to the
+                        // crowded portion before taking the evidence capture.
+                        var attempts = 0
+                        while !app.staticTexts["From your history"].exists && attempts < 6 {
+                            app.swipeUp()
+                            attempts += 1
+                        }
+                        XCTAssertTrue(app.staticTexts["From your history"].waitForExistence(timeout: 5))
+                    } else if tab.name == "settings" {
+                        XCTAssertTrue(element("enable-location-logging").waitForExistence(timeout: 5),
+                                      "Settings capture must show the initial permission state")
+                    }
+                    let screenshot = XCUIScreen.main.screenshot()
+                    let attachment = XCTAttachment(screenshot: screenshot)
+                    attachment.name = "\(tab.name)-\(configuration.name)-\(appearance.name)"
+                    attachment.lifetime = .keepAlways
+                    add(attachment)
+                }
+            }
+        }
     }
 }

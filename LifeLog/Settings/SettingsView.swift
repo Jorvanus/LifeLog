@@ -154,6 +154,7 @@ struct SettingsView: View {
                     Text("Imports Life Cycle CSV exports on this iPhone. Existing imported rows are skipped when you import the same file again.")
                         .font(.footnote).foregroundStyle(.secondary)
                     NavigationLink { JournalCompactionView() } label: { Label("Manage imported journal storage", systemImage: "arrow.triangle.2.circlepath") }
+                        .accessibilityIdentifier("journal-storage-link")
                 } header: {
                     Text("Data import")
                 }
@@ -167,6 +168,7 @@ struct SettingsView: View {
                             backupURL = url
                         } catch { importMessage = "LifeLog couldn’t create a backup." }
                     } label: { Label("Create backup", systemImage: "externaldrive.badge.timemachine") }
+                        .accessibilityIdentifier("create-backup")
                     if let backupURL {
                         ShareLink(item: backupURL) { Label("Share backup", systemImage: "square.and.arrow.up") }
                     }

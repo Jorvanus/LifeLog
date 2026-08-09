@@ -15,6 +15,10 @@ struct DiagnosticsView: View {
     @State private var confirmingClear = false
     @State private var message: String?
 
+    private var visibleDiagnostics: [DiagnosticEvent] {
+        UITestFailureInjection.shouldShowEmptyDiagnostics ? [] : diagnostics
+    }
+
     /// A stay Core Location named but nobody has agreed with. The same test the review
     /// queue uses, so the two cannot report different numbers.
     private var provisionalCount: Int {
@@ -32,9 +36,10 @@ struct DiagnosticsView: View {
                 LabeledContent("Duplicate callbacks resolved", value: "\(supersededVisits.count)")
             }
             Section("Summary") {
-                LabeledContent("Events retained", value: "\(diagnostics.count)")
-                LabeledContent("Subsystems", value: "\(Set(diagnostics.map(\.subsystem)).count)")
-                LabeledContent("Slow or over-budget", value: "\(diagnostics.filter { $0.message.localizedCaseInsensitiveContains("slow") || $0.message.localizedCaseInsensitiveContains("over budget") }.count)")
+                LabeledContent("Events retained", value: "\(visibleDiagnostics.count)")
+                    .accessibilityIdentifier("diagnostics-events-count")
+                LabeledContent("Subsystems", value: "\(Set(visibleDiagnostics.map(\.subsystem)).count)")
+                LabeledContent("Slow or over-budget", value: "\(visibleDiagnostics.filter { $0.message.localizedCaseInsensitiveContains("slow") || $0.message.localizedCaseInsensitiveContains("over budget") }.count)")
             }
             // Both actions sit above the event list. The store keeps hundreds of
             // events, so anything below it is effectively unreachable without
@@ -43,11 +48,12 @@ struct DiagnosticsView: View {
                 Button {
                     createReport()
                 } label: { Label("Create performance report", systemImage: "chart.bar.doc.horizontal") }
+                    .accessibilityIdentifier("create-performance-report")
                 if let reportURL {
                     ShareLink(item: reportURL) { Label("Share performance report", systemImage: "square.and.arrow.up") }
                 }
                 Button("Clear diagnostics", role: .destructive) { confirmingClear = true }
-                    .disabled(diagnostics.isEmpty)
+                    .disabled(visibleDiagnostics.isEmpty)
                     .accessibilityIdentifier("clear-diagnostics")
             } footer: {
                 Text("Reports contain only aggregate timings, counts, app version, and device/OS class—not coordinates, place names, notes, or Health values.")
@@ -68,8 +74,12 @@ struct DiagnosticsView: View {
                      : "Empty unless detailed location diagnostics are on, in Settings.")
             }
             Section("Events") {
-                if diagnostics.isEmpty { Text("No diagnostic events recorded.").foregroundStyle(.secondary) }
-                ForEach(diagnostics) { event in
+                if visibleDiagnostics.isEmpty {
+                    Text("No diagnostic events recorded.")
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("diagnostics-empty-state")
+                }
+                ForEach(visibleDiagnostics) { event in
                     VStack(alignment: .leading, spacing: 3) {
                         HStack { Text(event.subsystem).font(.caption.bold()); Spacer(); Text(event.createdAt.formatted(date: .abbreviated, time: .shortened)).font(.caption2).foregroundStyle(.secondary) }
                         Text(event.message).font(.footnote)
@@ -94,9 +104,12 @@ struct DiagnosticsView: View {
 
     private func createReport() {
         ExportFileCleanup.removeExpired()
-        let data = Diagnostics.makePerformanceReport(events: diagnostics)
+        let data = Diagnostics.makePerformanceReport(events: visibleDiagnostics)
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("LifeLog-Performance-Report.json")
         do {
+            if UITestFailureInjection.shouldFailProtectedReport {
+                throw CocoaError(.fileWriteNoPermission)
+            }
             // Written with complete protection: the report is aggregate-only, but it
             // still describes this device and stays in the temporary directory until
             // it is shared or expires.

@@ -23,16 +23,27 @@ struct JournalCompactionView: View {
 
     var body: some View {
         Form {
-            Section("Imported journal") { LabeledContent("Records", value: "\(entries.count)"); LabeledContent("Estimated storage", value: ByteCountFormatter.string(fromByteCount: Int64(entries.reduce(0) { $0 + $1.note.count }), countStyle: .file)) }
+            Section("Imported journal") {
+                LabeledContent("Records") {
+                    Text("\(entries.count)").accessibilityIdentifier("journal-record-count")
+                }
+                if entries.isEmpty {
+                    Text("No imported journal history.")
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("journal-empty-state")
+                }
+                LabeledContent("Estimated storage", value: ByteCountFormatter.string(fromByteCount: Int64(entries.reduce(0) { $0 + $1.note.count }), countStyle: .file))
+            }
             Section("Preview") {
                 Picker("Retention", selection: $option) { ForEach(Option.allCases) { Text($0.title).tag($0) } }
                 LabeledContent("Records removed", value: "\(removable.count)")
                 LabeledContent("Estimated savings", value: ByteCountFormatter.string(fromByteCount: Int64(removable.reduce(0) { $0 + $1.note.count }), countStyle: .file))
             }
-            Section { Button("Apply cleanup", role: .destructive) { confirming = true }.disabled(removable.isEmpty) } footer: { Text("Keeping all data makes no changes. Cleanup is reversible only through the backup created immediately beforehand.") }
+            Section { Button("Apply cleanup", role: .destructive) { confirming = true }.disabled(removable.isEmpty).accessibilityIdentifier("apply-journal-cleanup") } footer: { Text("Keeping all data makes no changes. Cleanup is reversible only through the backup created immediately beforehand.") }
             if let backupURL { Section("Backup created") { ShareLink(item: backupURL) { Label("Share backup", systemImage: "square.and.arrow.up") } } }
         }
         .navigationTitle("Journal Storage")
+        .accessibilityIdentifier("journal-storage-screen")
         .confirmationDialog("Back up before cleanup?", isPresented: $confirming) {
             Button("Create backup and remove \(removable.count) records", role: .destructive) { apply() }
             Button("Cancel", role: .cancel) { }

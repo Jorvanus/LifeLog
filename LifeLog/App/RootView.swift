@@ -2,6 +2,12 @@ import SwiftUI
 import SwiftData
 
 struct RootView: View {
+    private enum UITestDestination: String, Identifiable {
+        case diagnostics
+        case journalStorage
+        var id: String { rawValue }
+    }
+
     @Environment(\.modelContext) private var context
     let modelContainer: ModelContainer
     @State private var recorder = LocationRecorder()
@@ -16,6 +22,14 @@ struct RootView: View {
         if ProcessInfo.processInfo.arguments.contains("-showInsights") { return 1 }
         let requested = UserDefaults.standard.integer(forKey: "showTab")
         return (0...3).contains(requested) ? requested : 0
+    }()
+    /// Deep links exist only for UI tests so long, accessibility-sized Settings forms
+    /// can exercise their lower-level screens without coordinate-based taps.
+    @State private var uiTestDestination: UITestDestination? = {
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("-uiTesting"), arguments.contains("-ui-test-open-diagnostics") { return .diagnostics }
+        if arguments.contains("-uiTesting"), arguments.contains("-ui-test-open-journal-storage") { return .journalStorage }
+        return nil
     }()
 
     var body: some View {
@@ -71,6 +85,14 @@ struct RootView: View {
             Diagnostics.budget(context, subsystem: "Launch", operation: "responsive first screen",
                                startedAt: startedAt,
                                budget: Diagnostics.PerformanceBudget.responsiveFirstScreen)
+        }
+        .sheet(item: $uiTestDestination) { destination in
+            NavigationStack {
+                switch destination {
+                case .diagnostics: DiagnosticsView()
+                case .journalStorage: JournalCompactionView()
+                }
+            }
         }
     }
 }

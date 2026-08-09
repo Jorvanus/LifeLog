@@ -29,6 +29,9 @@ struct LifeLogBackup: Codable {
 
 enum LocalBackupService {
     static func makeBackup(context: ModelContext, diagnostics: [DiagnosticEvent]) throws -> Data {
+        if UITestFailureInjection.shouldFailBackup {
+            throw CocoaError(.fileWriteUnknown)
+        }
         let visits = try context.fetch(FetchDescriptor<Visit>())
         let places = try context.fetch(FetchDescriptor<SavedPlace>())
         let corrections = try context.fetch(FetchDescriptor<VisitCorrection>())
