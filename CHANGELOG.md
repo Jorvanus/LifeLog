@@ -2,6 +2,10 @@
 
 ## 2026-08-09
 
+### Current roadmap and future release work clarified
+
+- Re-audited LifeLog’s open work against the current implementation, removing shipped items, prioritising the next five code changes, and separating private-app improvements from the additional privacy, quality and distribution work needed for an App Store release.
+
 ### Place decisions keep one explainable score
 
 - Saved Place/geofence evidence, Apple Maps distance and category, dwell duration, location accuracy, recurrence, time of day, and prior corrections now feed one place-scoring pipeline. Each visit keeps the component breakdown alongside its stored MapKit candidates for later inspection.
