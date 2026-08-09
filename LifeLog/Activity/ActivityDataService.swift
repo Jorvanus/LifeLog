@@ -44,7 +44,7 @@ final class ActivityDataService {
     /// still available for them; everything else has been asked once and cannot be
     /// asked again from inside the app.
     var unaskedHealthTypes: [String] = []
-    var motionStatus = "Not connected"
+    var motionStatus = "Not requested"
     var lastImport: Date?
     var lastError: String?
     var importProgress: ActivityImportProgress?
@@ -269,6 +269,46 @@ final class ActivityDataService {
         UserDefaults.standard.removeObject(forKey: WorkoutJourneys.splitWorkoutRepairKey)
         guard HKHealthStore.isHealthDataAvailable() else { return }
         startImport(healthDays: 30, motionDays: nil)
+    }
+
+    /// Core Motion has no separate authorization API. Its first history query is the
+    /// request, so keep that tiny query behind the explicit Settings action rather
+    /// than making a person wait for the next automatic import.
+    func requestMotionAccess() {
+        guard CMMotionActivityManager.isActivityAvailable() else {
+            motionStatus = "Unavailable on this device"
+            return
+        }
+        guard CMMotionActivityManager.authorizationStatus() == .notDetermined else {
+            refreshMotionStatus()
+            return
+        }
+        let end = Date.now
+        let interval = DateInterval(start: end.addingTimeInterval(-60), end: end)
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await sampleReader.motionRecords(in: interval)
+            } catch {
+                // A denial is represented by the system status below; only retain
+                // unexpected query failures as a diagnostic for the owner.
+                if CMMotionActivityManager.authorizationStatus() == .notDetermined {
+                    lastError = "Motion Activity access couldn’t be requested."
+                }
+            }
+            refreshMotionStatus()
+        }
+    }
+
+    /// Gives the owner a deliberate recovery path when the automatic six-hour sweep
+    /// was missed, without resetting the independent HealthKit anchors.
+    func refreshMotionHistory() {
+        guard CMMotionActivityManager.authorizationStatus() == .authorized else {
+            requestMotionAccess()
+            return
+        }
+        UserDefaults.standard.set(Date.now, forKey: motionRefreshKey)
+        startImport(healthDays: nil, motionDays: 7)
     }
 
     func cancelImport() {
@@ -573,11 +613,15 @@ final class ActivityDataService {
     }
 
     private func refreshMotionStatus() {
+        guard CMMotionActivityManager.isActivityAvailable() else {
+            motionStatus = "Unavailable on this device"
+            return
+        }
         motionStatus = switch CMMotionActivityManager.authorizationStatus() {
         case .authorized: "Connected"
         case .denied: "Denied"
         case .restricted: "Restricted"
-        case .notDetermined: "Not connected"
+        case .notDetermined: "Not requested"
         @unknown default: "Unknown"
         }
     }

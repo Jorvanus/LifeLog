@@ -41,6 +41,23 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(element("saved-places-screen").waitForExistence(timeout: 5))
     }
 
+    /// HealthKit and Core Motion fail or need recovery in different places. Keeping
+    /// their controls independently addressable prevents a Health button silently
+    /// becoming the only apparent way to fix Motion access.
+    func testHealthAndMotionSetupHaveSeparateControls() {
+        app.tabBars.buttons["Settings"].tap()
+        XCTAssertTrue(app.staticTexts["Apple Health"].waitForExistence(timeout: 5))
+        XCTAssertTrue(element("reimport-health").waitForExistence(timeout: 5))
+
+        let motion = app.staticTexts["Motion Activity"]
+        var attempts = 0
+        while !motion.exists && attempts < 6 {
+            app.swipeUp()
+            attempts += 1
+        }
+        XCTAssertTrue(motion.waitForExistence(timeout: 5))
+    }
+
     /// Editing an activity pushes onto the Settings stack, so the editor keeps a
     /// working back button and offers Save without a redundant Cancel.
     func testEditingAnActivityPushesOntoTheSettingsStack() {

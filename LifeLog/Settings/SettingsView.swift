@@ -2,6 +2,7 @@ import SwiftUI
 import CoreLocation
 import SwiftData
 import UniformTypeIdentifiers
+import UIKit
 
 struct SettingsView: View {
     @Environment(\.modelContext) private var context
@@ -22,15 +23,12 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Location logging") {
-                    adaptiveValue("Permission", value: permissionName)
-                    adaptiveToggle("Background location logging", isOn: backgroundLoggingBinding)
-                    if recorder.authorization == .notDetermined {
-                        Button("Allow while using") { recorder.requestPermission() }
-                    }
-                    if recorder.authorization == .authorizedAlways || recorder.authorization == .authorizedWhenInUse {
-                        Button("Refresh Current Location") { recorder.refreshCurrentLocation() }
-                    }
+                Section {
+                    locationLoggingControls
+                } header: {
+                    Text("Location logging")
+                } footer: {
+                    Text(locationLoggingExplanation)
                 }
                 Section {
                     // "Edit Current Location" lived here and opened `VisitEditor` on the
@@ -71,41 +69,20 @@ struct SettingsView: View {
                     Text("Set locations as Home, Work, or another place. LifeLog will reuse the label, category, and activity whenever you return.")
                 }
                 Section {
-                    adaptiveValue("Apple Health", value: activityData.healthStatus)
-                    adaptiveValue("Motion Activity", value: activityData.motionStatus)
-                    // Both sources are asked for on first run and collected from then
-                    // on, so there is no connect button in the ordinary case. It
-                    // appears only when Health is not connected, because that state
-                    // used to be a dead end: the label said "Not connected" and
-                    // nothing on the screen could do anything about it.
-                    if !activityData.unaskedHealthTypes.isEmpty {
-                        Button("Connect Apple Health") {
-                            Task { await activityData.requestHealthAccess() }
-                        }
-                        .accessibilityIdentifier("connect-health")
-                        // iOS shows a sheet only for categories it has never asked
-                        // about, so saying which they are explains why the sheet is
-                        // shorter than the list above.
-                        Text("Not yet asked for: \(activityData.unaskedHealthTypes.formatted(.list(type: .and))). Only these will appear on the permission sheet — iOS never re-asks for the rest.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    } else if activityData.healthStatus != "Connected"
-                                && activityData.healthStatus != "Unavailable on this device" {
-                        Text("Open the Health app → Sharing → Apps → LifeLog to change what LifeLog can read.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    if !activityData.isImporting {
-                        Button("Re-import Health history") {
-                            activityData.reimportHealthHistory()
-                        }
-                        .accessibilityIdentifier("reimport-health")
-                        Text("Reads the last 30 days again from the beginning. Use it after granting Workout Routes, to fetch the paths of walks already imported without one. Existing entries are updated rather than duplicated.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    if activityData.motionStatus == "Denied" || activityData.motionStatus == "Restricted" {
-                        Text("Turn Motion & Fitness back on in the iPhone Settings app, under Privacy & Security.")
-                            .font(.caption).foregroundStyle(.orange)
-                            .accessibilityIdentifier("data-access-denied")
-                    }
+                    appleHealthControls
+                } header: {
+                    Text("Apple Health")
+                } footer: {
+                    Text("Reads sleep, Apple Watch workouts, workout routes, and steps. LifeLog never writes to Apple Health.")
+                }
+                Section {
+                    motionActivityControls
+                } header: {
+                    Text("Motion Activity")
+                } footer: {
+                    Text("Reads the iPhone’s walking, running, cycling, and vehicle history. The iPhone retains roughly one week, so LifeLog collects it regularly.")
+                }
+                Section {
                     if let progress = activityData.importProgress {
                         VStack(alignment: .leading, spacing: 9) {
                             HStack {
@@ -143,9 +120,7 @@ struct SettingsView: View {
                         adaptiveValue("Last import", value: imported.formatted(date: .abbreviated, time: .shortened))
                     }
                 } header: {
-                    Text("iPhone & Apple Watch")
-                } footer: {
-                    Text("Collected automatically, in small batches, while you use LifeLog and when Apple Health has something new. Sleep, Apple Watch workouts, and Watch walking come from Apple Health. Walking, running, cycling, and vehicle travel come from the iPhone’s motion history, which the iPhone keeps for about a week — so LifeLog gathers it regularly rather than waiting to be asked.")
+                    Text("Activity imports")
                 }
                 Section {
                     adaptiveToggle("Detailed location diagnostics", isOn: $detailedLocationDiagnostics)
@@ -232,6 +207,123 @@ struct SettingsView: View {
                     Text(importMessage ?? "")
                 }
         }
+    }
+
+    @ViewBuilder
+    private var locationLoggingControls: some View {
+        switch recorder.authorization {
+        case .notDetermined:
+            Button {
+                recorder.requestPermission()
+            } label: {
+                Label("Enable location logging", systemImage: "location.fill")
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.borderedProminent)
+            .accessibilityIdentifier("enable-location-logging")
+
+        case .authorizedWhenInUse, .authorizedAlways:
+            adaptiveValue("Location access", value: permissionName)
+            adaptiveToggle("Background location logging", isOn: backgroundLoggingBinding)
+            Button("Refresh current location") { recorder.refreshCurrentLocation() }
+
+        case .denied:
+            adaptiveValue("Location access", value: permissionName)
+            Button(action: openAppSettings) {
+                Label("Open iPhone Settings", systemImage: "gear")
+            }
+            .accessibilityIdentifier("open-location-settings")
+
+        case .restricted:
+            adaptiveValue("Location access", value: permissionName)
+
+        @unknown default:
+            adaptiveValue("Location access", value: permissionName)
+        }
+    }
+
+    private var locationLoggingExplanation: String {
+        switch recorder.authorization {
+        case .notDetermined:
+            "LifeLog first asks to use your location while the app is open. Background recording remains off until you choose it separately."
+        case .authorizedWhenInUse where recorder.isBackgroundLoggingEnabled:
+            "Background visits require Always Location access. LifeLog has requested it; if iOS does not offer the upgrade, open iPhone Settings → Privacy & Security → Location Services → LifeLog."
+        case .authorizedWhenInUse:
+            "LifeLog can refresh while it is open. Turn on background logging to record arrivals and departures when the app is not open; iOS will then ask for Always Location access."
+        case .authorizedAlways:
+            "Always Location access lets background logging record arrivals and departures when LifeLog is not open. Turn the switch off whenever you want foreground-only location use."
+        case .denied:
+            "Location access is off. Open iPhone Settings to allow it before LifeLog can identify where visits happened."
+        case .restricted:
+            "Location access is restricted by this iPhone’s settings and cannot be enabled from LifeLog."
+        @unknown default:
+            "Location access controls whether LifeLog can identify where visits happened."
+        }
+    }
+
+    @ViewBuilder
+    private var appleHealthControls: some View {
+        adaptiveValue("Status", value: activityData.healthStatus)
+        if !activityData.unaskedHealthTypes.isEmpty {
+            Button("Connect Apple Health") {
+                Task { await activityData.requestHealthAccess() }
+            }
+            .accessibilityIdentifier("connect-health")
+            Text("Not yet asked for: \(activityData.unaskedHealthTypes.formatted(.list(type: .and))). Only these appear on the permission sheet — iOS does not re-ask for the rest.")
+                .font(.caption).foregroundStyle(.secondary)
+        } else if activityData.healthStatus != "Connected"
+                    && activityData.healthStatus != "Unavailable on this device" {
+            Button("Open Apple Health") { openAppleHealth() }
+                .accessibilityIdentifier("open-health")
+            Text("In Health, go to Sharing → Apps → LifeLog to review what LifeLog can read.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        if !activityData.isImporting {
+            Button("Re-import Health history") { activityData.reimportHealthHistory() }
+                .accessibilityIdentifier("reimport-health")
+            Text("Reads the last 30 days again. Use it after granting Workout Routes to add paths to walks already imported without one; existing entries are updated, not duplicated.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var motionActivityControls: some View {
+        adaptiveValue("Status", value: activityData.motionStatus)
+        switch activityData.motionStatus {
+        case "Not requested":
+            Button("Enable Motion Activity") { activityData.requestMotionAccess() }
+                .accessibilityIdentifier("enable-motion-activity")
+            Text("iOS asks when LifeLog first reads this history.")
+                .font(.caption).foregroundStyle(.secondary)
+        case "Denied":
+            Button("Open iPhone Settings") { openAppSettings() }
+                .accessibilityIdentifier("open-motion-settings")
+            Text("Turn on Motion & Fitness for LifeLog in iPhone Settings before it can add movement to your timeline.")
+                .font(.caption).foregroundStyle(.secondary)
+        case "Restricted":
+            Text("Motion & Fitness is restricted by this iPhone’s settings and cannot be enabled from LifeLog.")
+                .font(.caption).foregroundStyle(.secondary)
+        case "Connected":
+            if !activityData.isImporting {
+                Button("Refresh Motion Activity") { activityData.refreshMotionHistory() }
+                    .accessibilityIdentifier("refresh-motion-activity")
+            }
+        default:
+            Text("Motion Activity status is unavailable right now. Try reopening LifeLog or check iPhone Settings.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private func openAppleHealth() {
+        guard let healthURL = URL(string: "x-apple-health://") else { return }
+        UIApplication.shared.open(healthURL) { opened in
+            if !opened { openAppSettings() }
+        }
+    }
+
+    private func openAppSettings() {
+        guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(settingsURL)
     }
 
     @ViewBuilder

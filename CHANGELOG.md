@@ -2,6 +2,14 @@
 
 ## 2026-08-09
 
+### Apple Health and Motion Activity now have separate setup paths
+
+- Settings now gives Apple Health and Motion Activity their own status, explanation, and recovery controls. Apple Health opens its permissions in the Health app and can re-import its history independently; Motion Activity can be enabled with its own prompt, refreshed independently, or recovered through iPhone Settings when denied.
+
+### Location permission setup now starts with one clear choice
+
+- Settings initially shows one **Enable location logging** action instead of a permission status, a premature background switch and a differently worded permission button. Background logging appears only after foreground access succeeds, with an explanation that recording while LifeLog is closed requires Always access. Denied access now has a direct route to iPhone Settings, while restricted access is explained without offering a control that cannot work.
+
 ### Largest text sizes keep the important controls readable
 
 - Activities gives its text the full row and removes the decorative seven-day sparkline at accessibility sizes, instead of breaking names and statistics into narrow fragments.
