@@ -71,6 +71,12 @@ final class Visit {
     var note: String
     var source: String
     var recognitionConfidence: String?
+    /// Apple Maps' durable place identifier when Maps named this visit. This is the
+    /// primary identity for future matching; names remain only for old/manual data.
+    var mapsIdentifier: String?
+    /// Where the current place fields came from: `maps`, `saved-place`, `manual`,
+    /// or `name-fallback`. It makes identifier-less history explainable.
+    var placeFieldProvenance: String?
     var candidateData: Data?
     /// The originating HealthKit sample UUID(s) for a health-imported visit (a merged
     /// sleep session can span several samples). Lets a later anchored-query deletion
@@ -86,6 +92,7 @@ final class Visit {
          inferredActivity: String = "Visiting", userActivity: String? = nil,
          note: String = "", source: String = "automatic",
          recognitionConfidence: String? = nil, candidateData: Data? = nil,
+         mapsIdentifier: String? = nil, placeFieldProvenance: String? = nil,
          healthKitSampleIDs: [UUID]? = nil, routeData: Data? = nil) {
         self.arrival = arrival; self.departure = departure
         self.latitude = latitude; self.longitude = longitude
@@ -95,6 +102,8 @@ final class Visit {
         self.note = TextSafety.clean(note, maximumLength: 2_000)
         self.source = TextSafety.clean(source, maximumLength: 40)
         self.recognitionConfidence = recognitionConfidence.map { TextSafety.clean($0, maximumLength: 20) }
+        self.mapsIdentifier = mapsIdentifier.map { TextSafety.clean($0, maximumLength: 120) }
+        self.placeFieldProvenance = placeFieldProvenance.map { TextSafety.clean($0, maximumLength: 30) }
         self.candidateData = candidateData
         self.healthKitSampleIDs = healthKitSampleIDs
         self.routeData = routeData

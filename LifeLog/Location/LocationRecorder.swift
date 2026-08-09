@@ -413,7 +413,9 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         let item = Visit(arrival: safeArrival, departure: inferredDeparture,
                          latitude: coordinate.latitude, longitude: coordinate.longitude,
                          placeName: name, inferredActivity: activity,
-                         recognitionConfidence: saved == nil ? nil : "learned")
+                         recognitionConfidence: saved == nil ? nil : "learned",
+                         mapsIdentifier: saved?.mapsIdentifier,
+                         placeFieldProvenance: saved == nil ? nil : "saved-place")
         context.insert(item)
         _ = PlaceScoreLifecycle.rescore(
             item, stage: .arrival, context: context, savedPlaces: savedPlaceCache,
@@ -706,10 +708,14 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                    !Visit.isPlaceholderName(match.name) {
                     visit.placeName = match.name
                     visit.inferredActivity = match.suggestedActivity
+                    visit.mapsIdentifier = match.mapsIdentifier
+                    visit.placeFieldProvenance = match.mapsIdentifier == nil ? "name-fallback" : "maps"
                     cache(match, context: context)
                 } else if let likely = evaluation.selected {
                     visit.placeName = likely.name
                     visit.inferredActivity = likely.suggestedActivity
+                    visit.mapsIdentifier = likely.mapsIdentifier
+                    visit.placeFieldProvenance = likely.mapsIdentifier == nil ? "name-fallback" : "maps"
                 } else {
                     reverseGeocode(visit)
                     return
@@ -759,6 +765,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 let resolvedName = item.name ?? item.address?.shortAddress ?? item.address?.fullAddress ?? Visit.unknownPlaceName
                 visit.placeName = TextSafety.clean(resolvedName, maximumLength: 120)
                 visit.recognitionConfidence = "low"
+                visit.placeFieldProvenance = "name-fallback"
                 LocationDiagnostics.record(.promoted, subject: "Unnamed stay",
                                            reason: "no Maps match; reverse geocoding supplied a name",
                                            evidence: visit.placeName, context: context)
@@ -778,6 +785,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         guard visit.needsCategorisation else { return }
         visit.placeName = Visit.unknownPlaceName
         visit.recognitionConfidence = "low"
+        visit.placeFieldProvenance = "name-fallback"
         visit.inferredActivity = "Visiting"
         _ = try? ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "unknown place")
         save(context)

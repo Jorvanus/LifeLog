@@ -6,6 +6,10 @@ import Testing
 /// These tests deliberately write with the unversioned schema used by the current
 /// on-device release, then reopen the same SQLite copy through the versioned plan.
 /// Keep this fixture representative when the schema grows.
+// Historical schemas intentionally contain different model classes with the same
+// entity names. SwiftData registers model metadata process-wide, so these fixture
+// migrations must not be constructed concurrently by Swift Testing.
+@Suite(.serialized)
 struct SchemaMigrationTests {
     @Test("Store recovery exports do not modify the original files")
     func exportsRecoveryCopyWithoutDeletingSource() throws {
@@ -282,10 +286,10 @@ struct SchemaMigrationTests {
     }
 
     /// Opens at the newest version, so every fixture in this file is carried all the
-    /// way to what the app actually ships. Left at V4 while the app moved to V5, these
+    /// way to what the app actually ships. Left at V5 while the app moved to V6, these
     /// tests would keep passing without once exercising the new stage.
     private func openVersionedStore(at url: URL) throws -> ModelContainer {
-        let schema = Schema(versionedSchema: LifeLogSchemaV5.self)
+        let schema = Schema(versionedSchema: LifeLogSchemaV6.self)
         let configuration = ModelConfiguration(
             "LifeLogMigrationFixture", schema: schema, url: url,
             allowsSave: true, cloudKitDatabase: .none

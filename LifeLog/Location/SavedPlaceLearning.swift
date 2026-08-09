@@ -99,7 +99,13 @@ enum SavedPlaceLearning {
             nearby.filter { NameKey.matching($0.place.name) == key }
                 .min { $0.distance < $1.distance }?.place
         }
-        let existing = previousMatch
+        // Maps identity wins whenever both sides have it. NameKey remains below for
+        // migrated visits and hand-created places that cannot carry an identifier.
+        let identifierMatch = visit.mapsIdentifier.flatMap { identifier in
+            nearby.first { $0.place.mapsIdentifier == identifier }?.place
+        }
+        let existing = identifierMatch
+            ?? previousMatch
             ?? nearby.filter { NameKey.matching($0.place.name) == currentKey }
                 .min { $0.distance < $1.distance }?.place
             ?? nearby.filter { $0.distance <= 75 }
@@ -119,7 +125,8 @@ enum SavedPlaceLearning {
                 latitude: visit.latitude,
                 longitude: visit.longitude,
                 radius: radius,
-                defaultActivity: activity
+                defaultActivity: activity,
+                mapsIdentifier: visit.mapsIdentifier
             )
             context.insert(created)
             place = created
@@ -162,11 +169,15 @@ enum SavedPlaceLearning {
                 confidence: visit.recognitionConfidence ?? "pending"
             )
             let visitLocation = CLLocation(latitude: visit.latitude, longitude: visit.longitude)
-            guard savedLocation.distance(from: visitLocation) <= place.radius else { continue }
+            let identifierMatches = place.mapsIdentifier != nil && place.mapsIdentifier == visit.mapsIdentifier
+            // Identifier match is authoritative; coordinate/name fallback keeps V5
+            // history and manually pinned places working after the V6 migration.
+            guard identifierMatches || savedLocation.distance(from: visitLocation) <= place.radius else { continue }
             // A Saved Place is helpful evidence for unresolved history, but it is
             // never allowed to silently revise a label the person explicitly chose.
             guard visit.recognitionConfidence?.lowercased() != "confirmed" else { continue }
             visit.placeName = place.name
+            if identifierMatches { visit.placeFieldProvenance = "saved-place" }
             // A saved-place default is a future suggestion, not a permanent label —
             // the same location can be Breakfast one day and Lunch the next — so
             // only the inferred activity is refreshed here. Any manual

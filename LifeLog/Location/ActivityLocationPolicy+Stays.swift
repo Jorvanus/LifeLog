@@ -142,8 +142,17 @@ extension ActivityLocationPolicy {
         let hostEnd = host.departure ?? now
         let candidateEnd = candidate.departure ?? now
         guard host.arrival < candidateEnd, hostEnd > candidate.arrival else { return false }
-        guard !Visit.isPlaceholderName(host.placeName), !Visit.isPlaceholderName(candidate.placeName),
-              NameKey.matching(host.placeName) == NameKey.matching(candidate.placeName) else { return false }
+        let sameIdentity: Bool
+        if let hostIdentifier = host.mapsIdentifier, let candidateIdentifier = candidate.mapsIdentifier {
+            sameIdentity = hostIdentifier == candidateIdentifier
+        } else {
+            // Records before V6 and hand-pinned places have no Maps identifier.
+            // NameKey is deliberately retained only as their compatibility fallback.
+            sameIdentity = !Visit.isPlaceholderName(host.placeName) &&
+                !Visit.isPlaceholderName(candidate.placeName) &&
+                NameKey.matching(host.placeName) == NameKey.matching(candidate.placeName)
+        }
+        guard sameIdentity else { return false }
         return CLLocation(latitude: host.latitude, longitude: host.longitude)
             .distance(from: CLLocation(latitude: candidate.latitude, longitude: candidate.longitude)) <= 250
     }

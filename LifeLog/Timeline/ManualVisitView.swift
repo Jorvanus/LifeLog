@@ -125,7 +125,8 @@ struct ManualVisitView: View {
                              placeName: safePlace,
                              inferredActivity: safeActivity.isEmpty ? inferred : safeActivity,
                              userActivity: safeActivity.isEmpty ? nil : safeActivity, source: "manual",
-                             recognitionConfidence: resolution.confidence))
+                             recognitionConfidence: resolution.confidence,
+                             placeFieldProvenance: "manual"))
         do {
             _ = try ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "manual visit")
             try context.save()

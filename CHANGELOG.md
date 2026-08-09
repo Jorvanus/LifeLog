@@ -2,6 +2,10 @@
 
 ## 2026-08-09
 
+### Maps identity is now retained on visits
+
+- Migrated the local timeline to V6 so Maps-resolved visits preserve Apple Maps identifiers and their source. Matching now prefers those identifiers, while older, manually pinned, and identifier-less records safely retain the existing name fallback and local backups round-trip both forms.
+
 ### Location resolution now protects every timeline mutation
 
 - Arrivals, departures, corrections, Saved Place changes, and relaunch recovery now run one location resolver before data is displayed. Diagnostics validate one current resolved stay, non-overlapping positive durations, hidden superseded callbacks, and preserved manual corrections.

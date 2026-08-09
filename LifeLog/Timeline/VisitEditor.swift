@@ -589,6 +589,7 @@ struct VisitEditor: View {
             // A manual location/activity correction is stronger evidence than a
             // delayed callback, Maps result, or Saved Place default.
             visit.recognitionConfidence = "confirmed"
+            visit.placeFieldProvenance = "manual"
         }
         if forceLearning || corrected {
             let result = try SavedPlaceLearning.upsert(
