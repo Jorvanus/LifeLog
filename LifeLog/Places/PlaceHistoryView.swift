@@ -83,6 +83,58 @@ struct PlaceHistoryView: View {
     }
 }
 
+/// The three headline numbers a place's own history can answer: when a visit is
+/// most likely to start, how long a typical stay runs, and how much time the
+/// place has claimed in total.
+private struct PlaceVisitAnalytics {
+    let peakHourLabel: String?
+    let averageStayLabel: String?
+    let lifetimeLabel: String
+
+    private struct WeekdayHour: Hashable { let weekday: Int; let hour: Int }
+
+    /// Below this many visits sharing the same weekday and hour, "usually" would
+    /// be reading a pattern into what could easily be one or two coincidences —
+    /// the same reasoning `ArchiveRetrospectives.minimumOccasionsForAGap` uses.
+    static let minimumOccasionsForPeakHour = 3
+
+    static func make(from visits: [Visit]) -> PlaceVisitAnalytics {
+        let calendar = Calendar.current
+        var slotCounts: [WeekdayHour: Int] = [:]
+        var representativeDate: [WeekdayHour: Date] = [:]
+        for visit in visits {
+            let components = calendar.dateComponents([.weekday, .hour], from: visit.arrival)
+            guard let weekday = components.weekday, let hour = components.hour else { continue }
+            let slot = WeekdayHour(weekday: weekday, hour: hour)
+            slotCounts[slot, default: 0] += 1
+            if representativeDate[slot] == nil { representativeDate[slot] = visit.arrival }
+        }
+
+        var peakHourLabel: String?
+        if let (slot, count) = slotCounts.max(by: { $0.value < $1.value }),
+           count >= minimumOccasionsForPeakHour,
+           let sample = representativeDate[slot],
+           let hourDate = calendar.date(bySettingHour: slot.hour, minute: 0, second: 0, of: sample) {
+            let weekdayName = sample.formatted(.dateTime.weekday(.abbreviated))
+            let timeString = hourDate.formatted(date: .omitted, time: .shortened)
+            peakHourLabel = "Usually \(weekdayName) at \(timeString)"
+        }
+
+        // Duration falls back to "now" for a visit still open, which would grow
+        // every time this screen redraws. Only a visit that has actually ended
+        // has a stay length worth averaging.
+        let completed = visits.filter { $0.departure != nil }
+        let averageStayLabel: String? = completed.isEmpty ? nil :
+            "Avg stay: \(formattedDuration(completed.reduce(0) { $0 + $1.duration } / Double(completed.count)))"
+
+        let totalHours = Int((visits.reduce(0) { $0 + $1.duration } / 3600).rounded())
+        let lifetimeLabel = "\(totalHours) \(totalHours == 1 ? "hour" : "hours") logged (\(visits.count) \(visits.count == 1 ? "visit" : "visits"))"
+
+        return PlaceVisitAnalytics(peakHourLabel: peakHourLabel, averageStayLabel: averageStayLabel,
+                                    lifetimeLabel: lifetimeLabel)
+    }
+}
+
 private struct PlaceHistoryDetail: View {
     @Environment(\.modelContext) private var context
     let placeName: String
@@ -92,6 +144,8 @@ private struct PlaceHistoryDetail: View {
     @State private var message: String?
     @State private var breakdown: [(band: PlaceTimeBand, activities: [(String, Int)])] = []
     @State private var matching: [Visit] = []
+
+    private var analytics: PlaceVisitAnalytics { PlaceVisitAnalytics.make(from: matching) }
 
     /// A person's own choice is never overwritten by a bulk change.
     private var protectedCount: Int {
@@ -104,6 +158,19 @@ private struct PlaceHistoryDetail: View {
 
     var body: some View {
         Form {
+            if !matching.isEmpty {
+                Section {
+                    Label(analytics.lifetimeLabel, systemImage: "mappin.and.ellipse")
+                    if let averageStayLabel = analytics.averageStayLabel {
+                        Label(averageStayLabel, systemImage: "hourglass")
+                    }
+                    if let peakHourLabel = analytics.peakHourLabel {
+                        Label(peakHourLabel, systemImage: "clock.fill")
+                    }
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("place-history-analytics")
+            }
             Section("What this place looks like now") {
                 ForEach(breakdown, id: \.band) { entry in
                     if !entry.activities.isEmpty {
