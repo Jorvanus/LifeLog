@@ -25,7 +25,7 @@ extension ActivityLocationPolicy {
     /// Movement is useful as a travel segment only when it sits between two destinations.
     /// This also hides stale records that were imported before Core Location delivered
     /// the surrounding visits.
-    static func isBetweenDestinations(_ activity: Visit, locationVisits: [Visit], now: Date = .now) -> Bool {
+    nonisolated static func isBetweenDestinations(_ activity: Visit, locationVisits: [Visit], now: Date = .now) -> Bool {
         guard isMovementActivity(activity) else { return true }
         let activityEnd = activity.departure ?? now
         guard activityEnd > activity.arrival else { return false }
@@ -42,7 +42,7 @@ extension ActivityLocationPolicy {
         return hasPreviousDestination && hasNextDestination
     }
 
-    static func shouldShow(_ visit: Visit, alongside allVisits: [Visit], now: Date = .now) -> Bool {
+    nonisolated static func shouldShow(_ visit: Visit, alongside allVisits: [Visit], now: Date = .now) -> Bool {
         shouldShow(
             visit,
             locationVisits: allVisits.filter(isLocationVisit),
@@ -53,7 +53,7 @@ extension ActivityLocationPolicy {
 
     /// Use this overload in batch processing so the caller can filter locations once
     /// instead of rescanning the entire timeline for every movement record.
-    static func shouldShow(_ visit: Visit, locationVisits: [Visit], now: Date = .now) -> Bool {
+    nonisolated static func shouldShow(_ visit: Visit, locationVisits: [Visit], now: Date = .now) -> Bool {
         // A started workout does not need a destination either side to be believed.
         // The person said it happened, and its route has not said otherwise.
         if isDeclaredJourney(visit, stays: locationVisits) { return true }
@@ -103,7 +103,7 @@ extension ActivityLocationPolicy {
 
     /// Insights retains every valid between-destination travel segment, including
     /// short commutes, so time spent travelling is not lost from the day total.
-    static func shouldShowInInsights(_ visit: Visit, locationVisits: [Visit], now: Date = .now) -> Bool {
+    nonisolated static func shouldShowInInsights(_ visit: Visit, locationVisits: [Visit], now: Date = .now) -> Bool {
         guard !isSupersededLocation(visit) else { return false }
         return shouldShow(visit, locationVisits: locationVisits, now: now)
     }

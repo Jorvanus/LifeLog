@@ -159,10 +159,19 @@ struct InsightsSnapshot {
     /// overlapping stays exactly the way the donut does. Counting a week by adding up
     /// visit durations instead would double-count every night that an open stay and a
     /// sleep record both claim, and the two charts would disagree about the same day.
-    static func categoryHours(visits: [Visit], range: DateInterval, now: Date) -> [String: Double] {
+    ///
+    /// `commutes` lets a caller resolving many ranges over the same `visits` (weekly
+    /// trend buckets, for instance) compute it once instead of once per range —
+    /// `CommuteDetection.commutes` sorts the whole array and does not depend on
+    /// `range` at all, so recomputing it per week is pure waste. `nil` computes it
+    /// fresh, unchanged from before.
+    // nonisolated so InsightsTrendAggregator can call this from inside its own
+    // @ModelActor isolation — it touches no UI state, only the Visit array it's given.
+    nonisolated static func categoryHours(visits: [Visit], range: DateInterval, now: Date,
+                                          commutes: [Commute]? = nil) -> [String: Double] {
         let locationVisits = visits.filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
         let segments = makeSegments(visits: visits, locationVisits: locationVisits,
-                                    range: range, now: now)
+                                    range: range, now: now, precomputedCommutes: commutes)
         var totals: [String: Double] = [:]
         for segment in segments where !segment.isUnlogged {
             totals[segment.category, default: 0] += segment.hours
@@ -174,15 +183,17 @@ struct InsightsSnapshot {
     /// Each weekday is averaged over the number of occurrences in `range`, so the
     /// chart describes a usual week rather than making a month look four times busier
     /// than a week simply because it contains four Mondays.
-    static func weekdayPatterns(visits: [Visit], range: DateInterval, now: Date) -> [WeekdayPattern] {
+    nonisolated static func weekdayPatterns(visits: [Visit], range: DateInterval, now: Date,
+                                            commutes: [Commute]? = nil) -> [WeekdayPattern] {
         let locationVisits = visits.filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
         let segments = makeSegments(visits: visits, locationVisits: locationVisits,
-                                    range: range, now: now)
+                                    range: range, now: now, precomputedCommutes: commutes)
         return makeWeekdayPatterns(from: segments, weekdayOccurrences: weekdayOccurrences(in: range))
     }
 
-    private static func makeSegments(visits: [Visit], locationVisits: [Visit],
-                                     range: DateInterval, now: Date) -> [InsightSegment] {
+    nonisolated private static func makeSegments(visits: [Visit], locationVisits: [Visit],
+                                                  range: DateInterval, now: Date,
+                                                  precomputedCommutes: [Commute]? = nil) -> [InsightSegment] {
         let orderedVisits = visits
             .filter { $0.overlaps(range, now: now) && $0.resolutionState != .ignored && $0.resolutionState != .superseded }
             .filter { ActivityLocationPolicy.shouldShowInInsights($0, locationVisits: locationVisits, now: now) }
@@ -201,7 +212,7 @@ struct InsightsSnapshot {
         // 6,000 rows take several seconds. Keep only visits active at the
         // current boundary while walking the already sorted timeline.
         // Derived once for the window rather than per boundary slice.
-        let commutes = CommuteDetection.commutes(in: visits, now: now)
+        let commutes = precomputedCommutes ?? CommuteDetection.commutes(in: visits, now: now)
         let arrivalSorted = orderedVisits.sorted { $0.arrival < $1.arrival }
         var nextArrival = 0
         var activeVisits: [Visit] = []
@@ -302,7 +313,7 @@ struct InsightsSnapshot {
     ///
     /// Grouped by category rather than by activity so the bars carry the same colours
     /// as the donut and Top Activities, and one day's "Shopping" stacks with another's.
-    private static func makeWeekdayPatterns(from segments: [InsightSegment],
+    nonisolated private static func makeWeekdayPatterns(from segments: [InsightSegment],
                                             weekdayOccurrences: [Int]? = nil) -> [WeekdayPattern] {
         let calendar = Calendar.current
         var totals = Array(repeating: 0.0, count: 7)
@@ -326,7 +337,7 @@ struct InsightsSnapshot {
         }
     }
 
-    private static func weekdayOccurrences(in range: DateInterval, calendar: Calendar = .current) -> [Int] {
+    nonisolated private static func weekdayOccurrences(in range: DateInterval, calendar: Calendar = .current) -> [Int] {
         var counts = Array(repeating: 0, count: 7)
         var day = calendar.startOfDay(for: range.start)
         while day < range.end {

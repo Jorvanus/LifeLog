@@ -125,9 +125,24 @@ private, single-phone app; the App Store work is deliberately separate below.
 
 ## Insight enhancements
 
-- [ ] Move trend/habit aggregation off the main actor or pre-aggregate it, then
+- [x] **Move trend/habit aggregation off the main actor or pre-aggregate it, then
   safely widen the current twelve-week horizon to a year where it genuinely
-  improves the answer.
+  improves the answer.** Done 2026-08-09 with both halves, not just the bigger
+  number. `InsightsTrendAggregator`, a `@ModelActor` mirroring `ActivityImportActor`'s
+  own isolation, fetches and resolves the season entirely off the main actor; only
+  the `Sendable` `WeeklyTotals`/`WeekdayPattern` results cross back. That's what
+  makes the wider window affordable: `InsightsTrends.habitWeeks` (52) is what
+  `habits` now reads, while the trend lines and weekly rhythm stay at the original
+  `weeks` (12) — a line chart or weekday average over a year reads worse than one
+  scoped to a season, and neither needed to widen for `habits`' "first this year"
+  claims to become honest. Also fixed the redundant O(weeks × N) cost this would
+  otherwise have made ~4x worse: `CommuteDetection.commutes` doesn't depend on which
+  week is being segmented, but was being recomputed identically once per week (and
+  a third time for the weekday chart) — now resolved once per load and threaded
+  through. Regression test (`widerWindowFindsAReturnANarrowerWindowMisses`)
+  reproduces the exact failure mode: a real return 20 weeks back reads as "First
+  entertainment in 12 weeks" (implying no history) with the old window, "Back to
+  entertainment" (correct) with the new one.
 
 - [ ] Add only useful archive retrospectives: first/last visit to a place,
   notable longest absence, and restrained year-over-year comparison. “On this

@@ -46,20 +46,28 @@ struct InsightsTrendSeries: Identifiable, Equatable {
     var peak: Double { points.map(\.hours).max() ?? 0 }
 }
 
-@MainActor
 enum InsightsTrends {
-    /// How many weeks of history the charts show, and therefore how far back the
-    /// fetch has to reach. Deliberately a season rather than the whole archive: this
-    /// runs on the main actor beside a nine-year journal, and twelve weeks is enough
-    /// to see a trend without loading years to draw one line.
+    /// How many weeks of history the trend lines and weekly rhythm display.
+    /// Deliberately a season, not because a wider fetch is unaffordable any more
+    /// (see `habitWeeks`), but because a line chart or a weekday average over a full
+    /// year reads worse than one scoped to a season a person can actually recall.
     static let weeks = 12
+
+    /// How many weeks of history `habits` is given to look through. Wider than
+    /// `weeks` on purpose: "first time this year" and "most in a year" are claims
+    /// that need a year in hand to make honestly, not just a season — the previous
+    /// twelve-week limit was a main-actor cost concern, not a real limit on how much
+    /// history is worth reading; `InsightsTrendAggregator` fetches and resolves this
+    /// off the main actor, so widening it costs nothing on the interaction path.
+    static let habitWeeks = 52
 
     /// A difference smaller than this is not a change, it is a week.
     static let noticeableChange = 0.1
 
-    /// The interval the trend charts need loaded, ending at the most recently
-    /// completed week so a part-finished week cannot masquerade as a collapse.
-    static func range(endingAt now: Date, calendar: Calendar = .current) -> DateInterval {
+    /// The interval that needs loading for `weeks` of history, ending at the most
+    /// recently completed week so a part-finished week cannot masquerade as a
+    /// collapse. Pass `habitWeeks` to reach back further for `habits`.
+    static func range(endingAt now: Date, weeks: Int = weeks, calendar: Calendar = .current) -> DateInterval {
         let currentWeek = calendar.dateInterval(of: .weekOfYear, for: now)
             ?? DateInterval(start: now, duration: 0)
         let end = currentWeek.start
@@ -71,27 +79,34 @@ enum InsightsTrends {
     ///
     /// Segmenting a week is the expensive part, so it happens here and every line and
     /// habit is read back out of the result. Asking per category instead re-resolved
-    /// the same twelve weeks once for each thing being drawn.
-    static func weeklyTotals(visits: [Visit], now: Date,
-                             calendar: Calendar = .current) -> [WeeklyTotals] {
-        let span = range(endingAt: now, calendar: calendar)
-        var weeks: [WeeklyTotals] = []
+    /// the same weeks once for each thing being drawn.
+    ///
+    /// `commutes` is resolved once up front rather than once per week — it does not
+    /// depend on the week being segmented, only on `visits`, so recomputing it inside
+    /// the loop was pure O(weeks) waste for a result that never changed. Pass an
+    /// already-resolved value (`commutes:`) when a caller needs it for something else
+    /// too, so it is computed once total rather than once per caller.
+    static func weeklyTotals(visits: [Visit], now: Date, weeks: Int = weeks,
+                             calendar: Calendar = .current, commutes: [Commute]? = nil) -> [WeeklyTotals] {
+        let span = range(endingAt: now, weeks: weeks, calendar: calendar)
+        let commutes = commutes ?? CommuteDetection.commutes(in: visits, now: now)
+        var result: [WeeklyTotals] = []
         var weekStart = span.start
         while weekStart < span.end {
             let weekEnd = calendar.date(byAdding: .weekOfYear, value: 1, to: weekStart) ?? span.end
             let bounded = min(weekEnd, span.end)
             guard bounded > weekStart else { break }
-            weeks.append(WeeklyTotals(
+            result.append(WeeklyTotals(
                 weekStart: weekStart,
                 hours: InsightsSnapshot.categoryHours(
                     visits: visits,
                     range: DateInterval(start: weekStart, end: bounded),
-                    now: now
+                    now: now, commutes: commutes
                 )
             ))
             weekStart = weekEnd
         }
-        return weeks
+        return result
     }
 
     static func series(for category: String, title: String, symbol: String,

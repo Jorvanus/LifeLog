@@ -148,7 +148,7 @@ struct InsightsView: View {
             .onChange(of: window) { _, _ in reloadInsights() }
             .onChange(of: anchorDate) { _, _ in reloadInsights() }
             .task(id: highlightKey) { await reloadHighlights() }
-            .task(id: trendKey) { reloadTrends() }
+            .task(id: trendKey) { await reloadTrends() }
         }
     }
 
@@ -256,24 +256,36 @@ struct InsightsView: View {
         UIApplication.shared.open(healthURL)
     }
 
-    /// Loads the season of history the trend lines are drawn from.
+    /// Loads the season of trend-line history, and the year of it `habits` needs to
+    /// make an honest "first this year" claim.
     ///
     /// A fetch of its own, deliberately separate from `reloadInsights`. That one is
     /// scoped tightly to the selected period and re-runs on every tap of the date
-    /// arrows; this one reaches back twelve weeks and must not be dragged along with
+    /// arrows; this one reaches back up to a year and must not be dragged along with
     /// it. It is keyed to the week, so stepping through days never refetches.
-    private func reloadTrends() {
-        let span = InsightsTrends.range(endingAt: now)
-        let start = span.start
-        let end = span.end
+    ///
+    /// Runs entirely inside `InsightsTrendAggregator`, off the main actor — a year of
+    /// history and its per-week segmenting no longer has to fit inside the
+    /// interaction path the way it did when this ran inline here.
+    private func reloadTrends() async {
         let startedAt = Date.now
-        let descriptor = FetchDescriptor<Visit>(
-            predicate: #Predicate { $0.arrival < end && ($0.departure ?? end) >= start },
-            sortBy: [SortDescriptor(\.arrival)]
-        )
-        let history: [Visit]
+        let container = context.container
+        let capturedNow = now
         do {
-            history = try context.fetch(descriptor)
+            let data = try await Task.detached(priority: .userInitiated) {
+                try await InsightsTrendAggregator(modelContainer: container).load(endingAt: capturedNow)
+            }.value
+            guard !Task.isCancelled else { return }
+            let allWeeks = data.weeklyTotals
+            let displayWeeks = Array(allWeeks.suffix(InsightsTrends.weeks))
+            trendSeries = [
+                InsightsTrends.series(for: "Home", title: "Home", symbol: "house.fill", weeks: displayWeeks),
+                InsightsTrends.series(for: "Sleep", title: "Sleep", symbol: "bed.double.fill", weeks: displayWeeks)
+            ].filter { !$0.isEmpty }
+            habits = InsightsTrends.habits(from: allWeeks)
+            weeklyRhythm = data.weekdayPatterns
+            Diagnostics.performance(context, subsystem: "Insights", operation: "trend history",
+                                    startedAt: startedAt, itemCount: data.itemCount)
         } catch {
             // The rest of Insights is unaffected, so a trend that cannot be built is
             // simply not drawn rather than taken as a failure of the screen.
@@ -282,18 +294,7 @@ struct InsightsView: View {
             trendSeries = []
             habits = []
             weeklyRhythm = WeekdayPattern.empty
-            return
         }
-        // Resolved once; the lines and the habits are both read out of this.
-        let weeks = InsightsTrends.weeklyTotals(visits: history, now: now)
-        trendSeries = [
-            InsightsTrends.series(for: "Home", title: "Home", symbol: "house.fill", weeks: weeks),
-            InsightsTrends.series(for: "Sleep", title: "Sleep", symbol: "bed.double.fill", weeks: weeks)
-        ].filter { !$0.isEmpty }
-        habits = InsightsTrends.habits(from: weeks)
-        weeklyRhythm = InsightsSnapshot.weekdayPatterns(visits: history, range: span, now: now)
-        Diagnostics.performance(context, subsystem: "Insights", operation: "trend history",
-                                startedAt: startedAt, itemCount: history.count)
     }
 
     /// The card the day opens with: what stood out, against the days like it.

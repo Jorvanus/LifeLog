@@ -300,6 +300,42 @@ struct InsightsTrendSeriesTests {
 
         #expect(abs(totals.values.reduce(0, +) - 8) < 0.001)
     }
+
+    /// The exact gap the twelve-week window left: a return the archive actually
+    /// recorded, reported as a first-ever occurrence because nothing further back
+    /// than a season was ever read. `habitWeeks` exists so `habits` can tell these
+    /// apart; this proves it does, not just that the constant is bigger.
+    @Test("habitWeeks lets a real return be recognised where the twelve-week window would have missed it")
+    func widerWindowFindsAReturnANarrowerWindowMisses() {
+        let span = InsightsTrends.range(endingAt: now, calendar: calendar)
+        let lastWeek = calendar.date(byAdding: .weekOfYear, value: -1, to: span.end)!
+        let twentyWeeksBack = calendar.date(byAdding: .weekOfYear, value: -20, to: span.end)!
+        let recentVisit = Visit(
+            arrival: lastWeek.addingTimeInterval(3600), departure: lastWeek.addingTimeInterval(4 * 3600),
+            latitude: -23.378, longitude: 150.511, placeName: "Cinema",
+            inferredActivity: "Watching a movie", userActivity: "Watching a movie",
+            source: "automatic", recognitionConfidence: "confirmed"
+        )
+        let oldVisit = Visit(
+            arrival: twentyWeeksBack.addingTimeInterval(3600), departure: twentyWeeksBack.addingTimeInterval(4 * 3600),
+            latitude: -23.378, longitude: 150.511, placeName: "Cinema",
+            inferredActivity: "Watching a movie", userActivity: "Watching a movie",
+            source: "automatic", recognitionConfidence: "confirmed"
+        )
+        let visits = [oldVisit, recentVisit]
+
+        let narrowWeeks = InsightsTrends.weeklyTotals(visits: visits, now: now,
+                                                       weeks: InsightsTrends.weeks, calendar: calendar)
+        let narrowHabits = InsightsTrends.habits(from: narrowWeeks, calendar: calendar)
+        #expect(narrowHabits.first?.headline == "First entertainment in \(InsightsTrends.weeks) weeks",
+                "with only a season in hand, the return 20 weeks back is invisible")
+
+        let wideWeeks = InsightsTrends.weeklyTotals(visits: visits, now: now,
+                                                     weeks: InsightsTrends.habitWeeks, calendar: calendar)
+        let wideHabits = InsightsTrends.habits(from: wideWeeks, calendar: calendar)
+        #expect(wideHabits.first?.headline == "Back to entertainment")
+        #expect(wideHabits.first?.detail.contains("weeks away") == true)
+    }
 }
 
 @MainActor
