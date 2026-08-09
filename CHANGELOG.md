@@ -2,6 +2,10 @@
 
 ## 2026-08-09
 
+### A new arrival can now guess its activity from what this place has meant before
+
+- A live arrival's activity used to come only from a keyword table matched against the place's name and Maps category — it had no memory of what this specific place, at this time of day, has actually been logged as before. It now also asks the archive, weighted so a correction or a confirmed visit outweighs several automatic guesses, and a bulk-imported default barely counts at all — only trusted once there's enough real evidence, never from a single data point.
+
 ### Three new archive retrospectives, only when they have something to say
 
 - Insights can now notice a genuinely first-ever visit to a place, the longest a familiar place has ever gone unvisited when that record is set inside the period you're looking at, and one restrained comparison of this period's total against the same period a year ago. Each stays silent rather than stating the obvious: a place seen only once or twice has no meaningful gap to report, and a small year-over-year shift isn't called out as a change.

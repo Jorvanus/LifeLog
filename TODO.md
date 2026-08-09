@@ -118,10 +118,11 @@ private, single-phone app; the App Store work is deliberately separate below.
 
 ## Insight enhancements
 
-- [ ] Finish data curation before learning from it: correct the highest-value
-  imported place history, adopt active activity labels, then infer activities
-  from place **and** time band. Weight corrections and LifeLog-created entries
-  above bulk-imported defaults.
+- [ ] Correct the highest-value imported place history and adopt active
+  activity labels. Inference from place and time band, weighted toward
+  corrections and LifeLog-created entries over bulk-imported defaults, now
+  exists and only gets better answers once this curation happens — it isn't a
+  replacement for doing it.
 
 - [ ] Surface recurring commute patterns and meaningful changes in time away
   from Home only after explicit Home/Work roles and the underlying location

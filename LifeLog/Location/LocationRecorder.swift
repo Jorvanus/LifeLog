@@ -408,8 +408,10 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                                        distanceMeters: Int(distance.rounded()))
         }
         let name = saved?.name ?? Visit.identifyingPlaceName
+        let learned = saved.flatMap { learnedActivity(forPlaceName: $0.name, arrival: safeArrival) }
         let activity = InferenceEngine.activity(placeName: name,
-                                                defaultActivity: saved?.defaultActivity, arrival: safeArrival)
+                                                defaultActivity: saved?.defaultActivity ?? learned,
+                                                arrival: safeArrival)
         let item = Visit(arrival: safeArrival, departure: inferredDeparture,
                          latitude: coordinate.latitude, longitude: coordinate.longitude,
                          placeName: name, inferredActivity: activity,
@@ -661,6 +663,23 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             .min { $0.1 < $1.1 }?.0
     }
 
+    /// What this place has meant at this hour before, weighted toward the
+    /// person's own corrections and confirmations over automatic guesses and
+    /// bulk-imported defaults. Exact name match rather than `NameKey`-normalised:
+    /// every visit assigned this Saved Place's name went through the same
+    /// canonical `saved.name` string, so the fuzzier match earns nothing here
+    /// and would cost a full-table scan on every arrival to get it.
+    private func learnedActivity(forPlaceName name: String, arrival: Date) -> String? {
+        guard let context else { return nil }
+        let visits = (try? context.fetch(FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.placeName == name }
+        ))) ?? []
+        let corrections = (try? context.fetch(FetchDescriptor<VisitCorrection>(
+            predicate: #Predicate { $0.newPlaceName == name }
+        ))) ?? []
+        return ActivityByPlaceAndTime.infer(arrival: arrival, history: visits, corrections: corrections)
+    }
+
     private func identifyPlace(_ visit: Visit, accuracy: CLLocationAccuracy = -1) {
         let identity = ObjectIdentifier(visit)
         let now = Date.now
@@ -769,8 +788,11 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 LocationDiagnostics.record(.promoted, subject: "Unnamed stay",
                                            reason: "no Maps match; reverse geocoding supplied a name",
                                            evidence: visit.placeName, context: context)
-                visit.inferredActivity = InferenceEngine.activity(placeName: visit.placeName,
-                                                                   arrival: visit.arrival)
+                visit.inferredActivity = InferenceEngine.activity(
+                    placeName: visit.placeName,
+                    defaultActivity: learnedActivity(forPlaceName: visit.placeName, arrival: visit.arrival),
+                    arrival: visit.arrival
+                )
                 _ = try? ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "reverse geocoding")
                 save(context)
             } catch {
