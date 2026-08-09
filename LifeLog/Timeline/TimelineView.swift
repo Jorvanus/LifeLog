@@ -17,6 +17,7 @@ struct TimelineView: View {
     /// screen stops being a live view and becomes the journal it always held.
     @State private var selectedDay = Calendar.current.startOfDay(for: .now)
     @State private var jumpingToDate = false
+    @State private var draftSelectedDay = Calendar.current.startOfDay(for: .now)
     /// The first day there is anything to read, so the picker cannot offer years of
     /// empty days before the archive begins. Resolved once, from one row.
     @State private var earliestDay: Date?
@@ -579,7 +580,10 @@ struct TimelineView: View {
     /// gesture that works only sometimes is worse than one that is not offered.
     private var dayNavigator: some View {
         HStack(spacing: 8) {
-            Button { jumpingToDate = true } label: {
+            Button {
+                draftSelectedDay = selectedDay
+                jumpingToDate = true
+            } label: {
                 HStack(spacing: 6) {
                     Text(isShowingToday ? "Today’s Journey" : journeyTitle)
                         .font(.system(.title, design: .rounded, weight: .bold))
@@ -615,8 +619,8 @@ struct TimelineView: View {
         NavigationStack {
             DatePicker("Jump to date",
                        selection: Binding(
-                        get: { selectedDay },
-                        set: { selectedDay = Calendar.current.startOfDay(for: $0) }
+                        get: { draftSelectedDay },
+                        set: { draftSelectedDay = Calendar.current.startOfDay(for: $0) }
                        ),
                        in: (earliestDay ?? .distantPast)...Calendar.current.startOfDay(for: clock),
                        displayedComponents: .date)
@@ -626,8 +630,14 @@ struct TimelineView: View {
             .navigationBarTitleDisplayMode(.inline)
             .accessibilityIdentifier("jump-to-date-sheet")
             .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { jumpingToDate = false }
+                }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { jumpingToDate = false }
+                    Button("Done") {
+                        selectedDay = draftSelectedDay
+                        jumpingToDate = false
+                    }
                 }
             }
         }

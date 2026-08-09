@@ -2,6 +2,18 @@
 
 ## 2026-08-09
 
+### Settings uses accurate saved-place wording
+
+- The Places footer now describes labels, categories, and activities without promising Home or Work roles before those roles exist.
+
+### Date pickers can be cancelled safely
+
+- Timeline and Insights now edit a draft date in their calendar sheets. Cancel leaves the current day or period unchanged; Done commits the selection.
+
+### Activities are grouped by purpose
+
+- Activities now separates recently used labels from history-only labels awaiting adoption, while unused catalogue labels stay collapsed until needed. A search field keeps the grouped list quick to navigate as it grows.
+
 ### One clear action on Timeline and Insights
 
 - Timeline review cards now use their orange **Check** or **Categorise** cue without a redundant chevron. Insights uses the date shown between its arrows as its single date-picker control, removing the duplicate toolbar calendar button.

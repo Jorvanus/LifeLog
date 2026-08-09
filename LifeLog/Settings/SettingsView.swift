@@ -66,7 +66,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Places")
                 } footer: {
-                    Text("Set locations as Home, Work, or another place. LifeLog will reuse the label, category, and activity whenever you return.")
+                    Text("Save places with a label, category, and activity. LifeLog will reuse those details whenever you return.")
                 }
                 Section {
                     appleHealthControls

@@ -321,6 +321,11 @@ final class LifeLogUITests: XCTestCase {
         dayTitle.tap()
         XCTAssertTrue(element("jump-to-date-sheet").waitForExistence(timeout: 5))
         XCTAssertTrue(app.datePickers.firstMatch.exists, "the sheet must hold a calendar")
+        app.buttons["Cancel"].tap()
+        XCTAssertEqual(dayTitle.label, "Today’s Journey", "cancelling the picker stays put")
+
+        dayTitle.tap()
+        XCTAssertTrue(element("jump-to-date-sheet").waitForExistence(timeout: 5))
         app.buttons["Done"].tap()
 
         XCTAssertTrue(element("timeline-screen").waitForExistence(timeout: 5))
@@ -400,6 +405,11 @@ final class LifeLogUITests: XCTestCase {
         datePicker.tap()
         XCTAssertTrue(app.navigationBars["Choose Date"].waitForExistence(timeout: 5))
 
+        app.buttons["Cancel"].tap()
+        XCTAssertFalse(app.navigationBars["Choose Date"].exists)
+
+        datePicker.tap()
+        XCTAssertTrue(app.navigationBars["Choose Date"].waitForExistence(timeout: 5))
         app.buttons["Done"].tap()
         XCTAssertFalse(app.navigationBars["Choose Date"].exists)
     }

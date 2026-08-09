@@ -14,6 +14,8 @@ struct ActivitiesTabView: View {
     /// Held rather than computed in `body`. As a computed property this was rebuilt on
     /// every render, and each rebuild walked the whole timeline once per activity.
     @State private var rows: [Row] = []
+    @State private var searchText = ""
+    @State private var showingUnused = false
 
     private func reload() {
         let startedAt = Date.now
@@ -36,14 +38,7 @@ struct ActivitiesTabView: View {
                 statistics: entry,
                 isAdopted: adopted.contains(NameKey.matching(entry.activity)))
         }
-        // Used first, unused last, each alphabetical: a list of labels is scanned by
-        // name, but a label you have never recorded is not what you came here for.
-        built.sort { left, right in
-            let leftUsed = left.statistics.occasions > 0
-            let rightUsed = right.statistics.occasions > 0
-            if leftUsed != rightUsed { return leftUsed }
-            return left.name.localizedStandardCompare(right.name) == .orderedAscending
-        }
+        built.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         rows = built
         // Instrumented because the first version of this screen was slow and left no
         // trace in Diagnostics to say so.
@@ -78,44 +73,43 @@ struct ActivitiesTabView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    ForEach(rows) { row in
-                        NavigationLink {
-                            ActivityDetailView(activityName: row.name, symbol: row.symbol)
-                        } label: {
-                            HStack(alignment: .top, spacing: 14) {
-                                activityIcon(for: row)
-                                activityDescription(for: row)
-                                Spacer(minLength: dynamicTypeSize.isAccessibilitySize ? 0 : 8)
-                                // A tiny chart cannot retain useful geometry beside text
-                                // several lines tall. The detail page still carries the
-                                // full history, so accessibility sizes give the words the
-                                // complete row instead of crushing both into fragments.
-                                if !dynamicTypeSize.isAccessibilitySize {
-                                    WeekSparkline(days: row.statistics.recentDays,
-                                                  color: activityColor(row.name))
-                                        .frame(width: 78, height: 30)
-                                }
-                            }
-                            .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 8 : 2)
-                        }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            if !row.isAdopted {
-                                Button { adopt(row) } label: {
-                                    Label("Add", systemImage: "plus.circle.fill")
-                                }.tint(.orange)
-                            }
-                        }
-                        .accessibilityIdentifier(row.isAdopted ? "activity-row" : "unadopted-activity-row")
+                if !recentRows.isEmpty {
+                    Section {
+                        ForEach(recentRows) { activityRow($0) }
+                    } header: {
+                        Text("Recently used")
                     }
-                } footer: {
-                    Text(unadoptedCount == 0
-                         ? "The line beside each activity is the last seven days."
-                         : "The line beside each activity is the last seven days. \(unadoptedCount) \(unadoptedCount == 1 ? "label comes" : "labels come") from recorded visits and \(unadoptedCount == 1 ? "is" : "are") not in your activity list yet — tap to open one, or swipe to add \(unadoptedCount == 1 ? "it" : "them"), and Insights will stop counting \(unadoptedCount == 1 ? "it" : "them") as Other.")
+                }
+                if !historyRows.isEmpty {
+                    Section {
+                        ForEach(historyRows) { activityRow($0) }
+                    } header: {
+                        Text("From your history")
+                    } footer: {
+                        Text("These labels came from recorded visits but are not activities yet. Tap one to review its history, or swipe right to add it to Activities.")
+                    }
+                }
+                if !unusedRows.isEmpty {
+                    Section {
+                        Button { showingUnused.toggle() } label: {
+                            HStack {
+                                Label("Not used yet", systemImage: showingUnused ? "chevron.down" : "chevron.right")
+                                Spacer()
+                                Text("\(unusedRows.count)").foregroundStyle(.secondary)
+                            }
+                        }
+                        .accessibilityIdentifier("unused-activities-toggle")
+                        if showingUnused || !searchText.isEmpty {
+                            ForEach(unusedRows) { activityRow($0) }
+                        }
+                    } footer: {
+                        Text("These labels are ready for future visits. They stay collapsed until you need one.")
+                    }
                 }
             }
             .navigationTitle("Activities")
             .accessibilityIdentifier("activities-tab-screen")
+            .searchable(text: $searchText, prompt: "Search activities")
             .task { reload() }
             .onReceive(NotificationCenter.default.publisher(for: InsightsInvalidation.notification)) { _ in
                 reload()
@@ -123,7 +117,51 @@ struct ActivitiesTabView: View {
         }
     }
 
-    private var unadoptedCount: Int { rows.count { !$0.isAdopted } }
+    private func activityRow(_ row: Row) -> some View {
+        NavigationLink {
+            ActivityDetailView(activityName: row.name, symbol: row.symbol)
+        } label: {
+            HStack(alignment: .top, spacing: 14) {
+                activityIcon(for: row)
+                activityDescription(for: row)
+                Spacer(minLength: dynamicTypeSize.isAccessibilitySize ? 0 : 8)
+                // A tiny chart cannot retain useful geometry beside text several lines
+                // tall. The detail page still carries the full history, so accessibility
+                // sizes give the words the complete row instead of crushing fragments.
+                if !dynamicTypeSize.isAccessibilitySize {
+                    WeekSparkline(days: row.statistics.recentDays,
+                                  color: activityColor(row.name))
+                        .frame(width: 78, height: 30)
+                }
+            }
+            .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 8 : 2)
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            if !row.isAdopted {
+                Button { adopt(row) } label: {
+                    Label("Add", systemImage: "plus.circle.fill")
+                }.tint(.orange)
+            }
+        }
+        .accessibilityIdentifier(row.isAdopted ? "activity-row" : "unadopted-activity-row")
+    }
+
+    private func filtered(_ source: [Row]) -> [Row] {
+        guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return source }
+        return source.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+    }
+
+    private var recentRows: [Row] {
+        filtered(rows.filter { $0.isAdopted && !$0.statistics.isEmpty })
+    }
+
+    private var historyRows: [Row] {
+        filtered(rows.filter { !$0.isAdopted && !$0.statistics.isEmpty })
+    }
+
+    private var unusedRows: [Row] {
+        filtered(rows.filter { $0.isAdopted && $0.statistics.isEmpty })
+    }
 
     private func activityIcon(for row: Row) -> some View {
         Image(systemName: row.symbol)

@@ -14,6 +14,7 @@ struct InsightsView: View {
     @State private var window: InsightWindow = .day
     @State private var anchorDate = Date.now
     @State private var choosingDate = false
+    @State private var draftAnchorDate = Date.now
     @State private var selectedSlice: TimeSlice?
     @State private var selectedPlace: PlaceTotal?
     @State private var now = Date.now
@@ -63,11 +64,21 @@ struct InsightsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $choosingDate) {
                 NavigationStack {
-                    DatePicker("Choose date", selection: $anchorDate, displayedComponents: .date)
+                    DatePicker("Choose date", selection: $draftAnchorDate, displayedComponents: .date)
                         .datePickerStyle(.graphical).padding()
                         .navigationTitle("Choose Date")
                         .navigationBarTitleDisplayMode(.inline)
-                        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { choosingDate = false } } }
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("Cancel") { choosingDate = false }
+                            }
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Done") {
+                                    anchorDate = draftAnchorDate
+                                    choosingDate = false
+                                }
+                            }
+                        }
                 }.presentationDetents([.medium])
             }
             .sheet(isPresented: $showingWeekdayChart) { weekdayChartSheet }
@@ -377,7 +388,10 @@ struct InsightsView: View {
                 }
                 .accessibilityLabel("Previous \(window.title.lowercased())")
                 Spacer()
-                Button { choosingDate = true } label: {
+                Button {
+                    draftAnchorDate = anchorDate
+                    choosingDate = true
+                } label: {
                     VStack(spacing: 2) {
                         Text(periodTitle).font(.title3.bold()).foregroundStyle(.primary)
                         Text(periodSubtitle).font(.caption).foregroundStyle(.secondary)
