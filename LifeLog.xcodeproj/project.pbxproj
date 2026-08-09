@@ -45,8 +45,10 @@
 		501339F0C046D30E775CF333 /* JournalCompactionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C12DBABF012522694021DE80 /* JournalCompactionView.swift */; };
 		516A51D490D21AED7C0E4929 /* MonitoredPlaces.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50F3F665B6B4EEE8DB6120CC /* MonitoredPlaces.swift */; };
 		51FB467CDA3E4EEC758AB3D9 /* ActivityImportActor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F19A48B6168901A38C9ECBE1 /* ActivityImportActor.swift */; };
+		6D899D4FE6C9D2A947F47ED5 /* SleepSessionRepair.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7904037148521259418CA84B /* SleepSessionRepair.swift */; };
 		527470E2B1A2B41A1D08F76D /* InsightWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2817B87DCA67AEF98B64AC98 /* InsightWindow.swift */; };
 		5D8568D1511806DE576FAB9A /* ActivityImportActorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 346E0ECB4A8D7AA9F0DC7BE2 /* ActivityImportActorTests.swift */; };
+		5B7A5D7E30BBCB2D617EED07 /* SleepSessionRepairTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 012EF84B096311014619445A /* SleepSessionRepairTests.swift */; };
 		5E58FA7949196BDAB62668A2 /* PlaceActivitySelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB1320DFF66D7CA1AC7D3AB3 /* PlaceActivitySelection.swift */; };
 		5E61FCDEA2963BF1B47F033E /* ActivityLocationPolicy+Stays.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB4629526B6F96DB1A875096 /* ActivityLocationPolicy+Stays.swift */; };
 		603EE8045255EDB80EBAF9A9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D936E236D5176123EE3DAD91 /* Assets.xcassets */; };
@@ -230,10 +232,12 @@
 		F04598A86CF649E23443B8E5 /* TimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineView.swift; sourceTree = "<group>"; };
 		F0AFA0A4040E0B9433BD29B7 /* ActivityArtwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityArtwork.swift; sourceTree = "<group>"; };
 		F19A48B6168901A38C9ECBE1 /* ActivityImportActor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityImportActor.swift; sourceTree = "<group>"; };
+		7904037148521259418CA84B /* SleepSessionRepair.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepSessionRepair.swift; sourceTree = "<group>"; };
 		F231EF6FF81FF1DE207D2222 /* CorrectionHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorrectionHistory.swift; sourceTree = "<group>"; };
 		F8FB75BDE81E101E03B4E6B2 /* ArchiveRetrospectives.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveRetrospectives.swift; sourceTree = "<group>"; };
 		FB6F8A7FCDAB1A97B8DE34B0 /* LocationJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationJournal.swift; sourceTree = "<group>"; };
 		FB833AF7C4BDBEA633EB2EE3 /* LifeLogSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeLogSchema.swift; sourceTree = "<group>"; };
+		012EF84B096311014619445A /* SleepSessionRepairTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepSessionRepairTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -253,6 +257,7 @@
 				136C28CBCB9BB1FEB539118A /* LocationArrivalConfirmationTests.swift */,
 				452978750FB4CA6A49A09C2A /* SavedPlaceLearningTests.swift */,
 				F00A33A60B150AFDBD347BC6 /* SchemaMigrationTests.swift */,
+				012EF84B096311014619445A /* SleepSessionRepairTests.swift */,
 				1F988CF286B464E43CCCF80A /* TimelineFixtureCoverageTests.swift */,
 			);
 			path = LifeLogTests;
@@ -315,6 +320,7 @@
 				474896A10B9E8662F6E586AA /* ActivityStatistics.swift */,
 				EE32D8BC301AC2222273125B /* CategoryPalette.swift */,
 				865B4510743A0C7EEFCF612F /* InferenceEngine.swift */,
+				7904037148521259418CA84B /* SleepSessionRepair.swift */,
 				A515882452919E11B257F68E /* SmartActivityClassifier.swift */,
 			);
 			path = Activity;
@@ -594,6 +600,7 @@
 				68D5A7D84644F31AC20CF6A6 /* ActivityIconPicker.swift in Sources */,
 				4DB75675BA592DBEC16488DE /* ActivityIcons.swift in Sources */,
 				51FB467CDA3E4EEC758AB3D9 /* ActivityImportActor.swift in Sources */,
+				6D899D4FE6C9D2A947F47ED5 /* SleepSessionRepair.swift in Sources */,
 				E6D36C766E5486096CF930F1 /* ActivityLocationPolicy+Classification.swift in Sources */,
 				DA9BD62DE7EA595C5B1FEB81 /* ActivityLocationPolicy+Journeys.swift in Sources */,
 				3B129F534BCAE1FBC535CDCC /* ActivityLocationPolicy+Reconciliation.swift in Sources */,
@@ -686,6 +693,7 @@
 				6554E3838F5DFE0ED57AF0DD /* LocationArrivalConfirmationTests.swift in Sources */,
 				8E704F71D1DDB0AF78FB71D4 /* SavedPlaceLearningTests.swift in Sources */,
 				D922EFA846AD3DED0FF17CDF /* SchemaMigrationTests.swift in Sources */,
+				5B7A5D7E30BBCB2D617EED07 /* SleepSessionRepairTests.swift in Sources */,
 				E303203502DB7032D4510DC3 /* TimelineFixtureCoverageTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

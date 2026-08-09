@@ -67,6 +67,9 @@ struct TimelineView: View {
     // Bump this marker whenever de-duplication rules become stronger so an
     // installed timeline receives the one-time repair as well as new callbacks.
     @AppStorage("automatic-location-deduplicated-v3") private var automaticLocationDeduplicated = false
+    // Merges the duplicate sleep visits the pre-fix arrival-window bug could
+    // leave behind. New duplicates should no longer occur, so this runs once.
+    @AppStorage(SleepSessionRepair.repairKey) private var sleepDuplicatesMerged = false
 
     private var today: [Visit] {
         TimelineView.rows(from: visits, day: TimelineView.interval(of: clock), now: clock)
@@ -225,6 +228,19 @@ struct TimelineView: View {
                                                severity: "info")
                         }
                         splitWorkoutsRepaired = true
+                    } catch {
+                        // Retry after a protected-store failure on the next appearance.
+                    }
+                }
+                if !sleepDuplicatesMerged {
+                    do {
+                        let merged = try SleepSessionRepair.mergeDuplicates(context: context)
+                        if merged > 0 {
+                            Diagnostics.record(context, subsystem: "HealthKit",
+                                               message: "Merged \(merged) duplicate sleep visits.",
+                                               severity: "info")
+                        }
+                        sleepDuplicatesMerged = true
                     } catch {
                         // Retry after a protected-store failure on the next appearance.
                     }

@@ -307,4 +307,43 @@ struct ActivityImportActorTests {
         #expect(remaining.count == 1)
         #expect(remaining.first?.source == "health-sleep")
     }
+
+    @Test("A widened sleep session updates the existing visit rather than duplicating it")
+    func widenedSleepSessionUpdatesExistingVisit() async throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(
+            for: Visit.self, SavedPlace.self, VisitCorrection.self,
+            configurations: configuration
+        )
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let end = start.addingTimeInterval(8 * 60 * 60)
+
+        let writer = ActivityImportActor(modelContainer: container)
+        try await writer.prepare()
+        _ = try await writer.insertBatch([
+            ActivityImportRecord(name: "Sleep", activity: "Sleeping", source: "health-sleep",
+                                 start: start, end: end)
+        ])
+        try await writer.finish()
+
+        // A later, fresh (non-anchored) sleep refresh sees more synced samples and
+        // recomputes the same night's session with a start 8.5 minutes earlier —
+        // well past the 2-minute window every other health/motion source matches
+        // a replay within. Before the fix (2026-08-10) this landed as a second,
+        // overlapping visit instead of widening the first.
+        try await writer.prepare()
+        let widenedStart = start.addingTimeInterval(-8.5 * 60)
+        let inserted = try await writer.insertBatch([
+            ActivityImportRecord(name: "Sleep", activity: "Sleeping", source: "health-sleep",
+                                 start: widenedStart, end: end)
+        ])
+        try await writer.finish()
+
+        let visits = try ModelContext(container).fetch(FetchDescriptor<Visit>())
+            .filter { $0.source == "health-sleep" }
+        #expect(inserted == 0)
+        #expect(visits.count == 1)
+        #expect(visits.first?.arrival == widenedStart)
+        #expect(visits.first?.departure == end)
+    }
 }

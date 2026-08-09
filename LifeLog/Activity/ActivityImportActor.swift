@@ -74,12 +74,34 @@ actor ActivityImportActor {
 
             for segment in segments {
                 let sourceVisits = visitsBySource[record.source, default: []]
-                if let existing = sourceVisits.first(where: {
-                    abs($0.arrival.timeIntervalSince(segment.start)) < 120
-                }) {
+                // Every other health/motion source here is read via an anchored query,
+                // which replays a changed sample at a near-identical arrival — a tight
+                // 2-minute window is enough to recognise it as the same visit. Sleep is
+                // read fresh (not anchored) on every refresh and re-merged from scratch,
+                // so its computed session start legitimately shifts as more samples sync
+                // in overnight; matching only within 2 minutes let a session that moved
+                // by, say, 8 minutes look like a new one and insert a duplicate beside
+                // the original (2026-08-10). Overlap, or a boundary within the sample
+                // reader's own 15-minute merge gap, catches that widening session.
+                let matchesExisting: (Visit) -> Bool = record.source == "health-sleep"
+                    ? { visit in
+                        let visitEnd = visit.departure ?? .distantFuture
+                        let overlaps = segment.start < visitEnd && visit.arrival < segment.end
+                        let gapAtStart = abs(visit.arrival.timeIntervalSince(segment.start))
+                        let gapAtEnd = abs(visitEnd.timeIntervalSince(segment.end))
+                        return overlaps || min(gapAtStart, gapAtEnd) < 15 * 60
+                    }
+                    : { abs($0.arrival.timeIntervalSince(segment.start)) < 120 }
+                if let existing = sourceVisits.first(where: matchesExisting) {
                     // Anchored queries can replay a changed sample. Update the
                     // existing visit instead of creating a second timeline row.
                     existing.departure = segment.end
+                    // A freshly re-merged sleep session is the current, complete answer
+                    // for the night, not just a later sample appended to it — so its
+                    // start replaces the stored one rather than only ever widening
+                    // forward. Every other source keeps its own arrival: they were
+                    // matched because the replayed sample's start barely moved.
+                    if record.source == "health-sleep" { existing.arrival = segment.start }
                     existing.placeName = record.name
                     existing.inferredActivity = record.activity
                     if !record.healthKitSampleIDs.isEmpty {
