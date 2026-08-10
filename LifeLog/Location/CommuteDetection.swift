@@ -65,9 +65,16 @@ enum CommuteDetection {
                     // Home to home, or work to work, is not a commute — the person
                     // returned to where they started.
                     guard candidateKind != kind else { break }
-                    let interval = DateInterval(start: departure, end: candidate.arrival)
-                    guard interval.duration > 0, interval.duration <= longestPlausible else { break }
-                    commutes.append(Commute(start: interval.start, end: interval.end,
+                    // `stays` is sorted by arrival, not departure, so a manually
+                    // added or otherwise overlapping visit can have an arrival
+                    // earlier than `departure` here. `DateInterval.init` traps on
+                    // end < start, so duration is computed by hand rather than
+                    // trusting the sort to guarantee that ordering (crashed
+                    // on-device 2026-08-10 adding a backfilled Work visit that
+                    // overlapped the stay before it).
+                    let commuteDuration = candidate.arrival.timeIntervalSince(departure)
+                    guard commuteDuration > 0, commuteDuration <= longestPlausible else { break }
+                    commutes.append(Commute(start: departure, end: candidate.arrival,
                                             direction: kind == .home ? .toWork : .toHome))
                     break
                 }
