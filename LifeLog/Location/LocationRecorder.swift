@@ -302,8 +302,32 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         let arrival = pendingArrival
         cancelLocationConfirmation()
         guard let location = confirmation.confirmedLocation else {
+            // A CLVisit arrival already carries Core Location's own coordinate — its
+            // motion-fused engine decided the phone had stopped before `didVisit` was
+            // ever called. The live burst here exists to catch a *stale* CLVisit
+            // delivered after the phone actually left, which is real evidence and
+            // still discarded below. Zero samples is not that: it is background
+            // `CLLocationUpdate.liveUpdates()` delivering nothing inside the window,
+            // observed on-device 2026-08-10 discarding an entire day of arrivals.
+            // Silence is not disproof, so a pending CLVisit arrival stands on its own
+            // evidence instead. There is nothing to fall back to for the launch-time
+            // check (no `arrival`), which keeps its stricter, evidence-required rule.
+            if let arrival, confirmation.samples.isEmpty {
+                HardwareValidation.recordFirst(
+                    .liveBurstBackgroundFallback, context: context,
+                    message: "A background live-location burst produced no samples; the CLVisit arrival was used instead of being discarded."
+                )
+                Diagnostics.record(context, subsystem: "Core Location",
+                                   message: "Live location confirmation \(reason) with no samples; used the CLVisit arrival directly.",
+                                   severity: "info")
+                if let coordinate = arrival.coordinate {
+                    createVisit(at: coordinate, arrival: arrival.arrival,
+                               callbackType: arrival.callbackType, accuracy: arrival.accuracy)
+                }
+                return
+            }
             Diagnostics.record(context, subsystem: "Core Location",
-                               message: "Live location confirmation \(reason) without stationary evidence (\(confirmation.samples.count) sample(s)).",
+                               message: "Live location confirmation \(reason) without stationary evidence (\(confirmation.samples.count) sample(s))\(arrival == nil ? "" : "; samples disagreed with the pending arrival, discarding it").",
                                severity: "info")
             return
         }
