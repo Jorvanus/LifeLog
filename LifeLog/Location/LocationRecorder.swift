@@ -14,15 +14,23 @@ struct LocationArrivalConfirmation {
 
     static let requiredStationarySamples = 2
     // Observed on-device 2026-08-10: `CLLocationUpdate.liveUpdates()` can deliver
-    // roughly one sample per second, and every sample read `stationary=false` for
-    // someone who had been still for hours. Core Location's motion fusion needs a
-    // sustained low-movement period before it commits to "stationary" -- exactly
-    // to avoid a brief pause reading as an arrival -- and a cap of 3 ended every
-    // burst within a few seconds, long before that classification had any real
-    // chance to settle. Raised so the burst can run close to the full `timeout`
-    // instead of quitting almost immediately.
-    static let maximumSamples = 12
+    // well over one sample per second, and raising this from 3 only meant the cap
+    // was reached in 5-7 seconds instead of fewer -- still cut short well inside
+    // the 15-second `timeout`. Raised again so a fast delivery rate cannot end the
+    // burst early on sample count; `timeout` is now the real limit either way.
+    static let maximumSamples = 60
     static let timeout: Duration = .seconds(15)
+
+    // A fallback for when Core Location's own "stationary" classification never
+    // settles at all -- observed on-device 2026-08-10, indoors: every sample across
+    // several full-length bursts read `stationary=false` despite being still the
+    // whole time. A cluster of samples that stays put over a real stretch of time is
+    // treated as equally good evidence: at any walking pace, `minimumSpan` covers
+    // tens of metres, well past `clusterTolerance` even at indoor GPS accuracy,
+    // while genuine jitter while still stays bounded.
+    static let minimumStationarySpan: TimeInterval = 8
+    static let stationaryClusterFloor: CLLocationDistance = 50
+    static let stationaryClusterAccuracyMultiplier: CLLocationDistance = 2.5
 
     let startedAt = Date.now
     private(set) var samples: [Sample] = []
@@ -34,11 +42,25 @@ struct LocationArrivalConfirmation {
 
     var hasReachedSampleLimit: Bool { samples.count == Self.maximumSamples }
     var confirmedLocation: CLLocation? {
-        guard samples.count >= Self.requiredStationarySamples,
-              samples.suffix(Self.requiredStationarySamples).allSatisfy(\.stationary) else {
-            return nil
+        if samples.count >= Self.requiredStationarySamples,
+           samples.suffix(Self.requiredStationarySamples).allSatisfy(\.stationary) {
+            return samples.last?.location
         }
-        return samples.last?.location
+        return clusteredStationaryLocation
+    }
+
+    /// Every sample collected so far, checked against the first: not a sliding
+    /// window, since one confirmation attempt lives for at most `timeout` and
+    /// nothing here needs to forget an old sample within that span.
+    private var clusteredStationaryLocation: CLLocation? {
+        guard let first = samples.first, let last = samples.last, samples.count >= 2,
+              last.location.timestamp.timeIntervalSince(first.location.timestamp) >= Self.minimumStationarySpan
+        else { return nil }
+        let tolerance = max(Self.stationaryClusterFloor,
+                            (samples.map(\.location.horizontalAccuracy).max() ?? 0) * Self.stationaryClusterAccuracyMultiplier)
+        let anchor = first.location
+        guard samples.allSatisfy({ $0.location.distance(from: anchor) <= tolerance }) else { return nil }
+        return last.location
     }
 }
 
