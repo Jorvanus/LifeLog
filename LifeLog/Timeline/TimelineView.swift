@@ -177,7 +177,7 @@ struct TimelineView: View {
             }
             .accessibilityIdentifier("timeline-screen")
             .toolbar(.hidden, for: .navigationBar)
-            .sheet(isPresented: $adding) { ManualVisitView() }
+            .sheet(isPresented: $adding) { ManualVisitView(range: TimelineView.interval(of: selectedDay)) }
             .sheet(isPresented: $jumpingToDate) { jumpToDateSheet }
             .task {
                 loadEarliestDay()

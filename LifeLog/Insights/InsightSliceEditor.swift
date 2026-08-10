@@ -67,7 +67,7 @@ struct InsightSliceEditor: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
             }
         }
-        .sheet(isPresented: $addingVisit) { ManualVisitView() }
+        .sheet(isPresented: $addingVisit) { ManualVisitView(range: interval) }
     }
 
     private func entryTime(for visit: Visit) -> String {

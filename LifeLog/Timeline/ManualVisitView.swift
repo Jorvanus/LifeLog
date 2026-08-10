@@ -29,6 +29,10 @@ enum ManualPlaceResolution {
 struct ManualVisitView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
+    /// The day (or window) this sheet was opened for, so Suggestions offers gaps
+    /// from the same period the person is already looking at rather than the most
+    /// recent holes anywhere in the archive.
+    let range: DateInterval
     @State private var place = ""
     @State private var activity = ""
     @State private var arrival = Date()
@@ -36,14 +40,23 @@ struct ManualVisitView: View {
     @State private var resolution: ManualPlaceResolution = .none
     @State private var saveFailed = false
 
-    /// Gaps in the recent timeline, offered as a starting point. Adding an entry by
-    /// hand is nearly always filling in something LifeLog missed, and it already knows
-    /// where the holes are and what sat either side of them.
-    @Query(filter: #Predicate<Visit> { $0.source != "imported-journal" },
-           sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
+    /// Scoped to `range` rather than the whole archive, and including every source
+    /// — imported-journal too — since `VisitSuggestion` now needs the same picture
+    /// of "already covered" that Insights uses to report unlogged time.
+    @Query private var visits: [Visit]
+
+    init(range: DateInterval) {
+        self.range = range
+        let fetchStart = range.start
+        let fetchEnd = range.end
+        _visits = Query(
+            filter: #Predicate<Visit> { $0.arrival < fetchEnd && ($0.departure == nil || $0.departure! >= fetchStart) },
+            sort: \Visit.arrival, order: .reverse
+        )
+    }
 
     private var suggestions: [VisitSuggestion] {
-        VisitSuggestion.make(from: visits)
+        VisitSuggestion.make(from: visits, range: range)
     }
 
     var body: some View {

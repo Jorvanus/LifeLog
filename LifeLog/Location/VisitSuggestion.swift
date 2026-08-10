@@ -24,26 +24,35 @@ struct VisitSuggestion: Identifiable, Sendable {
     static let shortest: TimeInterval = 5 * 60
     static let longest: TimeInterval = 6 * 60 * 60
 
-    static func make(from visits: [Visit], now: Date = .now, limit: Int = 4) -> [VisitSuggestion] {
-        let stays = visits
-            .filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
+    /// `range` scopes the gaps to the day (or window) actually being looked at, and
+    /// `InsightsSnapshot.makeSegments` is the same computation Insights itself uses
+    /// to report unlogged time. Suggesting gaps from a different, looser definition
+    /// — one that didn't know a device-sourced walk or an imported-journal entry
+    /// already covered a stretch — meant this list could disagree with what the
+    /// donut next to it was reporting as missing.
+    static func make(from visits: [Visit], range: DateInterval, now: Date = .now, limit: Int = 4) -> [VisitSuggestion] {
+        let locationVisits = visits.filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
+        // The gap itself comes from every visit source; the human-readable guess
+        // ("Home → Work") still needs a real named place on each side, which only a
+        // location stay carries — a device fragment like "Walking" has none to offer.
+        let stays = locationVisits
             .filter { $0.resolutionState != .superseded && $0.departure != nil }
             .sorted { $0.arrival < $1.arrival }
-        guard stays.count > 1 else { return [] }
 
-        var suggestions: [VisitSuggestion] = []
-        for (before, after) in zip(stays, stays.dropFirst()) {
-            guard let departure = before.departure else { continue }
-            let gap = after.arrival.timeIntervalSince(departure)
-            guard gap >= shortest, gap <= longest else { continue }
-            suggestions.append(VisitSuggestion(
-                start: departure, end: after.arrival,
-                place: place(between: before, and: after),
-                activity: activity(between: before, and: after)
-            ))
+        let segments = InsightsSnapshot.makeSegments(visits: visits, locationVisits: locationVisits,
+                                                      range: range, now: now)
+        let suggestions = segments.filter(\.isUnlogged).compactMap { segment -> VisitSuggestion? in
+            let gap = segment.end.timeIntervalSince(segment.start)
+            guard gap >= shortest, gap <= longest,
+                  let before = stays.last(where: { ($0.departure ?? .distantPast) <= segment.start }),
+                  let after = stays.first(where: { $0.arrival >= segment.end })
+            else { return nil }
+            return VisitSuggestion(start: segment.start, end: segment.end,
+                                   place: place(between: before, and: after),
+                                   activity: activity(between: before, and: after))
         }
         // Newest first: a gap from this morning is likelier to be filled in than one
-        // from last week, and the list is short by design.
+        // from earlier in the window, and the list is short by design.
         return Array(suggestions.sorted { $0.start > $1.start }.prefix(limit))
     }
 

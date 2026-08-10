@@ -656,25 +656,54 @@ struct TimelineFixtureCoverageTests {
                   latitude: -23.37, longitude: 150.51, placeName: name,
                   inferredActivity: "Visiting", source: "automatic", recognitionConfidence: "learned")
         }
-        // Home, a gap, Work — the commute nobody recorded. Then back home later.
-        let visits = [stay("Home", from: 0, to: 60),
-                      stay("Work", from: 85, to: 400),
-                      stay("Home", from: 430, to: 600)]
+        // Cafe, a gap, Gym — nothing recorded, and neither end is Home or Work, so
+        // CommuteDetection has no reason to claim this stretch: it should be offered.
+        let visits = [stay("Cafe", from: 0, to: 60), stay("Gym", from: 400, to: 600)]
+        let range = DateInterval(start: base, end: base.addingTimeInterval(600 * 60))
 
-        let suggestions = VisitSuggestion.make(from: visits)
+        let suggestions = VisitSuggestion.make(from: visits, range: range)
 
-        #expect(suggestions.count == 2)
-        // Newest first, because a recent hole is the one worth filling.
-        #expect(suggestions.first?.start == base.addingTimeInterval(400 * 60))
-        // Between home and work in either direction, the gap is the commute.
-        #expect(suggestions.allSatisfy { $0.activity == CommuteDetection.activityName })
-        #expect(suggestions.last?.summary.contains("Home") == true)
+        #expect(suggestions.count == 1)
+        #expect(suggestions.first?.start == base.addingTimeInterval(60 * 60))
+        #expect(suggestions.first?.end == base.addingTimeInterval(400 * 60))
+        #expect(suggestions.first?.activity == "Travelling")
+
+        // A real commute is already accounted for by CommuteDetection -- the same
+        // computation Insights itself uses -- so it is not "missing" and is not
+        // offered here either; suggesting it would fight the donut right next to it.
+        let commuteVisits = [stay("Home", from: 0, to: 60), stay("Work", from: 85, to: 400)]
+        let commuteRange = DateInterval(start: base, end: base.addingTimeInterval(400 * 60))
+        #expect(VisitSuggestion.make(from: commuteVisits, range: commuteRange).isEmpty)
 
         // A gap of seconds is not a visit, and neither is a day-long one.
-        let brief = [stay("Home", from: 0, to: 60), stay("Work", from: 61, to: 120)]
-        #expect(VisitSuggestion.make(from: brief).isEmpty)
-        let enormous = [stay("Home", from: 0, to: 60), stay("Work", from: 900, to: 1_000)]
-        #expect(VisitSuggestion.make(from: enormous).isEmpty)
+        let brief = [stay("Cafe", from: 0, to: 60), stay("Gym", from: 61, to: 120)]
+        #expect(VisitSuggestion.make(from: brief, range: DateInterval(start: base, end: base.addingTimeInterval(120 * 60))).isEmpty)
+        let enormous = [stay("Cafe", from: 0, to: 60), stay("Gym", from: 900, to: 1_000)]
+        #expect(VisitSuggestion.make(from: enormous, range: DateInterval(start: base, end: base.addingTimeInterval(1_000 * 60))).isEmpty)
+    }
+
+    @Test("A gap partly covered by a device visit only offers the remaining unlogged part")
+    func suggestionExcludesDeviceCoveredTime() {
+        func stay(_ name: String, from: Double, to: Double) -> Visit {
+            Visit(arrival: base.addingTimeInterval(from * 60), departure: base.addingTimeInterval(to * 60),
+                  latitude: -23.37, longitude: 150.51, placeName: name,
+                  inferredActivity: "Visiting", source: "automatic", recognitionConfidence: "learned")
+        }
+        // The exact shape reported 2026-08-10: Work ends, a Walking burst covers the
+        // first few minutes, and only what's left after it should be offered —
+        // VisitSuggestion used to have no idea the walk existed at all.
+        let walking = Visit(arrival: base.addingTimeInterval(60 * 60), departure: base.addingTimeInterval(69 * 60),
+                            latitude: -23.37, longitude: 150.51, placeName: "Walking",
+                            inferredActivity: "Walking", userActivity: "Walking", source: "health-walking",
+                            recognitionConfidence: "device")
+        let visits = [stay("Work", from: 0, to: 60), walking, stay("Blood Bank", from: 75, to: 130)]
+        let range = DateInterval(start: base, end: base.addingTimeInterval(130 * 60))
+
+        let suggestions = VisitSuggestion.make(from: visits, range: range)
+
+        #expect(suggestions.count == 1)
+        #expect(suggestions.first?.start == base.addingTimeInterval(69 * 60))
+        #expect(suggestions.first?.end == base.addingTimeInterval(75 * 60))
     }
 
     @Test("Returning to the same place suggests still being there")
@@ -685,7 +714,8 @@ struct TimelineFixtureCoverageTests {
                   inferredActivity: "At home", userActivity: "At home",
                   source: "automatic", recognitionConfidence: "learned")
         }
-        let suggestions = VisitSuggestion.make(from: [home(0, 60), home(90, 200)])
+        let range = DateInterval(start: base, end: base.addingTimeInterval(200 * 60))
+        let suggestions = VisitSuggestion.make(from: [home(0, 60), home(90, 200)], range: range)
 
         #expect(suggestions.count == 1)
         #expect(suggestions.first?.place == "Home")

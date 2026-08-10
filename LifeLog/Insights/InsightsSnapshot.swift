@@ -191,9 +191,12 @@ struct InsightsSnapshot {
         return makeWeekdayPatterns(from: segments, weekdayOccurrences: weekdayOccurrences(in: range))
     }
 
-    nonisolated private static func makeSegments(visits: [Visit], locationVisits: [Visit],
-                                                  range: DateInterval, now: Date,
-                                                  precomputedCommutes: [Commute]? = nil) -> [InsightSegment] {
+    // Internal rather than private: VisitSuggestion builds its gaps from this same
+    // computation, so "unlogged" means one thing everywhere it's reported rather
+    // than two definitions that can silently disagree.
+    nonisolated static func makeSegments(visits: [Visit], locationVisits: [Visit],
+                                         range: DateInterval, now: Date,
+                                         precomputedCommutes: [Commute]? = nil) -> [InsightSegment] {
         let orderedVisits = visits
             .filter { $0.overlaps(range, now: now) && $0.resolutionState != .ignored && $0.resolutionState != .superseded }
             .filter { ActivityLocationPolicy.shouldShowInInsights($0, locationVisits: locationVisits, now: now) }
