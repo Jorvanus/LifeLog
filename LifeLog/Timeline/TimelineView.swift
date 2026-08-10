@@ -194,6 +194,12 @@ struct TimelineView: View {
                 } catch {
                     // Protected stores are retried when Timeline next appears.
                 }
+                // Each repair below can touch a meaningful slice of a large archive.
+                // Yielding between them, not just once at the very top, lets the run
+                // loop interleave a frame — the tab bar's own selection animation
+                // included — instead of this whole chain landing as one uninterrupted
+                // block on the main actor every time Timeline appears.
+                await Task.yield()
                 if !automaticLocationDeduplicated {
                     do {
                         let removed = try ActivityLocationPolicy.deduplicateAutomaticLocations(context: context)
@@ -203,6 +209,7 @@ struct TimelineView: View {
                         // Retry after a protected-store failure on the next appearance.
                     }
                 }
+                await Task.yield()
                 if !staySplitsRejoined {
                     do {
                         // Must run before reconciliation, which then re-absorbs the
@@ -218,6 +225,7 @@ struct TimelineView: View {
                         // Retry after a protected-store failure on the next appearance.
                     }
                 }
+                await Task.yield()
                 if !splitWorkoutsRepaired {
                     do {
                         let repaired = try WorkoutJourneys.repairSplitWorkouts(context: context)
@@ -232,6 +240,7 @@ struct TimelineView: View {
                         // Retry after a protected-store failure on the next appearance.
                     }
                 }
+                await Task.yield()
                 if !sleepDuplicatesMerged {
                     do {
                         let merged = try SleepSessionRepair.mergeDuplicates(context: context)
@@ -258,6 +267,7 @@ struct TimelineView: View {
                 // afterwards, so what matters is *when* it reverts. Printing the stay's
                 // departure on every appearance turns that into something watchable
                 // instead of something to reason about.
+                await Task.yield()
                 let watched = visits
                     .filter { ActivityLocationPolicy.isLocationVisit($0) && $0.departure != nil }
                     .max { ($0.departure ?? .distantPast) < ($1.departure ?? .distantPast) }
@@ -279,6 +289,7 @@ struct TimelineView: View {
                 // and that check reads the wrong answer against a record still carrying
                 // its full, untrimmed, overlapping end. Absorption has to shorten it
                 // first.
+                await Task.yield()
                 do {
                     if try ActivityLocationPolicy.reapplyRecentMovementAbsorption(context: context) {
                         Diagnostics.record(context, subsystem: "Timeline",
@@ -288,6 +299,7 @@ struct TimelineView: View {
                 } catch {
                     // Retried on the next appearance, like every other repair here.
                 }
+                await Task.yield()
                 do {
                     if try ActivityLocationPolicy.reapplyRecentJourneyTiming(context: context) {
                         Diagnostics.record(context, subsystem: "Timeline",
@@ -297,6 +309,7 @@ struct TimelineView: View {
                 } catch {
                     // Retried on the next appearance, like every other repair here.
                 }
+                await Task.yield()
                 do {
                     if try ActivityLocationPolicy.reapplyRecentOpenStayAbsorption(context: context) {
                         Diagnostics.record(context, subsystem: "Timeline",
@@ -307,6 +320,7 @@ struct TimelineView: View {
                     // Retried on the next appearance, like every other repair here.
                 }
                 guard !locationPolicyReconciled else { return }
+                await Task.yield()
                 do {
                     // Journal-only imports do not contain device activity, so there is
                     // nothing to reconcile. This cheap check avoids a second full-history
