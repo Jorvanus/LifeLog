@@ -1,6 +1,6 @@
 # LifeLog — what's next
 
-Audited against `main` on 2026-08-09. This is intentionally an **open-work**
+Audited against `main` on 2026-08-11. This is intentionally an **open-work**
 list: shipped work has been removed, historical counts have not been carried
 forward as if they were current, and hardware items remain only where the code
 exists but has not yet been proven on the owner’s iPhone. LifeLog is still a
@@ -58,11 +58,18 @@ private, single-phone app; the App Store work is deliberately separate below.
   coordinate drift, overlapping geofences, missing departures, relaunch with
   an open visit, and Home → destination → Home.
 
-- [ ] **Prove or constrain foreground live-location bursts.** On hardware,
-  confirm stationary indoor arrival settles promptly, continuous walking makes
-  no visit, and bad signal ends cleanly. Add an on-demand Diagnostics trigger
-  and sample-level trace only if the ordinary-use proof is insufficient; never
-  silently fall back to a single-fix inference.
+- [ ] **Finish proving the live-location confirmation fallbacks.** On-device
+  2026-08-10 confirmed `CLLocationUpdate.stationary` does not reliably settle
+  `true` even after 7+ seconds indoors while genuinely still, on this OS —
+  every sample across several full-length bursts read `stationary=false`.
+  Two fallbacks now cover that in `LocationRecorder.swift`: a `CLVisit`
+  arrival with zero live samples uses Core Location's own coordinate instead
+  of being discarded, and a sample cluster that stays within tolerance over
+  `minimumStationarySpan` confirms without the flag at all. Both are proven
+  once, manually, indoors, stationary. Still needed: repeat outdoors and in
+  poor signal, confirm continuous walking never satisfies the distance-cluster
+  fallback either, and confirm a bad-signal burst still ends cleanly rather
+  than confirming a wrong location.
 
 - [ ] **Handle reduced-accuracy location honestly.** Detect it in Settings and
   Diagnostics, explain its effect, and prevent it from teaching Saved Places or
@@ -70,8 +77,12 @@ private, single-phone app; the App Store work is deliberately separate below.
 
 - [ ] **Calibrate rather than cargo-cult thresholds.** Review a few weeks of
   real traces before trusting `walkingBurstGap`,
-  `maximumStayShareConsumedByJourney`, `passingStayCoverage`, and
-  `passingStayPace`; record why each change is made and what cases it changes.
+  `maximumStayShareConsumedByJourney`, `passingStayCoverage`,
+  `passingStayPace`, and `LocationArrivalConfirmation`'s
+  `minimumStationarySpan`/`stationaryClusterFloor`/
+  `stationaryClusterAccuracyMultiplier` (added 2026-08-10 from a single indoor
+  session, not weeks of traces); record why each change is made and what
+  cases it changes.
 
 - [ ] **Complete the Health and motion device matrix.** Test denial, partial
   permission, no data, disconnected Watch, duplicate/deleted samples, DST and
@@ -116,13 +127,31 @@ private, single-phone app; the App Store work is deliberately separate below.
   history-only and unused labels are now separated, but bulk adoption and
   colour/icon choices need to remain understandable without a second route.
 
+- [ ] **Reconcile `InsightSliceEditor`'s header total with its own entry
+  list.** The header shows the category's deduplicated segment total, the
+  same figure the donut wedge and "N logged" text use; the rows below it show
+  each visit's raw, unclamped duration via `Visit.duration(in:)`, which does
+  not subtract time another category's segment already claimed. Two
+  overlapping visits (a Home stay spanning hours a Sleep record also covers)
+  can make the rows sum to far more than the header says. Either compute each
+  row's actual post-resolution contribution, or change the wording so it
+  stops implying the rows sum to the header figure.
+
 ## Insight enhancements
 
 - [ ] **Implement Waking Life Balance Ratio**: Add a 4-part segmented balance visual (Work, Fitness, Social, Home) with ratio baseline comparison.
 - [ ] **Add Commute Overhead & Transit Impact Trend**: Surface weekly commuting hours and trend changes derived from `CommuteDetection`.
 - [ ] **Track Exploration & Novelty Index**: Calculate percentage of time spent at new/unfamiliar places vs. routine locations.
 - [ ] **Calculate Peak Dwell & Focus Duration**: Display average stay length per venue category and place type.
-- [ ] **Embed Contextual Micro-Insights Across App**: Show badges on Timeline visit cards (*First time here*, *Milestone visit*, *Longest stay*) and Place History headers (*Peak visit hour*, *Average stay*, *Lifetime hours*).
+- [ ] **Add micro-insight badges to Timeline visit cards** (*First time here*,
+  *Milestone visit*, *Longest stay*). Place History's headers already carry
+  the equivalent (*Peak visit hour*, *Average stay*, *Lifetime hours*,
+  shipped 2026-08-10 as a plain Form section matching that screen's own
+  styling). A first attempt at the Timeline version shipped the same day and
+  was reverted immediately: stacked capsule/pill badges broke the card onto
+  extra lines and looked wrong against Timeline's card style. Review any
+  future attempt against the actual card before shipping it, not assumed to
+  fit the space.
 - [ ] **Segment Insights View into Focused Tabs**: Group the 13 long scrollable cards in `InsightsView` into `[ Overview | Habits & Trends | Places ]` tabs.
 
 - [ ] Correct the highest-value imported place history and adopt active
@@ -165,6 +194,20 @@ private, single-phone app; the App Store work is deliberately separate below.
 - [ ] Isolate UI-test state completely. A seeded run must use/reset a scratch
   defaults suite for every app-owned key, not just its in-memory SwiftData
   store, so test order cannot change results.
+
+- [ ] **Audit for other unguarded `DateInterval(start:end:)` construction.**
+  `CommuteDetection.commutes` crashed on-device 2026-08-10
+  (`EXC_BREAKPOINT`/`SIGTRAP`) when a manually added visit overlapped the
+  stay before it: `stays` there is sorted by arrival, and the code trusted
+  that order alone to guarantee `end >= start`, which `DateInterval.init`
+  requires or traps on. Manual visits go through no overlap resolution at
+  all — `ManualVisitView` only clamps a visit's own arrival against its own
+  departure — so the same shape can occur wherever else two different
+  visits' dates are combined the same way. Grep for other
+  `DateInterval(start:end:)` sites built from two visits and confirm each
+  tolerates an out-of-order pair, or consider warning about/resolving an
+  overlap at Add Visit save time instead of patching each crash site as it's
+  found.
 
 - [ ] Re-run archive performance on the physical phone after each data-shape
   change. Keep aggregate timing only; investigate any main-thread stall over
