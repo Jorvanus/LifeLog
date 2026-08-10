@@ -13,7 +13,15 @@ struct LocationArrivalConfirmation {
     }
 
     static let requiredStationarySamples = 2
-    static let maximumSamples = 3
+    // Observed on-device 2026-08-10: `CLLocationUpdate.liveUpdates()` can deliver
+    // roughly one sample per second, and every sample read `stationary=false` for
+    // someone who had been still for hours. Core Location's motion fusion needs a
+    // sustained low-movement period before it commits to "stationary" -- exactly
+    // to avoid a brief pause reading as an arrival -- and a cap of 3 ended every
+    // burst within a few seconds, long before that classification had any real
+    // chance to settle. Raised so the burst can run close to the full `timeout`
+    // instead of quitting almost immediately.
+    static let maximumSamples = 12
     static let timeout: Duration = .seconds(15)
 
     let startedAt = Date.now
