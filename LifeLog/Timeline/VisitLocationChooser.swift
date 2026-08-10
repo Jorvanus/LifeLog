@@ -8,6 +8,12 @@ import MapKit
 /// Search button, then results. Standing in a place you can see, the useful question
 /// is not "what would I search for" but "which of these is it", so the places nearby
 /// are listed on arrival, closest first, with how far away each one is.
+///
+/// That answers "I am here now" well and a retrospective entry badly: filling in a
+/// visit hours or days after the fact means standing somewhere else entirely, where
+/// "nearby" is the wrong question. Submitting the text field runs a real Apple Maps
+/// search instead of only listing what's close, and "Choose on map" drops a movable
+/// pin for a place search can't find at all.
 struct VisitLocationChooser: View {
     @Binding var name: String
     @Binding var resolution: ManualPlaceResolution
@@ -15,7 +21,8 @@ struct VisitLocationChooser: View {
 
     /// Anchored on the most recent recorded location rather than asking Core Location
     /// again: it is where the person is, and it keeps this screen off the permission
-    /// and battery path entirely.
+    /// and battery path entirely. Also the starting point for "Choose on map" and the
+    /// soft bias for a text search, not a hard limit on either.
     @Query(filter: #Predicate<Visit> { $0.source == "automatic" || $0.source == "manual" },
            sort: \Visit.arrival, order: .reverse) private var recent: [Visit]
     @Query(sort: \SavedPlace.name) private var savedPlaces: [SavedPlace]
@@ -23,6 +30,11 @@ struct VisitLocationChooser: View {
     @State private var nearby: [NearbyPlace] = []
     @State private var isSearching = true
     @State private var searchFailed = false
+
+    @State private var searchResults: [NearbyPlace] = []
+    @State private var isSearchingByName = false
+    @State private var searchAttempted = false
+    @State private var textSearchFailed = false
 
     struct NearbyPlace: Identifiable {
         let name: String
@@ -43,11 +55,53 @@ struct VisitLocationChooser: View {
             Section {
                 TextField("e.g. Aaron's Gardens", text: $name)
                     .textInputAutocapitalization(.words)
+                    .submitLabel(.search)
+                    .onSubmit { Task { await search() } }
+                    .onChange(of: name) { _, updated in
+                        if updated.isEmpty {
+                            searchAttempted = false
+                            searchResults = []
+                        }
+                    }
                     .accessibilityIdentifier("location-name-field")
             } header: {
                 Text("Location")
             } footer: {
-                Text("Type a name, or choose one below.")
+                Text("Type a name and search, or choose a place nearby below.")
+            }
+
+            if searchAttempted {
+                Section {
+                    if isSearchingByName {
+                        HStack(spacing: 10) { ProgressView(); Text("Searching…") }
+                    } else if searchResults.isEmpty {
+                        Text(textSearchFailed
+                             ? "Apple Maps could not be reached. Try again, or choose on the map below."
+                             : "No matches for “\(name)”. Try a different name, or choose on the map below.")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    } else {
+                        ForEach(searchResults) { place in row(for: place) }
+                    }
+                } header: {
+                    Text("Search results")
+                } footer: {
+                    Text("From Apple Maps, wherever the place actually is.")
+                }
+            }
+
+            Section {
+                NavigationLink {
+                    LocationDetailView(name: name, coordinate: anchor ?? .init(latitude: 0, longitude: 0)) { chosen, coordinate in
+                        name = chosen
+                        resolution = .matched(name: chosen, coordinate: coordinate)
+                        dismiss()
+                    }
+                } label: {
+                    Label("Choose on map", systemImage: "mappin.and.ellipse")
+                }
+                .accessibilityIdentifier("choose-on-map-link")
+            } footer: {
+                Text("Drop a pin anywhere — for a place search can't find, or one you'd rather point to yourself.")
             }
 
             Section {
@@ -55,41 +109,11 @@ struct VisitLocationChooser: View {
                     HStack(spacing: 10) { ProgressView(); Text("Looking around you…") }
                 } else if nearby.isEmpty {
                     Text(searchFailed
-                         ? "Apple Maps could not be reached. Type a name above instead."
-                         : "Nothing found nearby. Type a name above instead.")
+                         ? "Apple Maps could not be reached."
+                         : "Nothing found nearby.")
                         .font(.subheadline).foregroundStyle(.secondary)
                 } else {
-                    ForEach(nearby) { place in
-                        HStack {
-                            Button {
-                                choose(place)
-                            } label: {
-                                HStack(spacing: 8) {
-                                    if place.isKnown {
-                                        Image(systemName: "clock.arrow.trianglehead.counterclockwise.rotate.90")
-                                            .font(.caption).foregroundStyle(.blue)
-                                            .accessibilityLabel("Used before")
-                                    }
-                                    Text(place.name).foregroundStyle(.primary)
-                                    Spacer()
-                                    Text("\(Int(place.metres.rounded())) m")
-                                        .font(.caption).foregroundStyle(.secondary)
-                                }
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            NavigationLink {
-                                LocationDetailView(name: place.name, coordinate: place.coordinate) { chosen, coordinate in
-                                    name = chosen
-                                    resolution = .matched(name: chosen, coordinate: coordinate)
-                                    dismiss()
-                                }
-                            } label: { EmptyView() }
-                                .labelsHidden()
-                                .frame(width: 26)
-                                .accessibilityLabel("Details for \(place.name)")
-                        }
-                    }
+                    ForEach(nearby) { place in row(for: place) }
                 }
             } header: {
                 HStack {
@@ -105,6 +129,39 @@ struct VisitLocationChooser: View {
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("visit-location-chooser")
         .task { await load() }
+    }
+
+    @ViewBuilder
+    private func row(for place: NearbyPlace) -> some View {
+        HStack {
+            Button {
+                choose(place)
+            } label: {
+                HStack(spacing: 8) {
+                    if place.isKnown {
+                        Image(systemName: "clock.arrow.trianglehead.counterclockwise.rotate.90")
+                            .font(.caption).foregroundStyle(.blue)
+                            .accessibilityLabel("Used before")
+                    }
+                    Text(place.name).foregroundStyle(.primary)
+                    Spacer()
+                    Text("\(Int(place.metres.rounded())) m")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            NavigationLink {
+                LocationDetailView(name: place.name, coordinate: place.coordinate) { chosen, coordinate in
+                    name = chosen
+                    resolution = .matched(name: chosen, coordinate: coordinate)
+                    dismiss()
+                }
+            } label: { EmptyView() }
+                .labelsHidden()
+                .frame(width: 26)
+                .accessibilityLabel("Details for \(place.name)")
+        }
     }
 
     private func choose(_ place: NearbyPlace) {
@@ -152,6 +209,46 @@ struct VisitLocationChooser: View {
         }
         nearby = results.sorted { $0.metres < $1.metres }
         isSearching = false
+    }
+
+    /// A search by name rather than by proximity — the thing this screen otherwise
+    /// has no way to do. Biased loosely toward `anchor` when one exists so a common
+    /// name (a chain café, a bank branch) prefers the nearby result, but Apple Maps
+    /// still surfaces a distant, well-matched name over that bias.
+    private func search() async {
+        let query = TextSafety.clean(name, maximumLength: 120)
+        guard !query.isEmpty else {
+            searchAttempted = false
+            searchResults = []
+            return
+        }
+        searchAttempted = true
+        isSearchingByName = true
+        textSearchFailed = false
+
+        let request = MKLocalSearch.Request()
+        request.naturalLanguageQuery = query
+        if let anchor {
+            request.region = MKCoordinateRegion(center: anchor, latitudinalMeters: 50_000, longitudinalMeters: 50_000)
+        }
+        let origin = anchor.map { CLLocation(latitude: $0.latitude, longitude: $0.longitude) }
+
+        do {
+            let response = try await MKLocalSearch(request: request).start()
+            searchResults = response.mapItems.compactMap { item -> NearbyPlace? in
+                guard let itemName = item.name else { return nil }
+                let coordinate = item.location.coordinate
+                guard CLLocationCoordinate2DIsValid(coordinate) else { return nil }
+                let distance = origin?.distance(from: CLLocation(latitude: coordinate.latitude,
+                                                                  longitude: coordinate.longitude)) ?? 0
+                return NearbyPlace(name: TextSafety.clean(itemName, maximumLength: 120),
+                                   coordinate: coordinate, metres: distance, isKnown: false)
+            }.sorted { $0.metres < $1.metres }
+        } catch {
+            searchResults = []
+            textSearchFailed = true
+        }
+        isSearchingByName = false
     }
 }
 

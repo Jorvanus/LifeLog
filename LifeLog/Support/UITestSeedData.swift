@@ -50,6 +50,15 @@ enum UITestSeedData {
         // Without one seeded, that whole path renders as nothing at all.
         visit(690, 750, "Rockhampton Hospital", "Donate Blood", "automatic", "medium")
         visit(-420, -30, "Sleep", "Sleeping", "health-sleep", "device")
+        // A hand-typed Add Visit entry with no resolved coordinate — what "Where?"
+        // produces when a name is typed rather than chosen from a search result.
+        // Distinct from the device-sourced Walking row above: this one is a location
+        // source (manual) with none recorded, which the editor must offer to set
+        // rather than treat as a genuine no-position device recording.
+        context.insert(Visit(arrival: day.addingTimeInterval(750 * 60), departure: day.addingTimeInterval(780 * 60),
+                             latitude: 0, longitude: 0, placeName: "Blood Bank",
+                             inferredActivity: "Donate Blood", userActivity: "Donate Blood",
+                             source: "manual", recognitionConfidence: nil))
         try context.save()
     }
 }

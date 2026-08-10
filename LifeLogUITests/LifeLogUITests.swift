@@ -260,6 +260,27 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertFalse(element("visit-location-map-picker").exists)
     }
 
+    /// A hand-typed Add Visit entry with no coordinate is a different case from the
+    /// walk above: there is nothing to protect it from a pin, and no way to give it
+    /// one had to mean opening a different app entirely. It gets the editable map,
+    /// not the read-only "places either side" context that a genuine device
+    /// recording keeps.
+    func testAManuallyTypedVisitWithNoCoordinateGetsAnEditableMap() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+
+        XCTAssertTrue(element("jump-to-date-button").waitForExistence(timeout: 10))
+        let bloodBank = app.staticTexts["Blood Bank"].firstMatch
+        XCTAssertTrue(bloodBank.waitForExistence(timeout: 5))
+        bloodBank.tap()
+
+        XCTAssertTrue(app.textFields["Place name"].waitForExistence(timeout: 5))
+        XCTAssertTrue(element("visit-location-map-picker").waitForExistence(timeout: 5))
+        XCTAssertFalse(element("visit-context-map").exists)
+        XCTAssertTrue(app.staticTexts["Tap the map to set this visit’s location."].exists)
+    }
+
     /// Grouping decides where Insights counts time, and until now it could only be
     /// seen one activity at a time through a picker. The group's own view has to be
     /// reachable from Settings and offer adding one.
