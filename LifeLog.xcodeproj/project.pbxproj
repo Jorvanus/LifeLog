@@ -48,6 +48,7 @@
 		6D899D4FE6C9D2A947F47ED5 /* SleepSessionRepair.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7904037148521259418CA84B /* SleepSessionRepair.swift */; };
 		527470E2B1A2B41A1D08F76D /* InsightWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2817B87DCA67AEF98B64AC98 /* InsightWindow.swift */; };
 		5D8568D1511806DE576FAB9A /* ActivityImportActorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 346E0ECB4A8D7AA9F0DC7BE2 /* ActivityImportActorTests.swift */; };
+		C9E818B70CEE6B1BE30D9A1E /* InsightsDonutChartTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 505D9764DB8E31E2F0453C04 /* InsightsDonutChartTests.swift */; };
 		1D41011EEC587C2494757BB2 /* CommuteDetectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 476DA2FBDF5AC67285CB435D /* CommuteDetectionTests.swift */; };
 		5B7A5D7E30BBCB2D617EED07 /* SleepSessionRepairTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 012EF84B096311014619445A /* SleepSessionRepairTests.swift */; };
 		5E58FA7949196BDAB62668A2 /* PlaceActivitySelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB1320DFF66D7CA1AC7D3AB3 /* PlaceActivitySelection.swift */; };
@@ -177,6 +178,7 @@
 		649970936CB4187C10D48FE7 /* JournalCSVImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalCSVImporter.swift; sourceTree = "<group>"; };
 		65F71226A086D9FA96C67287 /* LifeLogApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeLogApp.swift; sourceTree = "<group>"; };
 		68B312E02829D6B2AA4ADE95 /* InsightsAggregationCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsAggregationCacheTests.swift; sourceTree = "<group>"; };
+		505D9764DB8E31E2F0453C04 /* InsightsDonutChartTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsDonutChartTests.swift; sourceTree = "<group>"; };
 		69B4B98007D7C7BB21196EFC /* InsightsDonutChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsDonutChart.swift; sourceTree = "<group>"; };
 		6C707C98C486A8C44AF8282B /* LocationDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationDiagnostics.swift; sourceTree = "<group>"; };
 		6CB11E4F47D7C0137AE52300 /* PlaceScoring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceScoring.swift; sourceTree = "<group>"; };
@@ -255,6 +257,7 @@
 				BC059E0E19671902B7E592AF /* DiagnosticsTests.swift */,
 				D31DA6EE7697B72E6A9B0C41 /* InferenceEngineTests.swift */,
 				68B312E02829D6B2AA4ADE95 /* InsightsAggregationCacheTests.swift */,
+				505D9764DB8E31E2F0453C04 /* InsightsDonutChartTests.swift */,
 				42FA1BEB104759808C00B661 /* InsightsTrendAggregatorTests.swift */,
 				E17E384A813C0062E6F2396F /* LocalBackupTests.swift */,
 				136C28CBCB9BB1FEB539118A /* LocationArrivalConfirmationTests.swift */,
@@ -692,6 +695,7 @@
 				3FD3341691D6EF3ADE458B34 /* DiagnosticsTests.swift in Sources */,
 				AF3FC621FF468CC2FBED1030 /* InferenceEngineTests.swift in Sources */,
 				27D43A1C35EFA7B52DE438D7 /* InsightsAggregationCacheTests.swift in Sources */,
+				C9E818B70CEE6B1BE30D9A1E /* InsightsDonutChartTests.swift in Sources */,
 				4395865BD17A4A1F4943A25B /* InsightsTrendAggregatorTests.swift in Sources */,
 				218485C59F61E8DC4CBCD9F8 /* LocalBackupTests.swift in Sources */,
 				6554E3838F5DFE0ED57AF0DD /* LocationArrivalConfirmationTests.swift in Sources */,

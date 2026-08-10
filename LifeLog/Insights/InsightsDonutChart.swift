@@ -43,7 +43,21 @@ struct InsightsDonutChart: View {
 
     private var focusedSegment: InsightSegment? {
         guard let focusedSlice else { return nil }
-        return segments.first { $0.category == focusedSlice.name && $0.isUnlogged == focusedSlice.isUnlogged }
+        return Self.representativeSegment(in: segments, matching: focusedSlice.name,
+                                          isUnlogged: focusedSlice.isUnlogged)
+    }
+
+    /// The largest segment in a category, not the earliest one. A category
+    /// interrupted partway through the day (Home, split by Sleep) has several
+    /// segments; the wedge is sized by all of them together, but the In/Out readout
+    /// can only show one, and picking the first picked whichever happened earliest
+    /// in the day — sometimes a sliver of a few minutes with no relation to what the
+    /// wedge's size or "View entry" actually represents.
+    nonisolated static func representativeSegment(in segments: [InsightSegment], matching category: String,
+                                                   isUnlogged: Bool) -> InsightSegment? {
+        segments
+            .filter { $0.category == category && $0.isUnlogged == isUnlogged }
+            .max { $0.hours < $1.hours }
     }
 
     /// Below this a wedge is too narrow to hold anything legible, and its icon would
