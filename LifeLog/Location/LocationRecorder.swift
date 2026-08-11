@@ -673,7 +673,16 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         guard let place = monitoredPlaces[event.identifier] else { return }
         switch event.state {
         case .satisfied:
-            createVisit(at: place.coordinate, arrival: event.date, callbackType: "geofence-entry")
+            // A geofence crossing is not proof the phone stopped -- GPS jitter near
+            // an already-open stay's boundary, or driving straight through, can
+            // satisfy the region without a real visit happening. Confirm it against
+            // the same motion-fused burst used for CLVisit arrivals before writing
+            // a durable one; a phone still moving when the burst ends produces no
+            // confirmed location and the arrival is discarded, not recorded.
+            beginLocationConfirmation(
+                pendingArrival: .init(coordinate: place.coordinate, arrival: event.date,
+                                      callbackType: "geofence-entry", accuracy: -1)
+            )
         case .unsatisfied:
             closeMonitoredVisit(named: place.name, at: event.date, coordinate: place.coordinate)
         default:

@@ -13,6 +13,7 @@ struct VisitEditor: View {
     @Query(sort: \VisitCorrection.changedAt, order: .reverse) private var corrections: [VisitCorrection]
     @State private var saveFailed = false
     @State private var confirmingDelete = false
+    @State private var confirmingDeleteSplit = false
     @State private var correctionBaseline: VisitCorrectionSnapshot?
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var adjustingLocation = false
@@ -309,7 +310,7 @@ struct VisitEditor: View {
                 }
             }
             Section {
-                Button("Delete Visit", role: .destructive) { confirmingDelete = true }
+                Button("Delete Visit", role: .destructive) { presentDeleteConfirmation() }
                     .accessibilityIdentifier("delete-visit")
             } footer: {
                 // Was a trash glyph in the top-left corner, a thumb's width from the
@@ -341,10 +342,17 @@ struct VisitEditor: View {
             Text("LifeLog left your existing timeline unchanged.")
         }
         .confirmationDialog("Delete this visit?", isPresented: $confirmingDelete) {
-            Button("Delete visit", role: .destructive) { deleteVisit() }
+            Button("Delete visit", role: .destructive) { deleteVisit(splitTime: false) }
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("If the visits before and after it are the same place and activity, their time will be merged. Otherwise no surrounding visit will be guessed.")
+        }
+        .confirmationDialog("The visits before and after this one are different.", isPresented: $confirmingDeleteSplit) {
+            Button("Split time between them", role: .destructive) { deleteVisit(splitTime: true) }
+            Button("Leave as unlogged", role: .destructive) { deleteVisit(splitTime: false) }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("You can split the freed time evenly between the visit before and the one after, or leave it unlogged to fill in yourself later.")
         }
         .onAppear {
             // Guarded: `onAppear` fires again when this screen comes back to the
@@ -506,16 +514,40 @@ struct VisitEditor: View {
         }
     }
 
-    private func deleteVisit() {
+    private func deletionNeighbours() -> (previous: Visit?, next: Visit?) {
+        guard let all = try? context.fetch(FetchDescriptor<Visit>(sortBy: [SortDescriptor(\.arrival)])) else {
+            return (nil, nil)
+        }
+        let previous = all.filter { $0.id != visit.id && ($0.departure ?? .now) <= visit.arrival }
+            .max { $0.arrival < $1.arrival }
+        let end = visit.departure ?? visit.arrival
+        let next = all.filter { $0.id != visit.id && $0.arrival >= end }
+            .min { $0.arrival < $1.arrival }
+        return (previous, next)
+    }
+
+    /// Same-place/same-activity neighbours always merge silently -- that case has
+    /// only one sensible outcome. Different neighbours don't: splitting the freed
+    /// time is a real choice, not a default, so that case alone asks first.
+    private func presentDeleteConfirmation() {
+        let (previous, next) = deletionNeighbours()
+        if let previous, let next, !sameActivityLocation(previous, next) {
+            confirmingDeleteSplit = true
+        } else {
+            confirmingDelete = true
+        }
+    }
+
+    private func deleteVisit(splitTime: Bool) {
         do {
-            let all = try context.fetch(FetchDescriptor<Visit>(sortBy: [SortDescriptor(\.arrival)]))
-            let previous = all.filter { $0.id != visit.id && ($0.departure ?? .now) <= visit.arrival }
-                .max { $0.arrival < $1.arrival }
-            let end = visit.departure ?? visit.arrival
-            let next = all.filter { $0.id != visit.id && $0.arrival >= end }
-                .min { $0.arrival < $1.arrival }
+            let (previous, next) = deletionNeighbours()
             if let previous, let next, sameActivityLocation(previous, next) {
                 previous.departure = next.departure ?? next.arrival
+            } else if splitTime, let previous, let next {
+                let gapStart = previous.departure ?? visit.arrival
+                let midpoint = gapStart.addingTimeInterval(next.arrival.timeIntervalSince(gapStart) / 2)
+                previous.departure = midpoint
+                next.arrival = midpoint
             }
             context.delete(visit)
             try context.save()
