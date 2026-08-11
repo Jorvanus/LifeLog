@@ -2,6 +2,12 @@
 
 ## 2026-08-11
 
+### The "Where?" picker no longer hides its own nearby list behind the current guess
+
+- The location field pre-filled itself with the visit's current place name, which is usually specific enough to match nothing else nearby — opening the picker on an already-named visit routinely landed on "no nearby matches" instead of a usable list. The field now starts blank, and the current guess is shown as a checkmark next to its row in Places nearby instead, so the list stays browsable and typing still narrows it live.
+- The per-row "details" control was an invisible tap target with no visible affordance at all. It's now a visible info-circle icon, but only for a place LifeLog already knows (already saved, already visited) — a plain Apple Maps result has no history, save, or merge behind it to show, so it gets no detail link (and no disclosure chevron, which a `NavigationLink` draws automatically whether or not it leads anywhere useful) at all.
+- "Choose on map" and the per-row detail link had a `simultaneousGesture` diagnostic beacon added alongside their `NavigationLink`, which competed with the link's own tap handling — the button visibly highlighted but the push often didn't fire, needing several taps to actually open. Removed; the checkpoint diagnostics already sitting inside the destination screen cover the same ground without a gesture on the trigger itself.
+
 ### "Place" is now its own screen, with the map on top and the name below
 
 - Edit Visit used to show an editable pin map and a "Place" row as two separate sections inline in the main form. Tapping "Place" now opens a dedicated screen instead — the map first, then the current name as a row that leads into the existing "Where?" search/nearby picker, matching how "Choose on map" already gets its own screen rather than living inline.

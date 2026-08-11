@@ -48,7 +48,13 @@ struct VisitLocationChooser: View {
     init(name: Binding<String>, resolution: Binding<ManualPlaceResolution>) {
         _name = name
         _resolution = resolution
-        _query = State(initialValue: name.wrappedValue)
+        // Left blank rather than seeded from `name`: a real current guess is
+        // usually a long, specific name that matches nothing else nearby, so
+        // pre-filling it just filtered the nearby list down to "no matches" the
+        // instant this screen opened. The current guess is shown as a checkmark
+        // in that list instead, the way it's already known -- Places nearby
+        // still doubles as "confirm what LifeLog already thinks" this way.
+        _query = State(initialValue: "")
     }
 
     struct NearbyPlace: Identifiable {
@@ -125,15 +131,6 @@ struct VisitLocationChooser: View {
                     Label("Choose on map", systemImage: "mappin.and.ellipse")
                 }
                 .accessibilityIdentifier("choose-on-map-link")
-                // `simultaneousGesture` fires alongside the push, not instead of it, so
-                // this beacon lands even if everything past this point locks up -- the
-                // one thing an after-the-fact timing log can't do, since a genuine hang
-                // never reaches the code that would write it.
-                .simultaneousGesture(TapGesture().onEnded {
-                    Diagnostics.record(context, subsystem: "LocationDetailView",
-                                       message: "Choose on map tapped", severity: "info",
-                                       category: Diagnostics.Category.performance)
-                })
             } footer: {
                 Text("Drop a pin anywhere — for a place search can't find, or one you'd rather point to yourself.")
             }
@@ -177,6 +174,16 @@ struct VisitLocationChooser: View {
         .task { await load() }
     }
 
+    /// Whether this row is what LifeLog already has recorded for the visit --
+    /// shown as a checkmark rather than by pre-filling the text field, since a
+    /// pre-filled field filtered this very list down to nothing the moment the
+    /// screen opened.
+    private func isCurrentGuess(_ place: NearbyPlace) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        return NameKey.same(place.name, trimmed)
+    }
+
     @ViewBuilder
     private func row(for place: NearbyPlace) -> some View {
         HStack {
@@ -184,7 +191,11 @@ struct VisitLocationChooser: View {
                 choose(place)
             } label: {
                 HStack(spacing: 8) {
-                    if place.isKnown {
+                    if isCurrentGuess(place) {
+                        Image(systemName: "checkmark")
+                            .font(.caption.weight(.semibold)).foregroundStyle(.blue)
+                            .accessibilityLabel("Current place")
+                    } else if place.isKnown {
                         Image(systemName: "clock.arrow.trianglehead.counterclockwise.rotate.90")
                             .font(.caption).foregroundStyle(.blue)
                             .accessibilityLabel("Used before")
@@ -197,21 +208,27 @@ struct VisitLocationChooser: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            NavigationLink {
-                LocationDetailView(name: place.name, coordinate: place.coordinate) { chosen, coordinate in
-                    name = chosen
-                    resolution = .matched(name: chosen, coordinate: coordinate)
-                    dismiss()
+            // Apple Maps alone has nothing behind this for a place LifeLog has
+            // never recorded -- no history, nothing to merge or delete, just the
+            // same name and coordinate already on screen. The detail link (and
+            // the disclosure chevron a `NavigationLink` draws automatically in a
+            // `List` row) only earns its place when there's a real destination:
+            // a place LifeLog already knows.
+            if place.isKnown {
+                NavigationLink {
+                    LocationDetailView(name: place.name, coordinate: place.coordinate) { chosen, coordinate in
+                        name = chosen
+                        resolution = .matched(name: chosen, coordinate: coordinate)
+                        dismiss()
+                    }
+                } label: {
+                    Image(systemName: "info.circle")
+                        .foregroundStyle(.blue)
                 }
-            } label: { EmptyView() }
-                .labelsHidden()
-                .frame(width: 26)
+                .buttonStyle(.plain)
+                .frame(width: 30)
                 .accessibilityLabel("Details for \(place.name)")
-                .simultaneousGesture(TapGesture().onEnded {
-                    Diagnostics.record(context, subsystem: "LocationDetailView",
-                                       message: "Place detail arrow tapped", severity: "info",
-                                       category: Diagnostics.Category.performance)
-                })
+            }
         }
     }
 
