@@ -275,9 +275,12 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(bloodBank.waitForExistence(timeout: 5))
         bloodBank.tap()
 
-        XCTAssertTrue(element("choose-location-link").waitForExistence(timeout: 5))
-        XCTAssertTrue(element("visit-location-map-picker").waitForExistence(timeout: 5))
+        let placeLink = element("choose-location-link")
+        XCTAssertTrue(placeLink.waitForExistence(timeout: 5))
         XCTAssertFalse(element("visit-context-map").exists)
+        placeLink.tap()
+
+        XCTAssertTrue(element("visit-location-map-picker").waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Tap the map to set this visit’s location."].exists)
     }
 

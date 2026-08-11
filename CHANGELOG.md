@@ -2,6 +2,10 @@
 
 ## 2026-08-11
 
+### "Place" is now its own screen, with the map on top and the name below
+
+- Edit Visit used to show an editable pin map and a "Place" row as two separate sections inline in the main form. Tapping "Place" now opens a dedicated screen instead — the map first, then the current name as a row that leads into the existing "Where?" search/nearby picker, matching how "Choose on map" already gets its own screen rather than living inline.
+
 ### Fixed UI freeze when opening "Choose on map" in location chooser
 
 - Replaced an unbounded `@Query` over all historic visits in `VisitLocationChooser` with a single bounded fetch limited to the latest visit coordinate, avoiding main-thread object materialization of thousands of visits.

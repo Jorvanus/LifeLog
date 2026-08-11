@@ -16,7 +16,6 @@ struct VisitEditor: View {
     @State private var confirmingDeleteSplit = false
     @State private var correctionBaseline: VisitCorrectionSnapshot?
     @State private var mapPosition: MapCameraPosition = .automatic
-    @State private var adjustingLocation = false
     @State private var placeResolution: ManualPlaceResolution = .none
 
     // Typing goes here, not straight into the visit. Writing the model on every
@@ -164,59 +163,27 @@ struct VisitEditor: View {
                     Text("This entry came from Apple Health, which records movement without a location, so LifeLog has no position for it. These are the places recorded either side of it.")
                 }
             }
-            // Shown for every stay with no route, except the one case the section
-            // above already owns: a genuine device recording with no location at all,
-            // where a precise pin would be invented rather than corrected. Anything
-            // else without a coordinate — a place typed by hand in Add Visit, chiefly
-            // — previously had no way to ever get one; this is that way.
-            // `recordedCoordinate == nil` is itself the cue to place the first pin;
-            // once set, a tap only moves it while `adjustingLocation` guards against
-            // nudging it by accident.
-            if !visit.hasRoute, !showsNeighbourContextInsteadOfMap {
-                Section {
-                    MapReader { proxy in
-                        Map(position: $mapPosition) {
-                            if let coordinate = recordedCoordinate {
-                                Marker("Recorded location", coordinate: coordinate)
-                                    .tint(adjustingLocation ? .orange : .blue)
-                            }
-                        }
-                        .frame(height: 240)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                        .mapControls { MapCompass(); MapUserLocationButton() }
-                        .onTapGesture(coordinateSpace: .local) { point in
-                            guard recordedCoordinate == nil || adjustingLocation,
-                                  let updated = proxy.convert(point, from: .local),
-                                  CLLocationCoordinate2DIsValid(updated) else { return }
-                            latitudeDraft = updated.latitude
-                            longitudeDraft = updated.longitude
-                            mapPosition = .region(region(centeredOn: updated))
-                            adjustingLocation = false
-                        }
-                    }
-                    .accessibilityIdentifier("visit-location-map-picker")
-                    Text(mapLocationFooterText)
-                        .font(.footnote).foregroundStyle(.secondary)
-                    if recordedCoordinate != nil {
-                        Button {
-                            adjustingLocation.toggle()
-                        } label: {
-                            Label(adjustingLocation ? "Finish adjusting pin" : "Adjust pin location",
-                                  systemImage: adjustingLocation ? "checkmark.circle" : "mappin.and.ellipse")
-                        }
-                    }
-                } header: {
-                    Text("Map location")
-                } footer: {
-                    Text("Adjusting the pin changes this visit’s stored coordinate. It does not contact Apple Maps until you choose a place suggestion or save a place.")
-                }
-            }
             Section {
                 NavigationLink {
-                    VisitLocationChooser(name: $placeNameDraft, resolution: $placeResolution)
+                    VisitPlaceScreen(
+                        placeNameDraft: $placeNameDraft,
+                        placeResolution: $placeResolution,
+                        latitudeDraft: $latitudeDraft,
+                        longitudeDraft: $longitudeDraft,
+                        // Only a genuine device recording with no location at all
+                        // (a walk or workout Health/Motion gave no coordinate for)
+                        // keeps the read-only neighbour context instead of a pin
+                        // to place; a route already has its own map, and anything
+                        // else -- a hand-typed Add Visit entry above all -- gets
+                        // the editable one.
+                        showsEditableMap: !visit.hasRoute && !showsNeighbourContextInsteadOfMap,
+                        fallbackRegion: region(covering: neighbours)
+                    )
                 } label: {
-                    Text(placeNameDraft.isEmpty ? "Choose location" : placeNameDraft)
-                        .foregroundStyle(placeNameDraft.isEmpty ? .secondary : .primary)
+                    LabeledContent("Place") {
+                        Text(placeNameDraft.isEmpty ? "Choose location" : placeNameDraft)
+                            .foregroundStyle(placeNameDraft.isEmpty ? .secondary : .primary)
+                    }
                 }
                 .accessibilityIdentifier("choose-location-link")
                 if visit.needsConfirmation {
@@ -640,13 +607,6 @@ struct VisitEditor: View {
         !visit.hasRoute && recordedCoordinate == nil && ActivityLocationPolicy.isDeviceActivity(visit)
     }
 
-    private var mapLocationFooterText: String {
-        guard recordedCoordinate != nil else { return "Tap the map to set this visit’s location." }
-        return adjustingLocation
-            ? "Tap the map to move the pin, then tap Done to save it."
-            : "Recorded at the location shown above."
-    }
-
     private func region(centeredOn coordinate: CLLocationCoordinate2D) -> MKCoordinateRegion {
         MKCoordinateRegion(center: coordinate,
                            span: MKCoordinateSpan(latitudeDelta: 0.004, longitudeDelta: 0.004))
@@ -712,6 +672,113 @@ struct VisitEditor: View {
         }
         InsightsInvalidation.invalidate(reason: corrected ? "visit correction" : "visit edit", context: context)
         correctionBaseline = currentSnapshot
+    }
+}
+
+/// "Place": the editable pin and the current name, one screen instead of two
+/// sections in the middle of the main form. Reached by tapping "Place" from the
+/// visit editor, the same way "Choose on map" already gets its own screen inside
+/// "Where?" rather than living inline.
+struct VisitPlaceScreen: View {
+    @Binding var placeNameDraft: String
+    @Binding var placeResolution: ManualPlaceResolution
+    @Binding var latitudeDraft: Double
+    @Binding var longitudeDraft: Double
+    let showsEditableMap: Bool
+    /// Where to first centre the map for a visit with no coordinate yet -- the
+    /// places either side of it, computed once by the visit editor from its own
+    /// `neighbours`, rather than this screen re-fetching the same thing.
+    let fallbackRegion: MKCoordinateRegion?
+
+    @State private var mapPosition: MapCameraPosition = .automatic
+    @State private var adjustingLocation = false
+
+    private var recordedCoordinate: CLLocationCoordinate2D? {
+        let coordinate = CLLocationCoordinate2D(latitude: latitudeDraft, longitude: longitudeDraft)
+        guard CLLocationCoordinate2DIsValid(coordinate),
+              coordinate.latitude != 0 || coordinate.longitude != 0 else { return nil }
+        return coordinate
+    }
+
+    private var mapLocationFooterText: String {
+        guard recordedCoordinate != nil else { return "Tap the map to set this visit’s location." }
+        return adjustingLocation
+            ? "Tap the map to move the pin, then tap Done to save it."
+            : "Recorded at the location shown above."
+    }
+
+    private func region(centeredOn coordinate: CLLocationCoordinate2D) -> MKCoordinateRegion {
+        MKCoordinateRegion(center: coordinate,
+                           span: MKCoordinateSpan(latitudeDelta: 0.004, longitudeDelta: 0.004))
+    }
+
+    var body: some View {
+        Form {
+            // `recordedCoordinate == nil` is itself the cue to place the first pin;
+            // once set, a tap only moves it while `adjustingLocation` guards against
+            // nudging it by accident.
+            if showsEditableMap {
+                Section {
+                    MapReader { proxy in
+                        Map(position: $mapPosition) {
+                            if let coordinate = recordedCoordinate {
+                                Marker("Recorded location", coordinate: coordinate)
+                                    .tint(adjustingLocation ? .orange : .blue)
+                            }
+                        }
+                        .frame(height: 240)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .mapControls { MapCompass(); MapUserLocationButton() }
+                        .onTapGesture(coordinateSpace: .local) { point in
+                            guard recordedCoordinate == nil || adjustingLocation,
+                                  let updated = proxy.convert(point, from: .local),
+                                  CLLocationCoordinate2DIsValid(updated) else { return }
+                            latitudeDraft = updated.latitude
+                            longitudeDraft = updated.longitude
+                            mapPosition = .region(region(centeredOn: updated))
+                            adjustingLocation = false
+                        }
+                    }
+                    .accessibilityIdentifier("visit-location-map-picker")
+                    Text(mapLocationFooterText)
+                        .font(.footnote).foregroundStyle(.secondary)
+                    if recordedCoordinate != nil {
+                        Button {
+                            adjustingLocation.toggle()
+                        } label: {
+                            Label(adjustingLocation ? "Finish adjusting pin" : "Adjust pin location",
+                                  systemImage: adjustingLocation ? "checkmark.circle" : "mappin.and.ellipse")
+                        }
+                    }
+                } header: {
+                    Text("Map location")
+                } footer: {
+                    Text("Adjusting the pin changes this visit’s stored coordinate. It does not contact Apple Maps until you choose a place suggestion or save a place.")
+                }
+            }
+            Section {
+                NavigationLink {
+                    VisitLocationChooser(name: $placeNameDraft, resolution: $placeResolution)
+                } label: {
+                    Text(placeNameDraft.isEmpty ? "Choose location" : placeNameDraft)
+                        .foregroundStyle(placeNameDraft.isEmpty ? .secondary : .primary)
+                }
+                .accessibilityIdentifier("visit-location-link")
+            } header: {
+                Text("Location")
+            } footer: {
+                Text("Search by name, choose on the map, or pick from what's nearby -- including places you've been before.")
+            }
+        }
+        .navigationTitle("Place")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            if let coordinate = recordedCoordinate {
+                mapPosition = .region(region(centeredOn: coordinate))
+            } else if let fallbackRegion {
+                mapPosition = .region(fallbackRegion)
+            }
+        }
     }
 }
 
