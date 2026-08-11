@@ -29,6 +29,20 @@ struct VisitEditor: View {
     @State private var noteDraft = ""
     @State private var loadedDrafts = false
 
+    // Everything below used to write straight into `visit` -- a map tap set
+    // `visit.latitude`/`longitude` immediately, the date pickers were bound to
+    // `visit.arrival`/`departure` directly, and a picked place wrote
+    // `visit.recognitionConfidence` on the spot. Leaving the screen any way other
+    // than "Done" -- back button, swipe, `onDisappear` -- still committed all of
+    // it, so there was no way to change your mind. These are drafts for exactly
+    // the same reason the text fields above are: nothing reaches `visit` before
+    // `sanitizeVisit`, which now covers these too.
+    @State private var arrivalDraft = Date()
+    @State private var departureDraft: Date?
+    @State private var latitudeDraft: Double = 0
+    @State private var longitudeDraft: Double = 0
+    @State private var recognitionConfidenceDraft: String?
+
     // Read once on appear rather than derived in `body`. Both were recomputed on
     // every evaluation: the catalogue is a JSON decode and a localised sort, and the
     // visits here used to be filtered out of a `@Query` holding the whole archive.
@@ -174,8 +188,8 @@ struct VisitEditor: View {
                             guard recordedCoordinate == nil || adjustingLocation,
                                   let updated = proxy.convert(point, from: .local),
                                   CLLocationCoordinate2DIsValid(updated) else { return }
-                            visit.latitude = updated.latitude
-                            visit.longitude = updated.longitude
+                            latitudeDraft = updated.latitude
+                            longitudeDraft = updated.longitude
                             mapPosition = .region(region(centeredOn: updated))
                             adjustingLocation = false
                         }
@@ -291,10 +305,10 @@ struct VisitEditor: View {
                 }
             }
             Section("Time") {
-                DatePicker("Arrived", selection: $visit.arrival)
-                DatePicker("Left", selection: Binding(get: { visit.departure ?? .now }, set: { visit.departure = $0 }))
+                DatePicker("Arrived", selection: $arrivalDraft)
+                DatePicker("Left", selection: Binding(get: { departureDraft ?? .now }, set: { departureDraft = $0 }))
             }
-            if visit.latitude != 0 || visit.longitude != 0 {
+            if latitudeDraft != 0 || longitudeDraft != 0 {
                 Section {
                     Button {
                         learnPlace()
@@ -323,15 +337,22 @@ struct VisitEditor: View {
             // `VisitLocationChooser` owns `placeNameDraft` directly through the
             // binding; this only carries back what it can't reach through that --
             // the coordinate, and the confidence a picked place earns over a typo fix.
+            // Both land in drafts, same as everything else here -- picking a place
+            // is a real choice worth keeping if you back out of this screen too,
+            // but it still isn't final until Done.
             guard let coordinate = resolution.coordinate else { return }
-            visit.latitude = coordinate.latitude
-            visit.longitude = coordinate.longitude
+            latitudeDraft = coordinate.latitude
+            longitudeDraft = coordinate.longitude
             if let confidence = resolution.confidence {
-                visit.recognitionConfidence = confidence
+                recognitionConfidenceDraft = confidence
             }
             reloadVisitsHere()
         }
+        .navigationBarBackButtonHidden(true)
         .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") { dismiss() }
+            }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Done") { saveAndDismiss() }
             }
@@ -362,6 +383,10 @@ struct VisitEditor: View {
                 placeNameDraft = visit.placeName
                 activityDraft = visit.userActivity ?? ""
                 noteDraft = visit.note
+                arrivalDraft = visit.arrival
+                departureDraft = visit.departure
+                latitudeDraft = visit.latitude
+                longitudeDraft = visit.longitude
                 loadedDrafts = true
             }
             if catalogue.isEmpty { catalogue = ActivityCatalog.load() }
@@ -381,11 +406,6 @@ struct VisitEditor: View {
             if let coordinate = recordedCoordinate {
                 mapPosition = .region(region(centeredOn: coordinate))
             }
-        }
-        .onDisappear {
-            guard !saveFailed else { return }
-            sanitizeVisit()
-            try? persistChanges(forceLearning: false)
         }
     }
 
@@ -476,7 +496,7 @@ struct VisitEditor: View {
     /// the place for future arrivals.
     private func confirmPlace() {
         if activityDraft.isEmpty { activityDraft = visit.inferredActivity }
-        visit.recognitionConfidence = "confirmed"
+        recognitionConfidenceDraft = "confirmed"
         learnPlace()
     }
 
@@ -493,14 +513,14 @@ struct VisitEditor: View {
     private func select(_ suggestion: PlaceSuggestion) {
         placeNameDraft = suggestion.name
         activityDraft = suggestion.suggestedActivity
-        visit.recognitionConfidence = "confirmed"
+        recognitionConfidenceDraft = "confirmed"
         reloadVisitsHere()
     }
 
     private func applyQuickLabel(name: String, activity: String) {
         placeNameDraft = name
         activityDraft = activity
-        visit.recognitionConfidence = "confirmed"
+        recognitionConfidenceDraft = "confirmed"
         learnPlace()
     }
 
@@ -561,9 +581,11 @@ struct VisitEditor: View {
         NameKey.same(lhs.placeName, rhs.placeName) && NameKey.same(lhs.activity, rhs.activity)
     }
 
-    /// The one place the typed text reaches the visit. Every path that persists —
-    /// Done, Save & Learn Place, and leaving the screen — goes through here first,
-    /// so there is a single commit point rather than a write per keystroke.
+    /// The one place any draft reaches the visit — text, time, coordinate, or
+    /// confidence alike. Every path that persists — Done, Save & Learn Place,
+    /// confirming a place, a quick label — goes through here first, so there is a
+    /// single commit point rather than a write as each one changes. Cancel and the
+    /// back button never call this, which is what makes them an actual cancel.
     private func sanitizeVisit() {
         PlaceLookupService.cancelAllLookups()
         // Nothing to commit if the fields were never filled from the visit. Without
@@ -577,24 +599,33 @@ struct VisitEditor: View {
         let activity = TextSafety.clean(activityDraft, maximumLength: 80)
         visit.userActivity = activity.isEmpty ? nil : activity
         visit.note = TextSafety.clean(noteDraft, maximumLength: 2_000)
+        visit.arrival = arrivalDraft
+        visit.departure = departureDraft
         if let departure = visit.departure, departure < visit.arrival {
             visit.departure = visit.arrival
+        }
+        visit.latitude = latitudeDraft
+        visit.longitude = longitudeDraft
+        if let recognitionConfidenceDraft {
+            visit.recognitionConfidence = recognitionConfidenceDraft
         }
         // Back into the fields, so what is shown is what was stored.
         placeNameDraft = visit.placeName
         activityDraft = visit.userActivity ?? ""
         noteDraft = visit.note
+        arrivalDraft = visit.arrival
+        departureDraft = visit.departure
     }
 
     private var canLearnPlace: Bool {
         let activity = activityDraft.isEmpty ? visit.inferredActivity : activityDraft
-        return (visit.latitude != 0 || visit.longitude != 0) &&
+        return (latitudeDraft != 0 || longitudeDraft != 0) &&
         !TextSafety.clean(placeNameDraft, maximumLength: 100).isEmpty &&
         !TextSafety.clean(activity, maximumLength: 80).isEmpty
     }
 
     private var recordedCoordinate: CLLocationCoordinate2D? {
-        let coordinate = CLLocationCoordinate2D(latitude: visit.latitude, longitude: visit.longitude)
+        let coordinate = CLLocationCoordinate2D(latitude: latitudeDraft, longitude: longitudeDraft)
         guard CLLocationCoordinate2DIsValid(coordinate),
               coordinate.latitude != 0 || coordinate.longitude != 0 else { return nil }
         return coordinate

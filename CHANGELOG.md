@@ -2,6 +2,16 @@
 
 ## 2026-08-11
 
+### Fixed UI freeze when opening "Choose on map" in location chooser
+
+- Replaced an unbounded `@Query` over all historic visits in `VisitLocationChooser` with a single bounded fetch limited to the latest visit coordinate, avoiding main-thread object materialization of thousands of visits.
+- Deferred the location history lookup in `LocationDetailView` to yield during navigation push transitions, keeping screen navigation fluid on large datasets.
+
+### Leaving Edit Visit, "Where?", or Edit Place no longer keeps changes you didn't ask to keep
+
+- All three screens wrote straight into the live model as you interacted with them — a map tap set the coordinate immediately, a radius slider or activity pick committed on the spot, and Edit Visit persisted everything on `onDisappear` regardless of how you left. The back button, and even a swipe, already amounted to saving; there was no way to change your mind. Every field is now a draft, committed only by an explicit Done/Save, and each screen has a real Cancel that discards it and nothing else. The default back button is hidden in favour of that Cancel so it's not still sitting there implying "go back" while actually meaning "keep this."
+- Typing in the "Where?" picker's search field had the same problem one level down: every keystroke wrote into the caller's place-name draft directly, so backing out after typing but not choosing anything left the half-typed text in place as if it had been picked. Typing is now purely local until an actual selection is made — a nearby row, a search result, or "Use" on the map.
+
 ### The "Where?" picker's nearby list now narrows as you type
 
 - Typing in the location field only ever ran a fresh Apple Maps search on submit; the "Places nearby" list underneath stayed exactly as loaded, unfiltered, until then. It now narrows live against what's already on screen as each letter is typed — the on-submit Apple Maps search is unchanged and still there for a place that isn't in the nearby list at all.

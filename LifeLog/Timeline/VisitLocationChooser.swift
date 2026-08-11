@@ -18,13 +18,14 @@ struct VisitLocationChooser: View {
     @Binding var name: String
     @Binding var resolution: ManualPlaceResolution
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
 
     /// Anchored on the most recent recorded location rather than asking Core Location
     /// again: it is where the person is, and it keeps this screen off the permission
     /// and battery path entirely. Also the starting point for "Choose on map" and the
-    /// soft bias for a text search, not a hard limit on either.
-    @Query(filter: #Predicate<Visit> { $0.source == "automatic" || $0.source == "manual" },
-           sort: \Visit.arrival, order: .reverse) private var recent: [Visit]
+    /// soft bias for a text search, not a hard limit on either. Fetched with fetchLimit = 1
+    /// in `load()` rather than an unbounded `@Query` over every visit in history.
+    @State private var anchorCoordinate: CLLocationCoordinate2D?
     @Query(sort: \SavedPlace.name) private var savedPlaces: [SavedPlace]
 
     @State private var nearby: [NearbyPlace] = []
@@ -35,6 +36,20 @@ struct VisitLocationChooser: View {
     @State private var isSearchingByName = false
     @State private var searchAttempted = false
     @State private var textSearchFailed = false
+
+    // What's typed, not what's chosen. `name`/`resolution` are the caller's own
+    // draft state (never the live model directly), but writing every keystroke
+    // into them meant leaving this screen without picking anything -- back
+    // button, swipe, whatever -- still left the half-typed text sitting in the
+    // place field as though it had been chosen. Only an explicit pick (a row, a
+    // search result, "Use" on the map) writes back; typing alone never does.
+    @State private var query: String
+
+    init(name: Binding<String>, resolution: Binding<ManualPlaceResolution>) {
+        _name = name
+        _resolution = resolution
+        _query = State(initialValue: name.wrappedValue)
+    }
 
     struct NearbyPlace: Identifiable {
         let name: String
@@ -47,7 +62,7 @@ struct VisitLocationChooser: View {
     }
 
     private var anchor: CLLocationCoordinate2D? {
-        recent.first { $0.latitude != 0 || $0.longitude != 0 }?.coordinate
+        anchorCoordinate
     }
 
     /// Narrows what's already loaded rather than re-querying Apple Maps per
@@ -55,19 +70,19 @@ struct VisitLocationChooser: View {
     /// not only once you submit (that's what the separate "Search results"
     /// section, and its live Apple Maps request, are for).
     private var filteredNearby: [NearbyPlace] {
-        let query = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return nearby }
-        return nearby.filter { $0.name.localizedCaseInsensitiveContains(query) }
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nearby }
+        return nearby.filter { $0.name.localizedCaseInsensitiveContains(trimmed) }
     }
 
     var body: some View {
         List {
             Section {
-                TextField("e.g. Aaron's Gardens", text: $name)
+                TextField("e.g. Aaron's Gardens", text: $query)
                     .textInputAutocapitalization(.words)
                     .submitLabel(.search)
                     .onSubmit { Task { await search() } }
-                    .onChange(of: name) { _, updated in
+                    .onChange(of: query) { _, updated in
                         if updated.isEmpty {
                             searchAttempted = false
                             searchResults = []
@@ -87,7 +102,7 @@ struct VisitLocationChooser: View {
                     } else if searchResults.isEmpty {
                         Text(textSearchFailed
                              ? "Apple Maps could not be reached. Try again, or choose on the map below."
-                             : "No matches for “\(name)”. Try a different name, or choose on the map below.")
+                             : "No matches for “\(query)”. Try a different name, or choose on the map below.")
                             .font(.subheadline).foregroundStyle(.secondary)
                     } else {
                         ForEach(searchResults) { place in row(for: place) }
@@ -101,7 +116,7 @@ struct VisitLocationChooser: View {
 
             Section {
                 NavigationLink {
-                    LocationDetailView(name: name, coordinate: anchor ?? .init(latitude: 0, longitude: 0)) { chosen, coordinate in
+                    LocationDetailView(name: query, coordinate: anchor ?? .init(latitude: 0, longitude: 0)) { chosen, coordinate in
                         name = chosen
                         resolution = .matched(name: chosen, coordinate: coordinate)
                         dismiss()
@@ -123,7 +138,7 @@ struct VisitLocationChooser: View {
                          : "Nothing found nearby.")
                         .font(.subheadline).foregroundStyle(.secondary)
                 } else if filteredNearby.isEmpty {
-                    Text("No nearby matches for “\(name)”.")
+                    Text("No nearby matches for “\(query)”.")
                         .font(.subheadline).foregroundStyle(.secondary)
                 } else {
                     ForEach(filteredNearby) { place in row(for: place) }
@@ -140,6 +155,15 @@ struct VisitLocationChooser: View {
         }
         .navigationTitle("Where?")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            // The default back button pops the same as this, but reads as "go
+            // back" rather than "discard" -- and nothing here is written back to
+            // the caller until an explicit pick anyway, so this is never lying.
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") { dismiss() }
+            }
+        }
         .accessibilityIdentifier("visit-location-chooser")
         .task { await load() }
     }
@@ -184,7 +208,17 @@ struct VisitLocationChooser: View {
     }
 
     private func load() async {
-        guard let anchor else {
+        if anchorCoordinate == nil {
+            let predicate = #Predicate<Visit> { visit in
+                visit.latitude != 0
+            }
+            let sortByArrival = SortDescriptor(\Visit.arrival, order: .reverse)
+            var descriptor = FetchDescriptor<Visit>(predicate: predicate, sortBy: [sortByArrival])
+            descriptor.fetchLimit = 1
+            let matchingVisits = try? context.fetch(descriptor)
+            anchorCoordinate = matchingVisits?.first?.coordinate
+        }
+        guard let anchor = anchorCoordinate else {
             isSearching = false
             return
         }
@@ -229,8 +263,8 @@ struct VisitLocationChooser: View {
     /// name (a chain café, a bank branch) prefers the nearby result, but Apple Maps
     /// still surfaces a distant, well-matched name over that bias.
     private func search() async {
-        let query = TextSafety.clean(name, maximumLength: 120)
-        guard !query.isEmpty else {
+        let cleanedQuery = TextSafety.clean(query, maximumLength: 120)
+        guard !cleanedQuery.isEmpty else {
             searchAttempted = false
             searchResults = []
             return
@@ -240,7 +274,7 @@ struct VisitLocationChooser: View {
         textSearchFailed = false
 
         let request = MKLocalSearch.Request()
-        request.naturalLanguageQuery = query
+        request.naturalLanguageQuery = cleanedQuery
         if let anchor {
             request.region = MKCoordinateRegion(center: anchor, latitudinalMeters: 50_000, longitudinalMeters: 50_000)
         }
@@ -278,7 +312,13 @@ struct LocationDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Query(sort: \SavedPlace.name) private var savedPlaces: [SavedPlace]
-    @Query(sort: \Visit.arrival, order: .reverse) private var allVisits: [Visit]
+
+    // An unbounded `@Query` over every `Visit` used to sit here, hydrating the
+    // entire archive into memory just to count how many matched this one name --
+    // tens of thousands of records on a real archive, which read as this screen
+    // hanging outright rather than being merely slow. `PlaceVisitLookup` already
+    // does the narrow-then-match version of this for `VisitEditor`; reused here.
+    @State private var history: [Visit] = []
     let onUse: (String, CLLocationCoordinate2D) -> Void
 
     /// The saved place this is, if LifeLog already knows it — by name, or by being
@@ -289,10 +329,6 @@ struct LocationDetailView: View {
             place.name.caseInsensitiveCompare(name) == .orderedSame ||
             origin.distance(from: CLLocation(latitude: place.latitude, longitude: place.longitude)) <= 60
         }
-    }
-
-    private var history: [Visit] {
-        allVisits.filter { $0.placeName.caseInsensitiveCompare(name) == .orderedSame }
     }
 
     init(name: String, coordinate: CLLocationCoordinate2D,
@@ -384,6 +420,16 @@ struct LocationDetailView: View {
                     .disabled(TextSafety.clean(name, maximumLength: 120).isEmpty)
             }
         }
+        .task(id: name) {
+            let targetName = name
+            guard !targetName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                history = []
+                return
+            }
+            // Yield so the push navigation transition finishes rendering before SQLite scans history
+            await Task.yield()
+            history = (try? PlaceVisitLookup.visits(named: targetName, excluding: nil, context: context)) ?? []
+        }
     }
 }
 
@@ -395,7 +441,8 @@ private extension LocationDetailView {
     /// entries for the same doorway happened to record it.
     func merge(_ source: SavedPlace, into target: SavedPlace) {
         let sourceName = source.name
-        for visit in allVisits where visit.placeName.caseInsensitiveCompare(sourceName) == .orderedSame {
+        let matching = (try? PlaceVisitLookup.visits(named: sourceName, excluding: nil, context: context)) ?? []
+        for visit in matching {
             visit.placeName = target.name
         }
         context.delete(source)

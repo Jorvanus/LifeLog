@@ -166,13 +166,23 @@ private struct SavedPlaceEditor: View {
     @State private var nameDraft = ""
     @State private var loadedDraft = false
 
+    // Same reasoning, extended to the fields that used to write straight into
+    // `place`: a map tap set `place.latitude`/`longitude` immediately, the radius
+    // slider and the activity picker were bound to `place` directly. None of that
+    // waited for Done -- leaving by the back button still kept it, so there was
+    // no way to back out of an accidental pin move or slider drag.
+    @State private var latitudeDraft: Double = 0
+    @State private var longitudeDraft: Double = 0
+    @State private var radiusDraft: Double = 100
+    @State private var defaultActivityDraft = ""
+
     var body: some View {
         Form {
             Section("Place") {
                 TextField("Name", text: $nameDraft)
             }
             Section("Map location") {
-                let coordinate = CLLocationCoordinate2D(latitude: place.latitude, longitude: place.longitude)
+                let coordinate = CLLocationCoordinate2D(latitude: latitudeDraft, longitude: longitudeDraft)
                 MapReader { proxy in
                     Map(position: $mapPosition) {
                         Marker(nameDraft.isEmpty ? "Place" : nameDraft, coordinate: coordinate)
@@ -185,8 +195,8 @@ private struct SavedPlaceEditor: View {
                         guard adjustingLocation,
                               let updated = proxy.convert(point, from: .local),
                               CLLocationCoordinate2DIsValid(updated) else { return }
-                        place.latitude = updated.latitude
-                        place.longitude = updated.longitude
+                        latitudeDraft = updated.latitude
+                        longitudeDraft = updated.longitude
                         mapPosition = .region(MKCoordinateRegion(center: updated,
                                                                   span: .init(latitudeDelta: 0.004, longitudeDelta: 0.004)))
                     }
@@ -211,14 +221,14 @@ private struct SavedPlaceEditor: View {
             }
             Section("Default activity") {
                 NavigationLink {
-                    PlaceActivitySelection(selection: $place.defaultActivity)
+                    PlaceActivitySelection(selection: $defaultActivityDraft)
                 } label: {
-                    LabeledContent("Activity", value: place.defaultActivity.isEmpty ? "Choose an activity" : place.defaultActivity)
+                    LabeledContent("Activity", value: defaultActivityDraft.isEmpty ? "Choose an activity" : defaultActivityDraft)
                 }
             }
             Section {
-                Slider(value: $place.radius, in: 25...500, step: 25)
-                LabeledContent("Recognition radius", value: "\(Int(place.radius)) m")
+                Slider(value: $radiusDraft, in: 25...500, step: 25)
+                LabeledContent("Recognition radius", value: "\(Int(radiusDraft)) m")
             } header: {
                 Text("Geofence")
             } footer: {
@@ -236,16 +246,24 @@ private struct SavedPlaceEditor: View {
         .navigationTitle(nameDraft.isEmpty ? "Edit Place" : nameDraft)
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            let coordinate = CLLocationCoordinate2D(latitude: place.latitude, longitude: place.longitude)
-            mapPosition = .region(MKCoordinateRegion(center: coordinate,
-                                                      span: .init(latitudeDelta: 0.004, longitudeDelta: 0.004)))
             if !loadedDraft {
                 nameDraft = place.name
+                latitudeDraft = place.latitude
+                longitudeDraft = place.longitude
+                radiusDraft = place.radius
+                defaultActivityDraft = place.defaultActivity
                 loadedDraft = true
             }
+            let coordinate = CLLocationCoordinate2D(latitude: latitudeDraft, longitude: longitudeDraft)
+            mapPosition = .region(MKCoordinateRegion(center: coordinate,
+                                                      span: .init(latitudeDelta: 0.004, longitudeDelta: 0.004)))
         }
         .task { backfillPreview = try? SavedPlaceLearning.preview(place, context: context) }
+        .navigationBarBackButtonHidden(true)
         .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") { dismiss() }
+            }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Done") { save() }
                     .disabled(TextSafety.clean(nameDraft, maximumLength: 100).isEmpty)
@@ -285,6 +303,10 @@ private struct SavedPlaceEditor: View {
 
     private func save() {
         place.name = nameDraft
+        place.latitude = latitudeDraft
+        place.longitude = longitudeDraft
+        place.radius = radiusDraft
+        place.defaultActivity = defaultActivityDraft
         do {
             try SavedPlaceLearning.apply(place, context: context)
             try context.save()

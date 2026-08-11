@@ -217,7 +217,7 @@ final class LifeLogUITests: XCTestCase {
         let firstVisit = app.cells.firstMatch
         XCTAssertTrue(firstVisit.waitForExistence(timeout: 5))
         firstVisit.tap()
-        XCTAssertTrue(app.textFields["Place name"].waitForExistence(timeout: 5))
+        XCTAssertTrue(element("choose-location-link").waitForExistence(timeout: 5))
     }
 
     /// The day begins with the stay it woke up in, and the walk between two places
@@ -254,7 +254,7 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(walk.waitForExistence(timeout: 5))
         walk.tap()
 
-        XCTAssertTrue(app.textFields["Place name"].waitForExistence(timeout: 5))
+        XCTAssertTrue(element("choose-location-link").waitForExistence(timeout: 5))
         XCTAssertTrue(element("visit-context-map").waitForExistence(timeout: 5))
         // And not the pin map, which would mean a position this record does not have.
         XCTAssertFalse(element("visit-location-map-picker").exists)
@@ -275,7 +275,7 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(bloodBank.waitForExistence(timeout: 5))
         bloodBank.tap()
 
-        XCTAssertTrue(app.textFields["Place name"].waitForExistence(timeout: 5))
+        XCTAssertTrue(element("choose-location-link").waitForExistence(timeout: 5))
         XCTAssertTrue(element("visit-location-map-picker").waitForExistence(timeout: 5))
         XCTAssertFalse(element("visit-context-map").exists)
         XCTAssertTrue(app.staticTexts["Tap the map to set this visit’s location."].exists)
