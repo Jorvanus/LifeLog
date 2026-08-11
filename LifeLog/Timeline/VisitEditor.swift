@@ -17,7 +17,7 @@ struct VisitEditor: View {
     @State private var correctionBaseline: VisitCorrectionSnapshot?
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var adjustingLocation = false
-    @State private var showingNearbyPlaces = false
+    @State private var placeResolution: ManualPlaceResolution = .none
 
     // Typing goes here, not straight into the visit. Writing the model on every
     // keystroke changed the store on every keystroke, and every `@Query` in the app
@@ -198,15 +198,13 @@ struct VisitEditor: View {
                 }
             }
             Section {
-                TextField("Place name", text: $placeNameDraft)
-                    .onSubmit { reloadVisitsHere() }
-                if recordedCoordinate != nil {
-                    Button {
-                        showingNearbyPlaces = true
-                    } label: {
-                        Label("Choose nearby Apple Maps place", systemImage: "mappin.and.ellipse")
-                    }
+                NavigationLink {
+                    VisitLocationChooser(name: $placeNameDraft, resolution: $placeResolution)
+                } label: {
+                    Text(placeNameDraft.isEmpty ? "Choose location" : placeNameDraft)
+                        .foregroundStyle(placeNameDraft.isEmpty ? .secondary : .primary)
                 }
+                .accessibilityIdentifier("choose-location-link")
                 if visit.needsConfirmation {
                     // Without this there is no way to agree with a weak guess:
                     // dismissing the editor leaves the confidence untouched, so the
@@ -321,15 +319,17 @@ struct VisitEditor: View {
         }
         .navigationTitle(visit.needsCategorisation ? "Categorise Place" : "Visit")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showingNearbyPlaces) {
-            if let coordinate = recordedCoordinate {
-                NearbyPlacePicker(coordinate: coordinate, arrival: visit.arrival) { suggestion in
-                    select(suggestion)
-                    visit.latitude = suggestion.latitude
-                    visit.longitude = suggestion.longitude
-                    showingNearbyPlaces = false
-                }
+        .onChange(of: placeResolution) { _, resolution in
+            // `VisitLocationChooser` owns `placeNameDraft` directly through the
+            // binding; this only carries back what it can't reach through that --
+            // the coordinate, and the confidence a picked place earns over a typo fix.
+            guard let coordinate = resolution.coordinate else { return }
+            visit.latitude = coordinate.latitude
+            visit.longitude = coordinate.longitude
+            if let confidence = resolution.confidence {
+                visit.recognitionConfidence = confidence
             }
+            reloadVisitsHere()
         }
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
@@ -752,62 +752,5 @@ enum SurroundingStays {
             // At or after it ended — the place it arrived at.
             after: located.first { $0.arrival >= ownEnd }
         )
-    }
-}
-
-private struct NearbyPlacePicker: View {
-    @Environment(\.dismiss) private var dismiss
-    let coordinate: CLLocationCoordinate2D
-    let arrival: Date
-    let onSelect: (PlaceSuggestion) -> Void
-    @State private var suggestions: [PlaceSuggestion] = []
-    @State private var isLoading = true
-    @State private var failed = false
-
-    var body: some View {
-        NavigationStack {
-            Group {
-                if isLoading {
-                    ProgressView("Searching Apple Maps…")
-                } else if failed || suggestions.isEmpty {
-                    ContentUnavailableView("No nearby places found", systemImage: "mappin.slash",
-                                           description: Text("Try adjusting the pin or enter the place name manually."))
-                } else {
-                    List(suggestions) { suggestion in
-                        Button {
-                            onSelect(suggestion)
-                            dismiss()
-                        } label: {
-                            HStack(spacing: 12) {
-                                ActivityIcon(activity: suggestion.suggestedActivity,
-                                             context: suggestion.name,
-                                             color: activityColor(suggestion.suggestedActivity), size: 42)
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(suggestion.name).foregroundStyle(.primary)
-                                    Text("\(suggestion.suggestedActivity) · \(Int(suggestion.distance.rounded())) m away")
-                                        .font(.caption).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
-                            }
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Nearby Apple Maps Places")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-            }
-            .task {
-                do {
-                    let result = try await PlaceLookupService.nearbyPlaces(at: coordinate, radius: 250, arrival: arrival)
-                    suggestions = result.suggestions
-                } catch {
-                    failed = true
-                }
-                isLoading = false
-            }
-        }
     }
 }

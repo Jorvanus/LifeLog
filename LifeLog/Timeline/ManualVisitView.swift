@@ -26,6 +26,23 @@ enum ManualPlaceResolution {
     }
 }
 
+extension ManualPlaceResolution: Equatable {
+    static func == (lhs: ManualPlaceResolution, rhs: ManualPlaceResolution) -> Bool {
+        switch (lhs, rhs) {
+        case (.none, .none):
+            return true
+        case let (.pinned(left), .pinned(right)):
+            return left.latitude == right.latitude && left.longitude == right.longitude
+        case let (.matched(leftName, leftCoordinate), .matched(rightName, rightCoordinate)):
+            return leftName == rightName &&
+                leftCoordinate.latitude == rightCoordinate.latitude &&
+                leftCoordinate.longitude == rightCoordinate.longitude
+        default:
+            return false
+        }
+    }
+}
+
 struct ManualVisitView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
