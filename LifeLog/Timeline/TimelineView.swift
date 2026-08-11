@@ -906,12 +906,18 @@ private struct JourneyRow: View {
                 Text("Uncategorised location").font(.headline.weight(.semibold)).foregroundStyle(.primary)
                 Text("Suspected: \(visit.inferredActivity)")
                     .font(.subheadline).foregroundStyle(.secondary)
-            } else {
-                Text(visit.activity).font(.headline.weight(.semibold)).foregroundStyle(.primary)
+            } else if visit.hasRoute {
                 // A journey is described by how far it went. Its place name is only
                 // ever "Walking workout", which says nothing.
-                Text(visit.hasRoute ? formattedDistance(visit.routeDistance) : visit.placeName)
+                Text(visit.activity).font(.headline.weight(.semibold)).foregroundStyle(.primary)
+                Text(formattedDistance(visit.routeDistance))
                     .font(.subheadline).foregroundStyle(.secondary)
+            } else {
+                // Place name leads, activity follows -- matching the Current
+                // Activity card above, so the same "Home"/"At home" pairing
+                // doesn't read backwards between the two.
+                Text(visit.displayPlaceName).font(.headline.weight(.semibold)).foregroundStyle(.primary)
+                Text(visit.activity).font(.subheadline).foregroundStyle(.secondary)
             }
             Text(timeDescription).font(.subheadline).foregroundStyle(.secondary)
         }

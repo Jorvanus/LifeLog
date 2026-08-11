@@ -134,7 +134,6 @@ struct VisitLocationChooser: View {
                     LocationDetailView(name: query, coordinate: anchor ?? .init(latitude: 0, longitude: 0)) { chosen, coordinate in
                         name = chosen
                         resolution = .matched(name: chosen, coordinate: coordinate)
-                        dismiss()
                     }
                 } label: {
                     Label("Choose on map", systemImage: "mappin.and.ellipse")
@@ -171,6 +170,16 @@ struct VisitLocationChooser: View {
         .navigationTitle("Where?")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
+        .onChange(of: resolution) { _, newValue in
+            // A pick made straight from this screen's own row is a plain button,
+            // so it could call `dismiss()` directly and it worked. A pick made on
+            // "Choose on map" or a place's own detail screen comes back through a
+            // callback captured two navigation levels up -- that `dismiss()`,
+            // called from a grandchild, did not reliably pop back this far. This
+            // reacts to the choice itself instead, however many screens away it
+            // was made, and is the one place any pick now dismisses from.
+            if case .matched = newValue { dismiss() }
+        }
         .toolbar {
             // The default back button pops the same as this, but reads as "go
             // back" rather than "discard" -- and nothing here is written back to
@@ -228,7 +237,6 @@ struct VisitLocationChooser: View {
                     LocationDetailView(name: place.name, coordinate: place.coordinate) { chosen, coordinate in
                         name = chosen
                         resolution = .matched(name: chosen, coordinate: coordinate)
-                        dismiss()
                     }
                 } label: {
                     Image(systemName: "info.circle")
@@ -244,7 +252,6 @@ struct VisitLocationChooser: View {
     private func choose(_ place: NearbyPlace) {
         name = place.name
         resolution = .matched(name: place.name, coordinate: place.coordinate)
-        dismiss()
     }
 
     private func load() async {
@@ -463,7 +470,10 @@ struct LocationDetailView: View {
         .accessibilityIdentifier("location-detail-screen")
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button("Use") { onUse(TextSafety.clean(name, maximumLength: 120), coordinate) }
+                Button("Use") {
+                    onUse(TextSafety.clean(name, maximumLength: 120), coordinate)
+                    dismiss()
+                }
                     .disabled(TextSafety.clean(name, maximumLength: 120).isEmpty)
             }
         }

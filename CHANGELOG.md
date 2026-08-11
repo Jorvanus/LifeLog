@@ -2,6 +2,14 @@
 
 ## 2026-08-12
 
+### Timeline's past entries now lead with place name, matching Current Activity
+
+- The Current Activity card shows place name bold with activity underneath ("Home" / "At home"). Every past entry below it showed the same pairing the other way round (activity bold, place name underneath), so the identical "Home"/"At home" pair read backwards depending on which card it was in. Past entries now lead with place name too, except a walk or workout with a route -- its place name is only ever "Walking workout", so that case still leads with the activity and shows distance underneath, same as before.
+
+### "Use" on a place's own map now actually returns you to "Where?"
+
+- Picking a place via "Choose on map" or a nearby row's own detail screen wrote the choice back correctly, but the screen didn't dismiss -- "Use" appeared to do nothing, leaving the back chevron as the only way out and the pick effectively lost. The callback that was supposed to close "Where?" captured its dismiss action two navigation levels up from where it actually got called, which doesn't reliably pop that far. Replaced with each screen dismissing only itself: the place-detail screen closes on "Use", and "Where?" now reacts to the pick being made at all, however many screens away it happened.
+
 ### A low-confidence guess now says so on Timeline, and recurring stops stop needing Maps to agree on a name
 
 - Diagnosed from a real false arrival: walking home landed on "Johnson Rd & Labanka Crescent Stop" — a bus stop 7-20 m from the actual (GPS-accurate) position — because Apple Maps had no better POI registered at the door and Home wasn't saved as a place, so the arrival fell through to the same weak nearby-POI guess every time (score 18 of the 75 needed, correctly flagged `recognitionConfidence: "low"`).
