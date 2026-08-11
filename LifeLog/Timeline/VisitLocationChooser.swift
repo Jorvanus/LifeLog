@@ -125,6 +125,15 @@ struct VisitLocationChooser: View {
                     Label("Choose on map", systemImage: "mappin.and.ellipse")
                 }
                 .accessibilityIdentifier("choose-on-map-link")
+                // `simultaneousGesture` fires alongside the push, not instead of it, so
+                // this beacon lands even if everything past this point locks up -- the
+                // one thing an after-the-fact timing log can't do, since a genuine hang
+                // never reaches the code that would write it.
+                .simultaneousGesture(TapGesture().onEnded {
+                    Diagnostics.record(context, subsystem: "LocationDetailView",
+                                       message: "Choose on map tapped", severity: "info",
+                                       category: Diagnostics.Category.performance)
+                })
             } footer: {
                 Text("Drop a pin anywhere — for a place search can't find, or one you'd rather point to yourself.")
             }
@@ -198,6 +207,11 @@ struct VisitLocationChooser: View {
                 .labelsHidden()
                 .frame(width: 26)
                 .accessibilityLabel("Details for \(place.name)")
+                .simultaneousGesture(TapGesture().onEnded {
+                    Diagnostics.record(context, subsystem: "LocationDetailView",
+                                       message: "Place detail arrow tapped", severity: "info",
+                                       category: Diagnostics.Category.performance)
+                })
         }
     }
 
@@ -354,6 +368,11 @@ struct LocationDetailView: View {
                               CLLocationCoordinate2DIsValid(updated) else { return }
                         coordinate = updated
                     }
+                    .onAppear {
+                        Diagnostics.record(context, subsystem: "LocationDetailView",
+                                           message: "Map appeared", severity: "info",
+                                           category: Diagnostics.Category.performance)
+                    }
                 }
                 .accessibilityIdentifier("location-detail-map")
             } header: {
@@ -420,7 +439,15 @@ struct LocationDetailView: View {
                     .disabled(TextSafety.clean(name, maximumLength: 120).isEmpty)
             }
         }
+        .onAppear {
+            Diagnostics.record(context, subsystem: "LocationDetailView",
+                               message: "Form appeared", severity: "info",
+                               category: Diagnostics.Category.performance)
+        }
         .task(id: name) {
+            Diagnostics.record(context, subsystem: "LocationDetailView",
+                               message: "History task started", severity: "info",
+                               category: Diagnostics.Category.performance)
             let targetName = name
             guard !targetName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 history = []
@@ -428,7 +455,14 @@ struct LocationDetailView: View {
             }
             // Yield so the push navigation transition finishes rendering before SQLite scans history
             await Task.yield()
+            let startedAt = Date.now
             history = (try? PlaceVisitLookup.visits(named: targetName, excluding: nil, context: context)) ?? []
+            Diagnostics.performance(context, subsystem: "LocationDetailView",
+                                    operation: "history fetch", startedAt: startedAt,
+                                    itemCount: history.count, threshold: 0)
+            Diagnostics.record(context, subsystem: "LocationDetailView",
+                               message: "History task finished (\(history.count) items)", severity: "info",
+                               category: Diagnostics.Category.performance)
         }
     }
 }

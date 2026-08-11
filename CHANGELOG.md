@@ -6,6 +6,8 @@
 
 - Replaced an unbounded `@Query` over all historic visits in `VisitLocationChooser` with a single bounded fetch limited to the latest visit coordinate, avoiding main-thread object materialization of thousands of visits.
 - Deferred the location history lookup in `LocationDetailView` to yield during navigation push transitions, keeping screen navigation fluid on large datasets.
+- `LocationDetailView`'s merge action had the same unbounded scan, looping every visit in the archive to rename the ones matching the merged place; switched to the same scoped `PlaceVisitLookup` fetch the history list already uses.
+- The freeze persisted after the above, so added unconditional checkpoint diagnostics (category `performance`, so they land in the existing "Share performance report" export) across the whole path — tap, view construction, map appearance, history fetch — so the last-reached checkpoint identifies where a future hang actually stalls, rather than continuing to guess.
 
 ### Leaving Edit Visit, "Where?", or Edit Place no longer keeps changes you didn't ask to keep
 
