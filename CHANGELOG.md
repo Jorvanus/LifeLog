@@ -2,6 +2,14 @@
 
 ## 2026-08-11
 
+### "Choose on map" now starts on the visit being edited, not wherever the phone last was
+
+- "Where?" anchored its map and its "places nearby" search on whichever visit was most recently recorded anywhere in the archive — correcting an old visit from a different city centred the map, and searched nearby, on today's location instead of the one actually being corrected. It now prefers the coordinate already recorded on the visit being edited, falling back to the most-recent-visit heuristic only for a brand new Add Visit entry that has no coordinate of its own yet.
+
+### The "Place" screen's map no longer needs "Adjust pin location" first
+
+- Moving the pin required tapping "Adjust pin location" to enter a separate editing mode before a tap on the map did anything. Removed the toggle; a tap always moves the pin now, the same way it already works on "Choose on map" -- nothing here commits until the whole visit editor is saved, so there was nothing the toggle was actually protecting.
+
 ### The "Where?" picker no longer hides its own nearby list behind the current guess
 
 - The location field pre-filled itself with the visit's current place name, which is usually specific enough to match nothing else nearby — opening the picker on an already-named visit routinely landed on "no nearby matches" instead of a usable list. The field now starts blank, and the current guess is shown as a checkmark next to its row in Places nearby instead, so the list stays browsable and typing still narrows it live.

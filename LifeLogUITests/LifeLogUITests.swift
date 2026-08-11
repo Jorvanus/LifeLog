@@ -281,7 +281,7 @@ final class LifeLogUITests: XCTestCase {
         placeLink.tap()
 
         XCTAssertTrue(element("visit-location-map-picker").waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Tap the map to set this visit’s location."].exists)
+        XCTAssertTrue(app.staticTexts["Tap the map to set or move this visit’s location."].exists)
     }
 
     /// Grouping decides where Insights counts time, and until now it could only be

@@ -28,6 +28,13 @@ struct VisitLocationChooser: View {
     @State private var anchorCoordinate: CLLocationCoordinate2D?
     @Query(sort: \SavedPlace.name) private var savedPlaces: [SavedPlace]
 
+    /// The visit being edited already has a coordinate more relevant than
+    /// wherever the phone last recorded one -- editing a visit from last week
+    /// in another city otherwise centred the map, and searched "nearby", on
+    /// today's location instead of the one actually being corrected. `nil` for
+    /// Add Visit, which has no visit yet to have a coordinate of its own.
+    let recordedCoordinate: CLLocationCoordinate2D?
+
     @State private var nearby: [NearbyPlace] = []
     @State private var isSearching = true
     @State private var searchFailed = false
@@ -45,9 +52,11 @@ struct VisitLocationChooser: View {
     // search result, "Use" on the map) writes back; typing alone never does.
     @State private var query: String
 
-    init(name: Binding<String>, resolution: Binding<ManualPlaceResolution>) {
+    init(name: Binding<String>, resolution: Binding<ManualPlaceResolution>,
+         recordedCoordinate: CLLocationCoordinate2D? = nil) {
         _name = name
         _resolution = resolution
+        self.recordedCoordinate = recordedCoordinate
         // Left blank rather than seeded from `name`: a real current guess is
         // usually a long, specific name that matches nothing else nearby, so
         // pre-filling it just filtered the nearby list down to "no matches" the
@@ -68,7 +77,7 @@ struct VisitLocationChooser: View {
     }
 
     private var anchor: CLLocationCoordinate2D? {
-        anchorCoordinate
+        recordedCoordinate ?? anchorCoordinate
     }
 
     /// Narrows what's already loaded rather than re-querying Apple Maps per
@@ -239,7 +248,9 @@ struct VisitLocationChooser: View {
     }
 
     private func load() async {
-        if anchorCoordinate == nil {
+        // Only needed as a fallback: a real `recordedCoordinate` already answers
+        // this, and skips the fetch entirely.
+        if recordedCoordinate == nil, anchorCoordinate == nil {
             let predicate = #Predicate<Visit> { visit in
                 visit.latitude != 0
             }
@@ -249,7 +260,7 @@ struct VisitLocationChooser: View {
             let matchingVisits = try? context.fetch(descriptor)
             anchorCoordinate = matchingVisits?.first?.coordinate
         }
-        guard let anchor = anchorCoordinate else {
+        guard let anchor else {
             isSearching = false
             return
         }
