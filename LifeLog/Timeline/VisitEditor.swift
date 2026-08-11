@@ -383,10 +383,12 @@ struct VisitEditor: View {
         }
     }
 
+    /// What's actually been done at this exact place before -- unconditionally
+    /// appending the whole catalogue defeated the point of "here": it made this
+    /// menu list nearly everything "Choose an activity" already does, rather
+    /// than the short, place-specific shortcut its own label promises.
     private var historicalActivities: [String] {
-        var values = visitsHere.map(\.activity)
-        values.append(contentsOf: catalogue.map(\.name))
-        return Array(Set(values)).filter { !$0.isEmpty }.sorted()
+        Array(Set(visitsHere.map(\.activity))).filter { !$0.isEmpty }.sorted()
     }
 
     /// Other visits to the place currently named in the field.

@@ -66,7 +66,6 @@ enum ActivityCatalog {
         ("Strength training", "Fitness", "dumbbell.fill"),
         ("Commuting", "Commute", "car.fill"),
         ("In transit", "Travel", "bus.fill"),
-        ("Home time", "Home", "house.fill"),
         ("Dog walk", "Fitness", "pawprint.fill")
     ]
 
@@ -429,6 +428,40 @@ enum ActivityCatalog {
         }
         save(activities)
         storage.set(true, forKey: workingRenamedKey)
+        return moved
+    }
+
+    private static let homeTimeRenamedKey = "LifeLog.ActivityCatalog.homeTimeRenamed.v1"
+
+    /// Retires the generated `Home time` label in favour of `At home`.
+    ///
+    /// `InferenceEngine` used to split a "home" arrival by time of day — `At home`
+    /// before 8am or after 6pm, `Home time` in between — which fragmented one
+    /// place into two labels nothing asked for: "Set as Home" always wrote `At
+    /// home` regardless of the hour, so the same place ended up split purely by
+    /// when an automatic guess happened to land. Every visit already holding the
+    /// old wording is carried across, the same way `mergeWorkingIntoWork` handles
+    /// its own historical rename.
+    ///
+    /// Runs once. An entry deliberately renamed back to `Home time` afterwards
+    /// stays that way instead of being corrected again at every launch.
+    @MainActor
+    @discardableResult
+    static func mergeHomeTimeIntoAtHome(context: ModelContext) throws -> Int {
+        guard !storage.bool(forKey: homeTimeRenamedKey) else { return 0 }
+        let moved = try renameActivity(from: "Home time", to: "At home", context: context)
+        var activities = load()
+        if let homeTime = activities.first(where: {
+            $0.name.caseInsensitiveCompare("Home time") == .orderedSame
+        }) {
+            activities.removeAll { $0.id == homeTime.id }
+            if !activities.contains(where: { $0.name.caseInsensitiveCompare("At home") == .orderedSame }) {
+                activities.append(ActivityDefinition(name: "At home", category: homeTime.category,
+                                                     symbol: homeTime.symbol))
+            }
+            save(activities)
+        }
+        storage.set(true, forKey: homeTimeRenamedKey)
         return moved
     }
 

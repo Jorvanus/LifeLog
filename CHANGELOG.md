@@ -2,6 +2,14 @@
 
 ## 2026-08-12
 
+### "At home" and "Home time" are now one activity, not two
+
+- `InferenceEngine` silently split every automatic home arrival by time of day — "At home" before 8am or after 6pm, "Home time" in between — while "Set as Home" always wrote "At home" regardless of the hour. The same place fragmented into two labels depending purely on when an automatic guess happened to land, for no reason anyone asked for. The time-of-day split is gone; every "home" arrival is "At home" now, and every existing visit and catalogue entry still holding "Home time" is renamed across in one pass at next launch (same pattern already used to merge the old "Working" label into "Work").
+
+### "Use a previous activity here" now actually means "here"
+
+- It unconditionally appended the entire activity catalogue on top of whatever had actually been used at this specific place, so it ended up showing nearly everything "Choose an activity" already does — never the short, place-specific shortcut its own label promised. It now shows only activities genuinely recorded at this place, and stays hidden (as it already did) when there aren't any yet.
+
 ### Timeline's past entries now lead with place name, matching Current Activity
 
 - The Current Activity card shows place name bold with activity underneath ("Home" / "At home"). Every past entry below it showed the same pairing the other way round (activity bold, place name underneath), so the identical "Home"/"At home" pair read backwards depending on which card it was in. Past entries now lead with place name too, except a walk or workout with a route -- its place name is only ever "Walking workout", so that case still leads with the activity and shows distance underneath, same as before.

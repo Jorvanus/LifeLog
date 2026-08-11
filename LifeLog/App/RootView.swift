@@ -72,6 +72,11 @@ struct RootView: View {
                                    message: "Renamed the seeded Working label to Work across \(moved) visits.",
                                    severity: "info")
             }
+            if let moved = try? ActivityCatalog.mergeHomeTimeIntoAtHome(context: context), moved > 0 {
+                Diagnostics.record(context, subsystem: "Activities",
+                                   message: "Renamed the seeded Home time label to At home across \(moved) visits.",
+                                   severity: "info")
+            }
             let startedAt = Date.now
             recorder.connect(context)
             activityData.connect(context, container: modelContainer)

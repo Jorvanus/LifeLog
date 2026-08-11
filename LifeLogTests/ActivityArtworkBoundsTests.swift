@@ -35,7 +35,7 @@ struct ActivityArtworkBoundsTests {
         // was full of both.
         let defined = Set(ActivityCatalog.defaults.map { $0.name.lowercased() })
         for produced in ["Sleeping", "Walking", "Running", "Cycling", "Swimming",
-                         "Yoga", "Strength training", "Commuting", "In transit", "Home time"] {
+                         "Yoga", "Strength training", "Commuting", "In transit"] {
             #expect(defined.contains(produced.lowercased()), "\(produced) has no activity")
         }
         // Every group LifeLog offers should have something in it.

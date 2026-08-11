@@ -126,10 +126,7 @@ enum InferenceEngine {
         if let match = rules.first(where: { rule in rule.1.contains { text.contains($0) } }) {
             return match.0
         }
-        let hour = Calendar.current.component(.hour, from: arrival)
-        if text.contains("home") {
-            return hour < 8 || hour >= 18 ? "At home" : "Home time"
-        }
+        if text.contains("home") { return "At home" }
         return "Visiting"
     }
 }
