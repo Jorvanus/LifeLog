@@ -1,5 +1,16 @@
 # Change log
 
+## 2026-08-11
+
+### Editing a visit's place now uses the same "Where?" picker as Add Visit
+
+- Edit Visit's place field was a plain text box plus a "Choose nearby Apple Maps place" sheet capped at 3 results, with no search, no map pin, and no awareness of Saved Places — a second, weaker path to what Add Visit's location picker already did well. Tapping the place row now opens that same picker: search by name, choose on the map, or pick from nearby places (Saved Places included, marked as already known). The old sheet is gone.
+
+### Geofence arrivals are now confirmed before becoming a visit, and deleting one can offer to split its time
+
+- A geofence boundary being crossed was trusted immediately, with no check that the phone had actually stopped — unlike a `CLVisit` arrival, which already waits for Core Location's own motion-fused "stationary" signal before writing a durable visit. GPS jitter near an already-open stay, or driving straight past a saved place, could create a visit for a stop that never happened. Geofence entries now go through the same stationary confirmation; if the phone is still moving when the check window ends, nothing is recorded.
+- Deleting a visit sandwiched between two different places used to just leave a gap, shown afterward as unlogged time. It now asks whether to split the freed time evenly between the visit before and after, or leave it unlogged. Deleting a visit sandwiched between two identical place/activity entries still merges automatically, as before.
+
 ## 2026-08-10
 
 ### Roadmap updated with Insights enhancement items
