@@ -32,6 +32,8 @@ struct PlaceSuggestion: Codable, Identifiable, Hashable {
         self.mapsIdentifier = mapsIdentifier
         self.mapsCategory = mapsCategory
     }
+
+    var coordinate: CLLocationCoordinate2D { .init(latitude: latitude, longitude: longitude) }
 }
 
 struct PlaceLookupResult {

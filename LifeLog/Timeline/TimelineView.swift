@@ -535,6 +535,16 @@ struct TimelineView: View {
                     if visit.needsCategorisation {
                         Label("Label", systemImage: "flag.fill")
                             .font(.caption.bold()).foregroundStyle(.orange)
+                    } else if visit.needsConfirmation {
+                        // A named guess is not the same as an unidentified one, but
+                        // this card used to treat them identically -- a low-confidence
+                        // Maps match (recognitionConfidence "low"/"medium") rendered
+                        // with total certainty, no different from a place LifeLog was
+                        // actually sure of. `needsConfirmation` already exists and
+                        // already gates the "Yes, this is right?" prompt inside the
+                        // editor; this is the one place that flag never reached.
+                        Label("Confirm", systemImage: "questionmark.circle.fill")
+                            .font(.caption.bold()).foregroundStyle(.orange)
                     }
                 }
                 HStack(spacing: 14) {
@@ -546,6 +556,8 @@ struct TimelineView: View {
                                 Text("Likely place: \(visit.placeName)")
                                     .font(.caption).foregroundStyle(.secondary)
                             }
+                        } else if visit.needsConfirmation {
+                            Text("Is this right? · \(visit.activity)").foregroundStyle(.secondary)
                         } else {
                             Text(visit.activity).foregroundStyle(.secondary)
                         }

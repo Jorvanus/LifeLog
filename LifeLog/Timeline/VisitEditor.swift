@@ -71,18 +71,25 @@ struct VisitEditor: View {
                     Text("Categorise it once and LifeLog will recognise this location next time.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
-                if canLearnPlace {
-                    Section("Quick labels") {
-                        Button {
-                            applyQuickLabel(name: "Home", activity: "At home")
-                        } label: {
-                            Label("Set as Home", systemImage: "house.fill")
-                        }
-                        Button {
-                            applyQuickLabel(name: "Work", activity: "Working")
-                        } label: {
-                            Label("Set as Work", systemImage: "building.2.fill")
-                        }
+            }
+            // A weak-but-named guess needs this exactly as much as an unidentified
+            // one does -- arriving home with no Home saved place recorded gets
+            // resolved against whatever Apple Maps POI happens to sit closest
+            // (a bus stop outside the door, say), which is a real name, just an
+            // unconfident one. Restricting this to `needsCategorisation` alone
+            // meant there was no one-tap way to say "no, this is Home" for exactly
+            // the case that keeps recurring without a saved geofence to anchor it.
+            if canLearnPlace, visit.needsCategorisation || visit.needsConfirmation {
+                Section("Quick labels") {
+                    Button {
+                        applyQuickLabel(name: "Home", activity: "At home")
+                    } label: {
+                        Label("Set as Home", systemImage: "house.fill")
+                    }
+                    Button {
+                        applyQuickLabel(name: "Work", activity: "Working")
+                    } label: {
+                        Label("Set as Work", systemImage: "building.2.fill")
                     }
                 }
             }

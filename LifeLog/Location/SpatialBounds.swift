@@ -22,4 +22,16 @@ enum SpatialBounds {
         return Box(minLatitude: coordinate.latitude - latDelta, maxLatitude: coordinate.latitude + latDelta,
                    minLongitude: coordinate.longitude - lonDelta, maxLongitude: coordinate.longitude + lonDelta)
     }
+
+    /// The union of a box around each coordinate — for a scattered set of candidate
+    /// locations (place suggestions, saved places) where a single centre point would
+    /// not cover them all. Nil for an empty set; there is nothing to bound.
+    static func box(around coordinates: [CLLocationCoordinate2D], radius: CLLocationDistance) -> Box? {
+        guard !coordinates.isEmpty else { return nil }
+        let boxes = coordinates.map { box(around: $0, radius: radius) }
+        return Box(minLatitude: boxes.map(\.minLatitude).min()!,
+                   maxLatitude: boxes.map(\.maxLatitude).max()!,
+                   minLongitude: boxes.map(\.minLongitude).min()!,
+                   maxLongitude: boxes.map(\.maxLongitude).max()!)
+    }
 }

@@ -95,13 +95,7 @@ enum PlaceScoringPipeline {
                          // outside the UI actor; PlaceScoreLifecycle owns the shared value.
                          decisionThreshold: Int = 75,
                          now: Date = .now) -> PlaceScoreEvaluation {
-        let candidates = suggestions.isEmpty
-            ? savedPlaces.map {
-                PlaceSuggestion(name: $0.name, latitude: $0.latitude, longitude: $0.longitude,
-                                suggestedActivity: $0.defaultActivity, distance: distance(from: visit, to: $0),
-                                mapsIdentifier: $0.mapsIdentifier)
-            }
-            : suggestions
+        let candidates = Self.candidates(suggestions: suggestions, savedPlaces: savedPlaces, visit: visit)
 
         let scored = candidates.map { candidate in
             score(candidate: candidate, visit: visit, savedPlaces: savedPlaces,
@@ -117,6 +111,21 @@ enum PlaceScoringPipeline {
                 candidateCount: candidates.count, now: now).breakdown)
         }
         return best
+    }
+
+    /// The places actually in contention for this visit: Apple Maps' own results when
+    /// it has any, otherwise every Saved Place recast as a candidate. Exposed so a
+    /// caller can learn which names and locations are about to be scored *before*
+    /// `evaluate` runs — `PlaceScoreLifecycle` uses this to scope its history fetch to
+    /// what these candidates could actually match, instead of loading every visit.
+    static func candidates(suggestions: [PlaceSuggestion], savedPlaces: [SavedPlace], visit: Visit) -> [PlaceSuggestion] {
+        suggestions.isEmpty
+            ? savedPlaces.map {
+                PlaceSuggestion(name: $0.name, latitude: $0.latitude, longitude: $0.longitude,
+                                suggestedActivity: $0.defaultActivity, distance: distance(from: visit, to: $0),
+                                mapsIdentifier: $0.mapsIdentifier)
+            }
+            : suggestions
     }
 
     private static func score(candidate: PlaceSuggestion?, visit: Visit,
@@ -150,8 +159,20 @@ enum PlaceScoringPipeline {
         if accuracy < 0 { horizontalAccuracy = 0 }
         else { horizontalAccuracy = min(10, Int(max(0, 10 * (1 - min(accuracy, 200) / 200)).rounded())) }
 
+        // A name match is the strong case, but requiring it entirely missed a
+        // spot visited daily where Apple Maps keeps picking a different (or
+        // simply wrong) nearby POI each time -- arriving home, most of all,
+        // since a bus stop or a neighbour's business can sit closer to the
+        // door than anything actually named "Home". 60 m matches the existing
+        // "same physical place" convention used to fold in a recent duplicate
+        // arrival elsewhere in this pipeline: tight enough that a genuinely
+        // different nearby address doesn't borrow this spot's history.
         let prior = visits.filter { other in
-            other !== visit && !other.isIgnored && candidate.map { NameKey.same(other.placeName, $0.name) } == true
+            guard other !== visit, !other.isIgnored else { return false }
+            if candidate.map({ NameKey.same(other.placeName, $0.name) }) == true { return true }
+            guard let candidateLocation, other.latitude != 0 || other.longitude != 0 else { return false }
+            return CLLocation(latitude: other.latitude, longitude: other.longitude)
+                .distance(from: candidateLocation) <= 60
         }
         let recurrence = min(10, prior.count)
         let arrivalHour = Calendar.current.component(.hour, from: visit.arrival)

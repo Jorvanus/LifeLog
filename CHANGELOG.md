@@ -1,5 +1,15 @@
 # Change log
 
+## 2026-08-12
+
+### A low-confidence guess now says so on Timeline, and recurring stops stop needing Maps to agree on a name
+
+- Diagnosed from a real false arrival: walking home landed on "Johnson Rd & Labanka Crescent Stop" — a bus stop 7-20 m from the actual (GPS-accurate) position — because Apple Maps had no better POI registered at the door and Home wasn't saved as a place, so the arrival fell through to the same weak nearby-POI guess every time (score 18 of the 75 needed, correctly flagged `recognitionConfidence: "low"`).
+- The "Current Activity" card treated that low-confidence guess identically to a confident one — `Visit.needsConfirmation` was already computed correctly, but the card only ever checked `needsCategorisation` (fully unidentified places), so a named-but-unsure guess showed with total, silent certainty. It now shows a "Confirm" badge and "Is this right?" the same way the review queue already phrases uncertain matches.
+- "Set as Home"/"Set as Work" quick labels only appeared for a fully unidentified place, not a named-but-uncertain one — so there was no one-tap way to correct exactly this case. They now appear for either.
+- Place scoring's recurrence signal only counted prior visits that got the *exact same resolved name* as the current guess, so a spot visited daily got no credit for that history if Apple Maps kept picking an inconsistent (or simply wrong) nearby POI each time — precisely what was happening here. It now also counts prior visits within 60 m regardless of name, the same "same physical place" radius already used elsewhere in this pipeline.
+- `PlaceScoreLifecycle.rescore` used to fetch every `Visit` and `VisitCorrection` in the entire archive, unbounded, on every single automatic arrival/departure/correction, just to answer "has this name/spot come up before" for the new proximity signal above. Replaced with `PlaceHistoryLookup`: a spatial bounding-box query plus one narrow name-contains fetch per distinct candidate name, instead of loading the whole table every time.
+
 ## 2026-08-11
 
 ### "Choose on map" now starts on the visit being edited, not wherever the phone last was

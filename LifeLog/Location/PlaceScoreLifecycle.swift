@@ -1,5 +1,104 @@
 import Foundation
 import SwiftData
+import CoreLocation
+
+/// The visit and correction history relevant to scoring a set of place candidates.
+///
+/// `PlaceScoringPipeline.score` reads two independent signals out of the archive for
+/// each candidate: has this exact name come up before, anywhere, and has this exact
+/// spot (within a small radius) come up before, under any name. It used to answer
+/// both by handing the scorer a fetch of every `Visit` and every `VisitCorrection`
+/// ever recorded — `rescore` runs on every automatic arrival, departure and
+/// correction, so on a real archive that fully hydrated the whole table into memory
+/// on every one of those events.
+///
+/// This narrows in the store first, the same way `PlaceVisitLookup` and
+/// `PlaceEvidence.nearbyPlaces` already do: a coarse `localizedStandardContains` per
+/// candidate name covers the name signal (case/diacritic-insensitive, so it is a
+/// superset of what `NameKey` would call the same), and a `SpatialBounds` box around
+/// every candidate location covers the proximity signal. `PlaceScoringPipeline.score`
+/// still applies its own exact `NameKey`/distance filter to whatever comes back, so
+/// the scoring logic itself — and its result — is unchanged; only how much of the
+/// archive gets loaded to run it is.
+enum PlaceHistoryLookup {
+    @MainActor
+    static func visits(near candidates: [PlaceSuggestion], context: ModelContext) -> [Visit] {
+        guard !candidates.isEmpty else { return [] }
+        var seen = Set<PersistentIdentifier>()
+        var found: [Visit] = []
+        func add(_ fetched: [Visit]) {
+            for visit in fetched where seen.insert(visit.persistentModelID).inserted {
+                found.append(visit)
+            }
+        }
+
+        // Proximity signal: "this exact spot before, under any name" — 60 m matches
+        // the "same physical place" radius PlaceScoringPipeline.score itself applies.
+        if let box = SpatialBounds.box(around: candidates.map(\.coordinate), radius: 60) {
+            let minLatitude = box.minLatitude, maxLatitude = box.maxLatitude
+            let minLongitude = box.minLongitude, maxLongitude = box.maxLongitude
+            add((try? context.fetch(FetchDescriptor<Visit>(
+                predicate: #Predicate {
+                    $0.latitude >= minLatitude && $0.latitude <= maxLatitude &&
+                    $0.longitude >= minLongitude && $0.longitude <= maxLongitude
+                }
+            ))) ?? [])
+        }
+
+        // Name signal: "this exact name before, anywhere" — one narrow fetch per
+        // distinct candidate name, not one fetch of the whole table.
+        for name in candidateNames(candidates) {
+            add((try? context.fetch(FetchDescriptor<Visit>(
+                predicate: #Predicate { $0.placeName.localizedStandardContains(name) }
+            ))) ?? [])
+        }
+        return found
+    }
+
+    @MainActor
+    static func corrections(near candidates: [PlaceSuggestion], context: ModelContext) -> [VisitCorrection] {
+        guard !candidates.isEmpty else { return [] }
+        var seen = Set<PersistentIdentifier>()
+        var found: [VisitCorrection] = []
+        func add(_ fetched: [VisitCorrection]) {
+            for correction in fetched where seen.insert(correction.persistentModelID).inserted {
+                found.append(correction)
+            }
+        }
+
+        // Matches PlaceScoringPipeline.score's own 100 m correction radius.
+        if let box = SpatialBounds.box(around: candidates.map(\.coordinate), radius: 100) {
+            let minLatitude = box.minLatitude, maxLatitude = box.maxLatitude
+            let minLongitude = box.minLongitude, maxLongitude = box.maxLongitude
+            add((try? context.fetch(FetchDescriptor<VisitCorrection>(
+                predicate: #Predicate {
+                    $0.latitude >= minLatitude && $0.latitude <= maxLatitude &&
+                    $0.longitude >= minLongitude && $0.longitude <= maxLongitude
+                }
+            ))) ?? [])
+        }
+
+        for name in candidateNames(candidates) {
+            add((try? context.fetch(FetchDescriptor<VisitCorrection>(
+                predicate: #Predicate { $0.newPlaceName.localizedStandardContains(name) }
+            ))) ?? [])
+        }
+        return found
+    }
+
+    /// One representative raw name per distinct `NameKey`, so candidates that are the
+    /// same place under slightly different casing only cost one fetch, not several.
+    /// `localizedStandardContains` is itself case/diacritic-insensitive, so which
+    /// candidate supplies the representative spelling does not change what matches.
+    private static func candidateNames(_ candidates: [PlaceSuggestion]) -> [String] {
+        Dictionary(grouping: candidates, by: { NameKey.matching($0.name) })
+            .compactMap { key, group -> String? in
+                let trimmed = group[0].name.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !key.isEmpty, !Visit.isPlaceholderName(trimmed) else { return nil }
+                return trimmed
+            }
+    }
+}
 
 /// Owns the lifetime of a place score. A stay's dwell time changes after arrival,
 /// so a score is evidence that must be refreshed rather than a one-off verdict.
@@ -23,8 +122,9 @@ enum PlaceScoreLifecycle {
               visit.latitude != 0 || visit.longitude != 0 else { return nil }
         let previous = visit.placeScoreBreakdown
         let places = savedPlaces ?? (try? context.fetch(FetchDescriptor<SavedPlace>())) ?? []
-        let visits = (try? context.fetch(FetchDescriptor<Visit>())) ?? []
-        let corrections = (try? context.fetch(FetchDescriptor<VisitCorrection>())) ?? []
+        let candidates = PlaceScoringPipeline.candidates(suggestions: visit.placeSuggestions, savedPlaces: places, visit: visit)
+        let visits = PlaceHistoryLookup.visits(near: candidates, context: context)
+        let corrections = PlaceHistoryLookup.corrections(near: candidates, context: context)
         let measuredAccuracy = accuracy ?? previous?.accuracyMeters.map(Double.init) ?? -1
         let usedGeofence = geofenceTriggered ?? previous?.geofenceTriggered ?? false
         let evaluation = PlaceScoringPipeline.evaluate(
