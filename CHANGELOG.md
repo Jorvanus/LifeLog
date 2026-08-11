@@ -2,6 +2,10 @@
 
 ## 2026-08-11
 
+### The "Where?" picker's nearby list now narrows as you type
+
+- Typing in the location field only ever ran a fresh Apple Maps search on submit; the "Places nearby" list underneath stayed exactly as loaded, unfiltered, until then. It now narrows live against what's already on screen as each letter is typed — the on-submit Apple Maps search is unchanged and still there for a place that isn't in the nearby list at all.
+
 ### Editing a visit's place now uses the same "Where?" picker as Add Visit
 
 - Edit Visit's place field was a plain text box plus a "Choose nearby Apple Maps place" sheet capped at 3 results, with no search, no map pin, and no awareness of Saved Places — a second, weaker path to what Add Visit's location picker already did well. Tapping the place row now opens that same picker: search by name, choose on the map, or pick from nearby places (Saved Places included, marked as already known). The old sheet is gone.

@@ -50,6 +50,16 @@ struct VisitLocationChooser: View {
         recent.first { $0.latitude != 0 || $0.longitude != 0 }?.coordinate
     }
 
+    /// Narrows what's already loaded rather than re-querying Apple Maps per
+    /// keystroke -- the list below the text field should react as you type,
+    /// not only once you submit (that's what the separate "Search results"
+    /// section, and its live Apple Maps request, are for).
+    private var filteredNearby: [NearbyPlace] {
+        let query = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return nearby }
+        return nearby.filter { $0.name.localizedCaseInsensitiveContains(query) }
+    }
+
     var body: some View {
         List {
             Section {
@@ -112,8 +122,11 @@ struct VisitLocationChooser: View {
                          ? "Apple Maps could not be reached."
                          : "Nothing found nearby.")
                         .font(.subheadline).foregroundStyle(.secondary)
+                } else if filteredNearby.isEmpty {
+                    Text("No nearby matches for “\(name)”.")
+                        .font(.subheadline).foregroundStyle(.secondary)
                 } else {
-                    ForEach(nearby) { place in row(for: place) }
+                    ForEach(filteredNearby) { place in row(for: place) }
                 }
             } header: {
                 HStack {
