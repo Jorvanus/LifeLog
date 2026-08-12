@@ -59,14 +59,17 @@ enum MonitoredPlaces {
         return Array(ranked.prefix(max(0, limit)))
     }
 
-    /// A visit belongs to a place if it carries the name, or sits inside the geofence
-    /// without a name of its own. Name first, because a place renamed after its visits
-    /// were recorded would otherwise appear unused and lose its slot.
+    /// A visit belongs to a place if it carries the same Maps identifier, carries the
+    /// name, or sits inside the geofence without a name of its own. Identifier first,
+    /// since two records can only share one by being the same physical POI; name
+    /// next, because a place renamed after its visits were recorded would otherwise
+    /// appear unused and lose its slot.
     ///
-    /// The second half is deliberately restricted to unidentified visits: geofences
+    /// The geofence half is deliberately restricted to unidentified visits: they
     /// overlap, and counting every named visit inside one would let a place stationed
     /// near a busier neighbour inherit its history and take its slot.
     private static func matches(_ visit: Visit, _ place: SavedPlace) -> Bool {
+        if let lhs = visit.mapsIdentifier, let rhs = place.mapsIdentifier, lhs == rhs { return true }
         if NameKey.same(visit.placeName, place.name) { return true }
         guard visit.hasPlaceholderName else { return false }
         guard visit.latitude != 0 || visit.longitude != 0 else { return false }

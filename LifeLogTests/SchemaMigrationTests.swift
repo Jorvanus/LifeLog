@@ -218,6 +218,57 @@ struct SchemaMigrationTests {
         #expect(try context.fetch(FetchDescriptor<LocationEvent>()).count == 1)
     }
 
+    @Test("A V5 store gains Maps visit identity without losing anything it held")
+    func migratesV5StoreAddingVisitIdentity() throws {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LifeLog-v5-\(UUID().uuidString).store")
+        defer { try? FileManager.default.removeItem(at: storeURL) }
+
+        let arrival = Date(timeIntervalSince1970: 1_800_000_000)
+        let v5Schema = Schema(versionedSchema: LifeLogSchemaV5.self)
+        let v5Configuration = ModelConfiguration(
+            "LifeLogMigrationFixture", schema: v5Schema, url: storeURL,
+            allowsSave: true, cloudKitDatabase: .none
+        )
+        do {
+            let container = try ModelContainer(for: v5Schema, configurations: [v5Configuration])
+            let context = ModelContext(container)
+            let visit = LifeLogSchemaV5.Visit(
+                arrival: arrival, latitude: -23.4455, longitude: 150.4522,
+                placeName: "Home", inferredActivity: "At home",
+                note: "V5 fixture", source: "automatic"
+            )
+            context.insert(visit)
+            let place = LifeLogSchemaV5.SavedPlace(
+                name: "Home", latitude: -23.4455, longitude: 150.4522,
+                radius: 85, defaultActivity: "At home"
+            )
+            place.mapsIdentifier = "I1234567890ABCDEF"
+            context.insert(place)
+            try context.save()
+        }
+
+        let context = ModelContext(try openVersionedStore(at: storeURL))
+        let visits = try context.fetch(FetchDescriptor<Visit>())
+        let places = try context.fetch(FetchDescriptor<SavedPlace>())
+
+        // A visit recorded before V6 has no Maps identity of its own to restore --
+        // it falls to the documented NameKey fallback until it is next resolved.
+        #expect(visits.count == 1)
+        #expect(visits[0].note == "V5 fixture")
+        #expect(visits[0].mapsIdentifier == nil)
+        #expect(visits[0].placeFieldProvenance == nil)
+        #expect(places.count == 1)
+        #expect(places[0].mapsIdentifier == "I1234567890ABCDEF")
+
+        visits[0].mapsIdentifier = "I1234567890ABCDEF"
+        visits[0].placeFieldProvenance = "maps"
+        try context.save()
+        let resaved = try context.fetch(FetchDescriptor<Visit>())
+        #expect(resaved[0].mapsIdentifier == "I1234567890ABCDEF")
+        #expect(resaved[0].placeFieldProvenance == "maps")
+    }
+
     @Test("A V1 store carrying place types migrates to V2 without losing visits or places")
     func migratesV1StoreDroppingPlaceType() throws {
         let storeURL = FileManager.default.temporaryDirectory

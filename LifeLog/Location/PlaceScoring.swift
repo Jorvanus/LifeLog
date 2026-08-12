@@ -159,16 +159,20 @@ enum PlaceScoringPipeline {
         if accuracy < 0 { horizontalAccuracy = 0 }
         else { horizontalAccuracy = min(10, Int(max(0, 10 * (1 - min(accuracy, 200) / 200)).rounded())) }
 
-        // A name match is the strong case, but requiring it entirely missed a
-        // spot visited daily where Apple Maps keeps picking a different (or
-        // simply wrong) nearby POI each time -- arriving home, most of all,
-        // since a bus stop or a neighbour's business can sit closer to the
-        // door than anything actually named "Home". 60 m matches the existing
-        // "same physical place" convention used to fold in a recent duplicate
-        // arrival elsewhere in this pipeline: tight enough that a genuinely
-        // different nearby address doesn't borrow this spot's history.
+        // Maps identity wins whenever both sides have it, the same priority order
+        // used for the SavedPlace link above -- two visits can only share a Maps
+        // identifier by being the same physical place, so this can't misfire the
+        // way a coincidental name match could. A name match is the next-strongest
+        // case, but requiring it entirely missed a spot visited daily where Apple
+        // Maps keeps picking a different (or simply wrong) nearby POI each time --
+        // arriving home, most of all, since a bus stop or a neighbour's business
+        // can sit closer to the door than anything actually named "Home". 60 m
+        // matches the existing "same physical place" convention used to fold in a
+        // recent duplicate arrival elsewhere in this pipeline: tight enough that a
+        // genuinely different nearby address doesn't borrow this spot's history.
         let prior = visits.filter { other in
             guard other !== visit, !other.isIgnored else { return false }
+            if let lhs = other.mapsIdentifier, let rhs = candidate?.mapsIdentifier, lhs == rhs { return true }
             if candidate.map({ NameKey.same(other.placeName, $0.name) }) == true { return true }
             guard let candidateLocation, other.latitude != 0 || other.longitude != 0 else { return false }
             return CLLocation(latitude: other.latitude, longitude: other.longitude)

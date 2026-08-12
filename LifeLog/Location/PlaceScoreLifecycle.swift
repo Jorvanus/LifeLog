@@ -4,13 +4,13 @@ import CoreLocation
 
 /// The visit and correction history relevant to scoring a set of place candidates.
 ///
-/// `PlaceScoringPipeline.score` reads two independent signals out of the archive for
-/// each candidate: has this exact name come up before, anywhere, and has this exact
-/// spot (within a small radius) come up before, under any name. It used to answer
-/// both by handing the scorer a fetch of every `Visit` and every `VisitCorrection`
-/// ever recorded — `rescore` runs on every automatic arrival, departure and
-/// correction, so on a real archive that fully hydrated the whole table into memory
-/// on every one of those events.
+/// `PlaceScoringPipeline.score` reads independent signals out of the archive for each
+/// candidate: has this exact Maps identifier come up before, has this exact name come
+/// up before, anywhere, and has this exact spot (within a small radius) come up
+/// before, under any name. It used to answer all of these by handing the scorer a
+/// fetch of every `Visit` and every `VisitCorrection` ever recorded — `rescore` runs
+/// on every automatic arrival, departure and correction, so on a real archive that
+/// fully hydrated the whole table into memory on every one of those events.
 ///
 /// This narrows in the store first, the same way `PlaceVisitLookup` and
 /// `PlaceEvidence.nearbyPlaces` already do: a coarse `localizedStandardContains` per
@@ -20,6 +20,11 @@ import CoreLocation
 /// still applies its own exact `NameKey`/distance filter to whatever comes back, so
 /// the scoring logic itself — and its result — is unchanged; only how much of the
 /// archive gets loaded to run it is.
+///
+/// No separate query narrows by `mapsIdentifier`: a Maps identifier names one
+/// physical POI, so a visit sharing a candidate's identifier already sits inside the
+/// same proximity box the name/distance signal is scoped by — there is no case where
+/// an identifier match could fall outside it.
 enum PlaceHistoryLookup {
     @MainActor
     static func visits(near candidates: [PlaceSuggestion], context: ModelContext) -> [Visit] {

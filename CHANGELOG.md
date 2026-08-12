@@ -2,6 +2,11 @@
 
 ## 2026-08-12
 
+### Maps visit identity now backs the remaining recurrence and monitoring signals
+
+- The V6 migration already gave every Maps-resolved `Visit` a durable identifier alongside `SavedPlace`, and several matching sites already preferred it over a name. Two more did not: place scoring's recurrence signal (has this exact spot come up before) and the monitored-places ranking (which visits count toward a Saved Place's usage) both matched by name/proximity only, even though both sides can carry the same identifier today. Both now check the Maps identifier first — two records can only share one by being the same physical POI, which name matching can't guarantee — falling back to name, then proximity/geofence, exactly as documented elsewhere in this pipeline.
+- Added a migration test isolating the V5→V6 hop specifically (previously only exercised implicitly via the current-schema round-trip test): a V5 store's visit has no Maps identity to restore, and the field is settable and persists once assigned.
+
 ### A Timeline row's icon is a little smaller, and its title no longer leaves a stray gap before the duration column
 
 - The activity icon on a Timeline row is now 48pt rather than 58pt, leaving more width for the title next to it.

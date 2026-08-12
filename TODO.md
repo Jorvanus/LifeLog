@@ -1,12 +1,12 @@
 # LifeLog — what's next
 
-Audited against `main` on 2026-08-11. This is intentionally an **open-work**
+Audited against `main` on 2026-08-12. This is intentionally an **open-work**
 list: shipped work has been removed, historical counts have not been carried
 forward as if they were current, and hardware items remain only where the code
 exists but has not yet been proven on the owner’s iPhone. LifeLog is still a
 private, single-phone app; the App Store work is deliberately separate below.
 
-## The next four code changes
+## The next three code changes
 
 1. [ ] **Make location resolution an invariant of every store mutation.** Run
    the resolver after arrivals, departures, corrections, Saved Place edits and
@@ -14,19 +14,13 @@ private, single-phone app; the App Store work is deliberately separate below.
    resolved visit, no resolved overlaps or negative durations, no superseded
    visit in Timeline/Insights, and no automation replacing a user correction.
 
-2. [ ] **Move Visit identity to Maps identifiers in a V6 migration.**
-   `SavedPlace` already keeps an `MKMapItem.identifier`; `Visit` does not.
-   Persist visit identifier plus field provenance, match identifier-first where
-   available, and retain `NameKey` only as a carefully documented fallback for
-   old or identifier-less records. Do not break existing backup restore.
-
-3. [ ] **Make Saved Place learning conservative and reversible.** Do not turn
+2. [ ] **Make Saved Place learning conservative and reversible.** Do not turn
    one high scoring Maps result into a permanent Saved Place. Require repeated
    corroborating visits or a correction, preserve competing evidence, and add
    an alias/cluster rule for GPS drift around large venues without merging two
    genuinely different businesses.
 
-4. [ ] **Make the archive searchable at archive scale.** Provide one scoped
+3. [ ] **Make the archive searchable at archive scale.** Provide one scoped
    search over place, activity and note, surface note-bearing visits in the
    results and Timeline, and keep the query/index work off the main actor so
    nine years of data stays responsive.
