@@ -42,6 +42,34 @@ struct HealthInsightsSummary: Equatable, Sendable {
                             activeStepDays: 0, elapsedDays: 0,
                             source: "Apple Health", lastSuccessfulImport: nil)
 
+    /// HealthKit's workout description is an implementation detail (for example,
+    /// `HKWorkoutActivityType(rawValue: 52)`). Keep that detail out of Insights
+    /// while leaving genuinely unknown future types understandable.
+    static func knownWorkoutTypeName(rawValue: Int) -> String? {
+        switch rawValue {
+        case 13: "Cycling"
+        case 24, 52: "Walking"
+        case 37: "Running"
+        case 46: "Swimming"
+        case 56: "Yoga"
+        case 20, 50: "Strength training"
+        case 11: "Cross-training"
+        case 35: "Rowing"
+        case 44, 67: "Stair climbing"
+        case 15: "Elliptical"
+        case 21: "Golf"
+        case 41: "Soccer"
+        case 48: "Tennis"
+        case 6: "Basketball"
+        case 1: "American football"
+        case 3: "Australian football"
+        case 8: "Boxing"
+        case 28: "Martial arts"
+        case 29: "Mind and body"
+        default: nil
+        }
+    }
+
     /// A meaningful month-to-month health change needs both a useful absolute
     /// movement and a relative movement. This keeps sparse or tiny samples quiet.
     static func meaningfulChange(current: Double?, previous: Double?, minimum: Double,

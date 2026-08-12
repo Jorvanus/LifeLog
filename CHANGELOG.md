@@ -2,6 +2,10 @@
 
 ## 2026-08-12
 
+### Apple Health workout labels are human readable
+
+- Day and other Insights Health summaries now show friendly workout names such as Walking instead of raw HealthKit enum values.
+
 ### Insights add incremental Apple Health summaries
 
 - Day, Week, Month, and Year now show available HealthKit steps, walking/running distance, active energy, exercise, stand time, workouts, sleep details, and a clearly labelled LifeLog sleep estimate; summaries are period-scoped, cached, source-labelled, and refreshed when Health changes.

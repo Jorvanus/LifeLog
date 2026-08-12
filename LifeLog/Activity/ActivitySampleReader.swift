@@ -114,7 +114,9 @@ actor ActivitySampleReader {
             predicates: [.workout(predicate)], sortDescriptors: [SortDescriptor(\.startDate)])
         return try await descriptor.result(for: healthStore).map { workout in
             HealthWorkoutFixture(id: workout.uuid,
-                                 type: String(describing: workout.workoutActivityType),
+                                 type: HealthInsightsSummary.knownWorkoutTypeName(
+                                    rawValue: Int(workout.workoutActivityType.rawValue)
+                                 ) ?? "Workout",
                                  start: workout.startDate, end: workout.endDate,
                                  distanceMeters: workout.totalDistance?.doubleValue(for: .meter()))
         }
@@ -422,14 +424,6 @@ actor ActivitySampleReader {
     }
 
     private func workoutActivity(_ type: HKWorkoutActivityType) -> String {
-        switch type {
-        case .walking, .hiking: "Walking"
-        case .running: "Running"
-        case .cycling, .handCycling: "Cycling"
-        case .swimming: "Swimming"
-        case .yoga: "Yoga"
-        case .traditionalStrengthTraining, .functionalStrengthTraining: "Strength training"
-        default: "Exercising"
-        }
+        HealthInsightsSummary.knownWorkoutTypeName(rawValue: Int(type.rawValue)) ?? "Exercising"
     }
 }

@@ -91,4 +91,11 @@ struct HealthInsightsSummaryTests {
         #expect(HealthInsightsSummary.meaningfulChange(current: 5_400, previous: 5_000, minimum: 500) == nil)
         #expect(HealthInsightsSummary.meaningfulChange(current: 6_000, previous: 5_000, minimum: 500) == 1_000)
     }
+
+    @Test("Workout types use human-readable names")
+    func workoutTypeNames() {
+        #expect(HealthInsightsSummary.knownWorkoutTypeName(rawValue: 52) == "Walking")
+        #expect(HealthInsightsSummary.knownWorkoutTypeName(rawValue: 37) == "Running")
+        #expect(HealthInsightsSummary.knownWorkoutTypeName(rawValue: 999) == nil)
+    }
 }
