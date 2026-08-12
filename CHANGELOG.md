@@ -2,6 +2,13 @@
 
 ## 2026-08-12
 
+### A donut slice's detail rows now add up to exactly what the header says
+
+- Tapping a donut segment (or a place in Top Places) opened `InsightSliceEditor`, whose header already showed the correct, deduplicated segment total but whose rows below it summed each visit's own raw `duration`/`duration(in:)`. Two records that overlap in time — an overnight Home stay under a Sleep record, a duplicate or imperfectly deduplicated automatic arrival — each claimed the same minutes twice, so the rows could add up to well more than the header.
+- Rows are now built from the same post-resolution `InsightSegment`s the donut and header are already built from (`InsightsSnapshot.sliceRows`), grouped by the record that produced them and summed only over the slivers each one actually won. A row whose own recorded span extends beyond what it won now says "Shares this time with another entry" rather than showing a smaller number with no explanation.
+- `InsightsSnapshot.makePlaceTotals` (the "Top Places" header total) is now built the same way, so the place-total entry point into the same screen stays consistent with the category entry point on the same overlapping data.
+- Editing from a row, and the selected segment refreshing afterward, are unchanged — the sheet's existing `onDismiss: reloadInsights` still rebuilds the snapshot.
+
 ### The full migration chain is now proven against a real device store
 
 - Extracted a copy of the on-device `LifeLog.store` (via Xcode's Devices and Simulators → Download Container) and opened it through the live `LifeLogMigrationPlan`, working only on the copy. All 25,685 real visits, 8 Saved Places, 81 corrections, and the diagnostic/location-event history survived the full V1→V8 chain intact, and the one place actually named "Home" was correctly backfilled to the new Home role. Closes the "prove it on a real historical store" gap the synthetic V1–V7 fixtures alone couldn't close.

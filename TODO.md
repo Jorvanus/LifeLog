@@ -111,9 +111,6 @@ responsive 32,000-row archive outrank App Store preparation and speculative feat
   states such as **Needs checking**, **Suggested**, and **Confirmed**. Hide badges that
   provide neither an action nor assurance.
 
-- [ ] Reconcile `InsightSliceEditor` totals. Its header uses deduplicated segment time
-  while rows show raw visit duration, so overlapping Home/Sleep records need either
-  post-resolution row contributions or wording that does not imply the rows add up.
 
 - [ ] Review the activity catalogue after real use: recently used, history-only, and
   unused labels are separated; confirm bulk adoption and icon/colour editing remain

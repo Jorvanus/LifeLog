@@ -107,7 +107,7 @@ struct InsightsSnapshot {
         )
         let slices = makeSlices(from: segments)
         let previousSlices = makeSlices(from: previousSegments)
-        let placeTotals = makePlaceTotals(visits: visits, range: analysisInterval, now: now)
+        let placeTotals = makePlaceTotals(segments: segments)
         let mappablePlaces = placeTotals.filter { $0.latitude != 0 || $0.longitude != 0 }
         let loggedHours = segments.filter { !$0.isUnlogged }.reduce(0) { $0 + $1.hours }
         // Sleep is imported as its own activity ("Sleeping" at place "Sleep"), and it
@@ -280,18 +280,22 @@ struct InsightsSnapshot {
         return values
     }
 
-    private static func makePlaceTotals(visits: [Visit], range: DateInterval, now: Date) -> [PlaceTotal] {
-        Dictionary(
-            grouping: visits.filter {
-                $0.overlaps(range, now: now) && ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored
-            },
-            by: \.displayPlaceName
-        ).compactMap { name, items in
+    /// Built from the same post-resolution `segments` the donut and `sliceRows`
+    /// read, not from raw visit durations. A place visited twice with overlapping
+    /// records (a corrected duplicate callback, say) must not count that overlap
+    /// twice just because this total is grouped by place instead of by category.
+    private static func makePlaceTotals(segments: [InsightSegment]) -> [PlaceTotal] {
+        let matching = segments.filter { segment in
+            guard !segment.isUnlogged, segment.placeName != nil,
+                  let visit = segment.visit else { return false }
+            return ActivityLocationPolicy.isLocationVisit(visit)
+        }
+        return Dictionary(grouping: matching) { $0.placeName! }.compactMap { name, items in
             guard let first = items.first else { return nil }
             return PlaceTotal(
-                name: name, category: first.insightCategory, activity: first.suspectedActivity,
-                latitude: first.latitude, longitude: first.longitude,
-                hours: items.reduce(0) { $0 + $1.duration(in: range, now: now) } / 3600
+                name: name, category: first.category, activity: first.activity,
+                latitude: first.visit?.latitude ?? 0, longitude: first.visit?.longitude ?? 0,
+                hours: items.reduce(0) { $0 + $1.hours }
             )
         }.sorted { $0.hours > $1.hours }
     }
@@ -467,6 +471,73 @@ struct InsightSegment: Identifiable {
             color: .gray.opacity(0.35), symbol: "moon.zzz.fill",
             isUnlogged: true, isLive: false
         )
+    }
+}
+
+/// One row a slice's detail screen (`InsightSliceEditor`) can show: either a
+/// Visit's own post-resolution contribution, or -- for commute time, which has
+/// no backing Visit -- the commute segment itself. Grouped by `InsightSegmentID`
+/// rather than by `Visit` alone so a commute row (identified by its start date,
+/// not an object identity) groups the same way a visit row does.
+struct SliceRow: Identifiable {
+    let id: InsightSegmentID
+    let visit: Visit?
+    let activity: String
+    let placeName: String?
+    let start: Date
+    let end: Date
+    /// This row's actual contribution to the selected slice, in hours, after
+    /// overlap resolution -- the sum of every segment this record won. Never a
+    /// raw `Visit.duration`: two overlapping records (an overnight Home stay
+    /// under a Sleep record, a duplicate automatic callback) would each claim
+    /// the same minutes and the rows would add up to more than the slice total.
+    let hours: Double
+    /// True when this row's own recorded span extends beyond what it won here
+    /// -- part of its time was awarded to another, competing record. Lets the
+    /// UI say so rather than showing a number smaller than the visit's own
+    /// arrival/departure would suggest, with no explanation.
+    let isPartial: Bool
+}
+
+extension InsightsSnapshot {
+    /// The one place slice detail rows are computed, for both the category
+    /// (donut) and place entry points into `InsightSliceEditor`. Reuses the
+    /// exact `InsightSegment`s the donut and its header total are built from --
+    /// grouping and summing already-resolved, non-overlapping slivers -- so a
+    /// row's hours can never disagree with what produced the header.
+    private static func sliceRows(matching predicate: (InsightSegment) -> Bool, in segments: [InsightSegment],
+                                  interval: DateInterval, now: Date) -> [SliceRow] {
+        var order: [InsightSegmentID] = []
+        var byID: [InsightSegmentID: [InsightSegment]] = [:]
+        for segment in segments where !segment.isUnlogged && predicate(segment) {
+            if byID[segment.id] == nil { order.append(segment.id) }
+            byID[segment.id, default: []].append(segment)
+        }
+        return order.compactMap { id -> SliceRow? in
+            guard let group = byID[id], let first = group.first else { return nil }
+            let hours = group.reduce(0) { $0 + $1.hours }
+            let isPartial = first.visit.map { hours < $0.duration(in: interval, now: now) / 3600 - 0.01 } ?? false
+            return SliceRow(
+                id: id, visit: first.visit, activity: first.activity, placeName: first.placeName,
+                start: group.map(\.start).min() ?? first.start, end: group.map(\.end).max() ?? first.end,
+                hours: hours, isPartial: isPartial
+            )
+        }.sorted { $0.start > $1.start }
+    }
+
+    /// Rows for a donut/category slice: every segment whose category matches it.
+    static func sliceRows(forCategory name: String, segments: [InsightSegment],
+                          interval: DateInterval, now: Date = .now) -> [SliceRow] {
+        sliceRows(matching: { $0.category == name }, in: segments, interval: interval, now: now)
+    }
+
+    /// Rows for a place total: every segment at that place. `makePlaceTotals`
+    /// already restricts itself to location-visit segments with a place name, so
+    /// matching on `placeName` alone cannot pick up an unrelated device segment
+    /// (Sleep, Travel) that merely shares a category with something at the place.
+    static func sliceRows(forPlace name: String, segments: [InsightSegment],
+                          interval: DateInterval, now: Date = .now) -> [SliceRow] {
+        sliceRows(matching: { $0.placeName == name }, in: segments, interval: interval, now: now)
     }
 }
 

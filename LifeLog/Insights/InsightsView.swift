@@ -83,18 +83,20 @@ struct InsightsView: View {
             }
             .sheet(isPresented: $showingWeekdayChart) { weekdayChartSheet }
             .sheet(item: $selectedSlice, onDismiss: reloadInsights) { slice in
-                let entries = visits(for: slice)
-                if entries.count == 1, let visit = entries.first {
+                let rows = sliceRows(for: slice)
+                // Skip straight to the editor only when there is exactly one row
+                // and it is a real Visit — a lone commute row has no record to open.
+                if rows.count == 1, let visit = rows.first?.visit {
                     NavigationStack { VisitEditor(visit: visit) }
                         .presentationDetents([.large])
                 } else {
-                    InsightSliceEditor(slice: slice, visits: entries, interval: snapshot.analysisInterval)
+                    InsightSliceEditor(slice: slice, rows: rows, interval: snapshot.analysisInterval)
                         .presentationDetents([.medium, .large])
                 }
             }
             .sheet(item: $selectedPlace, onDismiss: reloadInsights) { place in
-                let entries = visits(for: place)
-                if entries.count == 1, let visit = entries.first {
+                let rows = sliceRows(for: place)
+                if rows.count == 1, let visit = rows.first?.visit {
                     NavigationStack { VisitEditor(visit: visit) }
                         .presentationDetents([.large])
                 } else {
@@ -104,7 +106,7 @@ struct InsightsView: View {
                         slice: TimeSlice(name: place.name, hours: place.hours,
                                          color: activityColor(place.activity),
                                          symbol: insightSymbol(for: place.category), isUnlogged: false),
-                        visits: entries,
+                        rows: rows,
                         interval: snapshot.analysisInterval
                     )
                     .presentationDetents([.medium, .large])
@@ -1091,26 +1093,20 @@ struct InsightsView: View {
                            itemCount: visits.count)
     }
 
-    private func visits(for slice: TimeSlice) -> [Visit] {
+    // Both derived from `snapshot.segments` -- the exact post-resolution slivers
+    // the donut and its header total are built from -- rather than re-filtering
+    // raw visits. See InsightsSnapshot.sliceRows for why: a raw Visit.duration
+    // can overlap another record's, and summing those independently is what let
+    // the row list disagree with the header it sits under.
+    private func sliceRows(for slice: TimeSlice) -> [SliceRow] {
         guard !slice.isUnlogged else { return [] }
-        return visits
-            .filter { $0.overlaps(snapshot.analysisInterval, now: snapshot.generatedAt) }
-            .filter { sliceName(for: $0) == slice.name }
-            .sorted { $0.arrival > $1.arrival }
+        return InsightsSnapshot.sliceRows(forCategory: slice.name, segments: snapshot.segments,
+                                          interval: snapshot.analysisInterval, now: snapshot.generatedAt)
     }
 
-    private func sliceName(for visit: Visit) -> String {
-        visit.insightCategory
-    }
-
-    private func visits(for place: PlaceTotal) -> [Visit] {
-        // Mirrors the same filters InsightsSnapshot.makePlaceTotals used to build
-        // `place`, so the entries shown here match the hours displayed in the row.
-        visits
-            .filter { $0.overlaps(snapshot.analysisInterval, now: snapshot.generatedAt) }
-            .filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
-            .filter { $0.displayPlaceName == place.name }
-            .sorted { $0.arrival > $1.arrival }
+    private func sliceRows(for place: PlaceTotal) -> [SliceRow] {
+        InsightsSnapshot.sliceRows(forPlace: place.name, segments: snapshot.segments,
+                                   interval: snapshot.analysisInterval, now: snapshot.generatedAt)
     }
 
     private func move(_ amount: Int) {
