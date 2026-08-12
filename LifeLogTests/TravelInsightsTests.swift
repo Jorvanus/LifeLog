@@ -6,6 +6,37 @@ import Testing
 struct TravelInsightsTests {
     private let base = Date(timeIntervalSince1970: 1_800_000_000)
 
+    @Test("No travel has no meaningful Getting around story")
+    func noTravelIsNotMeaningful() {
+        let result = TravelInsights.make(from: [])
+
+        #expect(result.tripCount == 0)
+        #expect(!result.isMeaningful)
+    }
+
+    @Test("A short transition is retained but not promoted to a Week story")
+    func shortTravelIsNotMeaningful() {
+        let visit = movement(from: 60, to: 69, activity: "Travelling")
+        let segment = InsightSegment.visit(visit, visibleFrom: visit.arrival,
+                                           visibleTo: visit.departure!, now: base)
+        let result = TravelInsights.make(from: [segment])
+
+        #expect(result.tripCount == 1)
+        #expect(result.totalHours == 0.15)
+        #expect(!result.isMeaningful)
+    }
+
+    @Test("Commute travel is meaningful and reports days and average")
+    func commuteTravelIsMeaningful() {
+        let commute = Commute(start: base, end: base.addingTimeInterval(45 * 60), direction: .toWork)
+        let segment = InsightSegment.commute(commute, from: commute.start, to: commute.end)
+        let result = TravelInsights.make(from: [segment])
+
+        #expect(result.isMeaningful)
+        #expect(result.commuteDays == 1)
+        #expect(result.averageCommuteMinutes == 45)
+    }
+
     @Test("Home to destination to Home becomes two travel trips")
     func roundTripCountsTransitionsNotDestinations() {
         let home = stay(from: 0, to: 60, name: "Home", activity: "At home")

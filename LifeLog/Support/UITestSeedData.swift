@@ -69,6 +69,11 @@ enum UITestSeedData {
             visit(480, 510, "In transit", "Travelling", "motion", "device")
             visit(510, 600, "Gracemere Shopping World", "Shopping")
         }
+        if ProcessInfo.processInfo.arguments.contains("-ui-test-week-travel") {
+            // A dedicated long transition makes the Week card's meaningful-travel
+            // state deterministic without changing the default seed's small-trip case.
+            visit(900, 1_140, "Flight", "Flight", "manual", "learned")
+        }
         try context.save()
     }
 }

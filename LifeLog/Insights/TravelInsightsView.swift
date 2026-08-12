@@ -61,6 +61,80 @@ struct TravelInsightsCard: View {
     }
 }
 
+/// Week's single movement story. Travel remains transition time, while the
+/// optional commute summary adds the confident recurring pattern beside it.
+struct GettingAroundCard: View {
+    let summary: TravelInsights.Summary
+    let commute: InsightsSnapshot.WeekCommuteSummary?
+    let period: DateInterval?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Getting around").font(.title2.bold())
+            HStack(spacing: 12) {
+                metric("Travel time", formatHours(summary.totalHours), emphasis: true)
+                metric("Trips", "\(summary.tripCount)", emphasis: true)
+                if summary.longTripCount > 0 {
+                    metric("Long trips", "\(summary.longTripCount)", emphasis: false)
+                }
+            }
+
+            if summary.commuteHours > 0 || commute != nil {
+                Divider()
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Commute", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
+                        .font(.headline)
+                    HStack(spacing: 12) {
+                        metric("Days", "\(commute?.days ?? summary.commuteDays)", emphasis: false)
+                        if let average = commute?.averageMinutes ?? summary.averageCommuteMinutes {
+                            metric("Average", formatMinutes(average), emphasis: false)
+                        }
+                        if let change = commute?.changeFromUsual {
+                            metric("Vs usual", "\(formatHours(abs(change))) \(change >= 0 ? "more" : "less")", emphasis: false)
+                        }
+                    }
+                }
+            }
+
+            let modes = TravelInsights.Mode.allCases.compactMap { mode -> String? in
+                guard let count = summary.modeCounts[mode], count > 0 else { return nil }
+                return "\(mode.rawValue) \(count)"
+            }
+            if !modes.isEmpty {
+                Text(modes.joined(separator: " · "))
+                    .font(.caption).foregroundStyle(.secondary)
+                    .accessibilityLabel("Travel modes: \(modes.joined(separator: ", "))")
+            }
+
+            NavigationLink {
+                TravelTripsView(title: "Getting around", trips: summary.trips, period: period)
+            } label: {
+                Label("Review trips", systemImage: "list.bullet.rectangle")
+                    .font(.subheadline.weight(.semibold))
+            }
+            .accessibilityLabel("Review \(summary.tripCount) travel trips")
+        }
+        .padding(20)
+        .lifeCard()
+        .accessibilityIdentifier("insights-getting-around")
+    }
+
+    private func metric(_ label: String, _ value: String, emphasis: Bool) -> some View {
+        let valueFont: Font = emphasis ? .headline : .subheadline
+        return VStack(alignment: .leading, spacing: 3) {
+            Text(value).font(valueFont.monospacedDigit())
+            Text(label).font(.caption).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func formatMinutes(_ minutes: Double) -> String {
+        let rounded = Int(minutes.rounded())
+        if rounded < 60 { return "\(rounded)m" }
+        return "\(rounded / 60)h \(rounded % 60)m"
+    }
+}
+
 struct TravelTripsView: View {
     let title: String
     let trips: [TravelInsights.Trip]

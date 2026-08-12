@@ -148,7 +148,7 @@ final class LifeLogUITests: XCTestCase {
 
     func testWeekInsightsKeepsStripHeroAndCombinesWeeklyBalance() {
         app.terminate()
-        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launchArguments = ["-uiTesting", "-ui-test-seed", "-ui-test-week-travel"]
         app.launch()
         app.tabBars.buttons["Insights"].tap()
 
@@ -156,14 +156,30 @@ final class LifeLogUITests: XCTestCase {
         app.buttons["Week"].tap()
         XCTAssertTrue(element("insights-weekly-strip").waitForExistence(timeout: 10))
         XCTAssertTrue(element("insights-week-your-week").waitForExistence(timeout: 10))
+        XCTAssertTrue(element("insights-getting-around").waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["Each column is a day; colours show where your time went."].exists)
         XCTAssertFalse(element("insights-week-scorecard").exists)
         XCTAssertFalse(element("insights-week-life-areas").exists)
+        XCTAssertFalse(element("insights-week-commute").exists)
 
         let selectedDay = app.descendants(matching: .any)
             .matching(NSPredicate(format: "label CONTAINS[c] 'selected'"))
             .firstMatch
         XCTAssertTrue(selectedDay.waitForExistence(timeout: 5))
+    }
+
+    func testMonthInsightsUsesOneHeroCardForHeadlineAndKeyMetrics() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+        app.tabBars.buttons["Insights"].tap()
+
+        XCTAssertTrue(app.buttons["Month"].waitForExistence(timeout: 5))
+        app.buttons["Month"].tap()
+        XCTAssertTrue(element("insights-month-hero").waitForExistence(timeout: 10))
+        XCTAssertFalse(element("insights-month-headline").exists)
+        XCTAssertFalse(element("insights-month-scorecard").exists)
+        XCTAssertFalse(element("insights-travel-summary").exists)
     }
 
     func testDaySummaryOmitsUnavailableMetricsWithoutZeroPlaceholders() {

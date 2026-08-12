@@ -732,9 +732,8 @@ struct InsightsView: View {
     @ViewBuilder private var weekLayout: some View {
         weeklyStripSection
         weeklyYourWeekSection
-        TravelInsightsCard(title: "Travel", summary: snapshot.travel, period: snapshot.analysisInterval)
+        weeklyGettingAroundSection
         weeklyRoutineChangesSection
-        weeklyCommuteSection
         donutSection
         healthSetupSection
     }
@@ -743,9 +742,7 @@ struct InsightsView: View {
     /// the same long-term sections as Year. These cards all read the same resolved
     /// current/previous segments as the donut.
     @ViewBuilder private var monthLayout: some View {
-        monthlyHeadlineSection
-        monthlyScorecardSection
-        TravelInsightsCard(title: "Travel", summary: snapshot.travel, period: snapshot.analysisInterval)
+        monthlyHeroSection
         monthlyChangesSection
         monthlyBalanceSection
         monthlyPlacesSection
@@ -769,6 +766,66 @@ struct InsightsView: View {
         MonthlyInsights.make(current: snapshot.segments, previous: snapshot.previousSegments,
                              currentInterval: interval,
                              previousInterval: window.previousComparisonInterval(for: interval), now: now)
+    }
+
+    private var monthlyComparisonSubtitle: String {
+        let previous = window.previousComparisonInterval(for: interval)
+        return "Compared with \(previous.start.formatted(.dateTime.month(.wide)))"
+    }
+
+    private func monthlyChangeDetail(current: Double, previous: Double, unit: String = "") -> String {
+        guard previous > 0 else { return "This month" }
+        let delta = current - previous
+        guard abs(delta) >= MonthlyInsights.minimumAbsoluteChange,
+              abs(delta) / previous >= MonthlyInsights.minimumPercentageChange else {
+            return "This month"
+        }
+        let direction = delta >= 0 ? "more" : "less"
+        return "\(formatHours(abs(delta)))\(unit) \(direction) than last month"
+    }
+
+    private var monthlyHeroMetrics: [MonthlyHeroMetric] {
+        let currentCategories = InsightsSnapshot.categoryHours(in: snapshot.segments)
+        let previousCategories = InsightsSnapshot.categoryHours(in: snapshot.previousSegments)
+        let currentLogged = snapshot.loggedHours
+        let previousLogged = snapshot.previousSegments.filter { !$0.isUnlogged }.reduce(0) { $0 + $1.hours }
+        let currentAway = max(0, currentLogged - currentCategories["Home", default: 0])
+        let previousAway = max(0, previousLogged - previousCategories["Home", default: 0])
+        var metrics: [MonthlyHeroMetric] = []
+
+        if currentAway > 0.01 {
+            metrics.append(.init(id: "away", icon: "figure.walk.departure", title: "Away from Home",
+                                 value: formatHours(currentAway), detail: monthlyChangeDetail(current: currentAway, previous: previousAway)))
+        }
+        if let work = currentCategories["Work"], work > 0.01 {
+            metrics.append(.init(id: "work", icon: "briefcase.fill", title: "Work", value: formatHours(work),
+                                 detail: monthlyChangeDetail(current: work, previous: previousCategories["Work", default: 0]),
+                                 action: { openCategory("Work") }))
+        }
+        if snapshot.travel.totalHours > 0.01 {
+            let previousTravel = TravelInsights.make(from: snapshot.previousSegments).totalHours
+            metrics.append(.init(id: "travel", icon: "car.fill", title: "Travel", value: formatHours(snapshot.travel.totalHours),
+                                 detail: monthlyChangeDetail(current: snapshot.travel.totalHours, previous: previousTravel)))
+        }
+        if let sleep = monthAverageNightlySleep, sleep > 0 {
+            metrics.append(.init(id: "sleep", icon: "bed.double.fill", title: "Sleep · Apple Health",
+                                 value: formatHours(sleep / 3600), detail: "Nightly average", action: { openSleep() }))
+        } else if let steps = healthSummary?.averageDailySteps, steps > 0 {
+            metrics.append(.init(id: "steps", icon: "shoeprints.fill", title: "Steps · Apple Health",
+                                 value: "\(Int(steps.rounded()).formatted())/day", detail: "Daily average"))
+        }
+
+        let meaningful = metrics.filter { $0.detail != "This month" }
+        return Array((meaningful + metrics.filter { $0.detail == "This month" }).prefix(4))
+    }
+
+    @ViewBuilder private var monthlyHeroSection: some View {
+        let metrics = monthlyHeroMetrics
+        if let headline = monthlyInsights.headline, !metrics.isEmpty {
+            MonthlyHeroCard(headline: headline, subtitle: monthlyComparisonSubtitle, metrics: metrics)
+        } else if !metrics.isEmpty {
+            MonthlyHeroCard(headline: "A month in review", subtitle: monthlyComparisonSubtitle, metrics: metrics)
+        }
     }
 
     /// The Month counterpart to Week's scorecard: a short set of useful totals
@@ -1531,6 +1588,13 @@ struct InsightsView: View {
         let nonzero = baselineWeeks.map { $0.hours[CommuteDetection.categoryName] ?? 0 }.filter { $0 > 0 }
         let baselineHours = nonzero.isEmpty ? nil : nonzero.reduce(0, +) / Double(nonzero.count)
         return InsightsSnapshot.weekCommuteSummary(commutes: commutes, weekInterval: interval, baselineHours: baselineHours)
+    }
+
+    @ViewBuilder private var weeklyGettingAroundSection: some View {
+        if snapshot.travel.isMeaningful || weeklyCommuteSummary != nil {
+            GettingAroundCard(summary: snapshot.travel, commute: weeklyCommuteSummary,
+                              period: snapshot.analysisInterval)
+        }
     }
 
     @ViewBuilder private var weeklyCommuteSection: some View {
@@ -2435,6 +2499,80 @@ private struct WeeklyYourWeekCard: View {
         .frame(height: 18)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Life-area balance across \(formatHours(totalHours))")
+    }
+}
+
+private struct MonthlyHeroMetric: Identifiable {
+    let id: String
+    let icon: String
+    let title: String
+    let value: String
+    let detail: String
+    var action: (() -> Void)?
+}
+
+private struct MonthlyHeroCard: View {
+    let headline: String
+    let subtitle: String
+    let metrics: [MonthlyHeroMetric]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("This month").font(.title2.bold())
+            Text(headline)
+                .font(.title3.weight(.semibold))
+                .fixedSize(horizontal: false, vertical: true)
+            Text(subtitle)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12),
+                                GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                ForEach(metrics) { metric in
+                    metricTile(metric)
+                }
+            }
+        }
+        .padding(20)
+        .lifeCard()
+        .accessibilityIdentifier("insights-month-hero")
+        .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private func metricTile(_ metric: MonthlyHeroMetric) -> some View {
+        if let action = metric.action {
+            Button(action: action) { tileContent(metric) }
+                .buttonStyle(.plain)
+        } else {
+            tileContent(metric)
+        }
+    }
+
+    private func tileContent(_ metric: MonthlyHeroMetric) -> some View {
+        let detailColor: Color = metric.detail == "This month" ? .secondary : .blue
+        return VStack(alignment: .leading, spacing: 6) {
+            Label(metric.title, systemImage: metric.icon)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
+            Text(metric.value)
+                .font(.title3.bold().monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+            Text(metric.detail)
+                .font(.caption)
+                .foregroundStyle(detailColor)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
+        .padding(12)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        .contentShape(RoundedRectangle(cornerRadius: 12))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(metric.title): \(metric.value), \(metric.detail)")
     }
 }
 

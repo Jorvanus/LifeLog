@@ -2,6 +2,14 @@
 
 ## 2026-08-12
 
+### Month Insights leads with one This month card
+
+- Combined the monthly headline, strongest scorecard metrics, and key travel context into one scoped hero card with restrained comparison treatments and preserved drill-down actions.
+
+### Week travel and commute share one Getting around card
+
+- Combined meaningful travel and confident commute details into one Week card with trip totals, commute patterns, mode summaries, and the existing trip review drill-down; minor transitions remain available in the underlying data without taking over the screen.
+
 ### Week Insights has a clearer visual hierarchy
 
 - Kept the seven-day strip as the hero, combined weekly metrics and life-area balance into one compact Your week card, and moved the donut below the weekly comparison sections.

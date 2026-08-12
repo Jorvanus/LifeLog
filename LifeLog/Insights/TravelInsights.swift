@@ -45,6 +45,20 @@ struct TravelInsights {
 
         var tripCount: Int { trips.count }
         var hasTravel: Bool { !trips.isEmpty }
+        /// A few minutes of movement is useful in raw history but should not
+        /// compete with the rest of Week Insights as a first-class story.
+        var isMeaningful: Bool {
+            commuteHours > 0 || totalHours * 60 >= 15 || longTripCount > 0
+        }
+        var commuteDays: Int {
+            let calendar = Calendar.current
+            return Set(trips.filter(\.isCommute).map { calendar.startOfDay(for: $0.start) }).count
+        }
+        var averageCommuteMinutes: Double? {
+            let commuteTrips = trips.filter(\.isCommute)
+            guard !commuteTrips.isEmpty else { return nil }
+            return commuteTrips.reduce(0) { $0 + $1.duration } / Double(commuteTrips.count) / 60
+        }
         // Compatibility names keep existing Year aggregation callers readable
         // while the reusable summary exposes the more precise fields above.
         var hours: Double { totalHours }
