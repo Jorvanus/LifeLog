@@ -2,6 +2,11 @@
 
 ## 2026-08-12
 
+### Timeline refreshes its day boundary immediately on foreground
+
+- The minute clock that decides what "today" is drives itself with a 60-second sleeping `Task`, which iOS suspends in the background — so returning to the app could show up to a minute of stale data, long enough to miss a midnight crossing entirely. Timeline now refreshes the clock immediately on scene activation instead of waiting for that loop to resume.
+- If the person was already looking at "today" when the app was backgrounded, the selected day now advances across the boundary too, so a foreground open after midnight doesn't silently swap the live view for yesterday's read-only journal. Deliberately reading a past day is left alone — foregrounding never yanks it back to today.
+
 ### An approximate location fix no longer teaches a Saved Place or wins on distance
 
 - LifeLog now detects when a location fix is too fuzzy to trust for a distance comparison — either because Precise Location is off for the app, or because the fix itself is simply poor (indoors, urban canyon) — and treats both the same way, since a full-precision fix in a bad spot is just as untrustworthy as a deliberately fuzzed one.

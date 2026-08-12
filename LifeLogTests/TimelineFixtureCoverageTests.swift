@@ -8,6 +8,29 @@ import Testing
 struct TimelineFixtureCoverageTests {
     private let base = Date(timeIntervalSince1970: 1_800_000_000)
 
+    @Test("Foregrounding after a background midnight re-pins today's selected day forward")
+    func foregroundRefreshAdvancesSelectedDayAcrossMidnight() {
+        let yesterday = Calendar.current.startOfDay(for: base)
+        // The minute clock is stale from a suspended background task; the phone's
+        // real clock has already crossed into the next day by the time foreground
+        // refresh runs.
+        let refreshedClock = Calendar.current.date(byAdding: .day, value: 1, to: base)!
+
+        let advanced = TimelineView.selectedDayAfterForeground(
+            current: yesterday, wasShowingToday: true, refreshedClock: refreshedClock)
+        #expect(Calendar.current.isDate(advanced, inSameDayAs: refreshedClock))
+    }
+
+    @Test("Foregrounding never yanks a deliberately chosen past day back to today")
+    func foregroundRefreshLeavesADeliberatePastDayAlone() {
+        let aWeekAgo = Calendar.current.date(byAdding: .day, value: -7, to: base)!
+        let refreshedClock = base.addingTimeInterval(60)
+
+        let unchanged = TimelineView.selectedDayAfterForeground(
+            current: aWeekAgo, wasShowingToday: false, refreshedClock: refreshedClock)
+        #expect(Calendar.current.isDate(unchanged, inSameDayAs: aWeekAgo))
+    }
+
     @Test("Overlapping destinations never expose movement inside an occupied interval")
     func overlappingVisitsAreLocationFirst() {
         let destinations = (0..<80).map { index in

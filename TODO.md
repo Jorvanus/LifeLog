@@ -40,11 +40,6 @@ responsive 32,000-row archive outrank App Store preparation and speculative feat
 
 ## Correctness and recovery
 
-- [ ] **Refresh Timeline’s day boundary on foreground.** The minute clock can remain
-  stale when the app crosses midnight in the background. Update it on scene activation
-  and add a deterministic midnight/background fixture; do not wait for a second field
-  report to fix the known lifecycle gap.
-
 - [ ] **Audit cross-visit `DateInterval` construction.** `CommuteDetection` previously
   trapped when overlapping manual visits produced an end before a start. Inspect every
   interval built from two different visits, guard invalid ordering, and add overlapping

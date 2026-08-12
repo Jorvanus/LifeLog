@@ -6,6 +6,7 @@ import UIKit
 struct TimelineView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.scenePhase) private var scenePhase
     let recorder: LocationRecorder
     @Binding var returnStartedAt: Date?
     // Imported journals already contain resolved activity/location pairs and never
@@ -97,6 +98,17 @@ struct TimelineView: View {
         let start = Calendar.current.startOfDay(for: date)
         let end = Calendar.current.date(byAdding: .day, value: 1, to: start) ?? start
         return DateInterval(start: start, end: max(start, end))
+    }
+
+    /// The 60-second minute clock is suspended while backgrounded, so returning to
+    /// the foreground can leave `selectedDay` pinned to a day that has already
+    /// ended. Re-pin it forward only when the person was already reading today (as
+    /// of the stale clock, captured by the caller *before* refreshing it) --
+    /// someone deliberately reading a past day must not get yanked back to today
+    /// just because the app resumed.
+    static func selectedDayAfterForeground(current selectedDay: Date, wasShowingToday: Bool,
+                                           refreshedClock: Date) -> Date {
+        wasShowingToday ? Calendar.current.startOfDay(for: refreshedClock) : selectedDay
     }
 
     /// What a day's journey shows, from the visits available for it.
@@ -203,6 +215,17 @@ struct TimelineView: View {
                                        budget: Diagnostics.PerformanceBudget.returnToTimeline)
                     self.returnStartedAt = nil
                 }
+            }
+            // The minute clock (below) is a sleeping Task and iOS suspends it in the
+            // background, so it can be up to 60s stale on return -- long enough to
+            // cross midnight unnoticed. Refresh it immediately on activation instead
+            // of waiting for its own loop to resume.
+            .onChange(of: scenePhase) { _, phase in
+                guard phase == .active else { return }
+                let wasShowingToday = isShowingToday
+                clock = .now
+                selectedDay = TimelineView.selectedDayAfterForeground(
+                    current: selectedDay, wasShowingToday: wasShowingToday, refreshedClock: clock)
             }
             .task {
                 loadEarliestDay()
