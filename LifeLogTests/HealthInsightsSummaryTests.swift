@@ -1,10 +1,20 @@
 import Foundation
+import HealthKit
 import Testing
 @testable import LifeLog
 
 struct HealthInsightsSummaryTests {
     private let id = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
     private let interval = DateInterval(start: Date(timeIntervalSince1970: 1_700_000_000), duration: 86_400)
+
+    @Test("Heart-rate trend types use a rate unit")
+    func heartRateTrendUnits() {
+        let expected = HKUnit.count().unitDivided(by: .minute()).unitString
+        #expect(HealthTrendMetric.restingHeartRate.unit.unitString == expected)
+        #expect(HealthTrendMetric.walkingHeartRate.unit.unitString == expected)
+        #expect(HealthTrendMetric.heartRateRecovery.unit.unitString == expected)
+        #expect(HealthTrendMetric.respiratoryRate.unit.unitString == expected)
+    }
 
     @Test("No Health data produces an explicit empty summary")
     func noData() {
@@ -84,6 +94,26 @@ struct HealthInsightsSummaryTests {
                                                         now: interval.start.addingTimeInterval(7_200))
         #expect(summary.elapsedDays == 1)
         #expect(summary.averageDailySteps == 1_500)
+    }
+
+    @Test("Health signal summaries average duplicate-safe samples")
+    func healthSignals() {
+        let resting = HealthQuantityFixture(id: id, start: interval.start, end: interval.end, value: 60)
+        let walking = HealthQuantityFixture(id: UUID(), start: interval.start, end: interval.end, value: 110)
+        let recovery = HealthQuantityFixture(id: UUID(), start: interval.start, end: interval.end, value: 35)
+        let breathing = HealthQuantityFixture(id: UUID(), start: interval.start, end: interval.end, value: 15)
+        let summary = HealthInsightsAggregation.summary(
+            steps: [], walkingRunningMeters: [], activeEnergyKilocalories: [], exerciseMinutes: [],
+            standHours: [], workouts: [], sleep: nil, interval: interval,
+            calendar: Calendar(identifier: .gregorian), restingHeartRate: [resting, resting],
+            walkingHeartRate: [walking], heartRateRecovery: [recovery], respiratoryRate: [breathing],
+            now: interval.end
+        )
+        #expect(summary.restingHeartRateBPM == 60)
+        #expect(summary.walkingHeartRateBPM == 110)
+        #expect(summary.heartRateRecoveryBPM == 35)
+        #expect(summary.respiratoryRate == 15)
+        #expect(summary.hasData)
     }
 
     @Test("Month changes require absolute and relative movement")

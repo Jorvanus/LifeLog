@@ -104,6 +104,7 @@
 		ADE2D54F1402CDAB3B91B332 /* CategoryPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE32D8BC301AC2222273125B /* CategoryPalette.swift */; };
 		AF3FC621FF468CC2FBED1030 /* InferenceEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D31DA6EE7697B72E6A9B0C41 /* InferenceEngineTests.swift */; };
 		B0C5A9C1019FE79ED5CC669A /* ManualVisitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7707948168F56D6357737108 /* ManualVisitView.swift */; };
+		B3210B38B33812DE49390A06 /* HealthTrendsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2AD932407C1E26E6683F452 /* HealthTrendsView.swift */; };
 		B597386600DED82EEBED55CA /* StoreProtection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08F1DD65EB83F6301A1FEA40 /* StoreProtection.swift */; };
 		BAE9D34C5E695D013C90F634 /* LocationJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB6F8A7FCDAB1A97B8DE34B0 /* LocationJournal.swift */; };
 		BD197A29C9CE98CA1307F047 /* InsightDrillDownViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 996F407A8C4AF7A27700A9CE /* InsightDrillDownViews.swift */; };
@@ -263,6 +264,7 @@
 		BE923F03ACA0A4ACDAE23D08 /* AnnualInsightsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnualInsightsTests.swift; sourceTree = "<group>"; };
 		C12DBABF012522694021DE80 /* JournalCompactionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalCompactionView.swift; sourceTree = "<group>"; };
 		C1B5D3127D11F1A77CF5F1F1 /* ActivityLocationPolicy+Visibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ActivityLocationPolicy+Visibility.swift"; sourceTree = "<group>"; };
+		C2AD932407C1E26E6683F452 /* HealthTrendsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthTrendsView.swift; sourceTree = "<group>"; };
 		C47343A6D2D648151441966B /* InsightsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsView.swift; sourceTree = "<group>"; };
 		CE6A3EB265C7A3064D809A9B /* VisitSuggestion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitSuggestion.swift; sourceTree = "<group>"; };
 		CEA8B72CC21AA6BD64D7F761 /* RouteSimplification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteSimplification.swift; sourceTree = "<group>"; };
@@ -530,6 +532,7 @@
 				F8FB75BDE81E101E03B4E6B2 /* ArchiveRetrospectives.swift */,
 				906BA44701C01FD6C8470CE4 /* DayHighlight.swift */,
 				688154B57F1039547BF1241F /* DayTimelineBar.swift */,
+				C2AD932407C1E26E6683F452 /* HealthTrendsView.swift */,
 				996F407A8C4AF7A27700A9CE /* InsightDrillDownViews.swift */,
 				EEFDDF4EACA429A5EF239A02 /* InsightsAggregationCache.swift */,
 				69B4B98007D7C7BB21196EFC /* InsightsDonutChart.swift */,
@@ -716,6 +719,7 @@
 				4730E599E637ABA6ACCC94CA /* ExportFileCleanup.swift in Sources */,
 				2C99003FD4CB1D4F78CA8238 /* HardwareValidation.swift in Sources */,
 				9686C60B3CC378B719ED577B /* HealthInsightsSummary.swift in Sources */,
+				B3210B38B33812DE49390A06 /* HealthTrendsView.swift in Sources */,
 				934E459DF139645E78E33BDB /* IgnoredLocations.swift in Sources */,
 				DD828F1E680547BCC0CC0002 /* InferenceEngine.swift in Sources */,
 				BD197A29C9CE98CA1307F047 /* InsightDrillDownViews.swift in Sources */,

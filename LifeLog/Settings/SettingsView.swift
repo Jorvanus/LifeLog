@@ -74,7 +74,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Apple Health")
                 } footer: {
-                    Text("Reads sleep, Apple Watch workouts, workout routes, and steps. LifeLog never writes to Apple Health.")
+                    Text("Reads sleep, workouts, activity, and selected heart and breathing trends. LifeLog never writes to Apple Health.")
                 }
                 Section {
                     motionActivityControls

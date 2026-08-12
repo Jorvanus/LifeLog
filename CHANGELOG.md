@@ -2,6 +2,16 @@
 
 ## 2026-08-12
 
+### Health trends load safely on demand
+
+- Kept the main Insights Health summary on its established query path, and changed Health Trends to load one selected metric at a time over a bounded recent window so opening Insights cannot wait on slow Apple Health data; unavailable Apple Health deep links now fall back to iPhone Settings.
+- Corrected one-minute heart-rate recovery to read HealthKit's beats-per-minute samples as a rate, preventing the Trends screen from crashing on valid recovery data.
+- Replaced an unavailable Future timeline icon with a supported system symbol so it renders consistently instead of emitting a console warning.
+
+### Health trends are available from Insights
+
+- Added Apple Health resting heart rate, walking heart rate, one-minute heart-rate recovery, and respiratory-rate summaries with a period-scoped Health Trends chart; existing workout and timeline placement remains unchanged.
+
 ### Day timeline states are easier to read
 
 - Added compact timeline guidance and distinct future, unlogged, sleep, travel, and recorded treatments while preserving the 24-hour scale, current marker, and segment editing taps.

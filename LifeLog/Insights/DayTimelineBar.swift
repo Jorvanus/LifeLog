@@ -126,7 +126,7 @@ struct DayTimelineBar: View {
 private struct DayTimelineLegend: View {
     private let items: [(String, String)] = [
         ("Recorded", "square.fill"),
-        ("Future", "rectangle.diagonal.fill"),
+        ("Future", "rectangle.slash.fill"),
         ("Unlogged", "circle.dotted"),
         ("Sleep", "bed.double.fill"),
         ("Travel", "car.fill")

@@ -35,7 +35,7 @@
     <key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoads</key><false/></dict>
     <key>NSLocationRequireExplicitServiceSession</key><true/>
     <key>NSMotionUsageDescription</key><string>LifeLog uses motion activity to add walking, cycling, running, and travel to your private timeline.</string>
-    <key>NSHealthShareUsageDescription</key><string>LifeLog reads sleep, workout, and step data from Apple Health to complete your private timeline and insights.</string>
+    <key>NSHealthShareUsageDescription</key><string>LifeLog reads sleep, activity, workout, heart, and breathing data from Apple Health to complete your private timeline and insights.</string>
     <key>NSLocationWhenInUseUsageDescription</key><string>LifeLog uses your location to build your private timeline and identify public places with Apple Maps.</string>
     <key>NSLocationAlwaysAndWhenInUseUsageDescription</key><string>Allow background location so LifeLog can record visits when closed and identify public places with Apple Maps.</string>
 </dict>

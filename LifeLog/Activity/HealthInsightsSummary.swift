@@ -17,6 +17,10 @@ struct HealthInsightsSummary: Equatable, Sendable {
     let activeEnergyKilocalories: Double?
     let exerciseMinutes: Double?
     let standHours: Double?
+    let restingHeartRateBPM: Double?
+    let walkingHeartRateBPM: Double?
+    let heartRateRecoveryBPM: Double?
+    let respiratoryRate: Double?
     let workouts: [Workout]
     let sleep: SleepSummary?
     let activeStepDays: Int
@@ -33,12 +37,17 @@ struct HealthInsightsSummary: Equatable, Sendable {
     var workoutCount: Int { workouts.count }
     var hasData: Bool {
         steps != nil || walkingRunningMeters != nil || activeEnergyKilocalories != nil ||
-        exerciseMinutes != nil || standHours != nil || !workouts.isEmpty || sleep != nil
+        exerciseMinutes != nil || standHours != nil || restingHeartRateBPM != nil ||
+        walkingHeartRateBPM != nil || heartRateRecoveryBPM != nil || respiratoryRate != nil ||
+        !workouts.isEmpty || sleep != nil
     }
 
     static let empty = Self(steps: nil, walkingRunningMeters: nil,
                             activeEnergyKilocalories: nil, exerciseMinutes: nil,
-                            standHours: nil, workouts: [], sleep: nil,
+                            standHours: nil,
+                            restingHeartRateBPM: nil, walkingHeartRateBPM: nil,
+                            heartRateRecoveryBPM: nil, respiratoryRate: nil,
+                            workouts: [], sleep: nil,
                             activeStepDays: 0, elapsedDays: 0,
                             source: "Apple Health", lastSuccessfulImport: nil)
 
@@ -103,7 +112,10 @@ enum HealthInsightsAggregation {
                         activeEnergyKilocalories: [HealthQuantityFixture], exerciseMinutes: [HealthQuantityFixture],
                         standHours: [HealthQuantityFixture], workouts: [HealthWorkoutFixture],
                         sleep: SleepSummary?, interval: DateInterval, calendar: Calendar,
-                        now: Date = .now, lastSuccessfulImport: Date? = nil) -> HealthInsightsSummary {
+                        restingHeartRate: [HealthQuantityFixture] = [],
+                        walkingHeartRate: [HealthQuantityFixture] = [], heartRateRecovery: [HealthQuantityFixture] = [],
+                        respiratoryRate: [HealthQuantityFixture] = [], now: Date = .now,
+                        lastSuccessfulImport: Date? = nil) -> HealthInsightsSummary {
         func unique(_ values: [HealthQuantityFixture]) -> [HealthQuantityFixture] {
             var seen = Set<UUID>()
             return values.filter { seen.insert($0.id).inserted }
@@ -111,6 +123,11 @@ enum HealthInsightsAggregation {
         func total(_ values: [HealthQuantityFixture]) -> Double? {
             let distinct = unique(values)
             return distinct.isEmpty ? nil : distinct.reduce(0) { $0 + $1.value }
+        }
+        func average(_ values: [HealthQuantityFixture]) -> Double? {
+            let distinct = unique(values)
+            guard !distinct.isEmpty else { return nil }
+            return distinct.reduce(0) { $0 + $1.value } / Double(distinct.count)
         }
         let uniqueSteps = unique(steps)
         let distinctWorkouts = Dictionary(grouping: workouts, by: \.id).compactMap { $0.value.first }
@@ -131,6 +148,10 @@ enum HealthInsightsAggregation {
             activeEnergyKilocalories: total(activeEnergyKilocalories),
             exerciseMinutes: total(exerciseMinutes),
             standHours: total(standHours),
+            restingHeartRateBPM: average(restingHeartRate),
+            walkingHeartRateBPM: average(walkingHeartRate),
+            heartRateRecoveryBPM: average(heartRateRecovery),
+            respiratoryRate: average(respiratoryRate),
             workouts: distinctWorkouts,
             sleep: sleep,
             activeStepDays: activeDays,

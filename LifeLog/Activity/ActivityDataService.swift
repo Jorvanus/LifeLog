@@ -103,7 +103,9 @@ final class ActivityDataService {
         guard let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return }
         var types: [HKSampleType] = [sleepType, HKWorkoutType.workoutType()]
         types += [HKQuantityTypeIdentifier.stepCount, .distanceWalkingRunning,
-                  .activeEnergyBurned, .appleExerciseTime, .appleStandTime].compactMap {
+                  .activeEnergyBurned, .appleExerciseTime, .appleStandTime,
+                  .restingHeartRate, .walkingHeartRateAverage, .heartRateRecoveryOneMinute,
+                  .respiratoryRate].compactMap {
             HKObjectType.quantityType(forIdentifier: $0)
         }
         for type in types {
@@ -239,6 +241,10 @@ final class ActivityDataService {
         case HKSeriesType.workoutRoute(): "Workout routes"
         case HKObjectType.categoryType(forIdentifier: .sleepAnalysis): "Sleep"
         case HKObjectType.quantityType(forIdentifier: .stepCount): "Steps"
+        case HKObjectType.quantityType(forIdentifier: .restingHeartRate): "Resting heart rate"
+        case HKObjectType.quantityType(forIdentifier: .walkingHeartRateAverage): "Walking heart rate"
+        case HKObjectType.quantityType(forIdentifier: .heartRateRecoveryOneMinute): "Heart-rate recovery"
+        case HKObjectType.quantityType(forIdentifier: .respiratoryRate): "Respiratory rate"
         default: type.identifier
         }
     }
@@ -505,6 +511,21 @@ final class ActivityDataService {
         return summary
     }
 
+    /// Daily averages for the Health Trends screen. HealthKit owns the raw
+    /// samples; LifeLog only keeps the small, display-ready series in memory.
+    func healthTrend(for metric: HealthTrendMetric, interval: DateInterval) async -> [HealthTrendPoint] {
+        guard interval.duration > 0, HKHealthStore.isHealthDataAvailable() else { return [] }
+        let fixtures = await sampleReader.healthTrendFixtures(for: metric, in: interval)
+        let calendar = Calendar.current
+        let grouped = Dictionary(grouping: fixtures) { calendar.startOfDay(for: $0.start) }
+        return grouped.compactMap { day, values in
+            let distinct = Dictionary(grouping: values, by: \.id).compactMap { $0.value.first }
+            guard !distinct.isEmpty else { return nil }
+            return HealthTrendPoint(date: day,
+                                    value: distinct.reduce(0) { $0 + $1.value } / Double(distinct.count))
+        }.sorted { $0.date < $1.date }
+    }
+
     private func invalidateHealthSummaryCache() {
         healthSummaryCache.removeAll(keepingCapacity: true)
         stepCache.removeAll(keepingCapacity: true)
@@ -571,6 +592,11 @@ final class ActivityDataService {
         var types: Set<HKSampleType> = [HKWorkoutType.workoutType()]
         if let sleep = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) { types.insert(sleep) }
         if let steps = HKObjectType.quantityType(forIdentifier: .stepCount) { types.insert(steps) }
+        for identifier in [HKQuantityTypeIdentifier.restingHeartRate,
+                           .walkingHeartRateAverage, .heartRateRecoveryOneMinute,
+                           .respiratoryRate] {
+            if let type = HKObjectType.quantityType(forIdentifier: identifier) { types.insert(type) }
+        }
         // Workout routes are a separate permission from the workout itself. Without
         // it a walk is only a start and an end time, and LifeLog cannot tell a loop
         // around the block from walking about indoors.

@@ -450,6 +450,13 @@ struct InsightsView: View {
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel("Apple Health workouts: \(workouts.map { $0.type }.joined(separator: ", "))")
                 }
+                healthSignalRows
+                NavigationLink {
+                    HealthTrendsView(activityData: activityData, interval: interval, periodTitle: periodTitle)
+                } label: {
+                    Label("Open Health Trends", systemImage: "chart.xyaxis.line")
+                }
+                .accessibilityIdentifier("health-trends-link")
                 if !activityData.unaskedHealthTypes.isEmpty {
                     Button("Connect Apple Health") {
                         Task { await activityData.requestHealthAccess() }
@@ -472,13 +479,34 @@ struct InsightsView: View {
         }
     }
 
+    private var healthSignalRows: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let value = healthSummary?.restingHeartRateBPM {
+                daySummaryRow(icon: "heart.fill", label: "Resting heart rate", value: "\(Int(value.rounded())) bpm")
+            }
+            if let value = healthSummary?.walkingHeartRateBPM {
+                daySummaryRow(icon: "figure.walk", label: "Walking heart rate", value: "\(Int(value.rounded())) bpm")
+            }
+            if let value = healthSummary?.heartRateRecoveryBPM {
+                daySummaryRow(icon: "arrow.down.heart.fill", label: "One-minute recovery", value: "\(Int(value.rounded())) bpm recovered")
+            }
+            if let value = healthSummary?.respiratoryRate {
+                daySummaryRow(icon: "wind", label: "Respiratory rate", value: "\(Int(value.rounded())) breaths/min")
+            }
+        }
+    }
+
     private var needsHealthSetup: Bool {
         activityData.healthStatus != "Connected" && activityData.healthStatus != "Unavailable on this device"
     }
 
     private func openAppleHealth() {
         guard let healthURL = URL(string: "x-apple-health://") else { return }
-        UIApplication.shared.open(healthURL)
+        UIApplication.shared.open(healthURL) { opened in
+            if !opened, let settingsURL = URL(string: UIApplication.openSettingsURLString) {
+                UIApplication.shared.open(settingsURL)
+            }
+        }
     }
 
     private func openCategory(_ name: String) {

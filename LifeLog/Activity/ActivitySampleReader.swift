@@ -62,6 +62,65 @@ struct MotionActivitySegment: Sendable, Equatable {
     let end: Date
 }
 
+enum HealthTrendMetric: String, CaseIterable, Identifiable, Sendable {
+    case restingHeartRate
+    case walkingHeartRate
+    case heartRateRecovery
+    case respiratoryRate
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .restingHeartRate: "Resting heart rate"
+        case .walkingHeartRate: "Walking heart rate"
+        case .heartRateRecovery: "One-minute heart-rate recovery"
+        case .respiratoryRate: "Respiratory rate"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .restingHeartRate, .walkingHeartRate, .heartRateRecovery: "heart.fill"
+        case .respiratoryRate: "wind"
+        }
+    }
+
+    var unitTitle: String {
+        switch self {
+        case .restingHeartRate, .walkingHeartRate: "bpm"
+        case .heartRateRecovery: "bpm recovered"
+        case .respiratoryRate: "breaths/min"
+        }
+    }
+
+    var identifier: HKQuantityTypeIdentifier {
+        switch self {
+        case .restingHeartRate: .restingHeartRate
+        case .walkingHeartRate: .walkingHeartRateAverage
+        case .heartRateRecovery: .heartRateRecoveryOneMinute
+        case .respiratoryRate: .respiratoryRate
+        }
+    }
+
+    var unit: HKUnit {
+        switch self {
+        // HealthKit stores one-minute recovery as a rate, just like the other
+        // pulse-derived measurements. Reading it as a plain count throws an
+        // Objective-C exception that Swift cannot catch.
+        case .restingHeartRate, .walkingHeartRate, .heartRateRecovery, .respiratoryRate:
+            .heartRateUnit()
+        }
+    }
+}
+
+struct HealthTrendPoint: Identifiable, Equatable, Sendable {
+    let date: Date
+    let value: Double
+
+    var id: Date { date }
+}
+
 /// Health and Motion history is read away from the main actor and converted into
 /// small Sendable records before any database work begins.
 actor ActivitySampleReader {
@@ -91,6 +150,10 @@ actor ActivitySampleReader {
 
     private func safeWorkoutFixtures(in interval: DateInterval) async -> [HealthWorkoutFixture] {
         (try? await workoutFixtures(in: interval)) ?? []
+    }
+
+    func healthTrendFixtures(for metric: HealthTrendMetric, in interval: DateInterval) async -> [HealthQuantityFixture] {
+        (try? await quantityFixtures(in: interval, identifier: metric.identifier, unit: metric.unit)) ?? []
     }
 
     private func quantityFixtures(in interval: DateInterval, identifier: HKQuantityTypeIdentifier,
@@ -425,5 +488,11 @@ actor ActivitySampleReader {
 
     private func workoutActivity(_ type: HKWorkoutActivityType) -> String {
         HealthInsightsSummary.knownWorkoutTypeName(rawValue: Int(type.rawValue)) ?? "Exercising"
+    }
+}
+
+private extension HKUnit {
+    static func heartRateUnit() -> HKUnit {
+        HKUnit.count().unitDivided(by: HKUnit.minute())
     }
 }
