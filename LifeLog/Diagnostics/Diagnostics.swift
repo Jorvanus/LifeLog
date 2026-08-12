@@ -80,6 +80,7 @@ enum Diagnostics {
         static let insightsDay: TimeInterval = 0.25
         static let insightsMonth: TimeInterval = 0.75
         static let insightsYear: TimeInterval = 1.5
+        static let returnToTimeline: TimeInterval = 0.35
 
         static func insights(window: InsightWindow) -> TimeInterval {
             switch window {

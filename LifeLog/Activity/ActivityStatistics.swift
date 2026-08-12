@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 /// Everything the Activities screen reports about one label, worked out in one place
 /// so the sparkline, the comparisons and the totals can never disagree.
@@ -255,5 +256,22 @@ struct ActivityStatistics: Sendable {
             currentPeriodTime: current,
             previousPeriodTime: previous
         )
+    }
+}
+
+/// Archive-wide activity totals are useful, but never worth blocking a tab switch
+/// for. `Visit` stays inside this actor; only the small, Sendable row summaries
+/// cross back to SwiftUI.
+@ModelActor
+actor ActivitySummaryAggregator {
+    struct Result: Sendable {
+        let summaries: [ActivityStatistics.Summary]
+        let itemCount: Int
+    }
+
+    func load(names: [String], now: Date = .now) throws -> Result {
+        let visits = try modelContext.fetch(FetchDescriptor<Visit>())
+        return Result(summaries: ActivityStatistics.summaries(named: names, visits: visits, now: now),
+                      itemCount: visits.count)
     }
 }

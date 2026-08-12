@@ -66,12 +66,9 @@ struct ActivityDetailView: View {
         self.activityName = activityName
         self.symbol = symbol
         let name = activityName
-        // SwiftData cannot filter on `activity` because it is computed, so the fetch
-        // is loose and narrowed by the same rule the rest of the app uses.
-        _candidates = Query(
-            filter: #Predicate<Visit> { $0.userActivity == name || $0.inferredActivity == name },
-            sort: [SortDescriptor(\Visit.arrival, order: .reverse)]
-        )
+        // Keep this identity predicate centralised with the other bounded history
+        // fetches instead of letting each detail screen grow its own broad query.
+        _candidates = Query(VisitHistoryQuery.activity(named: name))
     }
 
     private var statistics: ActivityStatistics {

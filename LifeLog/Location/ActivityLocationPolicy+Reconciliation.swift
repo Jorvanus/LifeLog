@@ -65,8 +65,8 @@ extension ActivityLocationPolicy {
     /// the archive. Losing a race then costs a moment instead of a release.
     @discardableResult
     static func reapplyRecentJourneyTiming(context: ModelContext, now: Date = .now) throws -> Bool {
-        let visits = try fetchPolicyVisits(context: context)
         let since = now.addingTimeInterval(-24 * 60 * 60)
+        let visits = try fetchRecentPolicyVisits(context: context, since: since)
         let recent = visits.filter { isMovementActivity($0) && ($0.departure ?? now) >= since }
         guard !recent.isEmpty else { return false }
         let live = visits.filter { isLocationVisit($0) && !isSupersededLocation($0) }
@@ -85,8 +85,8 @@ extension ActivityLocationPolicy {
     /// misses the ordinary case rather than the rare one.
     @discardableResult
     static func reapplyRecentMovementAbsorption(context: ModelContext, now: Date = .now) throws -> Bool {
-        let visits = try fetchPolicyVisits(context: context)
         let since = now.addingTimeInterval(-24 * 60 * 60)
+        let visits = try fetchRecentPolicyVisits(context: context, since: since)
         let recent = visits.filter { isMovementActivity($0) && ($0.departure ?? now) >= since }
         guard !recent.isEmpty else { return false }
         let sessions = recent.filter(isWorkoutSession).compactMap { WorkoutJourneys.WorkoutSession($0, now: now) }
@@ -116,8 +116,8 @@ extension ActivityLocationPolicy {
     /// costs a filter over recent records rather than a pass over the archive.
     @discardableResult
     static func reapplyRecentOpenStayAbsorption(context: ModelContext, now: Date = .now) throws -> Bool {
-        let visits = try fetchPolicyVisits(context: context)
         let since = now.addingTimeInterval(-24 * 60 * 60)
+        let visits = try fetchRecentPolicyVisits(context: context, since: since)
         let recent = visits.filter { isMovementActivity($0) && ($0.departure ?? now) >= since }
         guard !recent.isEmpty else { return false }
         let live = visits.filter { isLocationVisit($0) && !isSupersededLocation($0) }
@@ -190,6 +190,18 @@ extension ActivityLocationPolicy {
         // large archive during location updates.
         let descriptor = FetchDescriptor<Visit>(
             predicate: #Predicate { $0.source != "imported-journal" }
+        )
+        return try context.fetch(descriptor)
+    }
+
+    /// The recurring return/import repairs concern only the last day plus a stay
+    /// still open from before it. Querying that small slice before filtering avoids
+    /// hydrating the complete archive every time Timeline becomes visible.
+    static func fetchRecentPolicyVisits(context: ModelContext, since: Date) throws -> [Visit] {
+        let descriptor = FetchDescriptor<Visit>(
+            predicate: #Predicate {
+                $0.source != "imported-journal" && ($0.arrival >= since || $0.departure == nil)
+            }
         )
         return try context.fetch(descriptor)
     }

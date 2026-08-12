@@ -10,14 +10,13 @@ import Charts
 struct ActivitiesTabView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Query(sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
     /// Held rather than computed in `body`. As a computed property this was rebuilt on
     /// every render, and each rebuild walked the whole timeline once per activity.
     @State private var rows: [Row] = []
     @State private var searchText = ""
     @State private var showingUnused = false
 
-    private func reload() {
+    private func reload() async {
         let startedAt = Date.now
         let definitions = ActivityCatalog.load()
         var symbols: [String: String] = [:]
@@ -25,7 +24,16 @@ struct ActivitiesTabView: View {
 
         // Summaries, not full statistics: the list shows occasions, total time and
         // the week's shape. Everything else is computed when an activity is opened.
-        let summaries = ActivityStatistics.summaries(named: definitions.map(\.name), visits: visits)
+        let result: ActivitySummaryAggregator.Result
+        do {
+            result = try await ActivitySummaryAggregator(modelContainer: context.container)
+                .load(names: definitions.map(\.name), now: .now)
+        } catch {
+            Diagnostics.record(error, context: context, subsystem: "Activities",
+                               operation: "activity statistics", severity: "warning")
+            return
+        }
+        let summaries = result.summaries
         // `summaries` deliberately also returns labels found in the archive that the
         // catalogue has never heard of — most of a bulk-imported history is exactly
         // that, and a screen reporting where time went must not hide it. But such a row
@@ -40,10 +48,10 @@ struct ActivitiesTabView: View {
         }
         built.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         rows = built
-        // Instrumented because the first version of this screen was slow and left no
-        // trace in Diagnostics to say so.
-        Diagnostics.performance(context, subsystem: "Activities", operation: "activity statistics",
-                                startedAt: startedAt, itemCount: visits.count)
+        // Archive-wide work is allowed here because it is isolated from the UI actor;
+        // retain a realistic diagnostic budget so a future regression remains visible.
+        Diagnostics.budget(context, subsystem: "Activities", operation: "background activity statistics",
+                           startedAt: startedAt, budget: 1.0, itemCount: result.itemCount)
     }
 
     private struct Row: Identifiable {
@@ -67,7 +75,7 @@ struct ActivitiesTabView: View {
         // Grouping is computed rather than stored, so adopting a label re-buckets every
         // visit already carrying it. Insights has to be told.
         InsightsInvalidation.invalidate(reason: "Activity adopted from history", context: context)
-        reload()
+        Task { await reload() }
     }
 
     var body: some View {
@@ -110,9 +118,9 @@ struct ActivitiesTabView: View {
             .navigationTitle("Activities")
             .accessibilityIdentifier("activities-tab-screen")
             .searchable(text: $searchText, prompt: "Search activities")
-            .task { reload() }
+            .task { await reload() }
             .onReceive(NotificationCenter.default.publisher(for: InsightsInvalidation.notification)) { _ in
-                reload()
+                Task { await reload() }
             }
         }
     }

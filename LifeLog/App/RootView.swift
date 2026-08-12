@@ -12,6 +12,9 @@ struct RootView: View {
     let modelContainer: ModelContainer
     @State private var recorder = LocationRecorder()
     @State private var activityData = ActivityDataService()
+    /// Set at tab selection, not when Timeline disappeared: the latter measures how
+    /// long the person was reading Settings rather than how long Timeline took back.
+    @State private var timelineReturnStartedAt: Date?
     @Environment(\.scenePhase) private var scenePhase
     /// Opens straight to a tab, so a screen can be inspected without driving the tab
     /// bar. `-showInsights` predates this and still works; `-showTab N` reaches any of
@@ -35,7 +38,7 @@ struct RootView: View {
     var body: some View {
         TabView(selection: $selectedTab) {
             Tab("Timeline", systemImage: "clock", value: 0) {
-                TimelineView(recorder: recorder)
+                TimelineView(recorder: recorder, returnStartedAt: $timelineReturnStartedAt)
             }
             // Next to Timeline: both are readings of the same days, one as it happened
             // and one totalled up, so they are what a person moves between.
@@ -50,6 +53,9 @@ struct RootView: View {
             }
         }
         .tint(.blue)
+        .onChange(of: selectedTab) { _, tab in
+            if tab == 0 { timelineReturnStartedAt = .now }
+        }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             activityData.refreshAutomatically()

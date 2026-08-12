@@ -2,6 +2,13 @@
 
 ## 2026-08-12
 
+### Large archives now use bounded history lookups
+
+- Timeline now reads a short current-day window rather than the complete archive, and place/activity history has reusable day, month, year, place, activity, and explicit place-search queries. Notes remain outside ordinary history searches so Timeline does not load note text just to render.
+- Diagnostics now measures the budget for returning to Timeline after leaving it, making a slow return from Insights, Settings, or an editor visible alongside launch and Insights timings.
+- Returning from Settings no longer reruns the archive-wide callback resolver. The remaining one-day reconciliation helpers now query the recent window before they filter it, and the return budget starts when Timeline is selected rather than when it was left — so Diagnostics reports the actual return time instead of time spent reading another tab.
+- Activities now builds its archive-wide summary away from the interface, and day Insights defers long-range trend/history work that does not affect its current-day cards. Opening either now prioritises the scoped information already on screen.
+
 ### Saved Place learning now waits for real evidence
 
 - A single Apple Maps result no longer becomes a Saved Place and future geofence on its own. Automatic learning now needs three corroborating automatic arrivals; manually correcting a visit or explicitly saving a place still takes effect immediately.

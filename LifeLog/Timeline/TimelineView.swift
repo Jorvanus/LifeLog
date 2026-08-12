@@ -7,6 +7,7 @@ struct TimelineView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let recorder: LocationRecorder
+    @Binding var returnStartedAt: Date?
     // Imported journals already contain resolved activity/location pairs and never
     // participate in live movement reconciliation. Excluding them keeps the launch
     // timeline query lightweight.
@@ -21,11 +22,9 @@ struct TimelineView: View {
     // silently hid every real standalone walk, which is exactly what
     // `testTimelineShowsTheOvernightStayAndTheWalkBetweenPlaces` and
     // `testAWalkWithNoPositionShowsThePlacesEitherSideOfIt` exist to catch. The
-    // archive-scale cost this was trying to avoid is real and still worth solving —
-    // properly, with a date-scoped fetch — but excluding by source is the wrong tool
-    // for it.
-    @Query(filter: #Predicate<Visit> { $0.source != "imported-journal" },
-           sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
+    // The fetch below is date-scoped; excluding by source remains the wrong tool for
+    // deciding whether a movement record belongs on the day's journey.
+    @Query private var visits: [Visit]
     @State private var adding = false
     @State private var clock = Date.now
     /// The day being read. Today until the person moves off it, at which point the
@@ -70,6 +69,24 @@ struct TimelineView: View {
     // Merges the duplicate sleep visits the pre-fix arrival-window bug could
     // leave behind. New duplicates should no longer occur, so this runs once.
     @AppStorage(SleepSessionRepair.repairKey) private var sleepDuplicatesMerged = false
+
+    init(recorder: LocationRecorder, returnStartedAt: Binding<Date?> = .constant(nil)) {
+        self.recorder = recorder
+        _returnStartedAt = returnStartedAt
+        // Today needs a small lead-in for an overnight stay, not the full archive.
+        let start = Calendar.current.date(byAdding: .day, value: -7, to: Date.now) ?? .now
+        let end = Calendar.current.date(byAdding: .day, value: 1, to: Date.now) ?? .now
+        _visits = Query(
+            filter: #Predicate { visit in
+                // An open stay may have begun before the usual lead-in. Keep that one
+                // live record so a long trip or an interrupted departure never makes
+                // the current-location card disappear just because it is old.
+                visit.source != "imported-journal" &&
+                    (visit.arrival >= start || visit.departure == nil) && visit.arrival < end
+            },
+            sort: [SortDescriptor(\Visit.arrival, order: .reverse)]
+        )
+    }
 
     private var today: [Visit] {
         TimelineView.rows(from: visits, day: TimelineView.interval(of: clock), now: clock)
@@ -179,21 +196,22 @@ struct TimelineView: View {
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $adding) { ManualVisitView(range: TimelineView.interval(of: selectedDay)) }
             .sheet(isPresented: $jumpingToDate) { jumpToDateSheet }
+            .onAppear {
+                if let returnStartedAt {
+                    Diagnostics.budget(context, subsystem: "Timeline", operation: "return to Timeline",
+                                       startedAt: returnStartedAt,
+                                       budget: Diagnostics.PerformanceBudget.returnToTimeline)
+                    self.returnStartedAt = nil
+                }
+            }
             .task {
                 loadEarliestDay()
                 // Let SwiftUI paint the first interactive frame before historical
                 // resolver and catch-up work resumes when returning from another tab.
                 await Task.yield()
-                do {
-                    let repaired = try ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "Timeline relaunch recovery")
-                    if repaired > 0 {
-                        try context.save()
-                        Diagnostics.record(context, subsystem: "Core Location",
-                                           message: "Closed \(repaired) superseded open visit records.", severity: "info")
-                    }
-                } catch {
-                    // Protected stores are retried when Timeline next appears.
-                }
+                // Store opening and every callback/import mutation already resolve
+                // the timeline. Re-running the archive-wide resolver merely because
+                // this tab became visible made a Settings round-trip block for seconds.
                 // Each repair below can touch a meaningful slice of a large archive.
                 // Yielding between them, not just once at the very top, lets the run
                 // loop interleave a frame — the tab bar's own selection animation

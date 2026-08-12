@@ -148,14 +148,22 @@ struct InsightsView: View {
             .onChange(of: window) { _, _ in reloadInsights() }
             .onChange(of: anchorDate) { _, _ in reloadInsights() }
             .task(id: highlightKey) { await reloadHighlights() }
-            .task(id: trendKey) { await reloadTrends() }
+            .task(id: trendKey) {
+                guard window != .day else {
+                    trendSeries = []
+                    habits = []
+                    weeklyRhythm = WeekdayPattern.empty
+                    return
+                }
+                await reloadTrends()
+            }
         }
     }
 
     /// The trends only move when the week does, so stepping through days inside one
     /// week never re-reads a season of history.
-    private var trendKey: Double {
-        InsightsTrends.range(endingAt: now).start.timeIntervalSinceReferenceDate
+    private var trendKey: String {
+        "\(window.rawValue)-\(InsightsTrends.range(endingAt: now).start.timeIntervalSinceReferenceDate)"
     }
 
     /// Rebuilds the highlights only when the day being looked at changes. Without an
