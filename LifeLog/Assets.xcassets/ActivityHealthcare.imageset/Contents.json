@@ -1,17 +1,26 @@
 {
   "images" : [
     {
-      "filename" : "ActivityHealthcare.png",
+      "filename" : "ActivityHealthcare-light.png",
       "idiom" : "universal",
-      "scale" : "1x"
+      "scale" : "1x",
+      "appearances" : [
+        {
+          "appearance" : "luminosity",
+          "value" : "light"
+        }
+      ]
     },
     {
+      "filename" : "ActivityHealthcare-dark.png",
       "idiom" : "universal",
-      "scale" : "2x"
-    },
-    {
-      "idiom" : "universal",
-      "scale" : "3x"
+      "scale" : "1x",
+      "appearances" : [
+        {
+          "appearance" : "luminosity",
+          "value" : "dark"
+        }
+      ]
     }
   ],
   "info" : {

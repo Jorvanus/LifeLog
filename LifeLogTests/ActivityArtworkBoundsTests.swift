@@ -108,10 +108,9 @@ struct ActivityArtworkBoundsTests {
                 >= ActivityArtworkLayout.width * 3)
     }
 
-    /// Ten illustrations shipped as `ActivityCoffee.png` inside imagesets for work,
-    /// beer, fitness and a blood donation. Nothing broke, because the catalog reads
-    /// the name out of `Contents.json` — which is exactly why it went unnoticed.
-    @Test("Each imageset's file is named after the imageset")
+    /// Appearance variants carry the imageset stem plus their luminosity, so a file
+    /// must be either the light or dark member of the set rather than another asset.
+    @Test("Each imageset's files are named after the imageset")
     func assetFilenamesMatchTheirImageset() {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent()
@@ -125,8 +124,8 @@ struct ActivityArtworkBoundsTests {
             let pngs = (try? FileManager.default.contentsOfDirectory(atPath: contents.path))?
                 .filter { $0.hasSuffix(".png") } ?? []
             for png in pngs {
-                #expect(png == "\(stem).png",
-                        "\(imageSet) contains \(png), which is named after another activity")
+                #expect(png == "\(stem)-light.png" || png == "\(stem)-dark.png",
+                        "\(imageSet) contains \(png), which is not one of its appearance variants")
             }
         }
     }

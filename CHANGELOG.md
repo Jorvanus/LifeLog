@@ -1515,3 +1515,7 @@ None of these were caught before shipping because the previous commit touched no
 - Device activity is excluded wherever it overlaps an automatic or manual location visit.
 - Partial walking, workout, sleep, or travel segments are trimmed so only time between places remains.
 - Location visits also reconcile activity that was imported before Core Location delivered the visit.
+## 2026-08-12
+
+- Replaced the larger activity artwork with wide, solo-life illustrations that have explicit light and dark appearance variants; iOS now selects the night artwork automatically in dark mode.
+- Removed the baked-in white artwork borders and made image placement follow the card’s rounded dark- and light-mode surface.

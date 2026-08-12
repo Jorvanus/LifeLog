@@ -1,17 +1,26 @@
 {
   "images" : [
     {
-      "filename" : "ActivityShoppingV2.png",
+      "filename" : "ActivityShoppingV2-light.png",
       "idiom" : "universal",
-      "scale" : "1x"
+      "scale" : "1x",
+      "appearances" : [
+        {
+          "appearance" : "luminosity",
+          "value" : "light"
+        }
+      ]
     },
     {
+      "filename" : "ActivityShoppingV2-dark.png",
       "idiom" : "universal",
-      "scale" : "2x"
-    },
-    {
-      "idiom" : "universal",
-      "scale" : "3x"
+      "scale" : "1x",
+      "appearances" : [
+        {
+          "appearance" : "luminosity",
+          "value" : "dark"
+        }
+      ]
     }
   ],
   "info" : {

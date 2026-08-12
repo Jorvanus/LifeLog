@@ -144,18 +144,10 @@ struct ActivityScene: View {
                 // let the transformed artwork affect layout: transparent source
                 // padding must never enlarge the card or push text out of alignment.
                 .frame(width: ActivityArtworkLayout.width, height: ActivityArtworkLayout.height)
+                // The artwork belongs to the card, so its corners must follow the
+                // card rather than exposing a square source-image edge at a placement.
+                .clipShape(RoundedRectangle(cornerRadius: ActivityArtworkLayout.cornerRadius))
                 .offset(y: ActivityArtworkLayout.verticalOffset)
-                .clipped()
-                // Fixed regardless of appearance. Every illustration is painted with
-                // transparent edges, and several have transparent gaps inside the
-                // scene itself — a highlight on a bowl, a seam in a tablecloth. Left
-                // alone, that transparency shows the card's own background through:
-                // paper-white in light mode, but a scatter of black flecks through
-                // the artwork in dark mode. A constant pale canvas behind the image
-                // means every illustration always sits on the surface it was drawn
-                // for, in both appearances, with no dark-mode variant required.
-                .background(ActivityArtworkLayout.canvasColor,
-                            in: RoundedRectangle(cornerRadius: ActivityArtworkLayout.cornerRadius))
                 .accessibilityHidden(true)
         }
     }
@@ -189,14 +181,4 @@ enum ActivityArtworkLayout {
     /// room for that crop and for the card ever growing, without shipping megabytes.
     static let recommendedSourcePixels = 1024
 
-    /// The panel every illustration sits on, in both light and dark mode.
-    ///
-    /// Deliberately not `Color(uiColor: .secondarySystemGroupedBackground)` or any
-    /// other adaptive colour — the whole point is that this stays put while the
-    /// system colour around it changes, so a transparent pixel in the artwork always
-    /// reveals the same pale surface rather than turning black at night. Sampled
-    /// from the illustrations' own light highlights (the tablecloth in
-    /// `ActivityDiningOut`), so a fixed panel reads as part of the drawing rather
-    /// than as a mount behind it.
-    static let canvasColor = Color(red: 241 / 255, green: 244 / 255, blue: 232 / 255)
 }

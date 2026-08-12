@@ -1,13 +1,30 @@
 {
-  "images": [
+  "images" : [
     {
-      "filename": "ActivityHome.png",
-      "idiom": "universal",
-      "scale": "1x"
+      "filename" : "ActivityHome-light.png",
+      "idiom" : "universal",
+      "scale" : "1x",
+      "appearances" : [
+        {
+          "appearance" : "luminosity",
+          "value" : "light"
+        }
+      ]
+    },
+    {
+      "filename" : "ActivityHome-dark.png",
+      "idiom" : "universal",
+      "scale" : "1x",
+      "appearances" : [
+        {
+          "appearance" : "luminosity",
+          "value" : "dark"
+        }
+      ]
     }
   ],
-  "info": {
-    "author": "xcode",
-    "version": 1
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
   }
 }

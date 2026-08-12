@@ -1,17 +1,26 @@
 {
   "images" : [
     {
-      "filename" : "ActivityGroceries.png",
+      "filename" : "ActivityGroceries-light.png",
       "idiom" : "universal",
-      "scale" : "1x"
+      "scale" : "1x",
+      "appearances" : [
+        {
+          "appearance" : "luminosity",
+          "value" : "light"
+        }
+      ]
     },
     {
+      "filename" : "ActivityGroceries-dark.png",
       "idiom" : "universal",
-      "scale" : "2x"
-    },
-    {
-      "idiom" : "universal",
-      "scale" : "3x"
+      "scale" : "1x",
+      "appearances" : [
+        {
+          "appearance" : "luminosity",
+          "value" : "dark"
+        }
+      ]
     }
   ],
   "info" : {
