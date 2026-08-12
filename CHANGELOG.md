@@ -1,6 +1,21 @@
 # Change log
 
+### Durations now use human-scale units
+
+- Long totals across Insights, Timeline, Places, Activities, and Visit Editor now use days plus hours instead of four-digit hour totals; short durations keep their existing minute precision.
+- Year place summaries now use consistent spacing between Most time, Most visits, Newly discovered, and previously regular places so each story reads as a distinct group.
+- Year place summaries now use the same activity icons and stable colours as Month Insights.
+
 ## 2026-08-12
+
+### Year Insights is now a personal retrospective
+
+- Year now presents a concise annual story with a 12-month stacked life-area chart, annual place summaries and drill-downs, source-aware movement and wellbeing metrics, restrained travel totals, and milestones that are only shown when the comparison or confidence data supports them.
+- Incomplete, sparse, and imported-only history stays visibly limited: prior-year comparisons require meaningful history in both years, Health-derived sleep and steps appear only when data exists, and travel excludes movement within an existing destination.
+
+### Insights period switching is lighter
+
+- Month and Year no longer trigger a full-period sleep refresh while switching windows, and shared commute/category resolution is reused during aggregation; Year renders its current story before deferred archive and Health-derived history finishes loading.
 
 ### Month Insights now answers “What changed in my life this month?”
 

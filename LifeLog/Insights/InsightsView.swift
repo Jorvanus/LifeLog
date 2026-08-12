@@ -52,6 +52,9 @@ struct InsightsView: View {
     @State private var weekAverageNightlySleep: TimeInterval?
     @State private var weekDays: [WeeklyStrip.Day] = []
     @State private var monthDays: [MonthlyInsights.Day] = []
+    @State private var annualInsights = AnnualInsights.make(current: [], previous: [],
+                                                             yearInterval: DateInterval(start: .distantPast, duration: 0), now: .now)
+    @State private var annualHealth = AnnualInsights.HealthMetrics.empty
 
     private var interval: DateInterval { window.interval(containing: anchorDate) }
     private var sleepRefreshKey: String {
@@ -71,7 +74,7 @@ struct InsightsView: View {
                         } else if window == .month {
                             monthLayout
                         } else {
-                            standardLayout
+                            yearLayout
                         }
                     }
                     .padding(.horizontal, 18)
@@ -170,6 +173,11 @@ struct InsightsView: View {
                 }
             }
             .task(id: sleepRefreshKey) {
+                // Historical month/year sleep is already represented by imported
+                // Health visits. Re-querying and re-importing the entire period while
+                // changing tabs delays the first useful frame, so refresh only the
+                // short windows where a newly synced night can affect the screen.
+                guard window == .day || window == .week else { return }
                 let queryEnd = interval.contains(now) ? now : interval.end
                 let queryInterval = DateInterval(start: interval.start, end: queryEnd)
                 _ = await activityData.refreshSleep(for: queryInterval, context: context)
@@ -192,6 +200,10 @@ struct InsightsView: View {
                 }
                 await reloadTrends()
             }
+            .task(id: annualKey) {
+                guard window == .year else { return }
+                await reloadAnnualHealth()
+            }
         }
     }
 
@@ -199,6 +211,10 @@ struct InsightsView: View {
     /// week never re-reads a season of history.
     private var trendKey: String {
         "\(window.rawValue)-\(InsightsTrends.range(endingAt: now).start.timeIntervalSinceReferenceDate)"
+    }
+
+    private var annualKey: String {
+        "\(window.rawValue)-\(interval.start.timeIntervalSinceReferenceDate)-\(Int(now.timeIntervalSinceReferenceDate / 3600))"
     }
 
     /// Rebuilds the highlights only when the day being looked at changes. Without an
@@ -556,6 +572,17 @@ struct InsightsView: View {
         monthlyBalanceSection
         monthlyPlacesSection
         monthlyCalendarSection
+        healthSetupSection
+    }
+
+    @ViewBuilder private var yearLayout: some View {
+        YearInsightsView(insights: annualInsights) { area in
+            let hours = annualInsights.months.reduce(0) { $0 + ($1.hours[area.name] ?? 0) }
+            guard hours > 0 else { return }
+            selectedSlice = TimeSlice(name: area.category, hours: hours,
+                                       color: insightColor(for: area.category),
+                                       symbol: insightSymbol(for: area.category), isUnlogged: false)
+        }
         healthSetupSection
     }
 
@@ -1621,6 +1648,67 @@ struct InsightsView: View {
         return "This \(window.title.lowercased()), you visited \(count) \(count == 1 ? "place" : "places") and logged \(formatHours(snapshot.loggedHours))."
     }
 
+    private func reloadAnnualHealth() async {
+        guard window == .year else { return }
+        // Let the Year shell render before its archive-scale place-history work.
+        await Task.yield()
+        let historical = annualHistoricalPlaces()
+        annualInsights = makeAnnualInsights(health: annualHealth, historicalOverride: historical)
+        let year = interval
+        let calendar = Calendar.current
+        var sleep: [Double?] = []
+        var steps: [Double?] = []
+        var cursor = year.start
+        var hasHealthData = false
+        while cursor < year.end {
+            guard let next = calendar.date(byAdding: .month, value: 1, to: cursor) else { break }
+            let monthEnd = min(next, min(year.end, now))
+            if monthEnd <= cursor {
+                sleep.append(nil)
+                steps.append(nil)
+            } else {
+                let month = DateInterval(start: cursor, end: monthEnd)
+                let sleepValue: Double?
+                if let summary = await activityData.sleepSummary(for: month) {
+                    sleepValue = summary.totalSleep / max(1, month.duration / 86_400) / 3600
+                } else {
+                    sleepValue = nil
+                }
+                let stepValue = await activityData.stepCount(for: month)
+                sleep.append(sleepValue)
+                steps.append(stepValue)
+                hasHealthData = hasHealthData || sleepValue != nil || stepValue != nil
+            }
+            cursor = next
+        }
+        annualHealth = AnnualInsights.HealthMetrics(monthlySleepHours: sleep,
+                                                    monthlySteps: steps,
+                                                    healthDataAvailable: hasHealthData)
+        annualInsights = makeAnnualInsights(health: annualHealth, historicalOverride: historical)
+    }
+
+    private func annualHistoricalPlaces() -> [Visit] {
+        guard window == .year else { return [] }
+        let all = (try? context.fetch(FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.arrival < interval.start },
+            sortBy: [SortDescriptor(\.arrival)]
+        ))) ?? []
+        let locationVisits = all.filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
+        return all.filter {
+            $0.arrival < interval.start &&
+            ActivityLocationPolicy.shouldShowInInsights($0, locationVisits: locationVisits, now: now)
+        }
+    }
+
+    private func makeAnnualInsights(health: AnnualInsights.HealthMetrics,
+                                   historicalOverride: [Visit]? = nil) -> AnnualInsights {
+        let historical = historicalOverride ?? annualHistoricalPlaces()
+        return AnnualInsights.make(current: snapshot.segments,
+                                   previous: snapshot.previousSegments,
+                                   yearInterval: interval, now: now,
+                                   historicalPlaceVisits: historical, health: health)
+    }
+
     private func reloadInsights() {
         // Fetch only the selected and comparison periods. Keeping the nine-year journal
         // archive out of memory is substantially cheaper than trimming useful history.
@@ -1702,6 +1790,11 @@ struct InsightsView: View {
         snapshot = snapshotCache.snapshot(key: cacheKey, generation: aggregationGeneration) {
             InsightsSnapshot.make(visits: visits, window: window, anchorDate: anchorDate, now: now,
                                   home: home, savedPlaces: savedPlaces)
+        }
+        if window == .year {
+            // Render the current year's story immediately; archive-derived place
+            // history is filled by the deferred annual task after the first frame.
+            annualInsights = makeAnnualInsights(health: annualHealth, historicalOverride: [])
         }
         Diagnostics.budget(context, subsystem: "Insights", operation: "\(window.rawValue) snapshot rebuild",
                            startedAt: startedAt,

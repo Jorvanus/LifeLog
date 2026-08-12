@@ -195,8 +195,16 @@ struct MonthlyInsights {
             ("Travel", "car.fill", ["Travel", "Commute"]),
             ("Rest/Sleep", "bed.double.fill", ["Sleep"])
         ]
+        // ActivityCatalog loads editable definitions from UserDefaults. Resolve each
+        // distinct activity once per snapshot rather than once per resolved time slice.
+        let definedCategories = Dictionary(uniqueKeysWithValues: Set(segments.compactMap { $0.visit?.activity })
+            .map { ($0, ActivityCatalog.category(for: $0)) })
         return groups.compactMap { name, symbol, categories in
-            let hours = segments.filter { !$0.isUnlogged && categories.contains(definedCategory(for: $0)) }
+            let hours = segments.filter {
+                guard !$0.isUnlogged else { return false }
+                let category = $0.visit.map { definedCategories[$0.activity] ?? ActivityCatalog.category(for: $0.activity) } ?? $0.category
+                return categories.contains(category)
+            }
                 .reduce(0) { $0 + $1.hours }
             guard hours > 0.01 else { return nil }
             return Balance(name: name, symbol: symbol, hours: hours,

@@ -854,11 +854,7 @@ struct TimelineView: View {
 /// A span as a person would say it, rounded down to whole minutes.
 func formattedDuration(_ seconds: TimeInterval) -> String {
     let totalMinutes = max(0, Int(seconds / 60))
-    let hours = totalMinutes / 60
-    let minutes = totalMinutes % 60
-    if hours == 0 { return "\(minutes)m" }
-    if minutes == 0 { return "\(hours)h" }
-    return "\(hours)h \(minutes)m"
+    return formatDurationMinutes(totalMinutes)
 }
 
 /// Distance as a person would say it: whole metres up to a kilometre, then one

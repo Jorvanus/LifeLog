@@ -99,11 +99,16 @@ struct InsightsSnapshot {
         // Location visits are prepared once and reused by both periods. This avoids an
         // all-history scan for each individual walking or travel record.
         let locationVisits = visits.filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
+        // Commute detection depends on the archive and saved-place roles, not the
+        // selected range. Resolve it once so current and prior periods share the same
+        // result instead of sorting and scanning the same visits twice on a transition.
+        let commutes = CommuteDetection.commutes(in: visits, savedPlaces: savedPlaces, now: now)
         let segments = makeSegments(
             visits: visits,
             locationVisits: locationVisits,
             range: analysisInterval,
             now: now,
+            precomputedCommutes: commutes,
             savedPlaces: savedPlaces
         )
         let previousSegments = makeSegments(
@@ -111,6 +116,7 @@ struct InsightsSnapshot {
             locationVisits: locationVisits,
             range: previousInterval,
             now: now,
+            precomputedCommutes: commutes,
             savedPlaces: savedPlaces
         )
         let slices = makeSlices(from: segments)
