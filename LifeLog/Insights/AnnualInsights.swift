@@ -14,12 +14,12 @@ struct AnnualInsights {
     static let areas: [LifeArea] = [
         .init(name: "Home", category: "Home"),
         .init(name: "Work", category: "Work"),
-        .init(name: "Travel", category: "Travel"),
-        .init(name: "Sleep/Rest", category: "Sleep"),
+        .init(name: "Health & Fitness", category: "Health & Fitness"),
         .init(name: "Social", category: "Social"),
-        .init(name: "Health/Fitness", category: "Fitness"),
-        .init(name: "Food & drink", category: "Food & Drink"),
-        .init(name: "Errands", category: "Shopping"),
+        .init(name: "Food & Drink", category: "Food & Drink"),
+        .init(name: "Errands", category: "Errands"),
+        .init(name: "Travel", category: "Travel"),
+        .init(name: "Sleep & Rest", category: "Sleep & Rest"),
         .init(name: "Other", category: "Other")
     ]
 
@@ -43,6 +43,11 @@ struct AnnualInsights {
     struct HealthMetrics {
         let monthlySleepHours: [Double?]
         let monthlySteps: [Double?]
+        let monthlyWalkingKilometres: [Double?]
+        let monthlyActiveEnergy: [Double?]
+        let monthlyExerciseMinutes: [Double?]
+        let monthlyWorkoutMinutes: [Double?]
+        let monthlyStandHours: [Double?]
         let healthDataAvailable: Bool
     }
 
@@ -66,16 +71,8 @@ struct AnnualInsights {
     let priorLoggedHours: Double
 
     static func area(for segment: InsightSegment) -> LifeArea {
-        let category = segment.category.lowercased()
-        if category == "home" || category == "at home" { return areas[0] }
-        if category == "work" { return areas[1] }
-        if category == "travel" || category == "commute" { return areas[2] }
-        if category.contains("sleep") { return areas[3] }
-        if category == "social" || category == "entertainment" { return areas[4] }
-        if category == "fitness" || category == "healthcare" { return areas[5] }
-        if category == "food & drink" { return areas[6] }
-        if category == "shopping" { return areas[7] }
-        return areas[8]
+        let raw = ActivityCatalog.lifeArea(for: segment.activity, category: segment.category)
+        return areas.first { $0.name == raw.rawValue } ?? areas.last!
     }
 
     static func make(current: [InsightSegment], previous: [InsightSegment],
@@ -197,5 +194,7 @@ struct AnnualInsights {
 }
 
 extension AnnualInsights.HealthMetrics {
-    static let empty = Self(monthlySleepHours: [], monthlySteps: [], healthDataAvailable: false)
+    static let empty = Self(monthlySleepHours: [], monthlySteps: [], monthlyWalkingKilometres: [],
+                            monthlyActiveEnergy: [], monthlyExerciseMinutes: [], monthlyWorkoutMinutes: [],
+                            monthlyStandHours: [], healthDataAvailable: false)
 }

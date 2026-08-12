@@ -68,6 +68,58 @@ actor ActivitySampleReader {
     private let healthStore = HKHealthStore()
     private let motionManager = CMMotionActivityManager()
 
+    /// Reads only the selected period. These are ordinary bounded sample queries;
+    /// the long-lived change signal remains the anchored observer/import path.
+    func healthInsightsFixtures(in interval: DateInterval) async -> (
+        steps: [HealthQuantityFixture], walking: [HealthQuantityFixture],
+        energy: [HealthQuantityFixture], exercise: [HealthQuantityFixture],
+        stand: [HealthQuantityFixture], workouts: [HealthWorkoutFixture]
+    ) {
+        async let steps = safeQuantityFixtures(in: interval, identifier: .stepCount, unit: .count())
+        async let walking = safeQuantityFixtures(in: interval, identifier: .distanceWalkingRunning, unit: .meter())
+        async let energy = safeQuantityFixtures(in: interval, identifier: .activeEnergyBurned, unit: .kilocalorie())
+        async let exercise = safeQuantityFixtures(in: interval, identifier: .appleExerciseTime, unit: .minute())
+        async let stand = safeQuantityFixtures(in: interval, identifier: .appleStandTime, unit: .hour())
+        async let workouts = safeWorkoutFixtures(in: interval)
+        return await (steps, walking, energy, exercise, stand, workouts)
+    }
+
+    private func safeQuantityFixtures(in interval: DateInterval, identifier: HKQuantityTypeIdentifier,
+                                      unit: HKUnit) async -> [HealthQuantityFixture] {
+        (try? await quantityFixtures(in: interval, identifier: identifier, unit: unit)) ?? []
+    }
+
+    private func safeWorkoutFixtures(in interval: DateInterval) async -> [HealthWorkoutFixture] {
+        (try? await workoutFixtures(in: interval)) ?? []
+    }
+
+    private func quantityFixtures(in interval: DateInterval, identifier: HKQuantityTypeIdentifier,
+                                  unit: HKUnit) async throws -> [HealthQuantityFixture] {
+        guard let type = HKObjectType.quantityType(forIdentifier: identifier) else { return [] }
+        let predicate = HKQuery.predicateForSamples(withStart: interval.start, end: interval.end,
+                                                     options: [.strictStartDate, .strictEndDate])
+        let descriptor = HKSampleQueryDescriptor<HKQuantitySample>(
+            predicates: [.quantitySample(type: type, predicate: predicate)],
+            sortDescriptors: [SortDescriptor(\.startDate)])
+        return try await descriptor.result(for: healthStore).map {
+            HealthQuantityFixture(id: $0.uuid, start: $0.startDate, end: $0.endDate,
+                                  value: $0.quantity.doubleValue(for: unit))
+        }
+    }
+
+    private func workoutFixtures(in interval: DateInterval) async throws -> [HealthWorkoutFixture] {
+        let predicate = HKQuery.predicateForSamples(withStart: interval.start, end: interval.end,
+                                                     options: [.strictStartDate, .strictEndDate])
+        let descriptor = HKSampleQueryDescriptor<HKWorkout>(
+            predicates: [.workout(predicate)], sortDescriptors: [SortDescriptor(\.startDate)])
+        return try await descriptor.result(for: healthStore).map { workout in
+            HealthWorkoutFixture(id: workout.uuid,
+                                 type: String(describing: workout.workoutActivityType),
+                                 start: workout.startDate, end: workout.endDate,
+                                 distanceMeters: workout.totalDistance?.doubleValue(for: .meter()))
+        }
+    }
+
     /// Rebuilds complete sleep evidence in a small window. Anchors are still used to
     /// learn that Health changed, but their delta alone cannot describe a whole night:
     /// a Watch may deliver its Core, REM and Deep samples in separate syncs.

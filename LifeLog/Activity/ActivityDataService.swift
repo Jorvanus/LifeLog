@@ -62,6 +62,7 @@ final class ActivityDataService {
     /// a Watch sync that is still waiting behind another batch.
     private var observerCompletions: [HealthObserverDelivery] = []
     private var healthImportQueuedForObserver = false
+    private var healthSummaryCache: [String: HealthInsightsSummary] = [:]
     private let sleepAnchorKey = "LifeLog.HealthKit.sleepAnchor.v1"
     private let workoutAnchorKey = "LifeLog.HealthKit.workoutAnchor.v1"
 
@@ -71,7 +72,7 @@ final class ActivityDataService {
     /// asked again from inside the app.
     var unaskedHealthTypes: [String] = []
     var motionStatus = "Not requested"
-    var lastImport: Date?
+    var lastImport: Date? = UserDefaults.standard.object(forKey: "LifeLog.HealthLastSuccessfulImport") as? Date
     var lastError: String?
     var importProgress: ActivityImportProgress?
     /// Evidence wording is intentionally narrower than Health authorisation: HealthKit
@@ -100,7 +101,11 @@ final class ActivityDataService {
         guard HKHealthStore.isHealthDataAvailable() else { return }
         guard healthObserverQueries.isEmpty else { return }
         guard let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return }
-        let types: [HKSampleType] = [sleepType, HKWorkoutType.workoutType()]
+        var types: [HKSampleType] = [sleepType, HKWorkoutType.workoutType()]
+        types += [HKQuantityTypeIdentifier.stepCount, .distanceWalkingRunning,
+                  .activeEnergyBurned, .appleExerciseTime, .appleStandTime].compactMap {
+            HKObjectType.quantityType(forIdentifier: $0)
+        }
         for type in types {
             let query = HKObserverQuery(sampleType: type, predicate: nil) { [weak self] _, completion, _ in
                 let delivery = HealthObserverDelivery(completion)
@@ -116,6 +121,7 @@ final class ActivityDataService {
     }
 
     private func processHealthObserverDelivery(_ delivery: HealthObserverDelivery) {
+        invalidateHealthSummaryCache()
         observerCompletions.append(delivery)
         guard !isImporting else {
             healthImportQueuedForObserver = true
@@ -478,6 +484,32 @@ final class ActivityDataService {
         }
     }
 
+    /// Period-scoped Health summary. The query is performed by the reader actor and
+    /// cached by exact interval; observer delivery is the only normal invalidation.
+    /// Opening a different Insights tab therefore never scans the Health archive.
+    func healthSummary(for interval: DateInterval) async -> HealthInsightsSummary? {
+        guard interval.duration > 0, HKHealthStore.isHealthDataAvailable() else { return nil }
+        let key = "\(interval.start.timeIntervalSinceReferenceDate)-\(interval.end.timeIntervalSinceReferenceDate)"
+        if let cached = healthSummaryCache[key] { return cached }
+        async let fixtures = sampleReader.healthInsightsFixtures(in: interval)
+        async let sleep = sleepSummary(for: interval)
+        let result = await fixtures
+        let summary = HealthInsightsAggregation.summary(
+            steps: result.steps, walkingRunningMeters: result.walking,
+            activeEnergyKilocalories: result.energy, exerciseMinutes: result.exercise,
+            standHours: result.stand, workouts: result.workouts, sleep: await sleep,
+            interval: interval, calendar: Calendar.current,
+            lastSuccessfulImport: lastImport
+        )
+        healthSummaryCache[key] = summary
+        return summary
+    }
+
+    private func invalidateHealthSummaryCache() {
+        healthSummaryCache.removeAll(keepingCapacity: true)
+        stepCache.removeAll(keepingCapacity: true)
+    }
+
     /// Refreshes only the displayed Insights period. Sleep remains meaningful while
     /// the user is at Home, so these records deliberately bypass the movement policy
     /// that removes walking and travel while a destination visit is active.
@@ -671,6 +703,8 @@ final class ActivityDataService {
                 healthStatus = healthDays == nil ? healthStatus : "Connected"
                 refreshMotionStatus()
                 lastImport = .now
+                UserDefaults.standard.set(lastImport, forKey: "LifeLog.HealthLastSuccessfulImport")
+                if !records.isEmpty || !deletedSampleIDs.isEmpty { invalidateHealthSummaryCache() }
                 updateSleepEvidenceStatus(rebuiltSleepRecords)
                 importProgress = ActivityImportProgress(state: .complete, title: "Import complete",
                                                         completed: records.count, total: records.count)

@@ -2,6 +2,15 @@
 
 ## 2026-08-12
 
+### Insights add incremental Apple Health summaries
+
+- Day, Week, Month, and Year now show available HealthKit steps, walking/running distance, active energy, exercise, stand time, workouts, sleep details, and a clearly labelled LifeLog sleep estimate; summaries are period-scoped, cached, source-labelled, and refreshed when Health changes.
+- Health permission, partial/no-data, import-age, duplicate-sample, and current-day states remain explicit, while Health-derived values stay separate from location-derived visits and exports.
+
+### Insights use derived life areas
+
+- Activities now carry a stable, non-place life-area mapping for Week, Month, and Year aggregation while preserving the original activity and existing activity groups. Life areas can be changed from Activity detail, appear in exports, and keep Other visible for imported or uncategorised history.
+
 ### Insights drill-downs keep the selected period
 
 - Significant activity, place, travel, sleep, comparison, and unlogged-time Insights now open period-scoped detail with consistent titles, accessible actions, and bounded resolved rows; review items continue directly to Visit Editor.

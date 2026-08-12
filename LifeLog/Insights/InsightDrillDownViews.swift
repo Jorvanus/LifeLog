@@ -40,6 +40,49 @@ struct InsightActivityDetailView: View {
     }
 }
 
+struct InsightLifeAreaDetailView: View {
+    let area: LifeArea
+    let periodTitle: String
+    let interval: DateInterval
+    let segments: [InsightSegment]
+
+    private var activities: [(name: String, hours: Double, rows: [SliceRow])] {
+        let matching = segments.filter {
+            !$0.isUnlogged && ActivityCatalog.lifeArea(for: $0.activity, category: $0.category) == area
+        }
+        let grouped = Dictionary(grouping: matching, by: \.activity)
+        return grouped.map { name, segments in
+            (name, segments.reduce(0) { $0 + $1.hours }, segments.map {
+                SliceRow(id: $0.id, visit: $0.visit, activity: $0.activity, placeName: $0.placeName,
+                         start: $0.start, end: $0.end, hours: $0.hours, isPartial: false)
+            })
+        }.sorted { $0.hours > $1.hours }
+    }
+
+    var body: some View {
+        List {
+            Section {
+                LabeledContent("Period", value: periodTitle)
+                LabeledContent("Total", value: formatHours(activities.reduce(0) { $0 + $1.hours }))
+            }
+            Section("Activities in this life area") {
+                ForEach(activities, id: \.name) { activity in
+                    NavigationLink {
+                        InsightActivityDetailView(activity: activity.name, periodTitle: periodTitle,
+                                                  interval: interval, rows: activity.rows)
+                    } label: {
+                        InsightRowLabel(title: activity.name, detail: formatHours(activity.hours))
+                    }
+                }
+            }
+        }
+        .navigationTitle(area.rawValue)
+        .navigationBarTitleDisplayMode(.inline)
+        .safeAreaInset(edge: .top) { PeriodBanner(title: periodTitle, interval: interval) }
+        .accessibilityIdentifier("insight-life-area-detail")
+    }
+}
+
 struct InsightPlaceHistoryView: View {
     let placeName: String
     let periodTitle: String
@@ -129,8 +172,12 @@ struct InsightSleepDetailView: View {
                 }
             }
             Section("About this data") {
-                Text(summary == nil ? "No Health sleep samples were available. Recorded sleep-looking visits are shown as LifeLog activity only." : "Sleep stages come from Health data when available. The score is a LifeLog estimate, not an Apple Sleep Score.")
+                Text(summary == nil ? "No Apple Health sleep samples were available. Recorded sleep-looking visits are shown as LifeLog activity only." : "Source: Apple Health. Sleep stages come from Health data when available. The score is a LifeLog estimate, not an Apple Watch or Apple Health score.")
                     .font(.footnote).foregroundStyle(.secondary)
+                if let imported = activityData.lastImport {
+                    Text("Last successful Health import: \(imported.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
             }
         }
         .navigationTitle("Sleep")

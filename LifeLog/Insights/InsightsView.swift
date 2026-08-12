@@ -16,6 +16,7 @@ struct InsightsView: View {
     @State private var choosingDate = false
     @State private var draftAnchorDate = Date.now
     @State private var selectedSlice: TimeSlice?
+    @State private var selectedLifeArea: LifeArea?
     @State private var selectedPlace: PlaceTotal?
     @State private var selectedComparison: TrendComparison?
     @State private var now = Date.now
@@ -58,6 +59,8 @@ struct InsightsView: View {
     @State private var annualInsights = AnnualInsights.make(current: [], previous: [],
                                                              yearInterval: DateInterval(start: .distantPast, duration: 0), now: .now)
     @State private var annualHealth = AnnualInsights.HealthMetrics.empty
+    @State private var healthSummary: HealthInsightsSummary?
+    @State private var previousHealthSummary: HealthInsightsSummary?
 
     private var interval: DateInterval { window.interval(containing: anchorDate) }
     private var sleepRefreshKey: String {
@@ -117,6 +120,14 @@ struct InsightsView: View {
                                                   interval: snapshot.analysisInterval, rows: rows)
                     }
                 }.presentationDetents([.medium, .large])
+            }
+            .sheet(item: $selectedLifeArea) { area in
+                NavigationStack {
+                    InsightLifeAreaDetailView(area: area, periodTitle: periodTitle,
+                                              interval: snapshot.analysisInterval,
+                                              segments: snapshot.segments)
+                }
+                .presentationDetents([.medium, .large])
             }
             .sheet(item: $selectedPlace, onDismiss: reloadInsights) { place in
                 let rows = sliceRows(for: place)
@@ -206,6 +217,10 @@ struct InsightsView: View {
                 guard window == .year else { return }
                 await reloadAnnualHealth()
             }
+            .task(id: healthSummaryKey) {
+                guard window != .year else { return }
+                await reloadHealthSummary()
+            }
         }
     }
 
@@ -217,6 +232,22 @@ struct InsightsView: View {
 
     private var annualKey: String {
         "\(window.rawValue)-\(interval.start.timeIntervalSinceReferenceDate)-\(Int(now.timeIntervalSinceReferenceDate / 3600))"
+    }
+
+    private var healthSummaryKey: String {
+        "\(window.rawValue)-\(interval.start.timeIntervalSinceReferenceDate)-\(Int(now.timeIntervalSinceReferenceDate / 60))"
+    }
+
+    private func reloadHealthSummary() async {
+        let end = interval.contains(now) ? now : interval.end
+        let current = DateInterval(start: interval.start, end: max(interval.start, end))
+        healthSummary = await activityData.healthSummary(for: current)
+        if window == .month {
+            let previous = window.previousComparisonInterval(for: interval)
+            previousHealthSummary = await activityData.healthSummary(for: previous)
+        } else {
+            previousHealthSummary = nil
+        }
     }
 
     /// Rebuilds the highlights only when the day being looked at changes. Without an
@@ -368,13 +399,39 @@ struct InsightsView: View {
     /// Health recovery therefore belongs in an ordinary card where its action remains
     /// obvious, tappable, and readable at larger text sizes.
     @ViewBuilder private var healthSetupSection: some View {
-        if needsHealthSetup {
+        if needsHealthSetup || activityData.lastImport != nil || healthSummary?.hasData != nil {
             VStack(alignment: .leading, spacing: 10) {
                 Label("Apple Health", systemImage: "heart.text.square")
                     .font(.headline)
-                Text("Connect Apple Health to add steps, sleep, and Apple Watch workouts to Insights.")
+                Text(needsHealthSetup
+                     ? "Connect Apple Health to add steps, sleep, and workouts to Insights."
+                     : healthSummary?.hasData == true
+                         ? "Health-derived summaries are shown separately from location records."
+                         : "Apple Health is connected, but there is no data for this period.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                if let lastImport = activityData.lastImport {
+                    Text("Last successful Health import: \(lastImport.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                if let workouts = healthSummary?.workouts, !workouts.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Workouts from Apple Health").font(.subheadline.weight(.semibold))
+                        ForEach(workouts.prefix(4)) { workout in
+                            HStack {
+                                Text(workout.type)
+                                Spacer()
+                                Text(formatHours(workout.duration / 3600))
+                                if let distance = workout.distanceMeters, distance > 0 {
+                                    Text("· \(formatHealthDistance(distance))")
+                                }
+                            }
+                            .font(.footnote)
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Apple Health workouts: \(workouts.map { $0.type }.joined(separator: ", "))")
+                }
                 if !activityData.unaskedHealthTypes.isEmpty {
                     Button("Connect Apple Health") {
                         Task { await activityData.requestHealthAccess() }
@@ -602,6 +659,7 @@ struct InsightsView: View {
     @ViewBuilder private var weekLayout: some View {
         weeklyStripSection
         weeklyScorecardSection
+        lifeAreaBalanceSection
         TravelInsightsCard(title: "Travel", summary: snapshot.travel, period: snapshot.analysisInterval)
         weeklyRoutineChangesSection
         weeklyCommuteSection
@@ -627,9 +685,7 @@ struct InsightsView: View {
         YearInsightsView(insights: annualInsights, openArea: { area in
             let hours = annualInsights.months.reduce(0) { $0 + ($1.hours[area.name] ?? 0) }
             guard hours > 0 else { return }
-            selectedSlice = TimeSlice(name: area.category, hours: hours,
-                                       color: insightColor(for: area.category),
-                                       symbol: insightSymbol(for: area.category), isUnlogged: false)
+            selectedLifeArea = LifeArea(rawValue: area.name)
         }, openPlace: { place in
             selectedPlace = PlaceTotal(name: place.name, category: place.category, activity: place.category,
                                        latitude: 0, longitude: 0, hours: place.hours)
@@ -669,15 +725,29 @@ struct InsightsView: View {
                                      value: formatHours(monthAverageNightlySleep / 3600))
                     }.buttonStyle(.plain)
                 }
-                if let monthSteps, monthSteps > 0 {
+                if let steps = healthSummary?.steps ?? monthSteps, steps > 0 {
                     let elapsedSeconds = min(now, interval.end).timeIntervalSince(interval.start)
                     let elapsedDays = max(1, Int(ceil(elapsedSeconds / 86_400)))
-                    daySummaryRow(icon: "shoeprints.fill", label: "Steps",
-                                 value: "\(Int(monthSteps).formatted()) total · \(Int(monthSteps / Double(elapsedDays)).formatted())/day avg")
+                    daySummaryRow(icon: "shoeprints.fill", label: "Steps · Apple Health",
+                                 value: "\(Int(steps).formatted()) total · \(Int(steps / Double(elapsedDays)).formatted())/day avg")
                 }
-                let exercise = InsightsSnapshot.fitnessHours(in: snapshot.segments)
-                if exercise > 0.01 {
-                    daySummaryRow(icon: "figure.run", label: "Exercise", value: formatHours(exercise))
+                if let distance = healthSummary?.walkingRunningMeters, distance > 0 {
+                    daySummaryRow(icon: "figure.walk", label: "Walking/running · Apple Health", value: formatHealthDistance(distance))
+                }
+                if let energy = healthSummary?.activeEnergyKilocalories, energy > 0 {
+                    daySummaryRow(icon: "flame.fill", label: "Active energy · Apple Health", value: "\(Int(energy.rounded())) kcal")
+                }
+                if let exercise = healthSummary?.exerciseMinutes, exercise > 0 {
+                    daySummaryRow(icon: "figure.run", label: "Exercise · Apple Health", value: "\(Int(exercise.rounded())) min")
+                }
+                if let change = HealthInsightsSummary.meaningfulChange(
+                    current: healthSummary?.averageDailySteps,
+                    previous: previousHealthSummary?.averageDailySteps,
+                    minimum: 500
+                ) {
+                    daySummaryRow(icon: change >= 0 ? "arrow.up.right" : "arrow.down.right",
+                                  label: "Steps vs last month",
+                                  value: "\(Int(abs(change).rounded()).formatted())/day \(change >= 0 ? "more" : "less")")
                 }
             }
         }
@@ -766,6 +836,32 @@ struct InsightsView: View {
         }
         .padding(20).lifeCard()
         .accessibilityIdentifier("insights-month-balance")
+    }
+
+    private var lifeAreaBalanceSection: some View {
+        let totals = LifeArea.totals(in: snapshot.segments)
+        return VStack(alignment: .leading, spacing: 14) {
+            Text("Life areas").font(.title2.bold())
+            Text("Activities grouped for Insights; tap an area to see its activities.")
+                .font(.subheadline).foregroundStyle(.secondary)
+            ForEach(LifeArea.allCases.filter { totals[$0, default: 0] > 0.01 }) { area in
+                NavigationLink {
+                    InsightLifeAreaDetailView(area: area, periodTitle: periodTitle,
+                                              interval: snapshot.analysisInterval, segments: snapshot.segments)
+                } label: {
+                    HStack(spacing: 11) {
+                        Image(systemName: area.symbol).foregroundStyle(insightColor(for: area.rawValue)).frame(width: 26)
+                        Text(area.rawValue).font(.subheadline)
+                        Spacer()
+                        Text(formatHours(totals[area, default: 0])).font(.subheadline.bold().monospacedDigit())
+                    }
+                    .contentShape(Rectangle())
+                }
+                .accessibilityLabel("\(area.rawValue), \(formatHours(totals[area, default: 0]))")
+            }
+        }
+        .padding(20).lifeCard()
+        .accessibilityIdentifier("insights-week-life-areas")
     }
 
     private var controls: some View {
@@ -1014,8 +1110,14 @@ struct InsightsView: View {
                 if travel > 0.01 {
                     daySummaryRow(icon: "car.fill", label: "Travelling", value: formatHours(travel))
                 }
-                if let todaySteps, todaySteps > 0 {
-                    daySummaryRow(icon: "shoeprints.fill", label: "Steps", value: Int(todaySteps).formatted())
+                if let steps = healthSummary?.steps ?? todaySteps, steps > 0 {
+                    daySummaryRow(icon: "shoeprints.fill", label: "Steps · Apple Health", value: Int(steps).formatted())
+                }
+                if let distance = healthSummary?.walkingRunningMeters, distance > 0 {
+                    daySummaryRow(icon: "figure.walk", label: "Walking/running · Apple Health", value: formatHealthDistance(distance))
+                }
+                if let energy = healthSummary?.activeEnergyKilocalories, energy > 0 {
+                    daySummaryRow(icon: "flame.fill", label: "Active energy · Apple Health", value: "\(Int(energy.rounded())) kcal")
                 }
                 if let lastNightSleep, lastNightSleep.totalSleep > 0 {
                     Button { openSleep() } label: {
@@ -1023,9 +1125,18 @@ struct InsightsView: View {
                                      value: formatHours(lastNightSleep.totalSleep / 3600))
                     }.buttonStyle(.plain)
                 }
-                let workout = InsightsSnapshot.fitnessHours(in: daySegments)
-                if workout > 0.01 {
-                    daySummaryRow(icon: "figure.run", label: "Exercise", value: formatHours(workout))
+                if let exercise = healthSummary?.exerciseMinutes, exercise > 0 {
+                    daySummaryRow(icon: "figure.run", label: "Exercise · Apple Health", value: "\(Int(exercise.rounded())) min")
+                } else {
+                    let workout = InsightsSnapshot.fitnessHours(in: daySegments)
+                    if workout > 0.01 {
+                        daySummaryRow(icon: "figure.run", label: "Exercise", value: formatHours(workout))
+                    }
+                }
+                if let workoutCount = healthSummary?.workoutCount, workoutCount > 0 {
+                    let types = Array(Set(healthSummary?.workouts.map(\.type) ?? [])).sorted().prefix(2)
+                    daySummaryRow(icon: "figure.run.circle.fill", label: "Workouts · Apple Health",
+                                  value: "\(workoutCount) · \(types.joined(separator: ", "))")
                 }
             }
         }
@@ -1041,6 +1152,11 @@ struct InsightsView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(label): \(value)")
+    }
+
+    private func formatHealthDistance(_ meters: Double) -> String {
+        let kilometres = meters / 1_000
+        return kilometres >= 1 ? String(format: "%.1f km", kilometres) : "\(Int(meters.rounded())) m"
     }
 
     private enum NeedsAttentionItem: Identifiable {
@@ -1164,19 +1280,28 @@ struct InsightsView: View {
                                      value: formatHours(weekAverageNightlySleep / 3600))
                     }.buttonStyle(.plain)
                 }
-                if let weekSteps, weekSteps > 0 {
+                if let steps = healthSummary?.steps ?? weekSteps, steps > 0 {
                     // Divided by the days actually elapsed in the week so far,
                     // not always 7 -- a Tuesday viewing of the current week
                     // shouldn't have its daily average diluted by Wed–Sun,
                     // which haven't happened yet.
                     let elapsedSeconds = min(now, interval.end).timeIntervalSince(interval.start)
                     let elapsedDays = max(1, min(7, Int(ceil(elapsedSeconds / 86_400))))
-                    daySummaryRow(icon: "shoeprints.fill", label: "Steps",
-                                 value: "\(Int(weekSteps).formatted()) total · \(Int(weekSteps / Double(elapsedDays)).formatted())/day avg")
+                    daySummaryRow(icon: "shoeprints.fill", label: "Steps · Apple Health",
+                                 value: "\(Int(steps).formatted()) total · \(Int(steps / Double(elapsedDays)).formatted())/day avg")
                 }
-                let exercise = InsightsSnapshot.fitnessHours(in: snapshot.segments)
-                if exercise > 0.01 {
-                    daySummaryRow(icon: "figure.run", label: "Exercise", value: formatHours(exercise))
+                if let distance = healthSummary?.walkingRunningMeters, distance > 0 {
+                    daySummaryRow(icon: "figure.walk", label: "Walking/running · Apple Health", value: formatHealthDistance(distance))
+                }
+                if let energy = healthSummary?.activeEnergyKilocalories, energy > 0 {
+                    daySummaryRow(icon: "flame.fill", label: "Active energy · Apple Health", value: "\(Int(energy.rounded())) kcal")
+                }
+                if let exercise = healthSummary?.exerciseMinutes, exercise > 0 {
+                    daySummaryRow(icon: "figure.run", label: "Exercise · Apple Health", value: "\(Int(exercise.rounded())) min")
+                }
+                if let workouts = healthSummary?.workoutCount, workouts > 0 {
+                    daySummaryRow(icon: "figure.run.circle.fill", label: "Workouts · Apple Health",
+                                  value: "\(workouts) · \(Int(healthSummary?.workoutMinutes.rounded() ?? 0)) min")
                 }
             }
         }
@@ -1783,6 +1908,11 @@ struct InsightsView: View {
         let calendar = Calendar.current
         var sleep: [Double?] = []
         var steps: [Double?] = []
+        var walking: [Double?] = []
+        var energy: [Double?] = []
+        var exercise: [Double?] = []
+        var workouts: [Double?] = []
+        var stand: [Double?] = []
         var cursor = year.start
         var hasHealthData = false
         while cursor < year.end {
@@ -1791,23 +1921,29 @@ struct InsightsView: View {
             if monthEnd <= cursor {
                 sleep.append(nil)
                 steps.append(nil)
+                walking.append(nil); energy.append(nil); exercise.append(nil); workouts.append(nil); stand.append(nil)
             } else {
                 let month = DateInterval(start: cursor, end: monthEnd)
-                let sleepValue: Double?
-                if let summary = await activityData.sleepSummary(for: month) {
-                    sleepValue = summary.totalSleep / max(1, month.duration / 86_400) / 3600
-                } else {
-                    sleepValue = nil
-                }
-                let stepValue = await activityData.stepCount(for: month)
+                let summary = await activityData.healthSummary(for: month)
+                let sleepValue = summary?.sleep.map { $0.totalSleep / max(1, month.duration / 86_400) / 3600 }
                 sleep.append(sleepValue)
-                steps.append(stepValue)
-                hasHealthData = hasHealthData || sleepValue != nil || stepValue != nil
+                steps.append(summary?.averageDailySteps)
+                walking.append(summary?.walkingRunningMeters.map { $0 / 1_000 })
+                energy.append(summary?.activeEnergyKilocalories)
+                exercise.append(summary?.exerciseMinutes)
+                workouts.append(summary.flatMap { $0.workouts.isEmpty ? nil : $0.workoutMinutes })
+                stand.append(summary?.standHours)
+                hasHealthData = hasHealthData || summary?.hasData == true
             }
             cursor = next
         }
         annualHealth = AnnualInsights.HealthMetrics(monthlySleepHours: sleep,
                                                     monthlySteps: steps,
+                                                    monthlyWalkingKilometres: walking,
+                                                    monthlyActiveEnergy: energy,
+                                                    monthlyExerciseMinutes: exercise,
+                                                    monthlyWorkoutMinutes: workouts,
+                                                    monthlyStandHours: stand,
                                                     healthDataAvailable: hasHealthData)
         annualInsights = makeAnnualInsights(health: annualHealth, historicalOverride: historical)
     }

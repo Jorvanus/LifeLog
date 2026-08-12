@@ -112,7 +112,24 @@ struct YearInsightsView: View {
                 if insights.health.monthlySteps.contains(where: { $0 != nil }) {
                     metricRow(title: "Average daily steps", values: insights.health.monthlySteps, suffix: "steps/day", integer: true)
                 }
+                if insights.health.monthlyWalkingKilometres.contains(where: { $0 != nil }) {
+                    metricRow(title: "Walking/running", values: insights.health.monthlyWalkingKilometres, suffix: "km/month")
+                }
+                if insights.health.monthlyActiveEnergy.contains(where: { $0 != nil }) {
+                    metricRow(title: "Active energy", values: insights.health.monthlyActiveEnergy, suffix: "kcal/month", integer: true)
+                }
+                if insights.health.monthlyExerciseMinutes.contains(where: { $0 != nil }) {
+                    metricRow(title: "Exercise", values: insights.health.monthlyExerciseMinutes, suffix: "min/month", integer: true)
+                }
+                if insights.health.monthlyWorkoutMinutes.contains(where: { $0 != nil }) {
+                    metricRow(title: "Workouts", values: insights.health.monthlyWorkoutMinutes, suffix: "min/month", integer: true)
+                }
+                if insights.health.monthlyStandHours.contains(where: { $0 != nil }) {
+                    metricRow(title: "Stand time", values: insights.health.monthlyStandHours, suffix: "h/month", integer: true)
+                }
             }
+            Text("Health values are sourced from Apple Health; sleep score is a LifeLog estimate when shown in detail.")
+                .font(.footnote).foregroundStyle(.secondary)
             let exercise = insights.months.reduce(0) { total, month in total + (month.hours["Health/Fitness"] ?? 0) }
             if exercise > 0 { Text("Exercise and fitness: \(formatHours(exercise))").font(.subheadline) }
         }

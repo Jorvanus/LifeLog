@@ -185,30 +185,12 @@ struct MonthlyInsights {
     }
 
     private static func balances(from segments: [InsightSegment]) -> [Balance] {
-        let groups: [(String, String, [String])] = [
-            ("Home", "house.fill", ["Home"]),
-            ("Work", "briefcase.fill", ["Work"]),
-            ("Social", "person.2.fill", ["Social", "Entertainment"]),
-            ("Health/Fitness", "figure.run", ["Fitness", "Healthcare"]),
-            ("Food & drink", "fork.knife", ["Food & Drink"]),
-            ("Errands", "cart.fill", ["Shopping"]),
-            ("Travel", "car.fill", ["Travel", "Commute"]),
-            ("Rest/Sleep", "bed.double.fill", ["Sleep"])
-        ]
-        // ActivityCatalog loads editable definitions from UserDefaults. Resolve each
-        // distinct activity once per snapshot rather than once per resolved time slice.
-        let definedCategories = Dictionary(uniqueKeysWithValues: Set(segments.compactMap { $0.visit?.activity })
-            .map { ($0, ActivityCatalog.category(for: $0)) })
-        return groups.compactMap { name, symbol, categories in
-            let hours = segments.filter {
-                guard !$0.isUnlogged else { return false }
-                let category = $0.visit.map { definedCategories[$0.activity] ?? ActivityCatalog.category(for: $0.activity) } ?? $0.category
-                return categories.contains(category)
-            }
-                .reduce(0) { $0 + $1.hours }
+        let totals = LifeArea.totals(in: segments)
+        return LifeArea.allCases.compactMap { area in
+            let hours = totals[area, default: 0]
             guard hours > 0.01 else { return nil }
-            return Balance(name: name, symbol: symbol, hours: hours,
-                           color: categories.map { insightColor(for: $0) }.first ?? .secondary)
+            return Balance(name: area.rawValue, symbol: area.symbol, hours: hours,
+                           color: insightColor(for: area.rawValue))
         }
     }
 

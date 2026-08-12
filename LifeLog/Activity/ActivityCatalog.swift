@@ -7,13 +7,32 @@ struct ActivityDefinition: Codable, Identifiable, Hashable {
     var category: String
     var symbol: String
     var colorHex: String?
+    /// Stored per activity so a user can change Insights grouping without changing
+    /// the existing editable activity category or any place data.
+    var lifeArea: String
 
-    init(id: UUID = UUID(), name: String, category: String = "Other", symbol: String = "circle.fill") {
+    init(id: UUID = UUID(), name: String, category: String = "Other", symbol: String = "circle.fill",
+         lifeArea: String? = nil) {
         self.id = id
         self.name = TextSafety.clean(name, maximumLength: 80)
         self.category = TextSafety.clean(category, maximumLength: 40)
         self.symbol = TextSafety.clean(symbol, maximumLength: 60)
         self.colorHex = nil
+        self.lifeArea = lifeArea.flatMap { LifeArea(rawValue: $0)?.rawValue }
+            ?? LifeArea.default(for: self.name, category: self.category).rawValue
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, name, category, symbol, colorHex, lifeArea }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        let id = try values.decode(UUID.self, forKey: .id)
+        let name = try values.decode(String.self, forKey: .name)
+        let category = try values.decodeIfPresent(String.self, forKey: .category) ?? "Other"
+        let symbol = try values.decodeIfPresent(String.self, forKey: .symbol) ?? "circle.fill"
+        let storedArea = try values.decodeIfPresent(String.self, forKey: .lifeArea)
+        self.init(id: id, name: name, category: category, symbol: symbol, lifeArea: storedArea)
+        colorHex = try values.decodeIfPresent(String.self, forKey: .colorHex)
     }
 }
 
@@ -148,6 +167,17 @@ enum ActivityCatalog {
         }
         if text.contains("travel") || text.contains("transit") { return "Travel" }
         return "Other"
+    }
+
+    /// Resolves a visit label to the derived life area. A stored definition wins;
+    /// imported/deleted labels use the same category/name fallback as Insights.
+    static func lifeArea(for activity: String, category: String? = nil) -> LifeArea {
+        let key = activity.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let definition = load().first(where: { $0.name.caseInsensitiveCompare(key) == .orderedSame }),
+           let area = LifeArea(rawValue: definition.lifeArea) {
+            return area
+        }
+        return LifeArea.default(for: key, category: category ?? self.category(for: key))
     }
 
     /// The group a name LifeLog ships with belongs to, whether or not the catalogue
