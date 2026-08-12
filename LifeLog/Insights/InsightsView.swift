@@ -50,6 +50,8 @@ struct InsightsView: View {
     @State private var weeklyBaselineTotals: [WeeklyTotals] = []
     @State private var weekSteps: Double?
     @State private var weekAverageNightlySleep: TimeInterval?
+    @State private var monthSteps: Double?
+    @State private var monthAverageNightlySleep: TimeInterval?
     @State private var weekDays: [WeeklyStrip.Day] = []
     @State private var monthDays: [MonthlyInsights.Day] = []
     @State private var annualInsights = AnnualInsights.make(current: [], previous: [],
@@ -265,11 +267,29 @@ struct InsightsView: View {
             // already accept an arbitrary span, so this is not seven daily calls.
             weekSteps = await activityData.stepCount(for: dayInterval)
             weekAverageNightlySleep = await activityData.averageNightlySleep(before: interval.end, nights: 7)
+            monthSteps = nil
+            monthAverageNightlySleep = nil
+        } else if window == .month {
+            todaySteps = nil
+            lastNightSleep = nil
+            weekSteps = nil
+            weekAverageNightlySleep = nil
+            // Query the month once per metric for the scorecard. The day count
+            // used for the displayed average is capped at elapsed days below,
+            // so a current month is not diluted by future dates.
+            monthSteps = await activityData.stepCount(for: dayInterval)
+            let elapsedSeconds = max(0, dayInterval.duration)
+            let elapsedNights = max(1, Int(ceil(elapsedSeconds / 86_400)))
+            monthAverageNightlySleep = await activityData.averageNightlySleep(
+                before: dayInterval.end, nights: elapsedNights
+            )
         } else {
             todaySteps = nil
             lastNightSleep = nil
             weekSteps = nil
             weekAverageNightlySleep = nil
+            monthSteps = nil
+            monthAverageNightlySleep = nil
         }
         if let highlight = DayHighlights.activity(from: snapshot.comparisons, window: window) {
             found.append(highlight)
@@ -543,6 +563,7 @@ struct InsightsView: View {
         dayTimelineBarSection
         donutSection
         daySummarySection
+        TravelInsightsCard(title: "Travel", summary: TravelInsights.make(from: daySegments))
         needsAttentionSection
         highlightsSection
         healthSetupSection
@@ -557,6 +578,7 @@ struct InsightsView: View {
     @ViewBuilder private var weekLayout: some View {
         weeklyStripSection
         weeklyScorecardSection
+        TravelInsightsCard(title: "Travel", summary: snapshot.travel)
         weeklyRoutineChangesSection
         weeklyCommuteSection
         donutSection
@@ -568,6 +590,8 @@ struct InsightsView: View {
     /// current/previous segments as the donut.
     @ViewBuilder private var monthLayout: some View {
         monthlyHeadlineSection
+        monthlyScorecardSection
+        TravelInsightsCard(title: "Travel", summary: snapshot.travel)
         monthlyChangesSection
         monthlyBalanceSection
         monthlyPlacesSection
@@ -590,6 +614,44 @@ struct InsightsView: View {
         MonthlyInsights.make(current: snapshot.segments, previous: snapshot.previousSegments,
                              currentInterval: interval,
                              previousInterval: window.previousComparisonInterval(for: interval), now: now)
+    }
+
+    /// The Month counterpart to Week's scorecard: a short set of useful totals
+    /// that stays grounded in the same resolved segments as the rest of Month
+    /// Insights. Health rows remain absent when Health data is unavailable.
+    private var monthlyScorecardSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Month scorecard").font(.title2.bold())
+            VStack(spacing: 10) {
+                daySummaryRow(icon: "house.fill", label: "At Home",
+                             value: formatHours(max(0, snapshot.loggedHours - snapshot.awayFromHomeHours)))
+                let categoryHours = InsightsSnapshot.categoryHours(in: snapshot.segments)
+                let workHours = categoryHours["Work"] ?? 0
+                if workHours > 0.01 {
+                    daySummaryRow(icon: "briefcase.fill", label: "At Work", value: formatHours(workHours))
+                }
+                let travel = InsightsSnapshot.travelHours(in: snapshot.segments)
+                if travel > 0.01 {
+                    daySummaryRow(icon: "car.fill", label: "Travelling", value: formatHours(travel))
+                }
+                if let monthAverageNightlySleep, monthAverageNightlySleep > 0 {
+                    daySummaryRow(icon: "bed.double.fill", label: "Sleep average",
+                                 value: formatHours(monthAverageNightlySleep / 3600))
+                }
+                if let monthSteps, monthSteps > 0 {
+                    let elapsedSeconds = min(now, interval.end).timeIntervalSince(interval.start)
+                    let elapsedDays = max(1, Int(ceil(elapsedSeconds / 86_400)))
+                    daySummaryRow(icon: "shoeprints.fill", label: "Steps",
+                                 value: "\(Int(monthSteps).formatted()) total · \(Int(monthSteps / Double(elapsedDays)).formatted())/day avg")
+                }
+                let exercise = InsightsSnapshot.fitnessHours(in: snapshot.segments)
+                if exercise > 0.01 {
+                    daySummaryRow(icon: "figure.run", label: "Exercise", value: formatHours(exercise))
+                }
+            }
+        }
+        .padding(20).lifeCard()
+        .accessibilityIdentifier("insights-month-scorecard")
     }
 
     @ViewBuilder private var monthlyHeadlineSection: some View {

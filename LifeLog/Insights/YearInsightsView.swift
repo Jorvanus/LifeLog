@@ -10,7 +10,7 @@ struct YearInsightsView: View {
             lifeAreas
             placeSummary
             movementAndWellbeing
-            travelSummary
+            TravelInsightsCard(title: "Travel", summary: insights.travel)
             milestones
         }
     }
@@ -129,37 +129,6 @@ struct YearInsightsView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title), \(integer ? "\(Int(average.rounded()))" : "\(average, specifier: "%.1f")") \(suffix)")
-    }
-
-    private var travelSummary: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Travel").font(.title2.bold())
-            HStack {
-                metricText("Time", value: formatHours(insights.travel.hours))
-                metricText("Trips", value: "\(insights.travel.trips)")
-                metricText("Long trips", value: "\(insights.travel.longTrips)")
-            }
-            if let commute = insights.travel.commuteHours, let nonCommute = insights.travel.nonCommuteHours {
-                Text("Commuting \(formatHours(commute)) · other travel \(formatHours(nonCommute))")
-                    .font(.subheadline).foregroundStyle(.secondary)
-            }
-            if insights.travel.flights > 0 {
-                Text("Recorded flights/long-distance trips: \(insights.travel.flights)")
-                    .font(.subheadline).foregroundStyle(.secondary)
-            }
-            Text("Travel counts resolved transitions, not movement within a destination.")
-                .font(.caption).foregroundStyle(.secondary)
-        }
-        .padding(20).lifeCard()
-        .accessibilityIdentifier("insights-year-travel")
-    }
-
-    private func metricText(_ title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(value).font(.headline.monospacedDigit())
-            Text(title).font(.caption).foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder private var milestones: some View {

@@ -30,6 +30,7 @@ struct InsightsSnapshot {
     let unloggedHours: Double
     let provisionalCount: Int
     let supersededCount: Int
+    let travel: TravelInsights.Summary
 
     static let empty = InsightsSnapshot(
         generatedAt: .distantPast,
@@ -41,7 +42,8 @@ struct InsightsSnapshot {
             span: .init(latitudeDelta: 0.2, longitudeDelta: 0.2)
         ),
         mapID: 0, weekdayPatterns: WeekdayPattern.empty,
-        awayFromHomeHours: 0, unloggedHours: 0, provisionalCount: 0, supersededCount: 0
+        awayFromHomeHours: 0, unloggedHours: 0, provisionalCount: 0, supersededCount: 0,
+        travel: .empty
     )
 
     /// Where home is, as a place rather than a word.
@@ -124,6 +126,7 @@ struct InsightsSnapshot {
         let placeTotals = makePlaceTotals(segments: segments)
         let mappablePlaces = placeTotals.filter { $0.latitude != 0 || $0.longitude != 0 }
         let loggedHours = segments.filter { !$0.isUnlogged }.reduce(0) { $0 + $1.hours }
+        let travel = TravelInsights.make(from: segments)
         // Sleep is imported as its own activity ("Sleeping" at place "Sleep"), and it
         // wins the segment slot over the overnight Home stay it sits inside because it
         // is the shorter, completed record. Neither of its labels mentions "home", so
@@ -167,7 +170,8 @@ struct InsightsSnapshot {
             awayFromHomeHours: awayFromHomeHours,
             unloggedHours: unloggedHours,
             provisionalCount: periodVisits.filter { $0.resolutionState == .provisional }.count,
-            supersededCount: periodVisits.filter { $0.resolutionState == .superseded }.count
+            supersededCount: periodVisits.filter { $0.resolutionState == .superseded }.count,
+            travel: travel
         )
     }
 

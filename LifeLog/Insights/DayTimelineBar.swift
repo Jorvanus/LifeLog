@@ -89,6 +89,13 @@ struct DayTimelineBar: View {
             }
             .frame(height: 34)
             GeometryReader { proxy in
+                let tickPositions = [0, 6, 12, 18].map {
+                    proxy.size.width * CGFloat($0) / 24
+                }
+                let nowPosition = nowFraction.map { proxy.size.width * $0 }
+                let nowSharesTick = nowPosition.map { position in
+                    tickPositions.contains { abs($0 - position) < 34 }
+                } ?? false
                 ForEach([0, 6, 12, 18], id: \.self) { hour in
                     Text(hourLabel(hour))
                         .font(.caption2).foregroundStyle(.secondary)
@@ -97,10 +104,13 @@ struct DayTimelineBar: View {
                 if let nowFraction {
                     Text("Now")
                         .font(.caption2.bold()).foregroundStyle(.primary)
-                        .position(x: min(max(proxy.size.width * nowFraction, 14), proxy.size.width - 14), y: 8)
+                        // Keep the marker readable when it is close to a fixed
+                        // six-hour tick (for example, 6:37pm beside 6pm).
+                        .position(x: min(max(proxy.size.width * nowFraction, 14), proxy.size.width - 14),
+                                  y: nowSharesTick ? 23 : 8)
                 }
             }
-            .frame(height: 16)
+            .frame(height: 30)
         }
     }
 

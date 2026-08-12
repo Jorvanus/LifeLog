@@ -46,15 +46,6 @@ struct AnnualInsights {
         let healthDataAvailable: Bool
     }
 
-    struct TravelSummary {
-        let hours: Double
-        let trips: Int
-        let longTrips: Int
-        let commuteHours: Double?
-        let nonCommuteHours: Double?
-        let flights: Int
-    }
-
     struct Milestones {
         let leadingIncrease: String?
         let longestActivityStreak: (activity: String, days: Int)?
@@ -68,7 +59,7 @@ struct AnnualInsights {
     let newPlaces: [Place]
     let placesNotVisited: [Place]
     let health: HealthMetrics
-    let travel: TravelSummary
+    let travel: TravelInsights.Summary
     let milestones: Milestones
     let comparisonSupported: Bool
     let currentLoggedHours: Double
@@ -99,7 +90,7 @@ struct AnnualInsights {
         let months = monthlyTotals(currentLogged, interval: yearInterval, now: now, calendar: calendar)
         let placeRows = placeRows(currentLogged, previous: previousLogged,
                                   historicalPlaceVisits: historicalPlaceVisits)
-        let travel = travelSummary(currentLogged)
+        let travel = TravelInsights.make(from: currentLogged)
         let milestones = milestones(current: currentLogged, previous: previousLogged,
                                     newPlaces: placeRows.new)
         return AnnualInsights(
@@ -164,18 +155,6 @@ struct AnnualInsights {
         let notVisited = previousRows.values.filter { $0.hours >= 8 && $0.visits >= 3 && currentRows[$0.name] == nil }
             .map { Place(name: $0.name, category: $0.category, hours: $0.hours, visits: $0.visits, isNew: false) }
         return (Array(currentRows.values), Array(new), Array(notVisited))
-    }
-
-    private static func travelSummary(_ segments: [InsightSegment]) -> TravelSummary {
-        let travel = segments.filter { area(for: $0).name == "Travel" }
-        let ids = Set(travel.map(\.id))
-        let longTrips = travel.filter { $0.hours >= 2 }.count
-        let commute = segments.filter { $0.category.caseInsensitiveCompare("Commute") == .orderedSame }
-        let flights = travel.filter { $0.activity.localizedCaseInsensitiveContains("flight") && $0.hours >= 2 }.count
-        return TravelSummary(hours: travel.reduce(0) { $0 + $1.hours }, trips: ids.count,
-                             longTrips: longTrips, commuteHours: commute.isEmpty ? nil : commute.reduce(0) { $0 + $1.hours },
-                             nonCommuteHours: commute.isEmpty ? nil : travel.reduce(0) { $0 + $1.hours } - commute.reduce(0) { $0 + $1.hours },
-                             flights: flights)
     }
 
     private static func milestones(current: [InsightSegment], previous: [InsightSegment],

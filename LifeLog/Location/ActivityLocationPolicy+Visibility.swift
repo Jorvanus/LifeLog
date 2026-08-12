@@ -20,6 +20,10 @@ extension ActivityLocationPolicy {
     /// 11m25s and home again in 4m18s. At five minutes the outbound leg appeared and
     /// the return did not, which reads as an unfinished trip rather than a tidier one.
     nonisolated static let minimumTimelineMovementDuration: TimeInterval = 3 * 60
+    /// Vehicle/travel motion is useful as a Timeline card only when it is a
+    /// meaningful journey. Short transitions stay available to Insights without
+    /// competing with the destinations that make up the daily story.
+    nonisolated static let minimumTimelineTravelDuration: TimeInterval = 60 * 60
 
 
     /// Movement is useful as a travel segment only when it sits between two destinations.
@@ -91,7 +95,10 @@ extension ActivityLocationPolicy {
         }
         guard isMovementActivity(visit) else { return true }
         let duration = (visit.departure ?? now).timeIntervalSince(visit.arrival)
-        guard duration >= minimumTimelineMovementDuration else { return false }
+        let minimumDuration = isTravelActivity(visit)
+            ? minimumTimelineTravelDuration
+            : minimumTimelineMovementDuration
+        guard duration >= minimumDuration else { return false }
         // A recorded route is its own evidence of a journey: it shows where the walk
         // went, so it does not also need a destination on either side to be believed.
         if visit.hasRoute { return true }

@@ -1,5 +1,19 @@
 # Change log
 
+## 2026-08-12
+
+### Travel is now a first-class Insights dimension
+
+- Day, Week, Month, and Year now share a Travel summary with total time, trip count, median duration, long-trip count, commute versus other travel, confident mode labels, waking-time share, and a trip drill-down; movement inside a resolved destination stays out of the summary, and short vehicle travel remains out of Timeline.
+
+### Day timeline labels stay readable
+
+- The current-time “Now” label moves to a separate line when it is close to a six-hour time marker, preventing the two labels from overlapping.
+
+### Month Insights adds a scorecard
+
+- Month now includes the Week-style scorecard for time at Home, Work, travelling, average sleep, steps, and exercise, with Health-derived rows shown only when the month has usable data.
+
 ### Durations now use human-scale units
 
 - Long totals across Insights, Timeline, Places, Activities, and Visit Editor now use days plus hours instead of four-digit hour totals; short durations keep their existing minute precision.
