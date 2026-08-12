@@ -142,14 +142,22 @@ enum PlaceScoringPipeline {
                     candidateLocation.map { $0.distance(from: CLLocation(latitude: place.latitude, longitude: place.longitude)) <= place.radius } == true
             }
         }
+        // A fuzzed or genuinely poor fix can't be trusted to say which nearby
+        // candidate is actually closest. `geofenceTriggered` survives untouched --
+        // it's a real OS region-crossing event, not a coordinate comparison -- and
+        // so does identity matching above (Maps identifier / saved-place radius
+        // membership already found `saved`); only the continuous distance credit
+        // below is gated.
+        let isApproximate = LocationQuality.isApproximate(accuracy)
         let visitLocation = CLLocation(latitude: visit.latitude, longitude: visit.longitude)
         let savedDistance = saved.map {
             visitLocation.distance(from: CLLocation(latitude: $0.latitude, longitude: $0.longitude))
         }
-        let insideGeofence = savedDistance.map { $0 <= (saved?.radius ?? 0) } ?? false
+        let insideGeofence = !isApproximate && (savedDistance.map { $0 <= (saved?.radius ?? 0) } ?? false)
         let geofence = min(35, geofenceTriggered || insideGeofence ? 35 :
-            Int(max(0, 35 * (1 - min(savedDistance ?? 500, 500) / 500))))
-        let poiDistance = candidate.map { Int(max(0, 15 * (1 - min($0.distance, 250) / 250))) } ?? 0
+            isApproximate ? 0 : Int(max(0, 35 * (1 - min(savedDistance ?? 500, 500) / 500))))
+        let poiDistance = isApproximate ? 0 :
+            (candidate.map { Int(max(0, 15 * (1 - min($0.distance, 250) / 250))) } ?? 0)
         let poiCategory = candidate?.mapsCategory.map { $0.isEmpty ? 0 : 10 } ?? 0
         // A new arrival does not yet prove a dwell. Its eventual duration is
         // deliberately re-evaluated at departure by PlaceScoreLifecycle.

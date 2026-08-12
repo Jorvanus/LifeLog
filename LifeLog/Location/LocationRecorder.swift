@@ -97,6 +97,10 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     private var locationConfirmation: LocationArrivalConfirmation?
     private var pendingArrival: PendingArrival?
     var authorization: CLAuthorizationStatus = .notDetermined
+    /// Whether iOS is fuzzing this app's location fixes to city-block scale (the
+    /// user-controlled "Precise Location" toggle). Read once at init and refreshed
+    /// on every authorization change, since it can flip independently of `authorization`.
+    private(set) var accuracyAuthorization: CLAccuracyAuthorization = .fullAccuracy
     var isBackgroundLoggingEnabled = false
     var lastError: String?
     /// The most recent validated location sample is intentionally exposed only as
@@ -112,6 +116,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
         manager.distanceFilter = 100
         authorization = manager.authorizationStatus
+        accuracyAuthorization = manager.accuracyAuthorization
         isBackgroundLoggingEnabled = UserDefaults.standard.bool(forKey: PreferenceKey.backgroundLoggingEnabled)
     }
 
@@ -210,6 +215,12 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         authorization = manager.authorizationStatus
+        let previousAccuracyAuthorization = accuracyAuthorization
+        accuracyAuthorization = manager.accuracyAuthorization
+        if accuracyAuthorization == .reducedAccuracy, previousAccuracyAuthorization != .reducedAccuracy {
+            Diagnostics.record(context, subsystem: "Core Location",
+                               message: "Precise Location turned off; arrivals will resolve less accurately until it's back on.")
+        }
         if authorization == .authorizedAlways, isBackgroundLoggingEnabled {
             startBackgroundWorkflow()
         }

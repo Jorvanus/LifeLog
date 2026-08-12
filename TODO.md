@@ -28,12 +28,15 @@ responsive 32,000-row archive outrank App Store preparation and speculative feat
    schema migration merely because an index sounds useful. Completion means ordinary
    Timeline never fetches note text for search and a broad query cannot freeze the UI.
 
-3. [ ] **Make location quality and hardware proof visible.** Detect reduced-accuracy
-   location, show it in Settings and Diagnostics, and prevent approximate fixes from
-   teaching a Saved Place or winning fine-distance comparisons. Then run the existing
-   hardware checklist with detailed diagnostics: named Saved Place arrival, geofence
-   exit, Wi-Fi departure assistance, region ranking, noisy signal, repeated callback,
-   and an outdoor continuous walk that must not satisfy the stationary fallback.
+3. [ ] **Prove location quality and hardware behavior on real hardware.** LifeLog now
+   detects reduced-accuracy location (the Precise Location toggle and a genuinely
+   poor fix), shows it in Settings and Diagnostics, and an approximate fix no longer
+   teaches a Saved Place or wins a fine-distance comparison against a better
+   candidate. Run the existing hardware checklist with detailed diagnostics: named
+   Saved Place arrival, geofence exit, Wi-Fi departure assistance, region ranking,
+   noisy signal, repeated callback, and an outdoor continuous walk that must not
+   satisfy the stationary fallback — including a real reduced-accuracy session to
+   confirm Settings/Diagnostics reflect it correctly.
 
 ## Correctness and recovery
 

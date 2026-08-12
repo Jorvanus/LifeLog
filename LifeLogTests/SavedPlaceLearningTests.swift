@@ -65,6 +65,70 @@ struct SavedPlaceLearningTests {
         #expect(places.first?.name == "Corner Cafe")
     }
 
+    @Test("An approximate fix does not anchor a new Saved Place")
+    func approximateAnchorDoesNotLearn() throws {
+        let context = try makeContext()
+        let candidate = PlaceSuggestion(name: "Corner Cafe", latitude: -27.4698, longitude: 153.0251,
+                                        suggestedActivity: "Eating", distance: 12,
+                                        mapsIdentifier: "corner-cafe")
+        let visit = Visit(arrival: base, latitude: -27.4698, longitude: 153.0251,
+                          placeName: candidate.name, inferredActivity: candidate.suggestedActivity,
+                          source: "automatic", mapsIdentifier: candidate.mapsIdentifier)
+        context.insert(visit)
+        visit.locationResolutionCandidates = .init(chosen: candidate, rejected: [])
+        visit.placeScoreBreakdown = PlaceScoreBreakdown(
+            recordedAt: base, total: 80, savedPlaceGeofence: 35, poiDistance: 15,
+            poiCategory: 10, dwellDuration: 15, horizontalAccuracy: 0, recurrence: 0,
+            timeOfDay: 0, priorCorrections: 0, selectedPlaceName: candidate.name,
+            mapsIdentifier: candidate.mapsIdentifier, accuracyMeters: 500
+        )
+
+        let learned = try SavedPlaceLearning.learnAutomatically(from: candidate, visit: visit, context: context)
+
+        #expect(learned == nil)
+        #expect(try context.fetch(FetchDescriptor<SavedPlace>()).isEmpty)
+    }
+
+    @Test("An approximate visit does not count toward corroboration")
+    func approximateVisitDoesNotCorroborate() throws {
+        let context = try makeContext()
+        let candidate = PlaceSuggestion(name: "Corner Cafe", latitude: -27.4698, longitude: 153.0251,
+                                        suggestedActivity: "Eating", distance: 12,
+                                        mapsIdentifier: "corner-cafe")
+
+        // One extra, approximate arrival on top of the usual requirement: it must
+        // not substitute for a real corroborating visit, so learning still waits
+        // for a fourth, accurate one.
+        for index in 0..<SavedPlaceLearning.automaticCorroborationRequired {
+            let visit = Visit(arrival: base.addingTimeInterval(Double(index) * 86_400),
+                              latitude: -27.4698, longitude: 153.0251,
+                              placeName: candidate.name, inferredActivity: candidate.suggestedActivity,
+                              source: "automatic", mapsIdentifier: candidate.mapsIdentifier)
+            context.insert(visit)
+            visit.locationResolutionCandidates = .init(chosen: candidate, rejected: [])
+            if index == 0 {
+                visit.placeScoreBreakdown = PlaceScoreBreakdown(
+                    recordedAt: base, total: 80, savedPlaceGeofence: 35, poiDistance: 15,
+                    poiCategory: 10, dwellDuration: 15, horizontalAccuracy: 0, recurrence: 0,
+                    timeOfDay: 0, priorCorrections: 0, selectedPlaceName: candidate.name,
+                    mapsIdentifier: candidate.mapsIdentifier, accuracyMeters: 800
+                )
+            }
+            let learned = try SavedPlaceLearning.learnAutomatically(from: candidate, visit: visit, context: context)
+            #expect(learned == nil)
+        }
+        #expect(try context.fetch(FetchDescriptor<SavedPlace>()).isEmpty)
+
+        let fourth = Visit(arrival: base.addingTimeInterval(3 * 86_400),
+                           latitude: -27.4698, longitude: 153.0251,
+                           placeName: candidate.name, inferredActivity: candidate.suggestedActivity,
+                           source: "automatic", mapsIdentifier: candidate.mapsIdentifier)
+        context.insert(fourth)
+        fourth.locationResolutionCandidates = .init(chosen: candidate, rejected: [])
+        let learned = try SavedPlaceLearning.learnAutomatically(from: candidate, visit: fourth, context: context)
+        #expect(learned != nil)
+    }
+
     @Test("Large venue alternatives coalesce into one automatic place cluster")
     func automaticLearningClustersVenueAliases() throws {
         let context = try makeContext()

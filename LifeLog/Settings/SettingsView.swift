@@ -179,7 +179,7 @@ struct SettingsView: View {
                 }
                 if let error = recorder.lastError ?? activityData.lastError { Section("Last issue") { Text(error) } }
                 Section {
-                    NavigationLink { DiagnosticsView() } label: {
+                    NavigationLink { DiagnosticsView(recorder: recorder) } label: {
                         Label("Diagnostics", systemImage: "stethoscope")
                     }
                     .accessibilityIdentifier("diagnostics-link")
@@ -228,6 +228,14 @@ struct SettingsView: View {
 
         case .authorizedWhenInUse, .authorizedAlways:
             adaptiveValue("Location access", value: permissionName)
+            if recorder.accuracyAuthorization == .reducedAccuracy {
+                Label("Precise location is off", systemImage: "location.slash")
+                    .foregroundStyle(.orange)
+                Button(action: openAppSettings) {
+                    Label("Open iPhone Settings", systemImage: "gear")
+                }
+                .accessibilityIdentifier("open-precise-location-settings")
+            }
             adaptiveToggle("Background location logging", isOn: backgroundLoggingBinding)
             Button("Refresh current location") { recorder.refreshCurrentLocation() }
 
@@ -246,16 +254,22 @@ struct SettingsView: View {
         }
     }
 
+    private var preciseLocationSuffix: String {
+        recorder.accuracyAuthorization == .reducedAccuracy
+            ? " Precise Location is off for LifeLog, so arrivals resolve less accurately and won't teach new Saved Places until it's back on."
+            : ""
+    }
+
     private var locationLoggingExplanation: String {
         switch recorder.authorization {
         case .notDetermined:
             "LifeLog first asks to use your location while the app is open. Background recording remains off until you choose it separately."
         case .authorizedWhenInUse where recorder.isBackgroundLoggingEnabled:
-            "Background visits require Always Location access. LifeLog has requested it; if iOS does not offer the upgrade, open iPhone Settings → Privacy & Security → Location Services → LifeLog."
+            "Background visits require Always Location access. LifeLog has requested it; if iOS does not offer the upgrade, open iPhone Settings → Privacy & Security → Location Services → LifeLog.\(preciseLocationSuffix)"
         case .authorizedWhenInUse:
-            "LifeLog can refresh while it is open. Turn on background logging to record arrivals and departures when the app is not open; iOS will then ask for Always Location access."
+            "LifeLog can refresh while it is open. Turn on background logging to record arrivals and departures when the app is not open; iOS will then ask for Always Location access.\(preciseLocationSuffix)"
         case .authorizedAlways:
-            "Always Location access lets background logging record arrivals and departures when LifeLog is not open. Turn the switch off whenever you want foreground-only location use."
+            "Always Location access lets background logging record arrivals and departures when LifeLog is not open. Turn the switch off whenever you want foreground-only location use.\(preciseLocationSuffix)"
         case .denied:
             "Location access is off. Open iPhone Settings to allow it before LifeLog can identify where visits happened."
         case .restricted:

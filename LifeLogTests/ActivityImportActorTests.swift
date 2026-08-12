@@ -397,6 +397,7 @@ struct ActivityImportActorTests {
     }
 
     @Test("Overlapping time in bed remains visible without being called sleep")
+    @MainActor
     func inBedIsVisibleAtHome() {
         let start = Date(timeIntervalSince1970: 1_800_000_000)
         let home = Visit(arrival: start, departure: start.addingTimeInterval(9 * 60 * 60),

@@ -100,7 +100,7 @@ struct RootView: View {
         .sheet(item: $uiTestDestination) { destination in
             NavigationStack {
                 switch destination {
-                case .diagnostics: DiagnosticsView()
+                case .diagnostics: DiagnosticsView(recorder: recorder)
                 case .journalStorage: JournalCompactionView()
                 }
             }

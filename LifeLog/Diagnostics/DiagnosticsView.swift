@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 
 struct DiagnosticsView: View {
+    let recorder: LocationRecorder
     @Environment(\.modelContext) private var context
     @Query(sort: \DiagnosticEvent.createdAt, order: .reverse) private var diagnostics: [DiagnosticEvent]
     /// Counted from the store rather than handed over by Insights, so this screen does
@@ -31,6 +32,16 @@ struct DiagnosticsView: View {
         }
     }
 
+    /// Automatic arrivals whose measured fix was too fuzzy to trust for a distance
+    /// comparison -- these never taught a Saved Place and never won a fine-distance
+    /// comparison against a better candidate. Visits nothing ever scored are not
+    /// counted; only fixes actually measured as approximate are.
+    private var approximateVisitCount: Int {
+        automaticVisits.count {
+            LocationQuality.isApproximate(recordedAccuracyMeters: $0.placeScoreBreakdown?.accuracyMeters)
+        }
+    }
+
     var body: some View {
         List {
             // Moved off Insights, which answers "where did my time go" and had no
@@ -40,6 +51,16 @@ struct DiagnosticsView: View {
             Section("Timeline quality") {
                 LabeledContent("Stays needing review", value: "\(provisionalCount)")
                 LabeledContent("Duplicate callbacks resolved", value: "\(supersededVisits.count)")
+            }
+            Section {
+                LabeledContent("Precise location", value: recorder.accuracyAuthorization == .reducedAccuracy ? "Off" : "On")
+                    .accessibilityIdentifier("diagnostics-precise-location")
+                LabeledContent("Approximate arrivals", value: "\(approximateVisitCount)")
+                    .accessibilityIdentifier("diagnostics-approximate-arrivals")
+            } header: {
+                Text("Location quality")
+            } footer: {
+                Text("An approximate arrival's fix was too fuzzy to trust for a distance comparison — it never taught a Saved Place and never won a fine-distance comparison against a better candidate.")
             }
             Section("Summary") {
                 LabeledContent("Events retained", value: "\(visibleDiagnostics.count)")
@@ -299,7 +320,8 @@ struct LocationJournalView: View {
     }
 
     private func position(of event: LocationEvent) -> String {
-        let accuracy = event.accuracy >= 0 ? "±\(Int(event.accuracy.rounded())) m" : "accuracy unknown"
+        var accuracy = event.accuracy >= 0 ? "±\(Int(event.accuracy.rounded())) m" : "accuracy unknown"
+        if LocationQuality.isApproximate(event.accuracy) { accuracy += " (approximate)" }
         return String(format: "%.5f, %.5f · %@", event.latitude, event.longitude, accuracy)
     }
 }

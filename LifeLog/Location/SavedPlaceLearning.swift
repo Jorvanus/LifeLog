@@ -79,7 +79,12 @@ enum SavedPlaceLearning {
     /// own matching Maps identity or name.
     static func learnAutomatically(from selected: PlaceSuggestion, visit: Visit,
                                    context: ModelContext) throws -> SavedPlace? {
-        guard isLocated(visit), visit.source == "automatic" else { return nil }
+        guard isLocated(visit), visit.source == "automatic",
+              // A fuzzed or genuinely poor fix is not proof this arrival happened
+              // where it says it did; it must not become the anchor of a future
+              // geofence.
+              !LocationQuality.isApproximate(recordedAccuracyMeters: visit.placeScoreBreakdown?.accuracyMeters)
+        else { return nil }
         let anchor = venueAnchor(for: selected, visit: visit) ?? selected
         let anchorLocation = CLLocation(latitude: anchor.latitude, longitude: anchor.longitude)
         let box = SpatialBounds.box(around: anchor.coordinate, radius: automaticClusterRadius)
@@ -308,7 +313,11 @@ enum SavedPlaceLearning {
     private static func corroborates(_ anchor: PlaceSuggestion, visit: Visit,
                                      anchorLocation: CLLocation) -> Bool {
         guard !visit.isIgnored, visit.resolutionState != .superseded,
-              isLocated(visit) else { return false }
+              isLocated(visit),
+              // An approximate fix can't corroborate anything -- it isn't
+              // independent evidence that this arrival happened at this place.
+              !LocationQuality.isApproximate(recordedAccuracyMeters: visit.placeScoreBreakdown?.accuracyMeters)
+        else { return false }
         if let identifier = anchor.mapsIdentifier, visit.mapsIdentifier == identifier { return true }
         let candidates = [visit.locationResolutionCandidates?.chosen].compactMap { $0 }
             + (visit.locationResolutionCandidates?.rejected ?? [])

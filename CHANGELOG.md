@@ -2,6 +2,13 @@
 
 ## 2026-08-12
 
+### An approximate location fix no longer teaches a Saved Place or wins on distance
+
+- LifeLog now detects when a location fix is too fuzzy to trust for a distance comparison — either because Precise Location is off for the app, or because the fix itself is simply poor (indoors, urban canyon) — and treats both the same way, since a full-precision fix in a bad spot is just as untrustworthy as a deliberately fuzzed one.
+- An approximate fix can no longer anchor a new Saved Place, and no longer counts as one of the three corroborating arrivals automatic learning requires. Identity-based evidence (a shared Apple Maps identifier, an actual geofence-entry event) still counts fully; only distance-based "closest wins" credit is withheld.
+- Settings shows when Precise Location is off for LifeLog, with a way to open iPhone Settings to turn it back on. Diagnostics adds a "Location quality" summary (precise location on/off, and how many recent arrivals were approximate) and flags approximate rows in the raw location journal.
+- The corresponding hardware-checklist TODO item now also calls for a real reduced-accuracy session on the phone, since this is unproven on hardware like the rest of the location pipeline.
+
 ### Sleep import now distinguishes measurement from an estimate
 
 - Health sleep changes now rebuild the complete affected night instead of piecing together individual Watch sync fragments. Deleted samples reconcile only the relevant overnight evidence, so one edited stage no longer removes an otherwise valid night.
