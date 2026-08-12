@@ -892,6 +892,26 @@ struct TimelineFixtureCoverageTests {
         #expect(visit.placeScoreBreakdown == score)
     }
 
+    @Test("Resolution candidate audit survives editor suggestion cleanup")
+    func retainsResolutionCandidatesForDiagnostics() {
+        let visit = Visit(arrival: base, latitude: -23.37, longitude: 150.51)
+        let chosen = PlaceSuggestion(name: "Corner Cafe", latitude: -23.37, longitude: 150.51,
+                                     suggestedActivity: "Eating", distance: 20,
+                                     mapsIdentifier: "cafe-id")
+        let rejected = PlaceSuggestion(name: "Bakery", latitude: -23.3702, longitude: 150.5101,
+                                       suggestedActivity: "Eating", distance: 45,
+                                       mapsIdentifier: "bakery-id")
+
+        visit.placeSuggestions = [chosen, rejected]
+        visit.locationResolutionCandidates = .init(chosen: chosen, rejected: [rejected])
+        // Saved Place learning clears edit-time suggestions after applying a correction.
+        visit.placeSuggestions = []
+
+        #expect(visit.placeSuggestions.isEmpty)
+        #expect(visit.locationResolutionCandidates?.chosen == chosen)
+        #expect(visit.locationResolutionCandidates?.rejected == [rejected])
+    }
+
     @Test("A label the catalogue has never heard of is still counted")
     func includesLabelsMissingFromTheCatalogue() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)

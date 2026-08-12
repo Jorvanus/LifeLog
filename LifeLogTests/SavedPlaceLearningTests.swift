@@ -42,6 +42,58 @@ struct SavedPlaceLearningTests {
         #expect(corrections.first?.newConfidence == "learned")
     }
 
+    @Test("Automatic Maps learning waits for three corroborating visits")
+    func automaticLearningRequiresCorroboration() throws {
+        let context = try makeContext()
+        let candidate = PlaceSuggestion(name: "Corner Cafe", latitude: -27.4698, longitude: 153.0251,
+                                        suggestedActivity: "Eating", distance: 12,
+                                        mapsIdentifier: "corner-cafe")
+
+        for index in 0..<SavedPlaceLearning.automaticCorroborationRequired {
+            let visit = Visit(arrival: base.addingTimeInterval(Double(index) * 86_400),
+                              latitude: -27.4698, longitude: 153.0251,
+                              placeName: candidate.name, inferredActivity: candidate.suggestedActivity,
+                              source: "automatic", mapsIdentifier: candidate.mapsIdentifier)
+            context.insert(visit)
+            visit.locationResolutionCandidates = .init(chosen: candidate, rejected: [])
+            let learned = try SavedPlaceLearning.learnAutomatically(from: candidate, visit: visit, context: context)
+            #expect((learned != nil) == (index == SavedPlaceLearning.automaticCorroborationRequired - 1))
+        }
+
+        let places = try context.fetch(FetchDescriptor<SavedPlace>())
+        #expect(places.count == 1)
+        #expect(places.first?.name == "Corner Cafe")
+    }
+
+    @Test("Large venue alternatives coalesce into one automatic place cluster")
+    func automaticLearningClustersVenueAliases() throws {
+        let context = try makeContext()
+        let mall = PlaceSuggestion(name: "Rivergate Shopping Centre", latitude: -27.4698, longitude: 153.0251,
+                                   suggestedActivity: "Shopping", distance: 45,
+                                   mapsIdentifier: "rivergate-mall", mapsCategory: "shoppingMall")
+
+        for index in 0..<SavedPlaceLearning.automaticCorroborationRequired {
+            let entrance = PlaceSuggestion(name: "Rivergate Entrance \(index + 1)",
+                                           latitude: -27.4698 + Double(index) * 0.0006,
+                                           longitude: 153.0251, suggestedActivity: "Shopping", distance: 8,
+                                           mapsIdentifier: "rivergate-entrance-\(index)")
+            let visit = Visit(arrival: base.addingTimeInterval(Double(index) * 86_400),
+                              latitude: entrance.latitude, longitude: entrance.longitude,
+                              placeName: entrance.name, inferredActivity: "Shopping", source: "automatic",
+                              mapsIdentifier: entrance.mapsIdentifier)
+            context.insert(visit)
+            // Maps selected different entrance POIs, but showed the shared centre as
+            // an alternative each time. The learning record makes that alias visible.
+            visit.locationResolutionCandidates = .init(chosen: entrance, rejected: [mall])
+            _ = try SavedPlaceLearning.learnAutomatically(from: entrance, visit: visit, context: context)
+        }
+
+        let places = try context.fetch(FetchDescriptor<SavedPlace>())
+        #expect(places.count == 1)
+        #expect(places.first?.name == mall.name)
+        #expect(places.first?.radius == 250)
+    }
+
     @Test("Renaming a visit updates the matching geofence without duplicating it")
     func updatesExistingSavedPlace() throws {
         let context = try makeContext()
@@ -109,6 +161,9 @@ struct SavedPlaceLearningTests {
         context.insert(saved)
         context.insert(current)
         context.insert(distant)
+        let competing = PlaceSuggestion(name: "Nearby Cafe", latitude: -27.4696, longitude: 153.0253,
+                                        suggestedActivity: "Eating", distance: 25)
+        current.placeSuggestions = [competing]
 
         try SavedPlaceLearning.apply(saved, context: context)
         try context.save()
@@ -116,6 +171,7 @@ struct SavedPlaceLearningTests {
         #expect(current.placeName == "Home")
         #expect(current.activity == "At home")
         #expect(current.needsCategorisation == false)
+        #expect(current.placeSuggestions == [competing])
         #expect(distant.placeName == "Another place")
         let corrections = try context.fetch(FetchDescriptor<VisitCorrection>())
         #expect(corrections.count == 1)

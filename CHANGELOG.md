@@ -2,6 +2,15 @@
 
 ## 2026-08-12
 
+### Saved Place learning now waits for real evidence
+
+- A single Apple Maps result no longer becomes a Saved Place and future geofence on its own. Automatic learning now needs three corroborating automatic arrivals; manually correcting a visit or explicitly saving a place still takes effect immediately.
+- The resolver keeps the competing Maps candidates that led to a learning decision. When Maps repeatedly reports different entrances at a shopping centre or mall but offers the shared venue as an alternative, those arrivals now corroborate one wider Saved Place cluster instead of creating several competing places.
+
+### Diagnostics now shows why one place candidate won
+
+- Diagnostics has a new "Location resolution choices" screen for automatic stays. It shows the selected Maps or Saved Place candidate, every named alternative the resolver rejected, and the persisted resolution reason — without putting raw Core Location callbacks or coordinates into Timeline. The decision remains available even after a later Saved Place correction clears the editor's suggestion list.
+
 ### Every automatic location repair now keeps its reason
 
 - Automatic stays now persist the decision that resolved them: a Maps identifier, a Saved Place, coordinate-and-time matching, a duplicate callback, movement evidence, or a low-confidence result that was ignored. The explanation is retained with the visit (and included in local backups), so it survives the short-lived diagnostic journal and can still explain why a timeline row was changed later.

@@ -20,6 +20,17 @@ enum LocationResolutionExplanation: String, Codable, Sendable {
     case duplicate = "superseded-duplicate"
     case movement = "ignored-movement"
     case lowConfidence = "ignored-low-confidence"
+
+    var diagnosticLabel: String {
+        switch self {
+        case .mapsIdentifier: "Matched by Maps identifier"
+        case .savedPlace: "Matched by Saved Place"
+        case .coordinateTime: "Matched by coordinate and time"
+        case .duplicate: "Superseded as duplicate"
+        case .movement: "Ignored as movement"
+        case .lowConfidence: "Ignored as low-confidence"
+        }
+    }
 }
 
 @Model
@@ -220,24 +231,43 @@ final class Visit {
     }
 
     var placeSuggestions: [PlaceSuggestion] {
-        get {
-            guard let candidateData else { return [] }
-            if let payload = try? JSONDecoder().decode(VisitCandidatePayload.self, from: candidateData) {
-                return payload.suggestions
-            }
-            return (try? JSONDecoder().decode([PlaceSuggestion].self, from: candidateData)) ?? []
-        }
-        set { candidateData = try? JSONEncoder().encode(VisitCandidatePayload(suggestions: newValue, score: placeScoreBreakdown)) }
+        get { candidatePayload?.suggestions ?? legacyPlaceSuggestions }
+        set { writeCandidatePayload(suggestions: newValue) }
     }
 
     var placeScoreBreakdown: PlaceScoreBreakdown? {
-        get {
-            guard let candidateData else { return nil }
-            return try? JSONDecoder().decode(VisitCandidatePayload.self, from: candidateData).score
-        }
-        set {
-            candidateData = try? JSONEncoder().encode(VisitCandidatePayload(suggestions: placeSuggestions, score: newValue))
-        }
+        get { candidatePayload?.score }
+        set { writeCandidatePayload(score: newValue) }
+    }
+
+    /// The resolver's decision is separate from editor suggestions: Saved Place
+    /// learning intentionally clears the latter, but Diagnostics must still be able
+    /// to explain what Maps offered and why one result won.
+    var locationResolutionCandidates: LocationResolutionCandidates? {
+        get { candidatePayload?.resolution }
+        set { writeCandidatePayload(resolution: newValue) }
+    }
+
+    private var candidatePayload: VisitCandidatePayload? {
+        guard let candidateData else { return nil }
+        return try? JSONDecoder().decode(VisitCandidatePayload.self, from: candidateData)
+    }
+
+    private var legacyPlaceSuggestions: [PlaceSuggestion] {
+        guard let candidateData else { return [] }
+        return (try? JSONDecoder().decode([PlaceSuggestion].self, from: candidateData)) ?? []
+    }
+
+    private func writeCandidatePayload(suggestions: [PlaceSuggestion]? = nil,
+                                       score: PlaceScoreBreakdown?? = nil,
+                                       resolution: LocationResolutionCandidates?? = nil) {
+        let payload = candidatePayload
+        let updated = VisitCandidatePayload(
+            suggestions: suggestions ?? payload?.suggestions ?? legacyPlaceSuggestions,
+            score: score ?? payload?.score,
+            resolution: resolution ?? payload?.resolution
+        )
+        candidateData = try? JSONEncoder().encode(updated)
     }
 
     var confidenceLabel: String {
@@ -278,6 +308,15 @@ final class Visit {
 private struct VisitCandidatePayload: Codable {
     let suggestions: [PlaceSuggestion]
     let score: PlaceScoreBreakdown?
+    let resolution: LocationResolutionCandidates?
+}
+
+/// The named options examined for an automatic stay. It deliberately records only
+/// Maps/Saved Place labels and distances; raw callback coordinates remain confined
+/// to the opt-in Location Journal.
+struct LocationResolutionCandidates: Codable, Equatable {
+    let chosen: PlaceSuggestion?
+    let rejected: [PlaceSuggestion]
 }
 
 /// Immutable audit entry for a user correction or a learned Saved Place update.

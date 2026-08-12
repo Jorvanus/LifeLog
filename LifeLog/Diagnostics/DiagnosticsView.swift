@@ -25,6 +25,12 @@ struct DiagnosticsView: View {
         automaticVisits.count { $0.needsReview }
     }
 
+    private var resolutionInspectableVisits: [Visit] {
+        (automaticVisits + supersededVisits).filter {
+            $0.locationResolutionCandidates != nil || $0.locationResolutionExplanation != nil
+        }
+    }
+
     var body: some View {
         List {
             // Moved off Insights, which answers "where did my time go" and had no
@@ -72,6 +78,16 @@ struct DiagnosticsView: View {
                 Text(LocationDiagnostics.isDetailed
                      ? "The Core Location callbacks behind your timeline, with their coordinates and accuracy. Recording now."
                      : "Empty unless detailed location diagnostics are on, in Settings.")
+            }
+            Section {
+                NavigationLink {
+                    LocationResolutionChoicesView()
+                } label: {
+                    LabeledContent("Location resolution choices", value: "\(resolutionInspectableVisits.count)")
+                }
+                .accessibilityIdentifier("location-resolution-choices-link")
+            } footer: {
+                Text("The candidate chosen for each automatic repair and the alternatives rejected. This never adds raw callbacks or coordinates to Timeline.")
             }
             Section("Events") {
                 if visibleDiagnostics.isEmpty {
@@ -128,6 +144,83 @@ struct DiagnosticsView: View {
             try context.save()
         } catch {
             message = "LifeLog couldn’t clear the diagnostics."
+        }
+    }
+}
+
+/// A durable account of the resolver's named options. Unlike `LocationJournalView`,
+/// this is not a callback log: it contains no raw callback timing or coordinates and
+/// remains useful after detailed location diagnostics have been turned off.
+struct LocationResolutionChoicesView: View {
+    @Query(filter: #Predicate<Visit> { $0.source == "automatic" })
+    private var automaticVisits: [Visit]
+    @Query(filter: #Predicate<Visit> { $0.source == "automatic-superseded" })
+    private var supersededVisits: [Visit]
+
+    private var visits: [Visit] {
+        (automaticVisits + supersededVisits)
+            .filter { $0.locationResolutionCandidates != nil || $0.locationResolutionExplanation != nil }
+            .sorted { $0.arrival > $1.arrival }
+    }
+
+    var body: some View {
+        List {
+            if visits.isEmpty {
+                ContentUnavailableView(
+                    "No resolution choices yet",
+                    systemImage: "checkmark.circle.badge.questionmark",
+                    description: Text("Automatic arrivals will appear here after the resolver records a decision.")
+                )
+            } else {
+                ForEach(visits) { visit in
+                    Section {
+                        Text(visit.locationResolutionExplanation?.diagnosticLabel ?? "No recorded resolution")
+                            .font(.subheadline.weight(.semibold))
+                        if let candidates = visit.locationResolutionCandidates {
+                            if let chosen = candidates.chosen {
+                                CandidateChoiceRow(title: "Chosen", candidate: chosen, tint: .green)
+                            } else {
+                                Label("No candidate was accepted", systemImage: "minus.circle")
+                                    .foregroundStyle(.secondary)
+                            }
+                            if !candidates.rejected.isEmpty {
+                                ForEach(candidates.rejected) { candidate in
+                                    CandidateChoiceRow(title: "Rejected", candidate: candidate, tint: .secondary)
+                                }
+                            }
+                        } else {
+                            Text("This repair did not use a named Maps or Saved Place candidate.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    } header: {
+                        Text(visit.arrival.formatted(date: .abbreviated, time: .shortened))
+                    }
+                }
+            }
+        }
+        .navigationTitle("Resolution Choices")
+        .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("location-resolution-choices-screen")
+    }
+}
+
+private struct CandidateChoiceRow: View {
+    let title: String
+    let candidate: PlaceSuggestion
+    let tint: Color
+
+    var body: some View {
+        LabeledContent {
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(candidate.name)
+                Text("\(Int(candidate.distance.rounded())) m away")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } label: {
+            Text(title)
+                .foregroundStyle(tint)
         }
     }
 }

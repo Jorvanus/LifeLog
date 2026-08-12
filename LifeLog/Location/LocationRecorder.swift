@@ -475,6 +475,16 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                          mapsIdentifier: saved?.mapsIdentifier,
                          placeFieldProvenance: saved == nil ? nil : "saved-place",
                          resolutionExplanation: saved == nil ? nil : LocationResolutionExplanation.savedPlace.rawValue)
+        if let saved {
+            let distance = CLLocation(latitude: saved.latitude, longitude: saved.longitude)
+                .distance(from: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude))
+            item.locationResolutionCandidates = .init(
+                chosen: PlaceSuggestion(name: saved.name, latitude: saved.latitude, longitude: saved.longitude,
+                                        suggestedActivity: saved.defaultActivity, distance: distance,
+                                        mapsIdentifier: saved.mapsIdentifier),
+                rejected: []
+            )
+        }
         context.insert(item)
         _ = PlaceScoreLifecycle.rescore(
             item, stage: .arrival, context: context, savedPlaces: savedPlaceCache,
@@ -782,6 +792,13 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                     accuracy: accuracy, geofenceTriggered: false
                 ) else { return }
                 visit.recognitionConfidence = evaluation.breakdown.confidence
+                // Keep this independently of `placeSuggestions`: a later Saved Place
+                // correction clears editor choices, while Diagnostics must retain the
+                // exact alternatives that were rejected at resolution time.
+                visit.locationResolutionCandidates = .init(
+                    chosen: evaluation.selected,
+                    rejected: result.suggestions.filter { $0.id != evaluation.selected?.id }
+                )
 
                 LocationDiagnostics.recordLookup(
                     radius: result.searchRadius, cacheHit: result.cacheHit,
@@ -797,7 +814,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                     visit.mapsIdentifier = match.mapsIdentifier
                     visit.placeFieldProvenance = match.mapsIdentifier == nil ? "name-fallback" : "maps"
                     visit.locationResolutionExplanation = match.mapsIdentifier == nil ? .coordinateTime : .mapsIdentifier
-                    cache(match, context: context)
+                    cache(match, for: visit, context: context)
                 } else if let likely = evaluation.selected {
                     visit.placeName = likely.name
                     visit.inferredActivity = likely.suggestedActivity
@@ -820,22 +837,17 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         }
     }
 
-    private func cache(_ match: PlaceSuggestion, context: ModelContext) {
-        let coordinate = CLLocation(latitude: match.latitude, longitude: match.longitude)
-        // Identity first: the same Maps place moves a little between fixes, and two
-        // different businesses can sit within fifty metres of each other.
-        let existing = savedPlaceCache.contains { place in
-            if let identifier = match.mapsIdentifier, let known = place.mapsIdentifier {
-                return identifier == known
+    private func cache(_ match: PlaceSuggestion, for visit: Visit, context: ModelContext) {
+        do {
+            // A lookup has only named this one arrival. SavedPlaceLearning waits for
+            // corroboration before it turns that evidence into a future geofence.
+            if try SavedPlaceLearning.learnAutomatically(from: match, visit: visit, context: context) != nil {
+                loadSavedPlaceCache()
             }
-            return coordinate.distance(from: CLLocation(latitude: place.latitude, longitude: place.longitude)) <= 50
+        } catch {
+            Diagnostics.record(context, subsystem: "Saved Place learning",
+                               message: "A Maps result was kept as a candidate but could not be corroborated.")
         }
-        guard !existing else { return }
-        context.insert(SavedPlace(name: TextSafety.clean(match.name, maximumLength: 100),
-                                  latitude: match.latitude, longitude: match.longitude,
-                                  radius: 85, defaultActivity: match.suggestedActivity,
-                                  mapsIdentifier: match.mapsIdentifier))
-        loadSavedPlaceCache()
     }
 
     private func reverseGeocode(_ visit: Visit) {
