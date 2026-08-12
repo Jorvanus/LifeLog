@@ -3,6 +3,7 @@ import SwiftUI
 struct TravelInsightsCard: View {
     let title: String
     let summary: TravelInsights.Summary
+    var period: DateInterval?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -17,7 +18,7 @@ struct TravelInsightsCard: View {
                     metric("Long trips", "\(summary.longTripCount)")
                 }
                 VStack(alignment: .leading, spacing: 7) {
-                    Text("Commute (formatHours(summary.commuteHours)) · other travel (formatHours(summary.nonCommuteHours))")
+                    Text("Commute \(formatHours(summary.commuteHours)) · other travel \(formatHours(summary.nonCommuteHours))")
                         .font(.subheadline)
                     if let share = summary.wakingShare {
                         Text("\(Int((share * 100).rounded()))% of waking, non-sleep time")
@@ -32,14 +33,14 @@ struct TravelInsightsCard: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                NavigationLink {
-                    TravelTripsView(title: title, trips: summary.trips)
-                } label: {
-                    Label("Review trips", systemImage: "list.bullet.rectangle")
-                        .font(.subheadline.weight(.semibold))
-                }
-                .accessibilityLabel("Review (summary.tripCount) travel trips")
             }
+            NavigationLink {
+                TravelTripsView(title: title, trips: summary.trips, period: period)
+            } label: {
+                Label("Review trips", systemImage: "list.bullet.rectangle")
+                    .font(.subheadline.weight(.semibold))
+            }
+            .accessibilityLabel("Review \(summary.tripCount) travel trips")
         }
         .padding(20).lifeCard()
         .accessibilityIdentifier("insights-travel-summary")
@@ -63,6 +64,7 @@ struct TravelInsightsCard: View {
 struct TravelTripsView: View {
     let title: String
     let trips: [TravelInsights.Trip]
+    var period: DateInterval?
 
     var body: some View {
         List {
@@ -92,5 +94,15 @@ struct TravelTripsView: View {
         }
         .navigationTitle("\(title) trips")
         .navigationBarTitleDisplayMode(.inline)
+        .safeAreaInset(edge: .top) {
+            if let period {
+                Text("Selected period: \(period.start.formatted(date: .abbreviated, time: .omitted))–\(period.end.formatted(date: .abbreviated, time: .omitted))")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal).padding(.vertical, 8)
+                    .background(.thinMaterial)
+                    .accessibilityIdentifier("travel-selected-period")
+            }
+        }
     }
 }

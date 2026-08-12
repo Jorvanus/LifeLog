@@ -2,6 +2,10 @@
 
 ## 2026-08-12
 
+### Insights drill-downs keep the selected period
+
+- Significant activity, place, travel, sleep, comparison, and unlogged-time Insights now open period-scoped detail with consistent titles, accessible actions, and bounded resolved rows; review items continue directly to Visit Editor.
+
 ### Travel is now a first-class Insights dimension
 
 - Day, Week, Month, and Year now share a Travel summary with total time, trip count, median duration, long-trip count, commute versus other travel, confident mode labels, waking-time share, and a trip drill-down; movement inside a resolved destination stays out of the summary, and short vehicle travel remains out of Timeline.

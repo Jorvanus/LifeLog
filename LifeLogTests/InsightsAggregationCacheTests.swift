@@ -346,8 +346,8 @@ struct InsightsTrendSeriesTests {
     func messageForABiggerWeek() {
         let message = InsightsTrends.message(title: "Home", latest: 60, baseline: 40)
         #expect(message.hasPrefix("More home than usual"))
-        #expect(message.contains("60h"))
-        #expect(message.contains("40h"))
+        #expect(message.contains("2d 12h"))
+        #expect(message.contains("1d 16h"))
     }
 
     @Test("A quieter week reads as less than usual")

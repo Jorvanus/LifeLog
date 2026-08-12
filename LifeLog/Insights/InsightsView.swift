@@ -17,6 +17,7 @@ struct InsightsView: View {
     @State private var draftAnchorDate = Date.now
     @State private var selectedSlice: TimeSlice?
     @State private var selectedPlace: PlaceTotal?
+    @State private var selectedComparison: TrendComparison?
     @State private var now = Date.now
     @State private var snapshot = InsightsSnapshot.empty
     @State private var exportFile: TrendExportFile?
@@ -107,40 +108,39 @@ struct InsightsView: View {
             .sheet(isPresented: $showingWeekdayChart) { weekdayChartSheet }
             .sheet(item: $selectedSlice, onDismiss: reloadInsights) { slice in
                 let rows = sliceRows(for: slice)
-                // Skip straight to the editor only when there is exactly one row
-                // and it is a real Visit — a lone commute row has no record to open.
-                if rows.count == 1, let visit = rows.first?.visit {
-                    NavigationStack { VisitEditor(visit: visit) }
-                        .presentationDetents([.large])
-                } else {
-                    InsightSliceEditor(slice: slice, rows: rows, interval: snapshot.analysisInterval)
-                        .presentationDetents([.medium, .large])
-                }
+                NavigationStack {
+                    if slice.name.localizedCaseInsensitiveContains("sleep") {
+                        InsightSleepDetailView(periodTitle: periodTitle, interval: snapshot.analysisInterval,
+                                               segments: snapshot.segments, activityData: activityData)
+                    } else {
+                        InsightActivityDetailView(activity: slice.name, periodTitle: periodTitle,
+                                                  interval: snapshot.analysisInterval, rows: rows)
+                    }
+                }.presentationDetents([.medium, .large])
             }
             .sheet(item: $selectedPlace, onDismiss: reloadInsights) { place in
                 let rows = sliceRows(for: place)
-                if rows.count == 1, let visit = rows.first?.visit {
-                    NavigationStack { VisitEditor(visit: visit) }
-                        .presentationDetents([.large])
-                } else {
-                    // Reuse the category slice editor for a single place: it already
-                    // handles "one visit -> edit directly" vs "many visits -> pick one".
-                    InsightSliceEditor(
-                        slice: TimeSlice(name: place.name, hours: place.hours,
-                                         color: activityColor(place.activity),
-                                         symbol: insightSymbol(for: place.category), isUnlogged: false),
-                        rows: rows,
-                        interval: snapshot.analysisInterval
-                    )
-                    .presentationDetents([.medium, .large])
+                NavigationStack {
+                    InsightPlaceHistoryView(placeName: place.name, periodTitle: periodTitle,
+                                            interval: snapshot.analysisInterval, rows: rows)
+                }.presentationDetents([.medium, .large])
+            }
+            .sheet(item: $selectedComparison) { comparison in
+                NavigationStack {
+                    InsightComparisonDetailView(comparison: comparison, periodTitle: periodTitle,
+                                                baselineTitle: "last (window.title.lowercased())")
                 }
+                .presentationDetents([.medium, .large])
             }
             .sheet(item: $selectedDaySegment, onDismiss: reloadInsights) { segment in
                 if let visit = segment.visit {
                     NavigationStack { VisitEditor(visit: visit) }
                         .presentationDetents([.large])
                 } else {
-                    ManualVisitView(range: DateInterval(start: segment.start, end: segment.end))
+                    NavigationStack {
+                        InsightGapDetailView(gap: segment, periodTitle: periodTitle)
+                    }
+                    .presentationDetents([.medium, .large])
                 }
             }
             .sheet(item: $editingVisit, onDismiss: reloadInsights) { visit in
@@ -406,6 +406,30 @@ struct InsightsView: View {
         UIApplication.shared.open(healthURL)
     }
 
+    private func openCategory(_ name: String) {
+        let matching = snapshot.segments.filter {
+            !$0.isUnlogged && ($0.category.caseInsensitiveCompare(name) == .orderedSame ||
+                               $0.activity.caseInsensitiveCompare(name) == .orderedSame)
+        }
+        let hours = matching.reduce(0) { $0 + $1.hours }
+        guard hours > 0 else { return }
+        selectedSlice = TimeSlice(name: name, hours: hours, color: insightColor(for: name),
+                                  symbol: insightSymbol(for: name), isUnlogged: false)
+    }
+
+    private func openSleep() {
+        let hours = snapshot.segments.filter(\.isSleep).reduce(0) { $0 + $1.hours }
+        guard hours > 0 else { return }
+        selectedSlice = TimeSlice(name: "Sleep", hours: hours, color: insightColor(for: "Sleep"),
+                                  symbol: insightSymbol(for: "Sleep"), isUnlogged: false)
+    }
+
+    private func openComparison(_ change: MonthlyInsights.ActivityChange) {
+        let comparison = TrendComparison(name: change.category, hours: change.hours,
+                                          previousHours: change.previousHours, delta: change.delta)
+        selectedComparison = comparison
+    }
+
     /// Loads the season of trend-line history, and the year of it `habits` needs to
     /// make an honest "first this year" claim.
     ///
@@ -563,7 +587,7 @@ struct InsightsView: View {
         dayTimelineBarSection
         donutSection
         daySummarySection
-        TravelInsightsCard(title: "Travel", summary: TravelInsights.make(from: daySegments))
+        TravelInsightsCard(title: "Travel", summary: TravelInsights.make(from: daySegments), period: interval)
         needsAttentionSection
         highlightsSection
         healthSetupSection
@@ -578,7 +602,7 @@ struct InsightsView: View {
     @ViewBuilder private var weekLayout: some View {
         weeklyStripSection
         weeklyScorecardSection
-        TravelInsightsCard(title: "Travel", summary: snapshot.travel)
+        TravelInsightsCard(title: "Travel", summary: snapshot.travel, period: snapshot.analysisInterval)
         weeklyRoutineChangesSection
         weeklyCommuteSection
         donutSection
@@ -591,7 +615,7 @@ struct InsightsView: View {
     @ViewBuilder private var monthLayout: some View {
         monthlyHeadlineSection
         monthlyScorecardSection
-        TravelInsightsCard(title: "Travel", summary: snapshot.travel)
+        TravelInsightsCard(title: "Travel", summary: snapshot.travel, period: snapshot.analysisInterval)
         monthlyChangesSection
         monthlyBalanceSection
         monthlyPlacesSection
@@ -600,13 +624,16 @@ struct InsightsView: View {
     }
 
     @ViewBuilder private var yearLayout: some View {
-        YearInsightsView(insights: annualInsights) { area in
+        YearInsightsView(insights: annualInsights, openArea: { area in
             let hours = annualInsights.months.reduce(0) { $0 + ($1.hours[area.name] ?? 0) }
             guard hours > 0 else { return }
             selectedSlice = TimeSlice(name: area.category, hours: hours,
                                        color: insightColor(for: area.category),
                                        symbol: insightSymbol(for: area.category), isUnlogged: false)
-        }
+        }, openPlace: { place in
+            selectedPlace = PlaceTotal(name: place.name, category: place.category, activity: place.category,
+                                       latitude: 0, longitude: 0, hours: place.hours)
+        }, period: snapshot.analysisInterval)
         healthSetupSection
     }
 
@@ -623,8 +650,10 @@ struct InsightsView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Month scorecard").font(.title2.bold())
             VStack(spacing: 10) {
-                daySummaryRow(icon: "house.fill", label: "At Home",
-                             value: formatHours(max(0, snapshot.loggedHours - snapshot.awayFromHomeHours)))
+                Button { openCategory("Home") } label: {
+                    daySummaryRow(icon: "house.fill", label: "At Home",
+                                 value: formatHours(max(0, snapshot.loggedHours - snapshot.awayFromHomeHours)))
+                }.buttonStyle(.plain)
                 let categoryHours = InsightsSnapshot.categoryHours(in: snapshot.segments)
                 let workHours = categoryHours["Work"] ?? 0
                 if workHours > 0.01 {
@@ -635,8 +664,10 @@ struct InsightsView: View {
                     daySummaryRow(icon: "car.fill", label: "Travelling", value: formatHours(travel))
                 }
                 if let monthAverageNightlySleep, monthAverageNightlySleep > 0 {
-                    daySummaryRow(icon: "bed.double.fill", label: "Sleep average",
-                                 value: formatHours(monthAverageNightlySleep / 3600))
+                    Button { openSleep() } label: {
+                        daySummaryRow(icon: "bed.double.fill", label: "Sleep average",
+                                     value: formatHours(monthAverageNightlySleep / 3600))
+                    }.buttonStyle(.plain)
                 }
                 if let monthSteps, monthSteps > 0 {
                     let elapsedSeconds = min(now, interval.end).timeIntervalSince(interval.start)
@@ -675,6 +706,7 @@ struct InsightsView: View {
                 Text("What changed").font(.title2.bold())
                 Text("Meaningful differences from last month").font(.subheadline).foregroundStyle(.secondary)
                 ForEach(changes.prefix(6)) { change in
+                    Button { openComparison(change) } label: {
                     HStack(spacing: 12) {
                         Image(systemName: insightSymbol(for: change.category))
                             .foregroundStyle(insightColor(for: change.category))
@@ -693,6 +725,9 @@ struct InsightsView: View {
                             Text("New").font(.caption.bold())
                         }
                     }
+                    .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel("\(change.category), \(change.delta >= 0 ? "more" : "less") \(formatHours(abs(change.delta))) than last month")
                 }
@@ -714,12 +749,16 @@ struct InsightsView: View {
                 InsightEmptyRow(icon: "chart.bar.xaxis", title: "Not enough recorded activity", detail: "These groups appear once the month has usable data.")
             } else {
                 ForEach(monthlyInsights.balance) { item in
+                    Button { openCategory(item.name) } label: {
                     HStack(spacing: 11) {
                         Image(systemName: item.symbol).foregroundStyle(item.color).frame(width: 26)
                         Text(item.name).font(.subheadline)
                         Spacer()
                         Text(formatHours(item.hours)).font(.subheadline.bold().monospacedDigit())
                     }
+                    .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel("\(item.name), \(formatHours(item.hours))")
                 }
@@ -836,6 +875,7 @@ struct InsightsView: View {
                                 detail: "Trends appear after LifeLog has visits in two comparable periods.")
             } else {
                 ForEach(snapshot.comparisons.prefix(4)) { comparison in
+                    Button { selectedComparison = comparison } label: {
                     HStack(spacing: 14) {
                         Image(systemName: comparison.delta >= 0 ? "arrow.up.right" : "arrow.down.right")
                             .font(.headline).foregroundStyle(comparison.delta >= 0 ? .orange : .blue)
@@ -848,6 +888,10 @@ struct InsightsView: View {
                         }
                         Spacer()
                     }
+                    .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens the comparison details")
                 }
             }
         }
@@ -974,8 +1018,10 @@ struct InsightsView: View {
                     daySummaryRow(icon: "shoeprints.fill", label: "Steps", value: Int(todaySteps).formatted())
                 }
                 if let lastNightSleep, lastNightSleep.totalSleep > 0 {
-                    daySummaryRow(icon: "bed.double.fill", label: "Last night’s sleep",
-                                 value: formatHours(lastNightSleep.totalSleep / 3600))
+                    Button { openSleep() } label: {
+                        daySummaryRow(icon: "bed.double.fill", label: "Last night’s sleep",
+                                     value: formatHours(lastNightSleep.totalSleep / 3600))
+                    }.buttonStyle(.plain)
                 }
                 let workout = InsightsSnapshot.fitnessHours(in: daySegments)
                 if workout > 0.01 {
@@ -1113,8 +1159,10 @@ struct InsightsView: View {
                     daySummaryRow(icon: "car.fill", label: "Travelling", value: formatHours(travel))
                 }
                 if let weekAverageNightlySleep, weekAverageNightlySleep > 0 {
-                    daySummaryRow(icon: "bed.double.fill", label: "Sleep average",
-                                 value: formatHours(weekAverageNightlySleep / 3600))
+                    Button { openSleep() } label: {
+                        daySummaryRow(icon: "bed.double.fill", label: "Sleep average",
+                                     value: formatHours(weekAverageNightlySleep / 3600))
+                    }.buttonStyle(.plain)
                 }
                 if let weekSteps, weekSteps > 0 {
                     // Divided by the days actually elapsed in the week so far,
@@ -1272,7 +1320,14 @@ struct InsightsView: View {
                 Text(empty).font(.caption).foregroundStyle(.secondary)
             } else {
                 ForEach(places) { place in
-                    NavigationLink { PlaceHistoryDetail(placeName: place.name) } label: {
+                    NavigationLink {
+                        InsightPlaceHistoryView(placeName: place.name, periodTitle: periodTitle,
+                                                interval: snapshot.analysisInterval,
+                                                rows: InsightsSnapshot.sliceRows(forPlace: place.name,
+                                                                                 segments: snapshot.segments,
+                                                                                 interval: snapshot.analysisInterval,
+                                                                                 now: snapshot.generatedAt))
+                    } label: {
                         HStack(spacing: 10) {
                             ActivityIcon(activity: place.activity, context: place.name,
                                          color: insightColor(for: place.category), size: 34)
@@ -1338,6 +1393,9 @@ struct InsightsView: View {
             } else {
                 let maximum = max(snapshot.comparisons.map { abs($0.delta) }.max() ?? 0, 0.01)
                 ForEach(snapshot.comparisons.prefix(6)) { item in
+                    Button { selectedSlice = TimeSlice(name: item.name, hours: item.hours,
+                                                       color: changeColor(for: item.name),
+                                                       symbol: insightSymbol(for: item.name), isUnlogged: false) } label: {
                     VStack(alignment: .leading, spacing: 5) {
                         HStack {
                             Text(item.name).font(.subheadline.bold())
@@ -1355,6 +1413,9 @@ struct InsightsView: View {
                                 .frame(width: max(4, proxy.size.width * abs(item.delta) / maximum))
                         }.frame(height: 8)
                     }
+                    .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel("\(item.name), \(item.delta >= 0 ? "up" : "down") \(formatHours(abs(item.delta)))")
                 }
@@ -1376,7 +1437,9 @@ struct InsightsView: View {
             if snapshot.mappablePlaces.isEmpty {
                 InsightEmptyRow(icon: "map", title: "No mapped visits", detail: "Places recorded with a location will appear here.")
             } else {
-                InsightsPlacesMap(places: snapshot.mappablePlaces, region: snapshot.mapRegion)
+                InsightsPlacesMap(places: snapshot.mappablePlaces, region: snapshot.mapRegion) { place in
+                    selectedPlace = place
+                }
                     .id(snapshot.mapID)
                 .frame(height: 230)
                 .clipShape(RoundedRectangle(cornerRadius: 18))

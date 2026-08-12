@@ -47,6 +47,40 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(element("choose-location-link").waitForExistence(timeout: 5))
     }
 
+    func testInsightsVisitDrillDownRestoresTheParentPeriod() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+        app.tabBars.buttons["Insights"].tap()
+        XCTAssertTrue(element("insights-screen").waitForExistence(timeout: 5))
+        let card = element("insights-current-activity-card")
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        card.tap()
+        XCTAssertTrue(element("choose-location-link").waitForExistence(timeout: 5))
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(element("insights-screen").waitForExistence(timeout: 5))
+        XCTAssertTrue(element("insights-period-picker").exists)
+    }
+
+    func testInsightsTravelDrillDownKeepsSelectedPeriod() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+        app.tabBars.buttons["Insights"].tap()
+        let travel = element("insights-travel-summary")
+        var attempts = 0
+        while !travel.exists && attempts < 8 {
+            app.swipeUp()
+            attempts += 1
+        }
+        XCTAssertTrue(travel.waitForExistence(timeout: 5))
+        let review = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Review ' AND label CONTAINS 'travel trips'" )).firstMatch
+        XCTAssertTrue(review.waitForExistence(timeout: 5))
+        review.tap()
+        XCTAssertTrue(app.navigationBars["Travel trips"].waitForExistence(timeout: 5))
+        XCTAssertTrue(element("travel-selected-period").waitForExistence(timeout: 5))
+    }
+
     /// The day bar is Day's primary visual — reachable, and distinct from the
     /// donut, which stays available lower on the same screen.
     func testInsightsDayTimelineBarAndDonutAreBothReachable() {

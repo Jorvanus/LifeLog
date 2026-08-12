@@ -3,6 +3,8 @@ import SwiftUI
 struct YearInsightsView: View {
     let insights: AnnualInsights
     let openArea: (AnnualInsights.LifeArea) -> Void
+    let openPlace: (AnnualInsights.Place) -> Void
+    let period: DateInterval
 
     var body: some View {
         VStack(spacing: 18) {
@@ -10,7 +12,7 @@ struct YearInsightsView: View {
             lifeAreas
             placeSummary
             movementAndWellbeing
-            TravelInsightsCard(title: "Travel", summary: insights.travel)
+            TravelInsightsCard(title: "Travel", summary: insights.travel, period: period)
             milestones
         }
     }
@@ -74,7 +76,7 @@ struct YearInsightsView: View {
             Text("Not enough recorded history").font(.subheadline).foregroundStyle(.secondary)
         } else {
                 ForEach(places) { place in
-                    NavigationLink { PlaceHistoryDetail(placeName: place.name) } label: {
+                    Button { openPlace(place) } label: {
                         HStack {
                             Image(systemName: insightSymbol(for: place.category))
                                 .font(.subheadline.bold())
