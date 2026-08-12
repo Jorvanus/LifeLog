@@ -92,6 +92,46 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(element("insights-donut-chart").waitForExistence(timeout: 5))
     }
 
+    func testDayTimelineScreenshotCoversFutureGapSleepAndTravelStates() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed", "-ui-test-timeline-states"]
+        app.launch()
+        app.tabBars.buttons["Insights"].tap()
+
+        XCTAssertTrue(element("insights-day-bar").waitForExistence(timeout: 10))
+        for label in ["Future time", "Unlogged time", "Sleep", "Travel"] {
+            let segment = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label BEGINSWITH[c] %@", label))
+                .firstMatch
+            XCTAssertTrue(segment.waitForExistence(timeout: 5), "Missing DayTimelineBar state: \(label)")
+        }
+
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = "day-timeline-future-gap-sleep-travel"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    func testDayTimelineScreenshotCoversNoDataState() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-empty"]
+        app.launch()
+        app.tabBars.buttons["Insights"].tap()
+
+        XCTAssertTrue(element("insights-day-bar").waitForExistence(timeout: 10))
+        let noDataSegment = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH[c] 'Unlogged time'"))
+            .firstMatch
+        XCTAssertTrue(noDataSegment.waitForExistence(timeout: 5))
+
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = "day-timeline-no-data"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testInsightsDayUsesDailyReviewSections() {
         app.terminate()
         app.launchArguments = ["-uiTesting", "-ui-test-seed"]
@@ -104,6 +144,48 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(element("insights-needs-attention").waitForExistence(timeout: 5))
         XCTAssertTrue(element("day-highlights").waitForExistence(timeout: 5))
         XCTAssertTrue(element("insights-donut-chart").waitForExistence(timeout: 5))
+    }
+
+    func testDaySummaryOmitsUnavailableMetricsWithoutZeroPlaceholders() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+        app.tabBars.buttons["Insights"].tap()
+
+        XCTAssertTrue(element("insights-day-summary").waitForExistence(timeout: 5))
+        let scope = element("insights-scope-picker")
+        XCTAssertTrue(scope.waitForExistence(timeout: 5))
+        scope.tap()
+        XCTAssertTrue(app.buttons["All history"].waitForExistence(timeout: 5))
+        app.buttons["All history"].tap()
+        // The fixture intentionally contains multiple source types, so assert the
+        // summary and its no-Health state without coupling this test to which
+        // location segment wins resolution on a particular simulator runtime.
+        XCTAssertTrue(element("insights-day-summary").exists)
+        XCTAssertFalse(element("day-metric-steps").exists)
+        XCTAssertFalse(element("day-metric-sleep").exists)
+    }
+
+    func testDaySummaryHidesHealthMetricsWhenScopeExcludesHealth() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+        app.tabBars.buttons["Insights"].tap()
+
+        let scope = element("insights-scope-picker")
+        XCTAssertTrue(scope.waitForExistence(timeout: 5))
+        scope.tap()
+        XCTAssertTrue(app.buttons["All history"].waitForExistence(timeout: 5))
+        app.buttons["All history"].tap()
+        scope.tap()
+        XCTAssertTrue(app.buttons["Imported journal only"].waitForExistence(timeout: 5))
+        app.buttons["Imported journal only"].tap()
+
+        XCTAssertTrue(element("insights-day-summary").waitForExistence(timeout: 5))
+        XCTAssertFalse(element("day-metric-steps").exists)
+        XCTAssertFalse(element("day-metric-sleep").exists)
+        XCTAssertFalse(element("day-metric-exercise").exists)
+        XCTAssertFalse(element("day-metric-travel").exists)
     }
 
     /// The seeded unidentified and low-confidence stays give "Needs your

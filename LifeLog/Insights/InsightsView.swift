@@ -1158,53 +1158,56 @@ struct InsightsView: View {
 
     /// A short, factual roll-up — not a second copy of `awayFromHomeSection`'s
     /// big-number treatment, which Week/Month/Year still get. Steps and sleep
-    /// are read from the `todaySteps`/`lastNightSleep` `reloadHighlights` already
-    /// fetched; travel and exercise are summed straight from `daySegments`, no
-    /// second HealthKit call. A value simply has no row when there's nothing to
-    /// show it — no "0 steps" when Health isn't connected.
+    /// are read from the `todaySteps`/`lastNightSleep`/`healthSummary` values
+    /// already fetched by `reloadHighlights` and `reloadHealthSummary`; travel
+    /// and exercise are summed straight from `daySegments`, with no new HealthKit
+    /// call for layout. A value simply has no tile when there's nothing to show it.
     private var daySummarySection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Day summary").font(.title2.bold())
-            VStack(spacing: 10) {
-                daySummaryRow(icon: "house.fill", label: "At Home",
-                             value: formatHours(max(0, snapshot.loggedHours - snapshot.awayFromHomeHours)))
-                daySummaryRow(icon: "figure.walk.departure", label: "Away from Home",
-                             value: formatHours(snapshot.awayFromHomeHours))
-                let travel = InsightsSnapshot.travelHours(in: daySegments)
-                if travel > 0.01 {
-                    daySummaryRow(icon: "car.fill", label: "Travelling", value: formatHours(travel))
+            Text("Today at a glance").font(.title2.bold())
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                let atHome = max(0, snapshot.loggedHours - snapshot.awayFromHomeHours)
+                if atHome > 0.01 {
+                    DayInsightMetricTile(icon: "house.fill", title: "At Home", value: formatHours(atHome),
+                                         identifier: "day-metric-home") { openCategory("Home") }
+                }
+                if snapshot.awayFromHomeHours > 0.01 {
+                    DayInsightMetricTile(icon: "figure.walk.departure", title: "Away from Home",
+                                         value: formatHours(snapshot.awayFromHomeHours),
+                                         identifier: "day-metric-away")
                 }
                 if let steps = healthSummary?.steps ?? todaySteps, steps > 0 {
-                    daySummaryRow(icon: "shoeprints.fill", label: "Steps · Apple Health", value: Int(steps).formatted())
-                }
-                if let distance = healthSummary?.walkingRunningMeters, distance > 0 {
-                    daySummaryRow(icon: "figure.walk", label: "Walking/running · Apple Health", value: formatHealthDistance(distance))
-                }
-                if let energy = healthSummary?.activeEnergyKilocalories, energy > 0 {
-                    daySummaryRow(icon: "flame.fill", label: "Active energy · Apple Health", value: "\(Int(energy.rounded())) kcal")
+                    DayInsightMetricTile(icon: "shoeprints.fill", title: "Steps", value: Int(steps).formatted(),
+                                         identifier: "day-metric-steps")
                 }
                 if let lastNightSleep, lastNightSleep.totalSleep > 0 {
-                    Button { openSleep() } label: {
-                        daySummaryRow(icon: "bed.double.fill", label: "Last night’s sleep",
-                                     value: formatHours(lastNightSleep.totalSleep / 3600))
-                    }.buttonStyle(.plain)
+                    DayInsightMetricTile(icon: "bed.double.fill", title: "Last night’s sleep",
+                                         value: formatHours(lastNightSleep.totalSleep / 3600),
+                                         identifier: "day-metric-sleep") { openSleep() }
                 }
                 if let exercise = healthSummary?.exerciseMinutes, exercise > 0 {
-                    daySummaryRow(icon: "figure.run", label: "Exercise · Apple Health", value: "\(Int(exercise.rounded())) min")
+                    DayInsightMetricTile(icon: "figure.run", title: "Exercise",
+                                         value: "\(Int(exercise.rounded())) min",
+                                         identifier: "day-metric-exercise")
+                } else if let workoutCount = healthSummary?.workoutCount, workoutCount > 0 {
+                    DayInsightMetricTile(icon: "figure.run.circle.fill", title: "Workouts",
+                                         value: "\(workoutCount) · \(Int(healthSummary?.workoutMinutes.rounded() ?? 0)) min",
+                                         identifier: "day-metric-exercise")
                 } else {
                     let workout = InsightsSnapshot.fitnessHours(in: daySegments)
                     if workout > 0.01 {
-                        daySummaryRow(icon: "figure.run", label: "Exercise", value: formatHours(workout))
+                        DayInsightMetricTile(icon: "figure.run", title: "Exercise", value: formatHours(workout),
+                                             identifier: "day-metric-exercise") { openCategory("Fitness") }
                     }
                 }
-                if let workoutCount = healthSummary?.workoutCount, workoutCount > 0 {
-                    let types = Array(Set(healthSummary?.workouts.map(\.type) ?? [])).sorted().prefix(2)
-                    daySummaryRow(icon: "figure.run.circle.fill", label: "Workouts · Apple Health",
-                                  value: "\(workoutCount) · \(types.joined(separator: ", "))")
+                let travel = TravelInsights.make(from: daySegments)
+                if travel.hasTravel {
+                    DayInsightMetricTile(icon: "car.fill", title: "Travel", value: formatHours(travel.totalHours),
+                                         identifier: "day-metric-travel")
                 }
             }
         }
-        .padding(20).lifeCard()
+        .padding(18).lifeCard()
         .accessibilityIdentifier("insights-day-summary")
     }
 
@@ -2210,6 +2213,51 @@ struct InsightsView: View {
         return window.title(for: interval)
     }
     private var periodSubtitle: String { window.subtitle(for: interval) }
+}
+
+/// A compact Day Summary tile. Health-backed values are omitted by the parent
+/// when unavailable, while the tile itself keeps one stable label/value layout
+/// for Dynamic Type and VoiceOver.
+private struct DayInsightMetricTile: View {
+    let icon: String
+    let title: String
+    let value: String
+    let identifier: String
+    var action: (() -> Void)? = nil
+
+    var body: some View {
+        Group {
+            if let action {
+                Button(action: action) { content }
+            } else {
+                content
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title): \(value)")
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(title, systemImage: icon)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
+            Text(value)
+                .font(.title3.bold().monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+                .allowsTightening(true)
+        }
+        .frame(maxWidth: .infinity, minHeight: 68, alignment: .leading)
+        .padding(12)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        .contentShape(RoundedRectangle(cornerRadius: 12))
+        .accessibilityIdentifier(identifier)
+    }
 }
 
 /// Carries the tallest highlight row's height up from the hidden measuring pass.

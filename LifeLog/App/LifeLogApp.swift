@@ -17,7 +17,8 @@ struct LifeLogApp: App {
         storeConfiguration = ModelConfiguration(
             "LifeLog",
             schema: schema,
-            isStoredInMemoryOnly: ProcessInfo.processInfo.arguments.contains(UITestSeedData.launchArgument),
+            isStoredInMemoryOnly: ProcessInfo.processInfo.arguments.contains(UITestSeedData.launchArgument) ||
+                ProcessInfo.processInfo.arguments.contains("-ui-test-empty"),
             allowsSave: true,
             groupContainer: .none,
             cloudKitDatabase: .none

@@ -59,6 +59,16 @@ enum UITestSeedData {
                              latitude: 0, longitude: 0, placeName: "Blood Bank",
                              inferredActivity: "Donate Blood", userActivity: "Donate Blood",
                              source: "manual", recognitionConfidence: nil))
+
+        // A focused visual fixture keeps the DayTimelineBar states deterministic:
+        // sleep wins part of a Home stay, a resolved travel interval sits between
+        // destinations, and the day still has an explicitly future half.
+        if ProcessInfo.processInfo.arguments.contains("-ui-test-timeline-states") {
+            visit(0, 120, "Home", "At home")
+            visit(120, 480, "Sleep", "Sleeping", "health-sleep", "device")
+            visit(480, 510, "In transit", "Travelling", "motion", "device")
+            visit(510, 600, "Gracemere Shopping World", "Shopping")
+        }
         try context.save()
     }
 }

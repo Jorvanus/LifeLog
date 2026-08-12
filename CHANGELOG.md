@@ -2,6 +2,14 @@
 
 ## 2026-08-12
 
+### Day timeline states are easier to read
+
+- Added compact timeline guidance and distinct future, unlogged, sleep, travel, and recorded treatments while preserving the 24-hour scale, current marker, and segment editing taps.
+
+### Day Summary uses a compact metric grid
+
+- Replaced the Day Insights vertical summary list with a responsive grid of available Home, away, Health, sleep, exercise, and travel metrics; unavailable values stay hidden while existing drill-down actions and readable accessibility labels remain intact.
+
 ### Day Insights is a focused daily review
 
 - Reordered Day Insights around the current activity, primary 24-hour timeline, daily glance, attention items, one meaningful highlight, meaningful travel, and a lower time breakdown; the interactive donut, editing actions, gap review, and useful Apple Health status remain available without duplicating Timeline's full current-activity card.
