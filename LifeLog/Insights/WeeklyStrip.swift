@@ -16,6 +16,7 @@ struct WeeklyStrip: View {
 
     let days: [Day]
     let today: Date
+    let selectedDate: Date?
     let onSelectDay: (Date) -> Void
 
     var body: some View {
@@ -45,6 +46,11 @@ struct WeeklyStrip: View {
         Calendar.current.isDate(day.date, inSameDayAs: today)
     }
 
+    private func isSelected(_ day: Day) -> Bool {
+        guard let selectedDate else { return false }
+        return Calendar.current.isDate(day.date, inSameDayAs: selectedDate)
+    }
+
     /// Segments stacked top (midnight) to bottom (end of day), proportional to
     /// the fraction of the day they cover — the same chronological reading a
     /// horizontal day bar gives, just rotated to fit seven of them in a row.
@@ -65,13 +71,18 @@ struct WeeklyStrip: View {
         .clipShape(RoundedRectangle(cornerRadius: 5))
         .overlay(
             RoundedRectangle(cornerRadius: 5)
-                .stroke(isToday(day) ? Color.primary.opacity(0.4) : .clear, lineWidth: 1.5)
+                .stroke(isSelected(day) ? Color.primary : (isToday(day) ? Color.primary.opacity(0.45) : .clear),
+                        lineWidth: isSelected(day) ? 2.5 : 1.5)
         )
+        .background(isToday(day) ? Color.primary.opacity(0.06) : .clear,
+                    in: RoundedRectangle(cornerRadius: 7))
     }
 
     private func accessibilityLabel(for day: Day) -> String {
         let logged = day.segments.filter { !$0.isUnlogged }.reduce(0) { $0 + $1.hours }
         let dateText = day.date.formatted(.dateTime.weekday(.wide).day().month(.wide))
-        return logged > 0.01 ? "\(dateText), \(formatHours(logged)) logged" : "\(dateText), nothing logged"
+        let state = logged > 0.01 ? "\(formatHours(logged)) logged" : "nothing logged"
+        let marker = isSelected(day) ? ", selected" : (isToday(day) ? ", today" : "")
+        return "\(dateText), \(state)\(marker)"
     }
 }

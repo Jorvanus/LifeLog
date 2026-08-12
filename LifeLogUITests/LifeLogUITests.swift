@@ -146,6 +146,26 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(element("insights-donut-chart").waitForExistence(timeout: 5))
     }
 
+    func testWeekInsightsKeepsStripHeroAndCombinesWeeklyBalance() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+        app.tabBars.buttons["Insights"].tap()
+
+        XCTAssertTrue(app.buttons["Week"].waitForExistence(timeout: 5))
+        app.buttons["Week"].tap()
+        XCTAssertTrue(element("insights-weekly-strip").waitForExistence(timeout: 10))
+        XCTAssertTrue(element("insights-week-your-week").waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Each column is a day; colours show where your time went."].exists)
+        XCTAssertFalse(element("insights-week-scorecard").exists)
+        XCTAssertFalse(element("insights-week-life-areas").exists)
+
+        let selectedDay = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS[c] 'selected'"))
+            .firstMatch
+        XCTAssertTrue(selectedDay.waitForExistence(timeout: 5))
+    }
+
     func testDaySummaryOmitsUnavailableMetricsWithoutZeroPlaceholders() {
         app.terminate()
         app.launchArguments = ["-uiTesting", "-ui-test-seed"]

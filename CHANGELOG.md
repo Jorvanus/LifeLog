@@ -2,6 +2,10 @@
 
 ## 2026-08-12
 
+### Week Insights has a clearer visual hierarchy
+
+- Kept the seven-day strip as the hero, combined weekly metrics and life-area balance into one compact Your week card, and moved the donut below the weekly comparison sections.
+
 ### Health trends load safely on demand
 
 - Kept the main Insights Health summary on its established query path, and changed Health Trends to load one selected metric at a time over a bounded recent window so opening Insights cannot wait on slow Apple Health data; unavailable Apple Health deep links now fall back to iPhone Settings.

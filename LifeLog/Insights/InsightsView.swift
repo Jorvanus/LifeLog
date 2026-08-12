@@ -731,8 +731,7 @@ struct InsightsView: View {
     /// reachable but demoted, same as Day.
     @ViewBuilder private var weekLayout: some View {
         weeklyStripSection
-        weeklyScorecardSection
-        lifeAreaBalanceSection
+        weeklyYourWeekSection
         TravelInsightsCard(title: "Travel", summary: snapshot.travel, period: snapshot.analysisInterval)
         weeklyRoutineChangesSection
         weeklyCommuteSection
@@ -1340,8 +1339,11 @@ struct InsightsView: View {
     private var weeklyStripSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("This week").font(.title2.bold())
-            Text("Tap a day to open it in Day Insights").font(.subheadline).foregroundStyle(.secondary)
-            WeeklyStrip(days: weekDays, today: now) { date in
+            Text("Each column is a day; colours show where your time went.")
+                .font(.subheadline).foregroundStyle(.secondary)
+            Text("Tap a day to open it in Day Insights")
+                .font(.caption).foregroundStyle(.secondary)
+            WeeklyStrip(days: weekDays, today: now, selectedDate: anchorDate) { date in
                 anchorDate = date
                 window = .day
             }
@@ -1402,6 +1404,46 @@ struct InsightsView: View {
         }
         .padding(20).lifeCard()
         .accessibilityIdentifier("insights-week-scorecard")
+    }
+
+    /// Combines the weekly facts and derived life-area balance so the Week view
+    /// has one useful context card instead of two competing lists.
+    private var weeklyYourWeekSection: some View {
+        let categoryHours = InsightsSnapshot.categoryHours(in: snapshot.segments)
+        let totals = LifeArea.totals(in: snapshot.segments)
+        let atHome = max(0, snapshot.loggedHours - snapshot.awayFromHomeHours)
+        let workHours = categoryHours["Work"] ?? 0
+        let travelHours = InsightsSnapshot.travelHours(in: snapshot.segments)
+        let elapsedSeconds = min(now, interval.end).timeIntervalSince(interval.start)
+        let elapsedDays = max(1, min(7, Int(ceil(elapsedSeconds / 86_400))))
+        var metrics: [WeeklyYourWeekMetric] = [
+            .init(id: "home", icon: "house.fill", title: "At Home", value: formatHours(atHome), action: { openCategory("Home") })
+        ]
+        if workHours > 0.01 {
+            metrics.append(.init(id: "work", icon: "briefcase.fill", title: "At Work", value: formatHours(workHours)))
+        }
+        if travelHours > 0.01 {
+            metrics.append(.init(id: "travel", icon: "car.fill", title: "Travelling", value: formatHours(travelHours)))
+        }
+        if let weekAverageNightlySleep, weekAverageNightlySleep > 0 {
+            metrics.append(.init(id: "sleep", icon: "bed.double.fill", title: "Sleep average",
+                                 value: formatHours(weekAverageNightlySleep / 3600), action: { openSleep() }))
+        }
+        if let steps = healthSummary?.steps ?? weekSteps, steps > 0 {
+            metrics.append(.init(id: "steps", icon: "shoeprints.fill", title: "Steps · Apple Health",
+                                 value: "\(Int(steps).formatted()) total · \(Int(steps / Double(elapsedDays)).formatted())/day avg"))
+        }
+        if let exercise = healthSummary?.exerciseMinutes, exercise > 0 {
+            metrics.append(.init(id: "exercise", icon: "figure.run", title: "Exercise · Apple Health",
+                                 value: "\(Int(exercise.rounded())) min"))
+        }
+        if let workouts = healthSummary?.workoutCount, workouts > 0 {
+            metrics.append(.init(id: "workouts", icon: "figure.run.circle.fill", title: "Workouts · Apple Health",
+                                 value: "\(workouts) · \(Int(healthSummary?.workoutMinutes.rounded() ?? 0)) min"))
+        }
+        return WeeklyYourWeekCard(metrics: metrics, areaTotals: totals, periodTitle: periodTitle,
+                                  interval: snapshot.analysisInterval, segments: snapshot.segments)
+            .accessibilityIdentifier("insights-week-your-week")
     }
 
     /// How many of `weeklyBaselineTotals`' completed weeks count as "usual" —
@@ -2285,6 +2327,114 @@ private struct DayInsightMetricTile: View {
         .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
         .contentShape(RoundedRectangle(cornerRadius: 12))
         .accessibilityIdentifier(identifier)
+    }
+}
+
+private struct WeeklyYourWeekMetric: Identifiable {
+    let id: String
+    let icon: String
+    let title: String
+    let value: String
+    var action: (() -> Void)?
+}
+
+private struct WeeklyYourWeekCard: View {
+    let metrics: [WeeklyYourWeekMetric]
+    let areaTotals: [LifeArea: Double]
+    let periodTitle: String
+    let interval: DateInterval
+    let segments: [InsightSegment]
+
+    private var areas: [LifeArea] {
+        LifeArea.allCases.filter { areaTotals[$0, default: 0] > 0.01 }
+    }
+
+    private var totalHours: Double {
+        areas.reduce(0) { $0 + areaTotals[$1, default: 0] }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Your week").font(.title2.bold())
+            VStack(spacing: 10) {
+                ForEach(metrics) { metric in
+                    metricRow(metric)
+                }
+            }
+            Divider()
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Life areas").font(.headline)
+                Text("Tap an area to see its activities.")
+                    .font(.caption).foregroundStyle(.secondary)
+                areaBar
+                LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading),
+                                    GridItem(.flexible(), alignment: .leading)], spacing: 8) {
+                    ForEach(areas) { area in
+                        NavigationLink {
+                            InsightLifeAreaDetailView(area: area, periodTitle: periodTitle,
+                                                      interval: interval, segments: segments)
+                        } label: {
+                            HStack(spacing: 6) {
+                                Circle().fill(insightColor(for: area.rawValue)).frame(width: 8, height: 8)
+                                Text(area.rawValue).font(.caption)
+                                    .lineLimit(1).minimumScaleFactor(0.8)
+                                Spacer(minLength: 2)
+                                Text(formatHours(areaTotals[area, default: 0]))
+                                    .font(.caption.bold().monospacedDigit())
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("\(area.rawValue), \(formatHours(areaTotals[area, default: 0]))")
+                    }
+                }
+            }
+        }
+        .padding(20)
+        .lifeCard()
+        .accessibilityIdentifier("insights-week-life-areas")
+    }
+
+    @ViewBuilder
+    private func metricRow(_ metric: WeeklyYourWeekMetric) -> some View {
+        if let action = metric.action {
+            Button(action: action) { metricContent(metric) }
+                .buttonStyle(.plain)
+        } else {
+            metricContent(metric)
+        }
+    }
+
+    private func metricContent(_ metric: WeeklyYourWeekMetric) -> some View {
+        HStack(spacing: 10) {
+            Label(metric.title, systemImage: metric.icon)
+                .font(.subheadline).foregroundStyle(.secondary)
+                .lineLimit(2).minimumScaleFactor(0.8)
+            Spacer(minLength: 8)
+            Text(metric.value)
+                .font(.subheadline.bold().monospacedDigit())
+                .multilineTextAlignment(.trailing)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
+        }
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(metric.title): \(metric.value)")
+    }
+
+    private var areaBar: some View {
+        GeometryReader { proxy in
+            HStack(spacing: 1) {
+                ForEach(areas) { area in
+                    Rectangle()
+                        .fill(insightColor(for: area.rawValue))
+                        .frame(width: max(2, proxy.size.width * areaTotals[area, default: 0] / max(totalHours, 0.01)))
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 5))
+        }
+        .frame(height: 18)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Life-area balance across \(formatHours(totalHours))")
     }
 }
 
