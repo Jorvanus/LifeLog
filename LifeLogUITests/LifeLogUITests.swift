@@ -273,6 +273,28 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["New places"].exists)
     }
 
+    func testYearHealthUsesFocusedSectionsAndUsefulUnavailableState() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+        app.tabBars.buttons["Insights"].tap()
+
+        XCTAssertTrue(app.buttons["Year"].waitForExistence(timeout: 5))
+        app.buttons["Year"].tap()
+        var wellbeing = element("insights-year-wellbeing")
+        var attempts = 0
+        while !wellbeing.exists && attempts < 8 {
+            app.swipeUp()
+            attempts += 1
+        }
+        XCTAssertTrue(wellbeing.waitForExistence(timeout: 5))
+        XCTAssertTrue(element("year-health-picker").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Movement"].exists)
+        XCTAssertTrue(app.buttons["Sleep"].exists)
+        XCTAssertTrue(app.buttons["Workouts"].exists)
+        XCTAssertTrue(app.staticTexts["Apple Health is not connected"].waitForExistence(timeout: 5))
+    }
+
     func testDaySummaryOmitsUnavailableMetricsWithoutZeroPlaceholders() {
         app.terminate()
         app.launchArguments = ["-uiTesting", "-ui-test-seed"]

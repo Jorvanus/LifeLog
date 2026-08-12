@@ -2,6 +2,14 @@
 
 ## 2026-08-12
 
+### Fixed annual Health summary number formatting
+
+- Corrected decimal formatting for Year Insights Health summaries so the annual view compiles with the current Swift toolchain.
+
+### Year movement and wellbeing tells a clearer story
+
+- Replaced the annual Health metric list with focused Movement, Sleep, and Workouts views using date-scoped Apple Health summaries, compact visuals, numeric context, and explicit unavailable-data states.
+
 ### Year place story is focused
 
 - Replaced the stacked annual place lists with a stable Most time, Most visits, New places, or Not visited selector showing only the selected top results with clear empty states.
