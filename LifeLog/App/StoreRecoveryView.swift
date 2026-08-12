@@ -48,8 +48,8 @@ struct StoreRecoveryView: View {
                         Button("Retry Opening Timeline", action: retry)
                             .buttonStyle(.borderedProminent)
                     }
-                    .padding(18)
-                    .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 18))
+                    .padding(20)
+                    .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 22))
 
                     VStack(alignment: .leading, spacing: 12) {
                         Label("Recovery options", systemImage: "externaldrive")
@@ -71,8 +71,8 @@ struct StoreRecoveryView: View {
                             Button("Export Protected Store Copy") { createStoreCopy() }
                         }
                     }
-                    .padding(18)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+                    .padding(20)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22))
 
                     VStack(alignment: .leading, spacing: 8) {
                         Text("What to do next").font(.headline)

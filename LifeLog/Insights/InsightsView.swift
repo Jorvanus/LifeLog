@@ -483,7 +483,7 @@ struct InsightsView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(18)
+            .padding(20)
             .lifeCard()
             .accessibilityIdentifier("insights-health-setup")
         }
@@ -1109,7 +1109,7 @@ struct InsightsView: View {
             // until it is tapped, where before there was always a key underneath. The
             // threshold for showing an icon is set low to keep that rare.
         }
-        .padding(18)
+        .padding(20)
         .lifeCard()
     }
 
@@ -1141,7 +1141,7 @@ struct InsightsView: View {
                 }
             }
         }
-        .padding(18)
+        .padding(20)
         .lifeCard()
     }
 
@@ -1195,7 +1195,7 @@ struct InsightsView: View {
                     Spacer()
                     Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(.tertiary)
                 }
-                .padding(18)
+                .padding(20)
                 .lifeCard()
             }
             .buttonStyle(.plain)
@@ -1292,7 +1292,7 @@ struct InsightsView: View {
                 }
             }
         }
-        .padding(18).lifeCard()
+        .padding(20).lifeCard()
         .accessibilityIdentifier("insights-day-summary")
     }
 
@@ -1747,7 +1747,7 @@ struct InsightsView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 18))
             }
         }
-        .padding(18)
+        .padding(20)
         .lifeCard()
     }
 
@@ -1768,7 +1768,7 @@ struct InsightsView: View {
                 .accessibilityHint("Opens a larger chart with each day's activities listed")
             }
         }
-        .padding(18)
+        .padding(20)
         .lifeCard()
     }
 
@@ -1898,7 +1898,7 @@ struct InsightsView: View {
                     .accessibilityLabel("\(habit.headline). \(habit.detail)")
                 }
             }
-            .padding(18)
+            .padding(20)
             .lifeCard()
             .accessibilityIdentifier("insights-habits")
         }
@@ -1929,7 +1929,7 @@ struct InsightsView: View {
                     }
                 }
             }
-            .padding(18)
+            .padding(20)
             .lifeCard()
             .accessibilityIdentifier("insights-trend-lines")
         }
@@ -2013,7 +2013,7 @@ struct InsightsView: View {
                 }
             }
         }
-        .padding(18)
+        .padding(20)
         .lifeCard()
     }
 
@@ -2032,7 +2032,7 @@ struct InsightsView: View {
                 }
             }
         }
-        .padding(18)
+        .padding(20)
         .lifeCard()
     }
 

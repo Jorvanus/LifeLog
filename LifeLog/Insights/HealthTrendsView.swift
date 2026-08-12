@@ -112,7 +112,7 @@ private struct HealthTrendMetricSection: View {
                     .buttonStyle(.bordered)
             }
         }
-        .padding(18)
+        .padding(20)
         .lifeCard()
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("health-trend-\(metric.rawValue)")
