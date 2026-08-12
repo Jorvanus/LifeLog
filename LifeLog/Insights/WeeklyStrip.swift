@@ -18,11 +18,12 @@ struct WeeklyStrip: View {
     let today: Date
     let selectedDate: Date?
     let onSelectDay: (Date) -> Void
+    @State private var selectedDay: Date?
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
             ForEach(days) { day in
-                Button { onSelectDay(day.date) } label: {
+                Button { selectedDay = selectedDay == day.date ? nil : day.date } label: {
                     VStack(spacing: 6) {
                         column(for: day)
                         VStack(spacing: 1) {
@@ -37,8 +38,23 @@ struct WeeklyStrip: View {
                 .buttonStyle(.plain)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(accessibilityLabel(for: day))
-                .accessibilityHint("Opens this day in Day Insights")
+                .accessibilityHint("Selects this day; use the selected-day action to open Day Insights")
             }
+        }
+        if let selectedDay, let day = days.first(where: { Calendar.current.isDate($0.date, inSameDayAs: selectedDay) }) {
+            Button { onSelectDay(day.date) } label: {
+                HStack {
+                    Label(day.date.formatted(.dateTime.weekday(.wide).month(.wide).day()), systemImage: "calendar")
+                    Spacer()
+                    Text(formatHours(day.segments.reduce(0) { $0 + $1.hours }))
+                        .font(.subheadline.bold().monospacedDigit())
+                    Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 10)
+            .accessibilityLabel("Open \(day.date.formatted(.dateTime.weekday(.wide).month(.wide).day())) details, \(formatHours(day.segments.reduce(0) { $0 + $1.hours }))")
+            .accessibilityIdentifier("weekly-selected-day")
         }
     }
 
@@ -47,6 +63,9 @@ struct WeeklyStrip: View {
     }
 
     private func isSelected(_ day: Day) -> Bool {
+        if let selectedDay {
+            return Calendar.current.isDate(day.date, inSameDayAs: selectedDay)
+        }
         guard let selectedDate else { return false }
         return Calendar.current.isDate(day.date, inSameDayAs: selectedDate)
     }

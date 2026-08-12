@@ -128,6 +128,7 @@ struct InsightsDonutChart: View {
                                 selectedAngle = angleValue
                             }
                         }
+                        .accessibilityIdentifier("insights-donut-tap-target")
                 }
             }
             .onChange(of: selectedAngle) { _, angle in
@@ -167,6 +168,7 @@ struct InsightsDonutChart: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityHint("Opens this entry to review or edit")
+                .accessibilityIdentifier("insights-donut-selection")
             } else {
                 VStack(spacing: 2) {
                     if let stepCount {

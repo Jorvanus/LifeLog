@@ -7,7 +7,7 @@ struct TravelInsightsCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(title).font(.title2.bold())
+            Text(title).font(.headline)
             if summary.trips.isEmpty {
                 InsightEmptyRow(icon: "car.fill", title: "No resolved travel", detail: "Travel appears when movement connects two destinations.")
             } else {
@@ -70,7 +70,7 @@ struct GettingAroundCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Getting around").font(.title2.bold())
+            Text("Getting around").font(.headline)
             HStack(spacing: 12) {
                 metric("Travel time", formatHours(summary.totalHours), emphasis: true)
                 metric("Trips", "\(summary.tripCount)", emphasis: true)

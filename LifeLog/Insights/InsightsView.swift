@@ -716,7 +716,7 @@ struct InsightsView: View {
     @ViewBuilder private var dayHighlightSection: some View {
         if let highlight = highlights.first {
             VStack(alignment: .leading, spacing: 12) {
-                Text("One thing from today").font(.title2.bold())
+                Text("One thing from today").font(.headline)
                 highlightRow(highlight)
             }
             .padding(20)
@@ -843,7 +843,7 @@ struct InsightsView: View {
     /// Insights. Health rows remain absent when Health data is unavailable.
     private var monthlyScorecardSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Month scorecard").font(.title2.bold())
+            Text("Month scorecard").font(.headline)
             VStack(spacing: 10) {
                 Button { openCategory("Home") } label: {
                     daySummaryRow(icon: "house.fill", label: "At Home",
@@ -912,9 +912,7 @@ struct InsightsView: View {
         let changes = monthlyInsights.changes
         if !changes.isEmpty {
             VStack(alignment: .leading, spacing: 14) {
-                Text("What changed").font(.title2.bold())
-                Text("The strongest meaningful differences from last month")
-                    .font(.subheadline).foregroundStyle(.secondary)
+                Text("What changed").font(.headline)
                 ForEach(changes.prefix(4)) { change in
                     Button { openComparison(change) } label: {
                         HStack(spacing: 12) {
@@ -959,8 +957,8 @@ struct InsightsView: View {
 
     private var monthlyBalanceSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Monthly balance").font(.title2.bold())
-            Text("Proportion of recorded time by life area").font(.subheadline).foregroundStyle(.secondary)
+            Text("Monthly balance").font(.headline)
+            Text("Recorded time by life area").font(.subheadline).foregroundStyle(.secondary)
             if monthlyInsights.balance.isEmpty {
                 InsightEmptyRow(icon: "chart.bar.xaxis", title: "Not enough recorded activity", detail: "These groups appear once the month has usable data.")
             } else {
@@ -974,7 +972,7 @@ struct InsightsView: View {
     private var lifeAreaBalanceSection: some View {
         let totals = LifeArea.totals(in: snapshot.segments)
         return VStack(alignment: .leading, spacing: 14) {
-            Text("Life areas").font(.title2.bold())
+            Text("Life areas").font(.headline)
             Text("Activities grouped for Insights; tap an area to see its activities.")
                 .font(.subheadline).foregroundStyle(.secondary)
             ForEach(LifeArea.allCases.filter { totals[$0, default: 0] > 0.01 }) { area in
@@ -1061,7 +1059,7 @@ struct InsightsView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(window == .day ? "Breakdown" : "How you spent your time")
-                        .font(.title2.bold())
+                        .font(.headline)
                     Text(isCurrentWindow
                          ? "\(formatHours(snapshot.totalHours)) elapsed in this \(window.title.lowercased())"
                          : "All \(formatHours(snapshot.totalHours)) in this \(window.title.lowercased())")
@@ -1117,7 +1115,7 @@ struct InsightsView: View {
 
     private var trendsSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Trends").font(.title2.bold())
+            Text("Trends").font(.headline)
             if snapshot.comparisons.isEmpty {
                 InsightEmptyRow(icon: "chart.line.uptrend.xyaxis", title: "Not enough history yet",
                                 detail: "Trends appear after LifeLog has visits in two comparable periods.")
@@ -1126,9 +1124,9 @@ struct InsightsView: View {
                     Button { selectedComparison = comparison } label: {
                     HStack(spacing: 14) {
                         Image(systemName: comparison.delta >= 0 ? "arrow.up.right" : "arrow.down.right")
-                            .font(.headline).foregroundStyle(comparison.delta >= 0 ? .orange : .blue)
+                            .font(.headline).foregroundStyle(.secondary)
                             .frame(width: 42, height: 42)
-                            .background((comparison.delta >= 0 ? Color.orange : Color.blue).opacity(0.1), in: Circle())
+                            .background(Color.secondary.opacity(0.1), in: Circle())
                         VStack(alignment: .leading, spacing: 3) {
                             Text(comparison.message(window: window)).font(.headline)
                             Text("Compared with the previous \(window.title.lowercased())")
@@ -1220,7 +1218,6 @@ struct InsightsView: View {
     private var dayTimelineBarSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Your day").font(.title2.bold())
-            Text("Tap any part of the day to open it").font(.subheadline).foregroundStyle(.secondary)
             DayTimelineBar(segments: daySegments, interval: interval, now: now) { segment in
                 // A commute segment has no backing Visit and nothing recorded to
                 // add — the same "nothing to open" `InsightSliceEditor` already
@@ -1252,7 +1249,7 @@ struct InsightsView: View {
     /// call for layout. A value simply has no tile when there's nothing to show it.
     private var daySummarySection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Today at a glance").font(.title2.bold())
+            Text("Today at a glance").font(.headline)
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
                 let atHome = max(0, snapshot.loggedHours - snapshot.awayFromHomeHours)
                 if atHome > 0.01 {
@@ -1341,7 +1338,7 @@ struct InsightsView: View {
         let items = needsAttentionItems
         if !items.isEmpty {
             VStack(alignment: .leading, spacing: 14) {
-                Text("Needs your attention").font(.title2.bold())
+                Text("Needs your attention").font(.headline)
                 VStack(spacing: 10) {
                     ForEach(items) { needsAttentionRow($0) }
                 }
@@ -1402,8 +1399,6 @@ struct InsightsView: View {
             Text("This week").font(.title2.bold())
             Text("Each column is a day; colours show where your time went.")
                 .font(.subheadline).foregroundStyle(.secondary)
-            Text("Tap a day to open it in Day Insights")
-                .font(.caption).foregroundStyle(.secondary)
             WeeklyStrip(days: weekDays, today: now, selectedDate: anchorDate) { date in
                 anchorDate = date
                 window = .day
@@ -1419,7 +1414,7 @@ struct InsightsView: View {
     /// week) rather than a placeholder zero.
     private var weeklyScorecardSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Week scorecard").font(.title2.bold())
+            Text("Week scorecard").font(.headline)
             VStack(spacing: 10) {
                 daySummaryRow(icon: "house.fill", label: "At Home",
                              value: formatHours(max(0, snapshot.loggedHours - snapshot.awayFromHomeHours)))
@@ -1552,16 +1547,16 @@ struct InsightsView: View {
         let changes = weekRoutineChanges
         if !changes.isEmpty {
             VStack(alignment: .leading, spacing: 14) {
-                Text("What changed").font(.title2.bold())
+                Text("What changed").font(.headline)
                 Text("Compared with your last \(Self.weekBaselineWeeks) weeks")
                     .font(.subheadline).foregroundStyle(.secondary)
                 VStack(spacing: 10) {
                     ForEach(changes) { change in
                         HStack(spacing: 14) {
                             Image(systemName: change.delta >= 0 ? "arrow.up.right" : "arrow.down.right")
-                                .font(.headline).foregroundStyle(change.delta >= 0 ? .orange : .blue)
+                                .font(.headline).foregroundStyle(.secondary)
                                 .frame(width: 36, height: 36)
-                                .background((change.delta >= 0 ? Color.orange : Color.blue).opacity(0.1), in: Circle())
+                                .background(Color.secondary.opacity(0.1), in: Circle())
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(change.category).font(.subheadline.weight(.medium))
                                 Text("\(formatHours(change.latest)) vs usual \(formatHours(change.baseline))")
@@ -1604,7 +1599,7 @@ struct InsightsView: View {
     @ViewBuilder private var weeklyCommuteSection: some View {
         if let summary = weeklyCommuteSummary {
             VStack(alignment: .leading, spacing: 14) {
-                Text("Commute").font(.title2.bold())
+                Text("Commute").font(.headline)
                 VStack(spacing: 10) {
                     daySummaryRow(icon: "calendar", label: "Commute days", value: "\(summary.days)")
                     daySummaryRow(icon: "clock.fill", label: "Total time", value: formatHours(summary.totalHours))
@@ -1633,8 +1628,7 @@ struct InsightsView: View {
 
     private var monthlyCalendarSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Month at a glance").font(.title2.bold())
-            Text("Tap any day to open Day Insights").font(.subheadline).foregroundStyle(.secondary)
+            Text("Month at a glance").font(.headline)
             MonthCalendarHeatmap(days: monthDays) { date in
                 anchorDate = date
                 window = .day
@@ -1674,7 +1668,7 @@ struct InsightsView: View {
 
     private var awayFromHomeSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Time away from Home").font(.title2.bold())
+            Text("Time away from Home").font(.headline)
             Text(formatHours(snapshot.awayFromHomeHours))
                 .font(.system(.largeTitle, design: .rounded, weight: .bold))
             ProgressView(value: snapshot.awayFromHomeHours, total: max(snapshot.loggedHours, 0.01)).tint(.blue)
@@ -1695,7 +1689,7 @@ struct InsightsView: View {
 
     private var activityChangesSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Activity changes").font(.title2.bold())
+            Text("Activity changes").font(.headline)
             if snapshot.comparisons.isEmpty {
                 InsightEmptyRow(icon: "chart.bar.xaxis", title: "Not enough history", detail: "Changes appear after two comparable periods.")
             } else {
@@ -1740,7 +1734,7 @@ struct InsightsView: View {
 
     private var placesSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Places").font(.title2.bold())
+            Text("Places").font(.headline)
             Text(placeSummary).font(.headline)
             if snapshot.mappablePlaces.isEmpty {
                 InsightEmptyRow(icon: "map", title: "No mapped visits", detail: "Places recorded with a location will appear here.")
@@ -1761,7 +1755,7 @@ struct InsightsView: View {
 
     private var weekdayPatternsSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Your weekly rhythm").font(.title2.bold())
+            Text("Your weekly rhythm").font(.headline)
             Text("Waking hours on each day, by activity. Sleep is counted separately.")
                 .font(.subheadline).foregroundStyle(.secondary)
             if weeklyRhythm.allSatisfy({ $0.hours == 0 }) {
@@ -1879,7 +1873,7 @@ struct InsightsView: View {
     @ViewBuilder private var habitsSection: some View {
         if !habits.isEmpty {
             VStack(alignment: .leading, spacing: 14) {
-                Text("Recurring habits").font(.title2.bold())
+                Text("Recurring habits").font(.headline)
                 ForEach(habits) { habit in
                     HStack(spacing: 13) {
                         // The habit names a category, not an activity, so it carries its
@@ -1919,7 +1913,7 @@ struct InsightsView: View {
         if !trendSeries.isEmpty {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Recent months").font(.title2.bold())
+                    Text("Recent months").font(.headline)
                     Text("The last \(InsightsTrends.weeks) weeks, a point per week")
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
@@ -2002,29 +1996,13 @@ struct InsightsView: View {
 
     private var topActivitiesSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Top Activities").font(.title2.bold())
+            Text("Top Activities").font(.headline)
             if activitySlices.isEmpty {
                 InsightEmptyRow(icon: "list.bullet", title: "No activity yet", detail: "Logged time will appear here as visits accumulate.")
             } else {
                 let shown = showAllActivities ? activitySlices : Array(activitySlices.prefix(3))
-                ForEach(Array(shown.enumerated()), id: \.element.id) { index, slice in
-                    Button { selectedSlice = slice } label: {
-                        HStack(spacing: 13) {
-                            ActivityIcon(activity: slice.name, color: slice.color, size: 42)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(slice.name).font(.headline).lineLimit(1)
-                                Text(formatHours(slice.hours)).font(.caption).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Text("\(activityPercentage(slice))%").font(.subheadline.bold().monospacedDigit())
-                            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("\(slice.name), \(formatHours(slice.hours)), \(activityPercentage(slice)) percent of logged time")
-                    .accessibilityHint("Review and edit visits")
-                    if index < shown.count - 1 { Divider().padding(.leading, 55) }
+                InsightsActivitySelectionList(slices: shown, totalHours: snapshot.loggedHours) { slice in
+                    selectedSlice = slice
                 }
                 if activitySlices.count > 3 {
                     Button { showAllActivities.toggle() } label: {
@@ -2045,29 +2023,12 @@ struct InsightsView: View {
 
     private var topPlacesSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Top places by time").font(.title2.bold())
+            Text("Top places by time").font(.headline)
             if snapshot.placeTotals.isEmpty {
                 InsightEmptyRow(icon: "mappin.slash", title: "No places in this period", detail: "Choose another date or time window.")
             } else {
-                ForEach(Array(snapshot.placeTotals.prefix(8).enumerated()), id: \.element.id) { index, place in
-                    Button { selectedPlace = place } label: {
-                        HStack(spacing: 13) {
-                            Text("\(index + 1)").font(.headline.monospacedDigit()).foregroundStyle(.secondary).frame(width: 22)
-                            ActivityIcon(activity: place.activity, context: place.name,
-                                         color: activityColor(place.activity), size: 42)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(place.name).font(.headline).lineLimit(1)
-                                Text(place.category).font(.caption).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Text(formatHours(place.hours)).font(.subheadline.bold().monospacedDigit())
-                            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("Review and edit visits to \(place.name)")
-                    if index < min(snapshot.placeTotals.count, 8) - 1 { Divider().padding(.leading, 76) }
+                InsightsPlaceSelectionList(places: Array(snapshot.placeTotals.prefix(8))) { place in
+                    selectedPlace = place
                 }
             }
         }
@@ -2410,8 +2371,6 @@ private struct WeeklyYourWeekCard: View {
             Divider()
             VStack(alignment: .leading, spacing: 10) {
                 Text("Life areas").font(.headline)
-                Text("Tap an area to see its activities.")
-                    .font(.caption).foregroundStyle(.secondary)
                 areaBar
                 LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading),
                                     GridItem(.flexible(), alignment: .leading)], spacing: 8) {
@@ -2433,6 +2392,7 @@ private struct WeeklyYourWeekCard: View {
                         .accessibilityLabel("\(area.rawValue), \(formatHours(areaTotals[area, default: 0]))")
                     }
                 }
+                .accessibilityHint("Select a life area to see its activities.")
             }
         }
         .padding(20)
@@ -2481,6 +2441,105 @@ private struct WeeklyYourWeekCard: View {
         .frame(height: 18)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Life-area balance across \(formatHours(totalHours))")
+    }
+}
+
+/// Selection belongs to the small list, not the page-level snapshot. This keeps
+/// a highlight tap from rebuilding Health, travel, or comparison aggregation.
+private struct InsightsActivitySelectionList: View {
+    let slices: [TimeSlice]
+    let totalHours: Double
+    let open: (TimeSlice) -> Void
+    @State private var selectedID: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(slices.enumerated()), id: \.element.id) { index, slice in
+                Button { selectedID = selectedID == slice.id ? nil : slice.id } label: {
+                    HStack(spacing: 13) {
+                        ActivityIcon(activity: slice.name, color: slice.color, size: 42)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(slice.name).font(.headline).lineLimit(1)
+                            Text(formatHours(slice.hours)).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text("\(Int((slice.hours / max(totalHours, 0.01) * 100).rounded()))%")
+                            .font(.subheadline.bold().monospacedDigit())
+                    }
+                    .contentShape(Rectangle())
+                    .opacity(selectedID == nil || selectedID == slice.id ? 1 : 0.42)
+                }
+                .buttonStyle(.plain)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(slice.name), \(formatHours(slice.hours)), \(Int((slice.hours / max(totalHours, 0.01) * 100).rounded())) percent of logged time")
+                .accessibilityValue(selectedID == slice.id ? "Selected. Double tap to clear selection." : "Double tap to select")
+                if index < slices.count - 1 { Divider().padding(.leading, 55) }
+            }
+
+            if let selectedID, let slice = slices.first(where: { $0.id == selectedID }) {
+                Button { open(slice) } label: {
+                    HStack {
+                        Label(slice.name, systemImage: slice.symbol)
+                        Spacer()
+                        Text("\(formatHours(slice.hours)) · \(Int((slice.hours / max(totalHours, 0.01) * 100).rounded()))%")
+                            .font(.subheadline.bold().monospacedDigit())
+                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 12)
+                .accessibilityLabel("Open \(slice.name) details, \(formatHours(slice.hours))")
+                .accessibilityIdentifier("insights-selected-activity")
+            }
+        }
+    }
+}
+
+private struct InsightsPlaceSelectionList: View {
+    let places: [PlaceTotal]
+    let open: (PlaceTotal) -> Void
+    @State private var selectedID: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(places.enumerated()), id: \.element.id) { index, place in
+                Button { selectedID = selectedID == place.id ? nil : place.id } label: {
+                    HStack(spacing: 13) {
+                        Text("\(index + 1)").font(.headline.monospacedDigit()).foregroundStyle(.secondary).frame(width: 22)
+                        ActivityIcon(activity: place.activity, context: place.name,
+                                     color: activityColor(place.activity), size: 42)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(place.name).font(.headline).lineLimit(1)
+                            Text(place.category).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text(formatHours(place.hours)).font(.subheadline.bold().monospacedDigit())
+                    }
+                    .contentShape(Rectangle())
+                    .opacity(selectedID == nil || selectedID == place.id ? 1 : 0.42)
+                }
+                .buttonStyle(.plain)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(place.name), \(place.category), \(formatHours(place.hours))")
+                .accessibilityValue(selectedID == place.id ? "Selected. Double tap to clear selection." : "Double tap to select")
+                if index < places.count - 1 { Divider().padding(.leading, 76) }
+            }
+
+            if let selectedID, let place = places.first(where: { $0.id == selectedID }) {
+                Button { open(place) } label: {
+                    HStack {
+                        Label(place.name, systemImage: "mappin.and.ellipse")
+                        Spacer()
+                        Text(formatHours(place.hours)).font(.subheadline.bold().monospacedDigit())
+                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 12)
+                .accessibilityLabel("Open \(place.name) history, \(formatHours(place.hours))")
+                .accessibilityIdentifier("insights-selected-place")
+            }
+        }
     }
 }
 
@@ -2561,6 +2620,7 @@ private struct MonthlyHeroCard: View {
 private struct MonthlyBalanceVisual: View {
     let items: [MonthlyInsights.Balance]
     let onSelect: (String) -> Void
+    @State private var selectedName: String?
 
     private var totalHours: Double {
         items.reduce(0) { $0 + $1.hours }
@@ -2572,8 +2632,13 @@ private struct MonthlyBalanceVisual: View {
                 HStack(spacing: 2) {
                     ForEach(items) { item in
                         RoundedRectangle(cornerRadius: 4)
-                            .fill(item.color)
+                            .fill(item.color.opacity(selectedName == nil || selectedName == item.name ? 1 : 0.28))
                             .frame(width: max(2, proxy.size.width * item.hours / max(totalHours, 0.01)))
+                            .overlay {
+                                if selectedName == item.name {
+                                    RoundedRectangle(cornerRadius: 4).stroke(.primary, lineWidth: 1.5)
+                                }
+                            }
                     }
                 }
                 .clipShape(Capsule())
@@ -2586,7 +2651,7 @@ private struct MonthlyBalanceVisual: View {
             LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading),
                                 GridItem(.flexible(), alignment: .leading)], spacing: 8) {
                 ForEach(items) { item in
-                    Button { onSelect(item.name) } label: {
+                    Button { selectedName = selectedName == item.name ? nil : item.name } label: {
                         HStack(spacing: 7) {
                             Circle().fill(item.color).frame(width: 9, height: 9)
                             Text(item.name)
@@ -2598,11 +2663,28 @@ private struct MonthlyBalanceVisual: View {
                                 .font(.caption.bold().monospacedDigit())
                         }
                         .foregroundStyle(.primary)
+                        .opacity(selectedName == nil || selectedName == item.name ? 1 : 0.42)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Open \(item.name), \(formatHours(item.hours))")
+                    .accessibilityLabel("\(item.name), \(formatHours(item.hours))")
+                    .accessibilityValue(selectedName == item.name ? "Selected. Double tap to clear selection." : "Double tap to select")
                 }
+            }
+
+            if let selectedName, let selected = items.first(where: { $0.name == selectedName }) {
+                Button { onSelect(selected.name) } label: {
+                    HStack {
+                        Label(selected.name, systemImage: insightSymbol(for: selected.name))
+                        Spacer()
+                        Text(formatHours(selected.hours)).font(.subheadline.bold().monospacedDigit())
+                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 2)
+                .accessibilityLabel("Open \(selected.name) details, \(formatHours(selected.hours))")
+                .accessibilityIdentifier("month-selected-balance")
             }
         }
     }
@@ -2636,7 +2718,7 @@ private struct MonthlyPlaceStorySection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Place story").font(.title2.bold())
+            Text("Place story").font(.headline)
             Picker("Place story", selection: $selection) {
                 ForEach(MonthlyPlaceSection.allCases) { section in
                     Text(section.rawValue).tag(section)
@@ -2645,7 +2727,6 @@ private struct MonthlyPlaceStorySection: View {
             .pickerStyle(.segmented)
             .accessibilityIdentifier("month-place-story-picker")
 
-            Text(selection.rawValue).font(.headline)
             if selectedPlaces.isEmpty {
                 Text(selectedEmptyMessage)
                     .font(.caption)
@@ -2733,6 +2814,7 @@ private struct MonthlyPlaceStoryRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(place.name), \(detail)")
+        .accessibilityIdentifier("month-place-\(place.id)")
     }
 }
 

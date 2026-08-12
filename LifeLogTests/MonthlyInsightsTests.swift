@@ -91,7 +91,7 @@ struct MonthlyInsightsTests {
                           placeName: "Home", inferredActivity: "Home", source: "automatic")
         let segment = InsightSegment(id: .visit(ObjectIdentifier(visit)), visit: visit,
                                      category: "Home", activity: "Home", placeName: "Home",
-                                     start: visit.arrival, end: visit.departure, hours: 1,
+                                     start: visit.arrival, end: visit.departure!, hours: 1,
                                      color: insightColor(for: "Home"), symbol: "house.fill",
                                      isUnlogged: false, isLive: false)
         let days = MonthlyInsights.daySummaries(segments: [segment], interval: interval,

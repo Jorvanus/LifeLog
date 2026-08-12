@@ -19,6 +19,32 @@ final class LifeLogUITests: XCTestCase {
         app.descendants(matching: .any)[identifier]
     }
 
+    /// Every Insights visual fixture is built in memory. The extra flags select
+    /// deterministic data only; they never request HealthKit, location, or a
+    /// persisted preference left behind by another UI test.
+    private func launchSeededInsights(extraArguments: [String] = [], appearance: String? = nil,
+                                      contentSize: String? = nil) {
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"] + extraArguments
+        if let appearance {
+            app.launchArguments += ["-AppleInterfaceStyle", appearance]
+        }
+        if let contentSize {
+            app.launchArguments += ["-UIPreferredContentSizeCategoryName", contentSize]
+        }
+        app.launch()
+        app.tabBars.buttons["Insights"].tap()
+        XCTAssertTrue(element("insights-screen").waitForExistence(timeout: 10))
+    }
+
+    private func recordInsightsScreenshot(_ name: String) {
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testPrimaryScreensExposeStableAccessibilityHooks() {
         XCTAssertTrue(element("timeline-screen").waitForExistence(timeout: 5))
         XCTAssertTrue(app.tabBars.buttons["Insights"].exists)
@@ -166,6 +192,12 @@ final class LifeLogUITests: XCTestCase {
             .matching(NSPredicate(format: "label CONTAINS[c] 'selected'"))
             .firstMatch
         XCTAssertTrue(selectedDay.waitForExistence(timeout: 5))
+        let weekColumns = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'logged'"))
+        XCTAssertTrue(weekColumns.firstMatch.exists)
+        weekColumns.firstMatch.tap()
+        XCTAssertTrue(element("weekly-selected-day").waitForExistence(timeout: 5))
+        weekColumns.firstMatch.tap()
+        XCTAssertFalse(element("weekly-selected-day").exists)
     }
 
     func testMonthInsightsUsesOneHeroCardForHeadlineAndKeyMetrics() {
@@ -229,7 +261,7 @@ final class LifeLogUITests: XCTestCase {
         app.buttons["Month"].tap()
         XCTAssertTrue(element("insights-month-changes").waitForExistence(timeout: 10))
         XCTAssertTrue(element("insights-month-balance").waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["Proportion of recorded time by life area"].exists)
+        XCTAssertTrue(app.staticTexts["Recorded time by life area"].exists)
         XCTAssertFalse(app.staticTexts["Meaningful differences from last month"].exists)
     }
 
@@ -247,6 +279,55 @@ final class LifeLogUITests: XCTestCase {
         home.tap()
         XCTAssertTrue(element("annual-selected-life-area").waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Home"].exists)
+        home.tap()
+        XCTAssertFalse(element("annual-selected-life-area").exists)
+    }
+
+    func testInsightsActivitySelectionCanChangeDeselectRestoreAndDrillDown() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+        app.tabBars.buttons["Insights"].tap()
+
+        var attempts = 0
+        while !app.staticTexts["Top Activities"].exists && attempts < 8 {
+            app.swipeUp()
+            attempts += 1
+        }
+        XCTAssertTrue(app.staticTexts["Top Activities"].waitForExistence(timeout: 5))
+        let activities = app.buttons.matching(NSPredicate(format: "label CONTAINS 'percent of logged time'"))
+        XCTAssertGreaterThanOrEqual(activities.count, 2)
+        activities.element(boundBy: 0).tap()
+        XCTAssertTrue(element("insights-selected-activity").waitForExistence(timeout: 5))
+        activities.element(boundBy: 1).tap()
+        XCTAssertTrue(element("insights-selected-activity").exists)
+        activities.element(boundBy: 1).tap()
+        XCTAssertFalse(element("insights-selected-activity").exists)
+
+        app.swipeDown()
+        app.swipeUp()
+        activities.element(boundBy: 0).tap()
+        XCTAssertTrue(element("insights-selected-activity").waitForExistence(timeout: 5))
+        element("insights-selected-activity").tap()
+        XCTAssertTrue(element("insight-activity-detail").waitForExistence(timeout: 5))
+    }
+
+    func testInsightsMonthBalanceSelectionAndDeselect() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+        app.tabBars.buttons["Insights"].tap()
+        XCTAssertTrue(app.buttons["Month"].waitForExistence(timeout: 5))
+        app.buttons["Month"].tap()
+        XCTAssertTrue(element("insights-month-balance").waitForExistence(timeout: 10))
+
+        let balance = element("insights-month-balance")
+        let firstArea = balance.buttons.firstMatch
+        XCTAssertTrue(firstArea.waitForExistence(timeout: 5))
+        firstArea.tap()
+        XCTAssertTrue(element("month-selected-balance").waitForExistence(timeout: 5))
+        firstArea.tap()
+        XCTAssertFalse(element("month-selected-balance").exists)
     }
 
     func testYearPlacesUsesOneStableSelectedSegment() {
@@ -887,7 +968,7 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(element("insights-scope-empty-state").waitForExistence(timeout: 5))
 
         app.terminate()
-        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launchArguments = ["-uiTesting", "-ui-test-seed", "-ui-test-preserve-preferences"]
         app.launch()
         app.tabBars.buttons["Insights"].tap()
         let relaunchedPeriodPicker = element("insights-period-picker")
@@ -968,5 +1049,182 @@ final class LifeLogUITests: XCTestCase {
                 }
             }
         }
+    }
+
+    /// The Insights story is most prone to visual drift because each period has
+    /// different cards and colour semantics. Keep light/dark and Accessibility
+    /// XXXL captures for each period's top-level story.
+    func testInsightsVisualLanguageScreenshotMatrix() {
+        let configurations: [(name: String, size: String?)] = [
+            ("normal", nil),
+            ("accessibility-xxxl", "UICTContentSizeCategoryAccessibilityXXXL")
+        ]
+        let appearances = [(name: "light", value: "Light"), (name: "dark", value: "Dark")]
+        let periods = ["Day", "Week", "Month", "Year"]
+
+        for configuration in configurations {
+            for appearance in appearances {
+                app.terminate()
+                app = XCUIApplication()
+                app.launchArguments = ["-uiTesting", "-ui-test-seed", "-AppleInterfaceStyle", appearance.value]
+                if let size = configuration.size {
+                    app.launchArguments += ["-UIPreferredContentSizeCategoryName", size]
+                }
+                app.launch()
+                app.tabBars.buttons["Insights"].tap()
+
+                for period in periods {
+                    if period != "Day" {
+                        XCTAssertTrue(app.buttons[period].waitForExistence(timeout: 5))
+                        app.buttons[period].tap()
+                    }
+                    XCTAssertTrue(element("insights-screen").waitForExistence(timeout: 10))
+                    let screenshot = XCUIScreen.main.screenshot()
+                    let attachment = XCTAttachment(screenshot: screenshot)
+                    attachment.name = "insights-\(period.lowercased())-\(configuration.name)-\(appearance.name)"
+                    attachment.lifetime = .keepAlways
+                    add(attachment)
+                }
+            }
+        }
+    }
+
+    /// A rich, fixed archive catches visual regressions in the period-specific
+    /// stories without depending on a simulator's HealthKit or location history.
+    func testInsightsRichFixtureVisualRegressionMatrix() {
+        let configurations: [(name: String, size: String?)] = [
+            ("normal", nil),
+            ("accessibility-xxxl", "UICTContentSizeCategoryAccessibilityXXXL")
+        ]
+        let appearances = [(name: "light", value: "Light"), (name: "dark", value: "Dark")]
+        let expectedByPeriod = [
+            ("Day", "insights-day-summary"),
+            ("Week", "insights-week-your-week"),
+            ("Month", "insights-month-calendar"),
+            ("Year", "annual-life-area-chart")
+        ]
+
+        for configuration in configurations {
+            for appearance in appearances {
+                launchSeededInsights(
+                    extraArguments: ["-ui-test-timeline-states", "-ui-test-week-travel",
+                                     "-ui-test-long-labels", "-ui-test-health-connected"],
+                    appearance: appearance.value,
+                    contentSize: configuration.size
+                )
+
+                XCTAssertTrue(element("insights-current-activity-card").waitForExistence(timeout: 10))
+                XCTAssertTrue(element("insights-needs-attention").waitForExistence(timeout: 10))
+                XCTAssertTrue(element("day-metric-steps").waitForExistence(timeout: 10))
+
+                for (period, expected) in expectedByPeriod {
+                    if period != "Day" {
+                        XCTAssertTrue(app.buttons[period].waitForExistence(timeout: 5))
+                        app.buttons[period].tap()
+                    }
+                    XCTAssertTrue(element(expected).waitForExistence(timeout: 10),
+                                  "\(period) did not load for \(configuration.name)/\(appearance.name)")
+                    recordInsightsScreenshot("insights-rich-\(period.lowercased())-\(configuration.name)-\(appearance.name)")
+                }
+            }
+        }
+    }
+
+    func testInsightsFixtureStatesCoverLongLabelsSparseImportedAndHealthAvailability() {
+        launchSeededInsights(extraArguments: ["-ui-test-long-labels", "-ui-test-health-connected"])
+        XCTAssertTrue(element("day-metric-sleep").waitForExistence(timeout: 10))
+        XCTAssertTrue(element("day-metric-steps").exists)
+        app.buttons["Month"].tap()
+        XCTAssertTrue(element("insights-month-places").waitForExistence(timeout: 10))
+        let longPlace = app.buttons.matching(NSPredicate(format: "label CONTAINS %@",
+                                                         "The Very Long Riverfront Community Health and Wellbeing Centre"))
+            .firstMatch
+        var attempts = 0
+        while !longPlace.exists && attempts < 8 {
+            app.swipeUp()
+            attempts += 1
+        }
+        XCTAssertTrue(longPlace.waitForExistence(timeout: 5))
+        recordInsightsScreenshot("insights-long-labels-health-connected")
+
+        app.tabBars.buttons["Activities"].tap()
+        let longActivity = app.staticTexts["A very long activity name for accessibility and truncation regression coverage"]
+        attempts = 0
+        while !longActivity.exists && attempts < 8 {
+            app.swipeUp()
+            attempts += 1
+        }
+        XCTAssertTrue(longActivity.waitForExistence(timeout: 5))
+
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments = ["-uiTesting", "-ui-test-empty"]
+        app.launch()
+        app.tabBars.buttons["Insights"].tap()
+        XCTAssertTrue(element("insights-day-bar").waitForExistence(timeout: 10))
+        XCTAssertFalse(element("insights-travel-summary").exists)
+        recordInsightsScreenshot("insights-sparse-no-health-no-travel")
+
+        launchSeededInsights(extraArguments: ["-ui-test-imported-history"])
+        let scopePicker = element("insights-scope-picker")
+        XCTAssertTrue(scopePicker.waitForExistence(timeout: 5))
+        scopePicker.tap()
+        XCTAssertTrue(app.buttons["Imported journal only"].waitForExistence(timeout: 5))
+        app.buttons["Imported journal only"].tap()
+        app.buttons["Year"].tap()
+        XCTAssertTrue(element("annual-life-area-chart").waitForExistence(timeout: 10))
+        XCTAssertTrue(element("insights-period-picker").label.contains("Imported journal only"))
+        recordInsightsScreenshot("insights-imported-history-year")
+    }
+
+    func testInsightsDayBarDonutAndDrillDownsRestoreTheSelectedPeriod() {
+        launchSeededInsights(extraArguments: ["-ui-test-timeline-states", "-ui-test-health-connected"])
+
+        let gap = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH[c] 'Unlogged time'"))
+            .firstMatch
+        XCTAssertTrue(gap.waitForExistence(timeout: 10))
+        gap.tap()
+        XCTAssertTrue(element("insight-gap-detail").waitForExistence(timeout: 5))
+        app.swipeDown()
+        XCTAssertTrue(element("insights-period-picker").waitForExistence(timeout: 5))
+
+        let sleep = element("day-metric-sleep")
+        XCTAssertTrue(sleep.waitForExistence(timeout: 5))
+        sleep.tap()
+        XCTAssertTrue(element("insight-sleep-detail").waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["LifeLog estimated score"].exists)
+        app.swipeDown()
+        XCTAssertTrue(element("insights-period-picker").waitForExistence(timeout: 5))
+
+        let donutTarget = element("insights-donut-tap-target")
+        XCTAssertTrue(donutTarget.waitForExistence(timeout: 5))
+        let donutTap = donutTarget.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08))
+        donutTap.tap()
+        XCTAssertTrue(element("insights-donut-selection").waitForExistence(timeout: 5))
+        donutTap.tap()
+        XCTAssertFalse(element("insights-donut-selection").exists)
+
+        app.buttons["Week"].tap()
+        let columns = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'logged'"))
+        XCTAssertTrue(columns.firstMatch.waitForExistence(timeout: 10))
+        columns.firstMatch.tap()
+        XCTAssertTrue(element("weekly-selected-day").waitForExistence(timeout: 5))
+        columns.firstMatch.tap()
+        XCTAssertFalse(element("weekly-selected-day").exists)
+
+        app.buttons["Month"].tap()
+        XCTAssertTrue(element("insights-month-calendar").waitForExistence(timeout: 10))
+        XCTAssertTrue(element("month-calendar-weekdays").exists)
+        // `MonthlyInsightsTests` exercises all seven first-weekday offsets; this
+        // UI assertion keeps the weekday header attached to the interactive grid.
+
+        app.buttons["Year"].tap()
+        let home = element("annual-life-area-Home")
+        XCTAssertTrue(home.waitForExistence(timeout: 10))
+        home.tap()
+        XCTAssertTrue(element("annual-selected-life-area").waitForExistence(timeout: 5))
+        home.tap()
+        XCTAssertFalse(element("annual-selected-life-area").exists)
     }
 }

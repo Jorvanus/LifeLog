@@ -1,6 +1,20 @@
 # Change log
 
+## 2026-08-13
+
+### A quieter Insights story
+
+- Reduced repeated instructions and selector labels across Day, Week, Month, and Year Insights while keeping comparison, source, confidence, and empty-state explanations visible.
+
+### Consistent Insights selection
+
+- Standardised local selection states across donut, balance, annual, activity, and place Insights, with dimmed alternatives, values, and explicit drill-down actions.
+
 ## 2026-08-12
+
+### Insights share one visual language
+
+- Kept activity colours tied to time spent, made comparison directions neutral, reserved status colours for attention states, tightened supporting-card hierarchy, and added light/dark large-text visual coverage.
 
 ### Fixed annual Health summary number formatting
 

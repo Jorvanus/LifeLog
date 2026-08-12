@@ -5,6 +5,7 @@ enum UITestSeedData {
     static let launchArgument = "-ui-test-seed"
 
     static func install(in container: ModelContainer) throws {
+        resetPersistentTestStateIfNeeded()
         // The store is in-memory and so starts empty every launch, but the activity
         // catalogue lives in UserDefaults and does not. A test that adopts a label
         // left it adopted for every run afterwards, so the seeded state a test began
@@ -74,6 +75,40 @@ enum UITestSeedData {
             // state deterministic without changing the default seed's small-trip case.
             visit(900, 1_140, "Flight", "Flight", "manual", "learned")
         }
+        if ProcessInfo.processInfo.arguments.contains("-ui-test-long-labels") {
+            let longPlace = "The Very Long Riverfront Community Health and Wellbeing Centre"
+            context.insert(SavedPlace(name: longPlace, latitude: shops.latitude, longitude: shops.longitude,
+                                      defaultActivity: "Long-form community activity"))
+            visit(780, 900, longPlace,
+                  "A very long activity name for accessibility and truncation regression coverage",
+                  "manual", "learned")
+        }
+        if ProcessInfo.processInfo.arguments.contains("-ui-test-imported-history") {
+            // A bounded, repeatable imported archive gives the source-scope and
+            // annual layouts realistic density without reading any journal on disk.
+            for offset in stride(from: 1, through: 16, by: 1) {
+                let historicalDay = calendar.date(byAdding: .month, value: -offset, to: day)!
+                let arrival = historicalDay.addingTimeInterval(9 * 60 * 60)
+                let departure = arrival.addingTimeInterval(7 * 60 * 60)
+                context.insert(Visit(arrival: arrival, departure: departure,
+                                     latitude: shops.latitude, longitude: shops.longitude,
+                                     placeName: "Imported journal office \(offset)",
+                                     inferredActivity: "Work", userActivity: "Work",
+                                     source: "imported-journal", recognitionConfidence: "learned"))
+            }
+        }
         try context.save()
+    }
+
+    private static func resetPersistentTestStateIfNeeded() {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains("-uiTesting"),
+              !arguments.contains("-ui-test-preserve-preferences"),
+              let identifier = Bundle.main.bundleIdentifier else { return }
+        // SwiftData is in memory for seeded runs, but UserDefaults is not. Resetting
+        // only this test app's domain prevents a previous test's scope, catalogue, or
+        // Health-import marker from changing a later test's visual result.
+        UserDefaults.standard.removePersistentDomain(forName: identifier)
+        UserDefaults.standard.synchronize()
     }
 }

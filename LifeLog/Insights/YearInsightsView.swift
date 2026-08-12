@@ -23,6 +23,7 @@ private struct YearPlaceStoryCard: View {
     let insights: AnnualInsights
     @Binding var selection: YearPlaceSection
     let openPlace: (AnnualInsights.Place) -> Void
+    @State private var selectedPlaceID: String?
 
     private var places: [AnnualInsights.Place] {
         switch selection {
@@ -44,7 +45,7 @@ private struct YearPlaceStoryCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Places that shaped the year").font(.title2.bold())
+            Text("Places that shaped the year").font(.headline)
             Picker("Places", selection: $selection) {
                 ForEach(YearPlaceSection.allCases) { section in
                     Text(section.rawValue).tag(section)
@@ -53,7 +54,6 @@ private struct YearPlaceStoryCard: View {
             .pickerStyle(.segmented)
             .accessibilityIdentifier("year-place-picker")
 
-            Text(selection.rawValue).font(.headline)
             if places.isEmpty {
                 Text(emptyMessage)
                     .font(.subheadline)
@@ -61,7 +61,7 @@ private struct YearPlaceStoryCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 ForEach(places.prefix(5)) { place in
-                    Button { openPlace(place) } label: {
+                    Button { selectedPlaceID = selectedPlaceID == place.id ? nil : place.id } label: {
                         HStack(spacing: 10) {
                             Image(systemName: insightSymbol(for: place.category))
                                 .font(.subheadline.bold())
@@ -90,12 +90,30 @@ private struct YearPlaceStoryCard: View {
                             }
                         }
                         .contentShape(Rectangle())
+                        .opacity(selectedPlaceID == nil || selectedPlaceID == place.id ? 1 : 0.42)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("\(place.name), \(place.visits) \(place.visits == 1 ? "visit" : "visits"), \(formatHours(place.hours))")
+                    .accessibilityValue(selectedPlaceID == place.id ? "Selected. Double tap to clear selection." : "Double tap to select")
+                }
+
+                if let selectedPlaceID, let selectedPlace = places.first(where: { $0.id == selectedPlaceID }) {
+                    Button { openPlace(selectedPlace) } label: {
+                        HStack {
+                            Label(selectedPlace.name, systemImage: "mappin.and.ellipse")
+                            Spacer()
+                            Text(formatHours(selectedPlace.hours)).font(.subheadline.bold().monospacedDigit())
+                            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 2)
+                    .accessibilityLabel("Open \(selectedPlace.name) history, \(formatHours(selectedPlace.hours))")
+                    .accessibilityIdentifier("year-selected-place")
                 }
             }
         }
+        .onChange(of: selection) { _, _ in selectedPlaceID = nil }
     }
 }
 
@@ -109,7 +127,7 @@ struct YearInsightsView: View {
     @State private var selectedHealthSection: AnnualHealthSection = .movement
 
     var body: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 22) {
             annualStory
             lifeAreas
             placeSummary
@@ -123,7 +141,7 @@ struct YearInsightsView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Your year in perspective").font(.title2.bold())
             if insights.comparisonSupported {
-                Text("A concise view of how your time, places, movement, and routines changed from last year.")
+                Text("Compared with last year.")
                     .font(.subheadline).foregroundStyle(.secondary)
             } else {
                 Text("This year is still building. Comparisons appear after both years have enough recorded history.")
@@ -139,7 +157,7 @@ struct YearInsightsView: View {
     private var lifeAreas: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("How the year was spent").font(.title2.bold())
-            Text("Monthly time by derived life area. Select an area to highlight it.")
+            Text("Select an area to highlight its monthly total.")
                 .font(.subheadline).foregroundStyle(.secondary)
             AnnualLifeAreasChart(months: insights.months, selectedArea: $selectedArea, openArea: openArea)
         }
@@ -163,7 +181,7 @@ struct YearInsightsView: View {
         let milestone = insights.milestones
         if milestone.leadingIncrease != nil || milestone.longestActivityStreak != nil || milestone.longestPlaceGap != nil || milestone.mostVisitedNewPlace != nil {
             VStack(alignment: .leading, spacing: 12) {
-                Text("A few milestones").font(.title2.bold())
+                Text("A few milestones").font(.headline)
                 if let value = milestone.leadingIncrease { Text("Most increased: \(value)").font(.subheadline) }
                 if let value = milestone.longestActivityStreak { Text("Longest streak: \(value.activity), \(value.days) days").font(.subheadline) }
                 if let value = milestone.longestPlaceGap { Text("Longest return gap: \(value.place), \(value.days) days").font(.subheadline) }
@@ -233,8 +251,8 @@ private struct AnnualHealthVisual: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Movement and wellbeing").font(.title2.bold())
-            Text("Apple Health summaries across the year")
+            Text("Movement and wellbeing").font(.headline)
+            Text("Apple Health")
                 .font(.subheadline).foregroundStyle(.secondary)
             Picker("Health summary", selection: $selection) {
                 ForEach(AnnualHealthSection.allCases) { section in
@@ -263,8 +281,6 @@ private struct AnnualHealthVisual: View {
                                        description: Text("There is no usable \(selection.rawValue.lowercased()) data from Apple Health for this year."))
             }
 
-            Text("Health values are sourced from Apple Health; sleep score is a LifeLog estimate when shown in detail.")
-                .font(.footnote).foregroundStyle(.secondary)
         }
     }
 

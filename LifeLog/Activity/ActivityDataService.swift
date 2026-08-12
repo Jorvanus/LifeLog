@@ -66,13 +66,25 @@ final class ActivityDataService {
     private let sleepAnchorKey = "LifeLog.HealthKit.sleepAnchor.v1"
     private let workoutAnchorKey = "LifeLog.HealthKit.workoutAnchor.v1"
 
-    var healthStatus = "Not connected"
+    private var usesUITestHealthFixture: Bool {
+        ProcessInfo.processInfo.arguments.contains("-ui-test-health-connected")
+    }
+    private static let uiTestSleepSummary = SleepSummary(
+        totalSleep: 7.25 * 60 * 60, timeInBed: 7.75 * 60 * 60,
+        awake: 20 * 60, rem: 95 * 60, core: 4 * 60 * 60, deep: 70 * 60,
+        interruptions: 1
+    )
+    private static let uiTestHealthImportDate = Date(timeIntervalSinceReferenceDate: 789_004_800)
+
+    var healthStatus = ProcessInfo.processInfo.arguments.contains("-ui-test-health-connected") ? "Connected" : "Not connected"
     /// Health categories iOS has never shown a prompt for. Non-empty means a sheet is
     /// still available for them; everything else has been asked once and cannot be
     /// asked again from inside the app.
     var unaskedHealthTypes: [String] = []
     var motionStatus = "Not requested"
-    var lastImport: Date? = UserDefaults.standard.object(forKey: "LifeLog.HealthLastSuccessfulImport") as? Date
+    var lastImport: Date? = ProcessInfo.processInfo.arguments.contains("-ui-test-health-connected")
+        ? uiTestHealthImportDate
+        : UserDefaults.standard.object(forKey: "LifeLog.HealthLastSuccessfulImport") as? Date
     var lastError: String?
     var importProgress: ActivityImportProgress?
     /// Evidence wording is intentionally narrower than Health authorisation: HealthKit
@@ -84,6 +96,11 @@ final class ActivityDataService {
     func connect(_ context: ModelContext, container: ModelContainer) {
         self.context = context
         modelContainer = container
+        guard !usesUITestHealthFixture else {
+            healthStatus = "Connected"
+            unaskedHealthTypes = []
+            return
+        }
         refreshMotionStatus()
         configureBackgroundDelivery()
         requestAccessIfNeeded()
@@ -187,6 +204,11 @@ final class ActivityDataService {
     /// Note the honest limit: HealthKit never discloses whether a *read* was allowed,
     /// so "asked" is not "granted". Settings says so.
     func refreshHealthStatus(requestingIfNeeded: Bool = false) async {
+        guard !usesUITestHealthFixture else {
+            healthStatus = "Connected"
+            unaskedHealthTypes = []
+            return
+        }
         guard HKHealthStore.isHealthDataAvailable() else {
             healthStatus = "Unavailable on this device"
             unaskedHealthTypes = []
@@ -307,6 +329,7 @@ final class ActivityDataService {
     /// Left closed for a week, it widens to cover the real gap instead of silently
     /// losing that week's walks the way a flat two-day window would have.
     func refreshAutomatically(now: Date = .now) {
+        guard !usesUITestHealthFixture else { return }
         // Never interrupt an import in flight: starting one cancels the last, and a
         // half-finished import would lose its place.
         guard !isImporting else { return }
@@ -464,6 +487,7 @@ final class ActivityDataService {
     /// Reads the selected sleep session on demand so opening Insights does not add a
     /// HealthKit query to every chart render.
     func sleepSummary(for interval: DateInterval) async -> SleepSummary? {
+        if usesUITestHealthFixture { return Self.uiTestSleepSummary }
         guard HKHealthStore.isHealthDataAvailable(),
               let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return nil }
         // Sleep commonly crosses midnight. Padding the request by half a day
@@ -494,6 +518,7 @@ final class ActivityDataService {
     /// cached by exact interval; observer delivery is the only normal invalidation.
     /// Opening a different Insights tab therefore never scans the Health archive.
     func healthSummary(for interval: DateInterval) async -> HealthInsightsSummary? {
+        if usesUITestHealthFixture { return uiTestHealthSummary(for: interval) }
         guard interval.duration > 0, HKHealthStore.isHealthDataAvailable() else { return nil }
         let key = "\(interval.start.timeIntervalSinceReferenceDate)-\(interval.end.timeIntervalSinceReferenceDate)"
         if let cached = healthSummaryCache[key] { return cached }
@@ -509,6 +534,22 @@ final class ActivityDataService {
         )
         healthSummaryCache[key] = summary
         return summary
+    }
+
+    private func uiTestHealthSummary(for interval: DateInterval) -> HealthInsightsSummary {
+        let days = max(1, Int((interval.duration / 86_400).rounded(.up)))
+        return HealthInsightsSummary(
+            steps: Double(days * 10_355), walkingRunningMeters: Double(days) * 7_200,
+            activeEnergyKilocalories: Double(days * 540), exerciseMinutes: Double(days * 40),
+            standHours: Double(days * 11),
+            restingHeartRateBPM: 58, walkingHeartRateBPM: 102,
+            heartRateRecoveryBPM: 26, respiratoryRate: 14,
+            workouts: [.init(id: UUID(uuidString: "E8DF4817-D15E-4B2C-9A06-8514C9C8DE32")!,
+                             type: "Walking", duration: 40 * 60, distanceMeters: 4_100)],
+            sleep: Self.uiTestSleepSummary,
+            activeStepDays: days, elapsedDays: days,
+            source: "Apple Health", lastSuccessfulImport: Self.uiTestHealthImportDate
+        )
     }
 
     /// Daily averages for the Health Trends screen. HealthKit owns the raw
@@ -536,6 +577,7 @@ final class ActivityDataService {
     /// that removes walking and travel while a destination visit is active.
     @discardableResult
     func refreshSleep(for interval: DateInterval, context: ModelContext) async -> Bool {
+        if usesUITestHealthFixture { return false }
         guard interval.duration > 0,
               HKHealthStore.isHealthDataAvailable(),
               !isImporting,
@@ -556,6 +598,7 @@ final class ActivityDataService {
     /// Reads total step count for the selected Insights interval without storing
     /// a second copy of Health data in the timeline.
     func stepCount(for interval: DateInterval) async -> Double? {
+        if usesUITestHealthFixture { return uiTestHealthSummary(for: interval).steps }
         let startedAt = Date.now
         guard HKHealthStore.isHealthDataAvailable(),
               let stepType = HKObjectType.quantityType(forIdentifier: .stepCount) else { return nil }
