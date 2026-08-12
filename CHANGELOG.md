@@ -2,6 +2,12 @@
 
 ## 2026-08-12
 
+### A Timeline row's icon is a little smaller, and its title no longer leaves a stray gap before the duration column
+
+- The activity icon on a Timeline row is now 48pt rather than 58pt, leaving more width for the title next to it.
+- The title used to reserve a text column sized off however much width happened to be available, so a short place name ("Blood Bank", "Home") rendered flush left with a wide, empty gap before the duration/status column — most visible on a device with a large screen. The title now only claims the width it actually needs (via `layoutPriority` rather than `maxWidth: .infinity`), and a long name still wraps properly under real contention with the fixed-width duration/chevron column. The duration, status pill and chevron stay pinned to the card's right edge on every row — short or long — the same way Mail or Messages pins a trailing timestamp, rather than trailing the text at whatever distance it happens to end.
+- The status pill ("Medium", "Low") could break mid-word ("Medi-um") once the title started claiming more of the row; it is now pinned to its own single-line width regardless of how little room is left, so the title wraps first.
+
 ### A Timeline row's connecting dot no longer floats away from a long place name
 
 - Diagnosed from a real screen: a long place name ("Rockhampton Child Safety Service Centre", "State Government Building") wraps its Timeline row title to two or three lines, but the dot-and-line column on the left was fixed at a flat 108pt regardless — sized for a one-line name — so on a taller, wrapped row the dot stayed pinned where a short row would have centred it instead of following the card down, landing near the top instead of the middle. Both the dot/line column and the card content now share a `minHeight` instead of a fixed `height`, so they grow together and the dot stays centred whatever the name wraps to, while a short single-line row renders pixel-identical to before. Verified by seeding a two-line name in the simulator and comparing before/after screenshots.

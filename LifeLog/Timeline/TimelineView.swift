@@ -879,15 +879,33 @@ private struct JourneyRow: View {
                     }.frame(width: 38).frame(minHeight: 108)
                     HStack(spacing: 14) {
                         ActivityIcon(activity: visit.suspectedActivity, context: visit.displayPlaceName,
-                                     color: color, size: 58)
-                        journeyDetails
-                        Spacer(minLength: 8)
+                                     color: color, size: 48)
+                        // layoutPriority, not maxWidth: .infinity -- the latter reserves
+                        // a box sized off the *available* width, so a short name (most of
+                        // them) rendered flush left inside it with visible dead space
+                        // before the duration column, no matter how narrow that gap was
+                        // asked to be. Priority instead makes this the last thing to
+                        // shrink when a long name and the fixed-size duration/chevron
+                        // are actually competing for room, so it still wraps under real
+                        // contention, but a short name simply renders at its own width.
+                        journeyDetails.layoutPriority(1)
+                        // The Spacer -- not journeyDetails -- owns whatever's left after
+                        // that, so it collapses to nothing for a long name (right up
+                        // against the text, no forced gap) and keeps the duration/chevron
+                        // pinned to the card's actual right edge for a short one, rather
+                        // than stranding unclaimed width after the chevron instead.
+                        Spacer(minLength: 0)
+                        // Contention with the now-higher-priority text above must
+                        // shrink journeyDetails first, not break "Medium" or "7h 25m"
+                        // across two lines -- fixedSize pins this to its own single-line
+                        // width regardless of how little room is left.
                         VStack(alignment: .trailing, spacing: 8) {
                             Text(durationDescription)
                                 .font(.subheadline.monospacedDigit())
                                 .foregroundStyle(.secondary)
                             status
                         }
+                        .fixedSize()
                         Image(systemName: "chevron.right")
                             .font(.subheadline.weight(.semibold)).foregroundStyle(.tertiary)
                     }
@@ -898,7 +916,14 @@ private struct JourneyRow: View {
                     // would have centred it, floating near the top instead of the
                     // middle. `minHeight` lets both grow together and keeps the
                     // common (single/double-line) case pixel-identical.
-                    .padding(.horizontal, 14).frame(minHeight: 108)
+                    //
+                    // The outer maxWidth: .infinity is what actually makes the card
+                    // span the row's full available width -- the HStack above, left on
+                    // its own, only ever sizes to its content, whatever the ScrollView
+                    // around it can offer. Left-alignment then puts any width beyond
+                    // that content after the chevron, as ordinary trailing margin,
+                    // instead of as a gap in the middle of the row.
+                    .padding(.horizontal, 14).frame(maxWidth: .infinity, minHeight: 108, alignment: .leading)
                     .lifeCard()
                 }
             }
@@ -928,7 +953,6 @@ private struct JourneyRow: View {
             }
             Text(timeDescription).font(.subheadline).foregroundStyle(.secondary)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
     }
 
