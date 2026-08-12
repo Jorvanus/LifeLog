@@ -2,6 +2,10 @@
 
 ## 2026-08-12
 
+### The full migration chain is now proven against a real device store
+
+- Extracted a copy of the on-device `LifeLog.store` (via Xcode's Devices and Simulators → Download Container) and opened it through the live `LifeLogMigrationPlan`, working only on the copy. All 25,685 real visits, 8 Saved Places, 81 corrections, and the diagnostic/location-event history survived the full V1→V8 chain intact, and the one place actually named "Home" was correctly backfilled to the new Home role. Closes the "prove it on a real historical store" gap the synthetic V1–V7 fixtures alone couldn't close.
+
 ### Home and Work are now explicit Saved Place roles, not a name guess
 
 - Commute detection, travel-destination labelling ("Travelling to Work"), and the Insights "away from home" segment used to independently re-derive Home/Work by testing a place's *name* for the words "home"/"work" — a false positive for a café called "Homeward Bound," a false negative for an unnamed office, and two implementations that didn't even agree with each other. `SavedPlace` now has an explicit `role` (Home/Work/none), and every one of those consumers trusts it instead.

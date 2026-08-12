@@ -51,10 +51,6 @@ responsive 32,000-row archive outrank App Store preparation and speculative feat
   background save failure, then verify the pending failure appears after relaunch.
   Preserve the aggregate diagnostic evidence, never the personal store.
 
-- [ ] **Validate a copied pre-versioned device store.** Synthetic V1–V7 migrations
-  cover the declared schemas, but only a copy of the historical device store proves
-  the real upgrade. Work on a copy and leave the original protected store untouched.
-
 - [ ] **Choose the Health re-import boundary.** Routine Health refresh is bounded and
   the manual re-import reads 30 days. If older workout routes matter, add a date-range
   import with progress, cancellation, retry, and a clear inserted/updated/deleted
