@@ -2,6 +2,14 @@
 
 ## 2026-08-12
 
+### Year place story is focused
+
+- Replaced the stacked annual place lists with a stable Most time, Most visits, New places, or Not visited selector showing only the selected top results with clear empty states.
+
+### Year life-area chart is easier to read
+
+- Limited the annual hero chart to the five strongest meaningful areas plus Other, and added a selectable, accessible legend with highlighted totals and drill-downs.
+
 ### Month analysis has a clearer visual balance
 
 - Kept What changed focused on the strongest differences and turned Monthly balance into a proportional, tappable life-area visual with neutral direction cues.

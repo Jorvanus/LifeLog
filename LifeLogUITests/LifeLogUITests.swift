@@ -233,6 +233,46 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Meaningful differences from last month"].exists)
     }
 
+    func testYearLifeAreaChartHasSelectableLegendAndDrillDown() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+        app.tabBars.buttons["Insights"].tap()
+
+        XCTAssertTrue(app.buttons["Year"].waitForExistence(timeout: 5))
+        app.buttons["Year"].tap()
+        XCTAssertTrue(element("annual-life-area-chart").waitForExistence(timeout: 10))
+        let home = element("annual-life-area-Home")
+        XCTAssertTrue(home.waitForExistence(timeout: 5))
+        home.tap()
+        XCTAssertTrue(element("annual-selected-life-area").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Home"].exists)
+    }
+
+    func testYearPlacesUsesOneStableSelectedSegment() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+        app.tabBars.buttons["Insights"].tap()
+
+        XCTAssertTrue(app.buttons["Year"].waitForExistence(timeout: 5))
+        app.buttons["Year"].tap()
+        var places = element("insights-year-places")
+        var attempts = 0
+        while !places.exists && attempts < 8 {
+            app.swipeUp()
+            attempts += 1
+        }
+        XCTAssertTrue(places.waitForExistence(timeout: 5))
+        XCTAssertTrue(element("year-place-picker").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Most time"].exists)
+        XCTAssertTrue(app.buttons["Most visits"].exists)
+        XCTAssertTrue(app.buttons["New places"].exists)
+        XCTAssertTrue(app.buttons["Not visited"].exists)
+        app.buttons["New places"].tap()
+        XCTAssertTrue(app.staticTexts["New places"].exists)
+    }
+
     func testDaySummaryOmitsUnavailableMetricsWithoutZeroPlaceholders() {
         app.terminate()
         app.launchArguments = ["-uiTesting", "-ui-test-seed"]

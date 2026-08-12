@@ -54,6 +54,22 @@ struct AnnualInsightsTests {
         #expect(result.milestones.leadingIncrease == nil)
     }
 
+    @Test("Annual chart keeps the five strongest areas and folds the rest into Other")
+    func annualChartDataUsesFiveAreasAndOther() {
+        let start = calendar.date(from: DateComponents(year: 2026, month: 1, day: 1))!
+        let months = (0..<12).map { offset in
+            AnnualInsights.Month(date: calendar.date(byAdding: .month, value: offset, to: start)!,
+                                 label: "M\(offset)", isPartial: false,
+                                 hours: ["Home": 100, "Work": 80, "Travel": 60,
+                                         "Social": 40, "Health & Fitness": 20,
+                                         "Food & Drink": 10, "Errands": 0.2])
+        }
+        let rows = AnnualLifeAreaChartDataBuilder.make(months: months)
+        #expect(rows.map(\.area.name) == ["Home", "Work", "Travel", "Social", "Health & Fitness", "Other"])
+        #expect(rows.last?.totalHours == 122.4)
+        #expect(rows.reduce(0) { $0 + $1.totalHours } == 12 * 310.2)
+    }
+
     private func segment(_ category: String, start: Date, hours: Double,
                          source: String = "automatic", place: String? = "Test place") -> InsightSegment {
         let visit = Visit(arrival: start, departure: start.addingTimeInterval(hours * 3_600),

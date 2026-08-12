@@ -1,10 +1,101 @@
 import SwiftUI
 
+private enum YearPlaceSection: String, CaseIterable, Identifiable {
+    case mostTime = "Most time"
+    case mostVisits = "Most visits"
+    case newPlaces = "New places"
+    case notVisited = "Not visited"
+
+    var id: String { rawValue }
+}
+
+private struct YearPlaceStoryCard: View {
+    let insights: AnnualInsights
+    @Binding var selection: YearPlaceSection
+    let openPlace: (AnnualInsights.Place) -> Void
+
+    private var places: [AnnualInsights.Place] {
+        switch selection {
+        case .mostTime: return insights.placesByTime
+        case .mostVisits: return insights.placesByVisits
+        case .newPlaces: return insights.newPlaces
+        case .notVisited: return insights.placesNotVisited
+        }
+    }
+
+    private var emptyMessage: String {
+        switch selection {
+        case .mostTime: return "No places with enough recorded time."
+        case .mostVisits: return "No places with recorded visits."
+        case .newPlaces: return "No newly discovered places with enough history."
+        case .notVisited: return "No regular places were missed this year with enough comparable history."
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Places that shaped the year").font(.title2.bold())
+            Picker("Places", selection: $selection) {
+                ForEach(YearPlaceSection.allCases) { section in
+                    Text(section.rawValue).tag(section)
+                }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("year-place-picker")
+
+            Text(selection.rawValue).font(.headline)
+            if places.isEmpty {
+                Text(emptyMessage)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                ForEach(places.prefix(5)) { place in
+                    Button { openPlace(place) } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: insightSymbol(for: place.category))
+                                .font(.subheadline.bold())
+                                .foregroundStyle(.white)
+                                .frame(width: 38, height: 38)
+                                .background(insightColor(for: place.category), in: Circle())
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(place.name)
+                                    .font(.subheadline.weight(.medium))
+                                    .lineLimit(2)
+                                    .minimumScaleFactor(0.8)
+                                Text("\(place.category) · \(place.visits) \(place.visits == 1 ? "visit" : "visits")")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
+                            }
+                            Spacer(minLength: 8)
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text(formatHours(place.hours))
+                                    .font(.subheadline.bold().monospacedDigit())
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.75)
+                                Image(systemName: "chevron.right")
+                                    .font(.caption2).foregroundStyle(.tertiary)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(place.name), \(place.visits) \(place.visits == 1 ? "visit" : "visits"), \(formatHours(place.hours))")
+                }
+            }
+        }
+    }
+}
+
 struct YearInsightsView: View {
     let insights: AnnualInsights
     let openArea: (AnnualInsights.LifeArea) -> Void
     let openPlace: (AnnualInsights.Place) -> Void
     let period: DateInterval
+    @State private var selectedArea: AnnualInsights.LifeArea?
+    @State private var selectedPlaceSection: YearPlaceSection = .mostTime
 
     var body: some View {
         VStack(spacing: 18) {
@@ -37,66 +128,18 @@ struct YearInsightsView: View {
     private var lifeAreas: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("How the year was spent").font(.title2.bold())
-            Text("Monthly time by derived life area").font(.subheadline).foregroundStyle(.secondary)
-            AnnualLifeAreasChart(months: insights.months)
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                ForEach(AnnualInsights.areas) { area in
-                    Button { openArea(area) } label: {
-                        Label(area.name, systemImage: insightSymbol(for: area.category))
-                            .font(.caption)
-                            .foregroundStyle(insightColor(for: area.category))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Open \(area.name) activity details")
-                }
-            }
+            Text("Monthly time by derived life area. Select an area to highlight it.")
+                .font(.subheadline).foregroundStyle(.secondary)
+            AnnualLifeAreasChart(months: insights.months, selectedArea: $selectedArea, openArea: openArea)
         }
         .padding(20).lifeCard()
         .accessibilityIdentifier("insights-year-life-areas")
     }
 
     private var placeSummary: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            Text("Places that shaped the year").font(.title2.bold())
-            placeList(title: "Most time", places: insights.placesByTime)
-            placeList(title: "Most visits", places: insights.placesByVisits)
-            placeList(title: "Newly discovered", places: insights.newPlaces)
-            if !insights.placesNotVisited.isEmpty {
-                placeList(title: "Regular places you did not visit", places: insights.placesNotVisited)
-            }
-        }
+        YearPlaceStoryCard(insights: insights, selection: $selectedPlaceSection, openPlace: openPlace)
         .padding(20).lifeCard()
         .accessibilityIdentifier("insights-year-places")
-    }
-
-    @ViewBuilder private func placeList(title: String, places: [AnnualInsights.Place]) -> some View {
-        Text(title).font(.headline)
-        if places.isEmpty {
-            Text("Not enough recorded history").font(.subheadline).foregroundStyle(.secondary)
-        } else {
-                ForEach(places) { place in
-                    Button { openPlace(place) } label: {
-                        HStack {
-                            Image(systemName: insightSymbol(for: place.category))
-                                .font(.subheadline.bold())
-                                .foregroundStyle(.white)
-                                .frame(width: 42, height: 42)
-                                .background(insightColor(for: place.category), in: Circle())
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(place.name).font(.subheadline.weight(.medium))
-                                Text("\(place.category) · \(place.visits) \(place.visits == 1 ? "visit" : "visits")")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                        Spacer()
-                        Text(formatHours(place.hours)).font(.subheadline.bold().monospacedDigit())
-                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(place.name), \(place.visits) visits, \(formatHours(place.hours))")
-            }
-        }
     }
 
     private var movementAndWellbeing: some View {
