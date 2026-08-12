@@ -663,12 +663,36 @@ struct InsightsView: View {
     @ViewBuilder private var dayLayout: some View {
         currentActivitySection
         dayTimelineBarSection
-        donutSection
         daySummarySection
-        TravelInsightsCard(title: "Travel", summary: TravelInsights.make(from: daySegments), period: interval)
         needsAttentionSection
-        highlightsSection
+        dayHighlightSection
+        dayTravelSection
+        donutSection
         healthSetupSection
+    }
+
+    /// Day keeps one grounded observation in the main review. The full pager
+    /// remains available to longer-period layouts, where several comparisons
+    /// describe a pattern; showing all of them here made the daily review feel
+    /// like another dashboard.
+    @ViewBuilder private var dayHighlightSection: some View {
+        if let highlight = highlights.first {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("One thing from today").font(.title2.bold())
+                highlightRow(highlight)
+            }
+            .padding(20)
+            .lifeCard()
+            .accessibilityIdentifier("day-highlights")
+            .accessibilityElement(children: .contain)
+        }
+    }
+
+    @ViewBuilder private var dayTravelSection: some View {
+        let summary = TravelInsights.make(from: daySegments)
+        if summary.hasTravel {
+            TravelInsightsCard(title: "Travel", summary: summary, period: interval)
+        }
     }
 
     /// "How did this week compare with usual" — a different question from
@@ -948,7 +972,8 @@ struct InsightsView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("How you spent your time").font(.title2.bold())
+                    Text(window == .day ? "Breakdown" : "How you spent your time")
+                        .font(.title2.bold())
                     Text(isCurrentWindow
                          ? "\(formatHours(snapshot.totalHours)) elapsed in this \(window.title.lowercased())"
                          : "All \(formatHours(snapshot.totalHours)) in this \(window.title.lowercased())")

@@ -2,6 +2,10 @@
 
 ## 2026-08-12
 
+### Day Insights is a focused daily review
+
+- Reordered Day Insights around the current activity, primary 24-hour timeline, daily glance, attention items, one meaningful highlight, meaningful travel, and a lower time breakdown; the interactive donut, editing actions, gap review, and useful Apple Health status remain available without duplicating Timeline's full current-activity card.
+
 ### Insights can be filtered by data source
 
 - Added a compact, persistent Insights scope control for all history, device and manual records, imported journal entries, or confirmed/corrected locations; the selected scope now carries through charts, comparisons, trends, places, travel, Health summaries, drill-downs, and exports with clear empty states.

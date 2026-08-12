@@ -92,6 +92,20 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(element("insights-donut-chart").waitForExistence(timeout: 5))
     }
 
+    func testInsightsDayUsesDailyReviewSections() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+        app.tabBars.buttons["Insights"].tap()
+
+        XCTAssertTrue(element("insights-current-activity-card").waitForExistence(timeout: 5))
+        XCTAssertTrue(element("insights-day-bar").waitForExistence(timeout: 5))
+        XCTAssertTrue(element("insights-day-summary").waitForExistence(timeout: 5))
+        XCTAssertTrue(element("insights-needs-attention").waitForExistence(timeout: 5))
+        XCTAssertTrue(element("day-highlights").waitForExistence(timeout: 5))
+        XCTAssertTrue(element("insights-donut-chart").waitForExistence(timeout: 5))
+    }
+
     /// The seeded unidentified and low-confidence stays give "Needs your
     /// attention" something to show without needing a fixture of its own.
     func testInsightsDayShowsNeedsAttentionForSeededIssues() {
