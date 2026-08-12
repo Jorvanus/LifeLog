@@ -4,6 +4,27 @@ import HealthKit
 import SwiftData
 import Observation
 
+/// HealthKit’s observer callback is not annotated `Sendable`, but its completion has
+/// to follow the import across executors. This box is the one ownership boundary: it
+/// serialises access and invokes the callback at most once, even if a launch is torn
+/// down while a queued replacement import completes.
+private final class HealthObserverDelivery: @unchecked Sendable {
+    private let lock = NSLock()
+    private var completion: HKObserverQueryCompletionHandler?
+
+    init(_ completion: @escaping HKObserverQueryCompletionHandler) {
+        self.completion = completion
+    }
+
+    func finish() {
+        lock.lock()
+        let callback = completion
+        completion = nil
+        lock.unlock()
+        callback?()
+    }
+}
+
 /// Sleep details read from HealthKit for one selected overnight session.
 /// The score is LifeLog's transparent estimate; Apple does not expose its private
 /// Sleep Score as a public HealthKit value.
@@ -36,6 +57,11 @@ final class ActivityDataService {
     private var importID: UUID?
     private var stepCache: [String: Double] = [:]
     private var healthObserverQueries: [HKQuery] = []
+    /// HealthKit requires observer completion only after the anchored work has been
+    /// processed. Coalesce arrivals while an import is active instead of acknowledging
+    /// a Watch sync that is still waiting behind another batch.
+    private var observerCompletions: [HealthObserverDelivery] = []
+    private var healthImportQueuedForObserver = false
     private let sleepAnchorKey = "LifeLog.HealthKit.sleepAnchor.v1"
     private let workoutAnchorKey = "LifeLog.HealthKit.workoutAnchor.v1"
 
@@ -48,6 +74,9 @@ final class ActivityDataService {
     var lastImport: Date?
     var lastError: String?
     var importProgress: ActivityImportProgress?
+    /// Evidence wording is intentionally narrower than Health authorisation: HealthKit
+    /// does not reveal read denials, but a successful query can say what arrived.
+    var sleepEvidenceStatus = "No sleep evidence imported yet"
 
     var isImporting: Bool { importProgress?.isActive == true }
 
@@ -74,16 +103,40 @@ final class ActivityDataService {
         let types: [HKSampleType] = [sleepType, HKWorkoutType.workoutType()]
         for type in types {
             let query = HKObserverQuery(sampleType: type, predicate: nil) { [weak self] _, completion, _ in
-                completion()
+                let delivery = HealthObserverDelivery(completion)
                 Task { @MainActor [weak self] in
-                    guard let self, !self.isImporting else { return }
-                    self.refreshAutomatically()
+                    guard let self else { delivery.finish(); return }
+                    self.processHealthObserverDelivery(delivery)
                 }
             }
             healthStore.execute(query)
             healthObserverQueries.append(query)
             healthStore.enableBackgroundDelivery(for: type, frequency: .hourly) { _, _ in }
         }
+    }
+
+    private func processHealthObserverDelivery(_ delivery: HealthObserverDelivery) {
+        observerCompletions.append(delivery)
+        guard !isImporting else {
+            healthImportQueuedForObserver = true
+            return
+        }
+        // Anchors make this cheap; the two-day read is only the bounded sleep rebuild
+        // and catches a complete night that was delivered after waking.
+        startImport(healthDays: 2, motionDays: nil)
+    }
+
+    private func finishHealthObserverDeliveries() {
+        let completions = observerCompletions
+        observerCompletions.removeAll()
+        completions.forEach { $0.finish() }
+    }
+
+    private func continueQueuedHealthObserverImportIfNeeded() -> Bool {
+        guard healthImportQueuedForObserver else { return false }
+        healthImportQueuedForObserver = false
+        startImport(healthDays: 2, motionDays: nil)
+        return true
     }
 
     /// Asks for Health and Motion once, on first run.
@@ -222,9 +275,10 @@ final class ActivityDataService {
     /// hours later for no visible reason.
     ///
     /// Motion keeps the long interval because its queries are expensive and its
-    /// history spans a week. Sleep and workouts are read by anchor, so repeating them
-    /// collects only what has arrived since and costs almost nothing regardless of the
-    /// window handed to them — but `walkingRecords` has no anchored-query equivalent
+    /// history spans a week. Workout updates are read by anchor. Sleep uses its anchor
+    /// to find changed nights, then reads the bounded recent window in full so delayed
+    /// Watch stages form one session; the two-day floor keeps that reliable work small.
+    /// `walkingRecords` has no anchored-query equivalent
     /// and re-reads every step-count sample in the window on every call. A flat 30-day
     /// window here, throttled to once every two minutes, meant every foreground
     /// reprocessed roughly a month of steps: a real capture (`LifeLog-Performance-
@@ -505,7 +559,10 @@ final class ActivityDataService {
     private let healthRefreshInterval: TimeInterval = 2 * 60
 
     private func startImport(healthDays: Int?, motionDays: Int?) {
-        guard modelContainer != nil, healthDays != nil || motionDays != nil else { return }
+        guard modelContainer != nil, healthDays != nil || motionDays != nil else {
+            if healthDays != nil { finishHealthObserverDeliveries() }
+            return
+        }
         importTask?.cancel()
         let id = UUID()
         importID = id
@@ -515,10 +572,16 @@ final class ActivityDataService {
         importTask = Task { [weak self] in
             guard let self else { return }
             let startedAt = Date.now
-            guard let importWriter = await backgroundWriter() else { return }
+            guard let importWriter = await backgroundWriter() else {
+                if healthDays != nil { finishHealthObserverDeliveries() }
+                return
+            }
             do {
                 try await importWriter.prepare()
                 var records: [ActivityImportRecord] = []
+                var rebuiltSleepRecords: [ActivityImportRecord] = []
+                var rebuiltSleepWindows: [DateInterval] = []
+                var observedSleepDeletion = false
                 var sleepResultAnchor = Data()
                 var workoutResultAnchor = Data()
                 var deletedSampleIDs: [UUID] = []
@@ -531,9 +594,20 @@ final class ActivityDataService {
                     updateProgress(id: id, state: .reading, title: "Reading sleep…", completed: 0, total: 0)
                     let sleepResult = try await sampleReader.anchoredSleepRecords(
                         in: interval, anchorData: UserDefaults.standard.data(forKey: sleepAnchorKey))
-                    records += sleepResult.records
                     sleepResultAnchor = sleepResult.anchorData
                     deletedSampleIDs += sleepResult.deletedSampleIDs
+                    observedSleepDeletion = !sleepResult.deletedSampleIDs.isEmpty
+                    // An anchored delta only says what changed. Re-read the complete
+                    // night so separately synced sleep stages become one session.
+                    rebuiltSleepWindows.append(interval)
+                    rebuiltSleepWindows += await importWriter.sleepWindows(
+                        containing: sleepResult.deletedSampleIDs
+                    )
+                    for window in Self.mergedSleepWindows(rebuiltSleepWindows) {
+                        let sleep = try await sampleReader.sleepRecords(in: window)
+                        rebuiltSleepRecords += sleep
+                    }
+                    records += rebuiltSleepRecords
                     try Task.checkCancellation()
                     updateProgress(id: id, state: .reading, title: "Reading workouts…", completed: 0, total: 0)
                     let workoutResult = try await sampleReader.anchoredWorkoutRecords(
@@ -575,6 +649,15 @@ final class ActivityDataService {
                     await Task.yield()
                 }
                 try Task.checkCancellation()
+                // A successful empty query cannot distinguish "no sleep" from a
+                // revoked Health read permission. Only withdraw old evidence when a
+                // fresh session arrived, or Health explicitly reported a deletion.
+                if healthDays != nil, !rebuiltSleepWindows.isEmpty,
+                   !rebuiltSleepRecords.isEmpty || observedSleepDeletion {
+                    _ = try await importWriter.reconcileSleepEvidence(
+                        in: Self.mergedSleepWindows(rebuiltSleepWindows), expected: rebuiltSleepRecords
+                    )
+                }
                 try await importWriter.finish()
                 // Commit anchors only after all records have been saved. If the
                 // task is cancelled or the store fails, the next launch safely
@@ -588,6 +671,7 @@ final class ActivityDataService {
                 healthStatus = healthDays == nil ? healthStatus : "Connected"
                 refreshMotionStatus()
                 lastImport = .now
+                updateSleepEvidenceStatus(rebuiltSleepRecords)
                 importProgress = ActivityImportProgress(state: .complete, title: "Import complete",
                                                         completed: records.count, total: records.count)
                 importTask = nil
@@ -611,6 +695,8 @@ final class ActivityDataService {
                         message: "Core Motion returned \(motionSegmentsRead) segment(s) and the automatic import finished.")
                 }
                 InsightsInvalidation.invalidate(reason: "HealthKit or Motion import", context: context)
+                if continueQueuedHealthObserverImportIfNeeded() { return }
+                if healthDays != nil { finishHealthObserverDeliveries() }
             } catch is CancellationError {
                 await importWriter.cancel()
                 guard importID == id else { return }
@@ -618,6 +704,8 @@ final class ActivityDataService {
                                                         completed: importProgress?.completed ?? 0,
                                                         total: importProgress?.total ?? 0)
                 importTask = nil
+                if continueQueuedHealthObserverImportIfNeeded() { return }
+                if healthDays != nil { finishHealthObserverDeliveries() }
             } catch {
                 await importWriter.cancel()
                 guard importID == id else { return }
@@ -628,8 +716,43 @@ final class ActivityDataService {
                 importTask = nil
                 Diagnostics.record(error, context: context, subsystem: "Activity Import",
                                    operation: "background import")
+                if continueQueuedHealthObserverImportIfNeeded() { return }
+                if healthDays != nil { finishHealthObserverDeliveries() }
             }
         }
+    }
+
+    /// Combines overlapping rebuild ranges so a deleted stage does not issue several
+    /// equivalent HealthKit queries for the same night.
+    nonisolated static func mergedSleepWindows(_ windows: [DateInterval]) -> [DateInterval] {
+        let sorted = windows.filter { $0.duration > 0 }.sorted { $0.start < $1.start }
+        return sorted.reduce(into: [DateInterval]()) { result, window in
+            guard let last = result.last else { result.append(window); return }
+            if window.start <= last.end {
+                result[result.count - 1] = DateInterval(start: last.start, end: max(last.end, window.end))
+            } else {
+                result.append(window)
+            }
+        }
+    }
+
+    private func updateSleepEvidenceStatus(_ records: [ActivityImportRecord]) {
+        let measured = records.filter { SleepEvidence.isMeasured($0.source) }.count
+        let inBed = records.filter { $0.source == SleepEvidence.inBedSource }.count
+        if measured > 0 {
+            sleepEvidenceStatus = "Measured sleep imported"
+            HardwareValidation.recordFirst(.measuredSleep, context: context,
+                message: "HealthKit delivered measured sleep and LifeLog rebuilt the overnight session.")
+        } else if inBed > 0 {
+            sleepEvidenceStatus = "Estimated time in bed imported"
+            HardwareValidation.recordFirst(.estimatedTimeInBed, context: context,
+                message: "HealthKit delivered time-in-bed evidence without measured sleep.")
+        } else {
+            sleepEvidenceStatus = "No recent measured sleep — wear Watch or add it manually"
+        }
+        Diagnostics.record(context, subsystem: "HealthKit",
+                           message: "Sleep evidence rebuilt: \(measured) measured, \(inBed) in-bed session(s).",
+                           severity: "info", category: Diagnostics.Category.performance)
     }
 
     /// ModelActor contexts inherit their creation executor. Constructing this actor

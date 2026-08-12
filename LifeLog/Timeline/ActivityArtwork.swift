@@ -48,7 +48,7 @@ struct ActivityIcon: View {
         if text.contains("walk") { return "figure.walk" }
         if text.contains("run") { return "figure.run" }
         if text.contains("cycl") { return "bicycle" }
-        if text.contains("sleep") { return "bed.double.fill" }
+        if text.contains("sleep") || text.contains("in bed") { return "bed.double.fill" }
         if text.contains("shop") { return "bag.fill" }
         return "mappin"
     }
@@ -104,7 +104,7 @@ struct ActivityIcon: View {
         if text.contains("family") || text.contains("child") { return "ActivityVisitingFamily" }
         if text.contains("desk") { return "ActivityDesk" }
         if text.contains("shop") { return "ActivityShoppingV2" }
-        if text.contains("sleep") { return "ActivitySleep" }
+        if text.contains("sleep") || text.contains("in bed") { return "ActivitySleep" }
         if text.contains("cafe") || text.contains("café") { return "ActivityCafe" }
         if text.contains("coffee") { return "ActivityCoffeeV2" }
         if text.contains("work") || text.contains("office") { return "ActivityWorkV2" }

@@ -68,8 +68,56 @@ actor ActivitySampleReader {
     private let healthStore = HKHealthStore()
     private let motionManager = CMMotionActivityManager()
 
+    /// Rebuilds complete sleep evidence in a small window. Anchors are still used to
+    /// learn that Health changed, but their delta alone cannot describe a whole night:
+    /// a Watch may deliver its Core, REM and Deep samples in separate syncs.
     func sleepRecords(in interval: DateInterval) async throws -> [ActivityImportRecord] {
-        try await anchoredSleepRecords(in: interval, anchorData: nil).records
+        guard let type = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return [] }
+        let predicate = HKQuery.predicateForSamples(
+            withStart: interval.start, end: interval.end, options: .strictEndDate
+        )
+        let descriptor = HKSampleQueryDescriptor<HKCategorySample>(
+            predicates: [.categorySample(type: type, predicate: predicate)],
+            sortDescriptors: [SortDescriptor(\.startDate)]
+        )
+        let samples = try await descriptor.result(for: healthStore)
+        try Task.checkCancellation()
+
+        let measured = samples.compactMap { sample -> (interval: DateInterval, id: UUID)? in
+            guard let value = HKCategoryValueSleepAnalysis(rawValue: sample.value),
+                  value == .asleepCore || value == .asleepDeep ||
+                    value == .asleepREM || value == .asleepUnspecified else { return nil }
+            return (DateInterval(start: sample.startDate, end: sample.endDate), sample.uuid)
+        }
+        let inBed = samples.compactMap { sample -> (interval: DateInterval, id: UUID)? in
+            guard HKCategoryValueSleepAnalysis(rawValue: sample.value) == .inBed else { return nil }
+            return (DateInterval(start: sample.startDate, end: sample.endDate), sample.uuid)
+        }
+        let measuredSessions = mergeWithIdentifiers(measured, maximumGap: 15 * 60)
+            .filter { $0.interval.duration >= 20 * 60 }
+        let measuredRecords = measuredSessions
+            .map {
+                ActivityImportRecord(name: "Sleep", activity: "Sleeping",
+                                     source: SleepEvidence.measuredSource,
+                                     start: $0.interval.start, end: $0.interval.end,
+                                     healthKitSampleIDs: $0.ids)
+            }
+        let inBedRecords = mergeWithIdentifiers(inBed, maximumGap: 30 * 60)
+            .filter { $0.interval.duration >= 20 * 60 }
+            // When the Watch supplied actual sleep for this night, an overlapping
+            // schedule estimate adds no information and would create a second card.
+            .filter { inBedSession in
+                !measuredSessions.contains {
+                    $0.interval.start < inBedSession.interval.end && $0.interval.end > inBedSession.interval.start
+                }
+            }
+            .map {
+                ActivityImportRecord(name: "In bed", activity: "In bed",
+                                     source: SleepEvidence.inBedSource,
+                                     start: $0.interval.start, end: $0.interval.end,
+                                     healthKitSampleIDs: $0.ids)
+            }
+        return measuredRecords + inBedRecords
     }
 
     func anchoredSleepRecords(in interval: DateInterval, anchorData: Data?) async throws -> ActivityAnchorResult {
@@ -95,7 +143,7 @@ actor ActivitySampleReader {
             .filter { $0.interval.duration >= 20 * 60 }
             .map {
                 ActivityImportRecord(name: "Sleep", activity: "Sleeping",
-                                     source: "health-sleep", start: $0.interval.start, end: $0.interval.end,
+                                     source: SleepEvidence.measuredSource, start: $0.interval.start, end: $0.interval.end,
                                      healthKitSampleIDs: $0.ids)
             }
         return ActivityAnchorResult(records: records, anchorData: encodeAnchor(result.newAnchor),

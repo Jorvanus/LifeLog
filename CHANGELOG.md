@@ -2,6 +2,12 @@
 
 ## 2026-08-12
 
+### Sleep import now distinguishes measurement from an estimate
+
+- Health sleep changes now rebuild the complete affected night instead of piecing together individual Watch sync fragments. Deleted samples reconcile only the relevant overnight evidence, so one edited stage no longer removes an otherwise valid night.
+- When no wearable sleep is available, LifeLog can record Health’s time-in-bed estimate as `In bed` rather than calling it sleep, and Settings offers a clearly confirmed manual sleep entry for nights without a tracker.
+- Settings and Diagnostics now report whether recent Health evidence was measured sleep, estimated time in bed, or absent. Background Health deliveries remain pending until LifeLog has processed them, rather than being acknowledged before the import finishes.
+
 ### Large archives now use bounded history lookups
 
 - Timeline now reads a short current-day window rather than the complete archive, and place/activity history has reusable day, month, year, place, activity, and explicit place-search queries. Notes remain outside ordinary history searches so Timeline does not load note text just to render.

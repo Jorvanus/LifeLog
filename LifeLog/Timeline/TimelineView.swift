@@ -128,12 +128,12 @@ struct TimelineView: View {
                 // duplicate with the same start. Keep the more precise sample
                 // when one interval is fully contained by another.
                 guard ActivityLocationPolicy.isDeviceActivity(visit),
-                      !visit.source.hasPrefix("health-sleep") else { return true }
+                      !SleepEvidence.isSleepSource(visit.source) else { return true }
                 let end = visit.departure ?? now
                 return !visits.contains { other in
                     guard other.id != visit.id,
                           ActivityLocationPolicy.isDeviceActivity(other),
-                          !other.source.hasPrefix("health-sleep"),
+                          !SleepEvidence.isSleepSource(other.source),
                           other.activity.caseInsensitiveCompare(visit.activity) == .orderedSame else { return false }
                     let otherEnd = other.departure ?? now
                     let contains = other.arrival <= visit.arrival && otherEnd >= end

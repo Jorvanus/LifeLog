@@ -17,6 +17,8 @@ enum HardwareValidation {
         case wifiDepartureAnchor = "wifi-departure-anchor-v1"
         case monitoredPlaces = "monitored-places-v1"
         case liveBurstBackgroundFallback = "live-burst-background-fallback-v1"
+        case measuredSleep = "measured-sleep-v1"
+        case estimatedTimeInBed = "estimated-time-in-bed-v1"
     }
 
     private static let keyPrefix = "LifeLog.HardwareValidation."

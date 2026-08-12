@@ -77,7 +77,7 @@ extension ActivityLocationPolicy {
         // A started workout and sleep are both exceptions: each is an account of what
         // the time was, not the phone guessing from movement, so neither is folded into
         // a stay that happens to overlap it.
-        if isDeviceActivity(visit), !visit.source.hasPrefix("health-sleep"),
+        if isDeviceActivity(visit), !SleepEvidence.isSleepSource(visit.source),
            !isDeclaredJourney(visit, stays: locationVisits) {
             let end = visit.departure ?? now
             let overlapsDestination = locationVisits.contains { location in

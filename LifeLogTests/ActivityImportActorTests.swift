@@ -346,4 +346,79 @@ struct ActivityImportActorTests {
         #expect(visits.first?.arrival == widenedStart)
         #expect(visits.first?.departure == end)
     }
+
+    @Test("A rebuilt sleep night retains all current Health UUIDs and removes only absent automatic evidence")
+    func rebuiltSleepEvidenceReplacesItsFullIdentifierSet() async throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(
+            for: Visit.self, SavedPlace.self, VisitCorrection.self,
+            configurations: configuration
+        )
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let end = start.addingTimeInterval(8 * 60 * 60)
+        let first = UUID(), retained = UUID(), replacement = UUID()
+        let writer = ActivityImportActor(modelContainer: container)
+
+        try await writer.prepare()
+        _ = try await writer.insertBatch([
+            .init(name: "Sleep", activity: "Sleeping", source: SleepEvidence.measuredSource,
+                  start: start, end: end, healthKitSampleIDs: [first, retained])
+        ])
+        try await writer.finish()
+
+        let rebuilt = ActivityImportRecord(
+            name: "Sleep", activity: "Sleeping", source: SleepEvidence.measuredSource,
+            start: start.addingTimeInterval(-5 * 60), end: end,
+            healthKitSampleIDs: [retained, replacement]
+        )
+        try await writer.prepare()
+        _ = try await writer.insertBatch([rebuilt])
+        _ = try await writer.reconcileSleepEvidence(
+            in: [DateInterval(start: start.addingTimeInterval(-60 * 60), end: end.addingTimeInterval(60 * 60))],
+            expected: [rebuilt]
+        )
+        try await writer.finish()
+
+        var visits = try ModelContext(container).fetch(FetchDescriptor<Visit>())
+            .filter { $0.source == SleepEvidence.measuredSource }
+        #expect(visits.count == 1)
+        #expect(Set(visits[0].healthKitSampleIDs ?? []) == [retained, replacement])
+
+        try await writer.prepare()
+        let removed = try await writer.reconcileSleepEvidence(
+            in: [DateInterval(start: start.addingTimeInterval(-60 * 60), end: end.addingTimeInterval(60 * 60))],
+            expected: []
+        )
+        try await writer.finish()
+        visits = try ModelContext(container).fetch(FetchDescriptor<Visit>())
+            .filter { $0.source == SleepEvidence.measuredSource }
+        #expect(removed == 1)
+        #expect(visits.isEmpty)
+    }
+
+    @Test("Overlapping time in bed remains visible without being called sleep")
+    func inBedIsVisibleAtHome() {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let home = Visit(arrival: start, departure: start.addingTimeInterval(9 * 60 * 60),
+                         latitude: -23.37, longitude: 150.51,
+                         placeName: "Home", inferredActivity: "At home", source: "automatic")
+        let inBed = Visit(arrival: start, departure: start.addingTimeInterval(8 * 60 * 60),
+                          latitude: 0, longitude: 0,
+                          placeName: "In bed", inferredActivity: "In bed",
+                          source: SleepEvidence.inBedSource)
+        #expect(ActivityLocationPolicy.shouldShowInTimeline(inBed, locationVisits: [home], now: start.addingTimeInterval(9 * 60 * 60)))
+        #expect(!inBed.activity.localizedCaseInsensitiveContains("sleep"))
+    }
+
+    @Test("Overlapping affected sleep windows become one bounded rebuild")
+    func mergesOverlappingSleepRebuildWindows() {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let windows = ActivityDataService.mergedSleepWindows([
+            DateInterval(start: start, end: start.addingTimeInterval(8 * 60 * 60)),
+            DateInterval(start: start.addingTimeInterval(7 * 60 * 60), end: start.addingTimeInterval(10 * 60 * 60))
+        ])
+        #expect(windows.count == 1)
+        #expect(windows[0].start == start)
+        #expect(windows[0].end == start.addingTimeInterval(10 * 60 * 60))
+    }
 }

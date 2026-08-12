@@ -69,7 +69,7 @@ actor ActivityImportActor {
         var inserted = 0
         for record in records where record.end > record.start {
             let original = DateInterval(start: record.start, end: record.end)
-            if record.source != "health-sleep" { boundStay(departedWith: original, record: record) }
+            if !SleepEvidence.isSleepSource(record.source) { boundStay(departedWith: original, record: record) }
             let segments = segments(for: record, original: original)
 
             for segment in segments {
@@ -83,7 +83,7 @@ actor ActivityImportActor {
                 // by, say, 8 minutes look like a new one and insert a duplicate beside
                 // the original (2026-08-10). Overlap, or a boundary within the sample
                 // reader's own 15-minute merge gap, catches that widening session.
-                let matchesExisting: (Visit) -> Bool = record.source == "health-sleep"
+                let matchesExisting: (Visit) -> Bool = SleepEvidence.isAutomatic(record.source)
                     ? { visit in
                         let visitEnd = visit.departure ?? .distantFuture
                         let overlaps = segment.start < visitEnd && visit.arrival < segment.end
@@ -101,7 +101,7 @@ actor ActivityImportActor {
                     // start replaces the stored one rather than only ever widening
                     // forward. Every other source keeps its own arrival: they were
                     // matched because the replayed sample's start barely moved.
-                    if record.source == "health-sleep" { existing.arrival = segment.start }
+                    if SleepEvidence.isAutomatic(record.source) { existing.arrival = segment.start }
                     existing.placeName = record.name
                     existing.inferredActivity = record.activity
                     if !record.healthKitSampleIDs.isEmpty {
@@ -178,7 +178,10 @@ actor ActivityImportActor {
             guard visit.recognitionConfidence != "confirmed", let ids = visit.healthKitSampleIDs else { return false }
             return !Set(ids).isDisjoint(with: deleted)
         }
-        let toRemove = healthVisits.filter(matches)
+        // Sleep is reconstructed as a complete night after an anchored update. A
+        // deleted stage is not proof the other stages disappeared too, so deletion
+        // of one UUID must never erase the whole night here.
+        let toRemove = healthVisits.filter { !SleepEvidence.isAutomatic($0.source) && matches($0) }
         guard !toRemove.isEmpty else { return 0 }
         let removedIDs = Set(toRemove.map(\.persistentModelID))
         for visit in toRemove { modelContext.delete(visit) }
@@ -194,6 +197,51 @@ actor ActivityImportActor {
         updateTravelDescriptions()
         if modelContext.hasChanges { try modelContext.save() }
         clearSession()
+    }
+
+    /// The local rows overlapping a deleted sleep UUID tell the reader which nights
+    /// need a complete re-query. `HKDeletedObject` deliberately exposes no dates.
+    func sleepWindows(containing deletedSampleIDs: [UUID]) -> [DateInterval] {
+        let deleted = Set(deletedSampleIDs)
+        return healthVisits.compactMap { visit in
+            guard SleepEvidence.isAutomatic(visit.source),
+                  let ids = visit.healthKitSampleIDs,
+                  !Set(ids).isDisjoint(with: deleted),
+                  let end = visit.departure, end > visit.arrival else { return nil }
+            // Padding means a later sync that widened the same night is still part
+            // of this rebuild, without making every deletion an archive-wide scan.
+            return DateInterval(start: visit.arrival.addingTimeInterval(-2 * 60 * 60),
+                                end: end.addingTimeInterval(2 * 60 * 60))
+        }
+    }
+
+    /// Removes automatic sleep evidence only after a successful full-window read
+    /// proves it is absent. Confirmed entries are a person’s record and survive even
+    /// if the originating Health sample is subsequently deleted.
+    func reconcileSleepEvidence(in windows: [DateInterval], expected: [ActivityImportRecord]) throws -> Int {
+        guard !windows.isEmpty else { return 0 }
+        let expectedSleep = expected.filter { SleepEvidence.isAutomatic($0.source) }
+        let candidates = healthVisits.filter { visit in
+            guard SleepEvidence.isAutomatic(visit.source),
+                  visit.recognitionConfidence != "confirmed" else { return false }
+            let end = visit.departure ?? .distantFuture
+            return windows.contains { $0.start < end && $0.end > visit.arrival }
+        }
+        let stale = candidates.filter { visit in
+            !expectedSleep.contains { record in
+                guard record.source == visit.source else { return false }
+                return record.start < (visit.departure ?? .distantFuture) && record.end > visit.arrival
+            }
+        }
+        guard !stale.isEmpty else { return 0 }
+        let IDs = Set(stale.map(\.persistentModelID))
+        for visit in stale { modelContext.delete(visit) }
+        healthVisits.removeAll { IDs.contains($0.persistentModelID) }
+        for key in visitsBySource.keys {
+            visitsBySource[key]?.removeAll { IDs.contains($0.persistentModelID) }
+        }
+        try modelContext.save()
+        return stale.count
     }
 
     func cancel() {
@@ -237,7 +285,7 @@ actor ActivityImportActor {
     /// it; this path had not, so a stay recorded mid-walk cut the workout into fragments
     /// as it was imported — 2.69 km stored as 709 m and 324 m with the middle deleted.
     private func segments(for record: ActivityImportRecord, original: DateInterval) -> [DateInterval] {
-        guard record.source != "health-sleep" else { return [original] }
+        guard !SleepEvidence.isSleepSource(record.source) else { return [original] }
         if ActivityLocationPolicy.isDeclaredJourney(source: record.source, route: record.route,
                                                     stays: locations) {
             return [original]
@@ -301,7 +349,7 @@ actor ActivityImportActor {
 
     private func minimumDuration(for source: String) -> TimeInterval {
         switch source {
-        case "health-sleep": 20 * 60
+        case SleepEvidence.measuredSource, SleepEvidence.inBedSource: 20 * 60
         case "motion", "health-walking": 2 * 60
         default: 60
         }

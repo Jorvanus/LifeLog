@@ -17,6 +17,7 @@ struct SettingsView: View {
     @State private var importingBackup = false
     @State private var backupURL: URL?
     @State private var importMessage: String?
+    @State private var addingManualSleep = false
     @AppStorage(LocationDiagnostics.detailKey) private var detailedLocationDiagnostics = false
     let recorder: LocationRecorder
     let activityData: ActivityDataService
@@ -208,6 +209,7 @@ struct SettingsView: View {
                 } message: {
                     Text(importMessage ?? "")
                 }
+                .sheet(isPresented: $addingManualSleep) { ManualSleepEntryView() }
         }
     }
 
@@ -266,6 +268,7 @@ struct SettingsView: View {
     @ViewBuilder
     private var appleHealthControls: some View {
         adaptiveValue("Status", value: activityData.healthStatus)
+        adaptiveValue("Sleep evidence", value: activityData.sleepEvidenceStatus)
         if !activityData.unaskedHealthTypes.isEmpty {
             Button("Connect Apple Health") {
                 Task { await activityData.requestHealthAccess() }
@@ -286,6 +289,10 @@ struct SettingsView: View {
             Text("Reads the last 30 days again. Use it after granting Workout Routes to add paths to walks already imported without one; existing entries are updated, not duplicated.")
                 .font(.caption).foregroundStyle(.secondary)
         }
+        Button("Add sleep manually") { addingManualSleep = true }
+            .accessibilityIdentifier("add-manual-sleep")
+        Text("Without a Watch, LifeLog can show Health’s estimated time in bed when available. It never guesses that a stationary phone means you were asleep.")
+            .font(.caption).foregroundStyle(.secondary)
     }
 
     @ViewBuilder

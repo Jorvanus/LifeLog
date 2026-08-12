@@ -58,6 +58,9 @@ enum ActivityCatalog {
     /// empty while the timeline was full of both.
     static let generatedDefaults: [(name: String, category: String, symbol: String)] = [
         ("Sleeping", "Sleep", "bed.double.fill"),
+        // An iPhone schedule estimates this without measuring sleep. Keep it out of
+        // the Sleep category so Insights never treats time in bed as hours asleep.
+        ("In bed", "Other", "bed.double.fill"),
         ("Walking", "Fitness", "figure.walk"),
         ("Running", "Fitness", "figure.run"),
         ("Cycling", "Fitness", "bicycle"),

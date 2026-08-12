@@ -104,7 +104,7 @@ extension ActivityLocationPolicy {
 
     nonisolated static func minimumRetainedDuration(for source: String) -> TimeInterval {
         switch source {
-        case "health-sleep": 20 * 60
+        case SleepEvidence.measuredSource, SleepEvidence.inBedSource: 20 * 60
         case "motion", "health-walking": 2 * 60
         default: 60
         }
