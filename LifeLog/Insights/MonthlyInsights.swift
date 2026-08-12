@@ -45,6 +45,16 @@ struct MonthlyInsights {
         var id: Date { date }
     }
 
+    /// A seven-column calendar layout. Blank cells are explicit so the first
+    /// recorded day stays aligned with its real weekday instead of shifting the
+    /// whole month to the left.
+    struct CalendarCell: Identifiable {
+        let index: Int
+        let day: Day?
+
+        var id: String { day.map { "day-\($0.id.timeIntervalSinceReferenceDate)" } ?? "blank-\(index)" }
+    }
+
     static let minimumLoggedHours = 8.0
     static let minimumAbsoluteChange = 1.0
     static let minimumPercentageChange = 0.20
@@ -56,6 +66,7 @@ struct MonthlyInsights {
     let placesByVisits: [PlaceStory]
     let newPlaces: [PlaceStory]
     let biggestPlaceChange: PlaceStory?
+    let allPlaces: [PlaceStory]
     let balance: [Balance]
 
     /// `current` and `previous` are already post-resolution. This is intentionally
@@ -75,15 +86,17 @@ struct MonthlyInsights {
         let headline = headline(changes: changes, newPlaces: newPlaces,
                                 current: currentHours, previous: previousHours,
                                 logged: logged, previousLogged: previousLogged)
+        let placesByTime = currentPlaces.sorted { $0.hours > $1.hours }
         return MonthlyInsights(
             headline: headline,
             changes: changes,
-            placesByTime: Array(currentPlaces.sorted { $0.hours > $1.hours }.prefix(5)),
+            placesByTime: Array(placesByTime.prefix(5)),
             placesByVisits: Array(currentPlaces.sorted { $0.visits > $1.visits || ($0.visits == $1.visits && $0.hours > $1.hours) }.prefix(5)),
             newPlaces: Array(newPlaces.sorted { $0.hours > $1.hours }.prefix(5)),
             biggestPlaceChange: currentPlaces
                 .filter { meaningfulPlaceChange($0) }
                 .max { abs($0.delta) < abs($1.delta) },
+            allPlaces: placesByTime,
             balance: balances(from: current)
         )
     }
@@ -107,6 +120,18 @@ struct MonthlyInsights {
             date = end
         }
         return result
+    }
+
+    static func calendarCells(days: [Day], calendar: Calendar = .current) -> [CalendarCell] {
+        guard let first = days.first else { return [] }
+        let weekday = calendar.component(.weekday, from: first.date)
+        let leadingBlanks = (weekday - calendar.firstWeekday + 7) % 7
+        let usedCells = leadingBlanks + days.count
+        let totalCells = ((usedCells + 6) / 7) * 7
+        return (0..<totalCells).map { index in
+            let dayIndex = index - leadingBlanks
+            return CalendarCell(index: index, day: days.indices.contains(dayIndex) ? days[dayIndex] : nil)
+        }
     }
 
     private static func categoryHours(_ segments: [InsightSegment]) -> [String: Double] {

@@ -2,6 +2,22 @@
 
 ## 2026-08-12
 
+### Month analysis has a clearer visual balance
+
+- Kept What changed focused on the strongest differences and turned Monthly balance into a proportional, tappable life-area visual with neutral direction cues.
+
+### Month place drill-downs retain their period banner
+
+- Made the shared selected-period banner available to the Month Place Story list.
+
+### Month Place Story is focused
+
+- Replaced the long repeated place lists with a compact Most time, Most visits, New, or Changed selector and a scoped See all places list.
+
+### Month calendar reads like a real calendar
+
+- Added weekday headings, true leading alignment, explicit empty-day cells, and a compact colour legend to Month Insights.
+
 ### Month Insights leads with one This month card
 
 - Combined the monthly headline, strongest scorecard metrics, and key travel context into one scoped hero card with restrained comparison treatments and preserved drill-down actions.

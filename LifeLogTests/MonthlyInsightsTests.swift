@@ -47,6 +47,7 @@ struct MonthlyInsightsTests {
         #expect(result.newPlaces.first?.name == "New Cafe")
         #expect(result.newPlaces.first?.visits == 1)
         #expect(result.placesByTime.first?.hours == 1)
+        #expect(result.allPlaces.map(\.name) == ["New Cafe"])
     }
 
     @Test("Month calendar retains every day, including future and empty days")
@@ -57,6 +58,59 @@ struct MonthlyInsightsTests {
         let days = MonthlyInsights.daySummaries(segments: [], interval: month, now: month.start)
         #expect(days.count == 31)
         #expect(days.allSatisfy { $0.dominantCategory == nil && $0.hours == 0 })
+    }
+
+    @Test("Month calendar aligns its first day for every weekday")
+    func calendarAlignsEveryWeekday() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.firstWeekday = 1
+        var seen = Set<Int>()
+
+        for month in 1...12 {
+            let date = calendar.date(from: DateComponents(year: 2026, month: month, day: 1))!
+            let day = MonthlyInsights.Day(date: date, dominantCategory: "Home", hours: 1, awayFraction: 0)
+            let cells = MonthlyInsights.calendarCells(days: [day], calendar: calendar)
+            let weekday = calendar.component(.weekday, from: date)
+            let expectedLeading = (weekday - calendar.firstWeekday + 7) % 7
+            #expect(cells.count % 7 == 0)
+            #expect(cells.prefix(expectedLeading).allSatisfy { $0.day == nil })
+            #expect(cells[expectedLeading].day?.date == date)
+            seen.insert(weekday)
+        }
+        #expect(seen == Set(1...7))
+    }
+
+    @Test("Sparse months retain empty days alongside recorded days")
+    func sparseMonthRetainsEmptyDays() {
+        let calendar = Calendar(identifier: .gregorian)
+        let start = calendar.date(from: DateComponents(year: 2026, month: 5, day: 1))!
+        let interval = calendar.dateInterval(of: .month, for: start)!
+        let visit = Visit(arrival: calendar.date(byAdding: .day, value: 4, to: start)!,
+                          departure: calendar.date(byAdding: .day, value: 4, to: start)!.addingTimeInterval(3_600),
+                          latitude: -27.47, longitude: 153.03,
+                          placeName: "Home", inferredActivity: "Home", source: "automatic")
+        let segment = InsightSegment(id: .visit(ObjectIdentifier(visit)), visit: visit,
+                                     category: "Home", activity: "Home", placeName: "Home",
+                                     start: visit.arrival, end: visit.departure, hours: 1,
+                                     color: insightColor(for: "Home"), symbol: "house.fill",
+                                     isUnlogged: false, isLive: false)
+        let days = MonthlyInsights.daySummaries(segments: [segment], interval: interval,
+                                                now: start.addingTimeInterval(86_400 * 5), calendar: calendar)
+        #expect(days.count == 31)
+        #expect(days[4].dominantCategory == "Home")
+        #expect(days.filter { $0.dominantCategory == nil }.count == 30)
+    }
+
+    @Test("Current partial month keeps future calendar days visible")
+    func currentPartialMonthKeepsFutureDays() {
+        let calendar = Calendar(identifier: .gregorian)
+        let start = calendar.date(from: DateComponents(year: 2026, month: 8, day: 1))!
+        let interval = calendar.dateInterval(of: .month, for: start)!
+        let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 12))!
+        let days = MonthlyInsights.daySummaries(segments: [], interval: interval, now: now, calendar: calendar)
+        #expect(days.count == 31)
+        #expect(days[11].date == calendar.date(from: DateComponents(year: 2026, month: 8, day: 12))!)
+        #expect(days[12...].allSatisfy { $0.dominantCategory == nil && $0.hours == 0 })
     }
 
     private var interval: DateInterval { DateInterval(start: base, duration: 30 * 86_400) }

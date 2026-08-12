@@ -4,6 +4,15 @@ import Charts
 import MapKit
 import UIKit
 
+private enum MonthlyPlaceSection: String, CaseIterable, Identifiable {
+    case mostTime = "Most time"
+    case mostVisits = "Most visits"
+    case new = "New"
+    case changed = "Changed"
+
+    var id: String { rawValue }
+}
+
 struct InsightsView: View {
     @Environment(\.modelContext) private var context
     let activityData: ActivityDataService
@@ -19,6 +28,7 @@ struct InsightsView: View {
     @State private var selectedSlice: TimeSlice?
     @State private var selectedLifeArea: LifeArea?
     @State private var selectedPlace: PlaceTotal?
+    @State private var monthlyPlaceSection: MonthlyPlaceSection = .mostTime
     @State private var selectedComparison: TrendComparison?
     @State private var now = Date.now
     @State private var snapshot = InsightsSnapshot.empty
@@ -903,28 +913,35 @@ struct InsightsView: View {
         if !changes.isEmpty {
             VStack(alignment: .leading, spacing: 14) {
                 Text("What changed").font(.title2.bold())
-                Text("Meaningful differences from last month").font(.subheadline).foregroundStyle(.secondary)
-                ForEach(changes.prefix(6)) { change in
+                Text("The strongest meaningful differences from last month")
+                    .font(.subheadline).foregroundStyle(.secondary)
+                ForEach(changes.prefix(4)) { change in
                     Button { openComparison(change) } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: insightSymbol(for: change.category))
-                            .foregroundStyle(insightColor(for: change.category))
-                            .frame(width: 36, height: 36)
-                            .background(insightColor(for: change.category).opacity(0.12), in: Circle())
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(change.category).font(.subheadline.weight(.medium))
-                            Text(change.delta >= 0 ? "\(formatHours(change.delta)) more" : "\(formatHours(abs(change.delta))) less")
-                                .font(.caption).foregroundStyle(.secondary)
+                        HStack(spacing: 12) {
+                            Image(systemName: insightSymbol(for: change.category))
+                                .foregroundStyle(insightColor(for: change.category))
+                                .frame(width: 36, height: 36)
+                                .background(insightColor(for: change.category).opacity(0.12), in: Circle())
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(change.category).font(.subheadline.weight(.medium))
+                                Text(change.delta >= 0 ? "More time" : "Less time")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: change.delta >= 0 ? "arrow.up.right" : "arrow.down.right")
+                                .foregroundStyle(.secondary)
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text(formatHours(abs(change.delta)))
+                                    .font(.subheadline.bold().monospacedDigit())
+                                if let percentage = change.percentage {
+                                    Text(monthlyPercentageText(percentage))
+                                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                                } else {
+                                    Text("New").font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
                         }
-                        Spacer()
-                        if let percentage = change.percentage {
-                            Text(monthlyPercentageText(percentage))
-                                .font(.subheadline.bold().monospacedDigit())
-                        } else {
-                            Text("New").font(.caption.bold())
-                        }
-                    }
-                    .contentShape(Rectangle())
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityElement(children: .combine)
@@ -943,24 +960,11 @@ struct InsightsView: View {
     private var monthlyBalanceSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Monthly balance").font(.title2.bold())
-            Text("Time grouped from your activity definitions").font(.subheadline).foregroundStyle(.secondary)
+            Text("Proportion of recorded time by life area").font(.subheadline).foregroundStyle(.secondary)
             if monthlyInsights.balance.isEmpty {
                 InsightEmptyRow(icon: "chart.bar.xaxis", title: "Not enough recorded activity", detail: "These groups appear once the month has usable data.")
             } else {
-                ForEach(monthlyInsights.balance) { item in
-                    Button { openCategory(item.name) } label: {
-                    HStack(spacing: 11) {
-                        Image(systemName: item.symbol).foregroundStyle(item.color).frame(width: 26)
-                        Text(item.name).font(.subheadline)
-                        Spacer()
-                        Text(formatHours(item.hours)).font(.subheadline.bold().monospacedDigit())
-                    }
-                    .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("\(item.name), \(formatHours(item.hours))")
-                }
+                MonthlyBalanceVisual(items: monthlyInsights.balance, onSelect: openCategory)
             }
         }
         .padding(20).lifeCard()
@@ -1620,57 +1624,11 @@ struct InsightsView: View {
     }
 
     private var monthlyPlacesSection: some View {
-        let story = monthlyInsights
-        return VStack(alignment: .leading, spacing: 16) {
-            Text("Place story").font(.title2.bold())
-            monthlyPlaceList(title: "Most time", places: story.placesByTime) { formatHours($0.hours) }
-            monthlyPlaceList(title: "Most visits", places: story.placesByVisits) { "\($0.visits) \($0.visits == 1 ? "visit" : "visits")" }
-            monthlyPlaceList(title: "New this month", places: story.newPlaces,
-                             empty: "No new places with enough recorded history.") { formatHours($0.hours) }
-            if let place = story.biggestPlaceChange {
-                monthlyPlaceList(title: "Biggest change from last month", places: [place]) {
-                    "\($0.delta >= 0 ? "+" : "−")\(formatHours(abs($0.delta))) vs last month"
-                }
-            }
-        }
-        .padding(20).lifeCard()
-        .accessibilityIdentifier("insights-month-places")
-    }
-
-    @ViewBuilder private func monthlyPlaceList(title: String, places: [MonthlyInsights.PlaceStory],
-                                               empty: String = "No places recorded yet.",
-                                               detail: @escaping (MonthlyInsights.PlaceStory) -> String) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Text(title).font(.headline)
-            if places.isEmpty {
-                Text(empty).font(.caption).foregroundStyle(.secondary)
-            } else {
-                ForEach(places) { place in
-                    NavigationLink {
-                        InsightPlaceHistoryView(placeName: place.name, periodTitle: periodTitle,
-                                                interval: snapshot.analysisInterval,
-                                                rows: InsightsSnapshot.sliceRows(forPlace: place.name,
-                                                                                 segments: snapshot.segments,
-                                                                                 interval: snapshot.analysisInterval,
-                                                                                 now: snapshot.generatedAt))
-                    } label: {
-                        HStack(spacing: 10) {
-                            ActivityIcon(activity: place.activity, context: place.name,
-                                         color: insightColor(for: place.category), size: 34)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(place.name).font(.subheadline.weight(.medium)).lineLimit(1)
-                                Text(place.category).font(.caption).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Text(detail(place)).font(.caption.bold().monospacedDigit())
-                            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("\(place.name), \(detail(place))")
-                }
-            }
-        }
+        MonthlyPlaceStorySection(story: monthlyInsights, selection: $monthlyPlaceSection,
+                                 periodTitle: periodTitle, interval: snapshot.analysisInterval,
+                                 segments: snapshot.segments, now: snapshot.generatedAt)
+            .padding(20).lifeCard()
+            .accessibilityIdentifier("insights-month-places")
     }
 
     private var monthlyCalendarSection: some View {
@@ -1681,13 +1639,37 @@ struct InsightsView: View {
                 anchorDate = date
                 window = .day
             }
-            HStack(spacing: 8) {
-                Circle().fill(.secondary.opacity(0.12)).frame(width: 10, height: 10)
-                Text("Little or nothing recorded").font(.caption).foregroundStyle(.secondary)
-            }
+            MonthCalendarLegend()
         }
         .padding(20).lifeCard()
         .accessibilityIdentifier("insights-month-calendar")
+    }
+
+    private struct MonthCalendarLegend: View {
+        private let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 2)
+
+        var body: some View {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 5) {
+                legendItem(color: .secondary.opacity(0.12), title: "No data", swatchOpacity: 1)
+                legendItem(color: insightColor(for: "Home"), title: "Mostly Home", swatchOpacity: 0.7)
+                legendItem(color: insightColor(for: "Work"), title: "Activity", swatchOpacity: 0.7)
+                legendItem(color: insightColor(for: "Travel"), title: "Away from Home", swatchOpacity: 0.7)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Calendar colours: no data, mostly Home, activity, and away from Home")
+            .accessibilityIdentifier("month-calendar-legend")
+        }
+
+        private func legendItem(color: Color, title: String, swatchOpacity: Double) -> some View {
+            HStack(spacing: 6) {
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(color.opacity(swatchOpacity))
+                    .frame(width: 12, height: 12)
+                Text(title)
+            }
+        }
     }
 
     private var awayFromHomeSection: some View {
@@ -2573,6 +2555,184 @@ private struct MonthlyHeroCard: View {
         .contentShape(RoundedRectangle(cornerRadius: 12))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(metric.title): \(metric.value), \(metric.detail)")
+    }
+}
+
+private struct MonthlyBalanceVisual: View {
+    let items: [MonthlyInsights.Balance]
+    let onSelect: (String) -> Void
+
+    private var totalHours: Double {
+        items.reduce(0) { $0 + $1.hours }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            GeometryReader { proxy in
+                HStack(spacing: 2) {
+                    ForEach(items) { item in
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(item.color)
+                            .frame(width: max(2, proxy.size.width * item.hours / max(totalHours, 0.01)))
+                    }
+                }
+                .clipShape(Capsule())
+            }
+            .frame(height: 18)
+            .accessibilityElement()
+            .accessibilityLabel("Monthly balance")
+            .accessibilityValue(items.map { "\($0.name), \(formatHours($0.hours))" }.joined(separator: ". "))
+
+            LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading),
+                                GridItem(.flexible(), alignment: .leading)], spacing: 8) {
+                ForEach(items) { item in
+                    Button { onSelect(item.name) } label: {
+                        HStack(spacing: 7) {
+                            Circle().fill(item.color).frame(width: 9, height: 9)
+                            Text(item.name)
+                                .font(.caption)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                            Spacer(minLength: 2)
+                            Text(formatHours(item.hours))
+                                .font(.caption.bold().monospacedDigit())
+                        }
+                        .foregroundStyle(.primary)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Open \(item.name), \(formatHours(item.hours))")
+                }
+            }
+        }
+    }
+}
+
+private struct MonthlyPlaceStorySection: View {
+    let story: MonthlyInsights
+    @Binding var selection: MonthlyPlaceSection
+    let periodTitle: String
+    let interval: DateInterval
+    let segments: [InsightSegment]
+    let now: Date
+
+    private var selectedPlaces: [MonthlyInsights.PlaceStory] {
+        switch selection {
+        case .mostTime: return story.placesByTime
+        case .mostVisits: return story.placesByVisits
+        case .new: return story.newPlaces
+        case .changed: return story.biggestPlaceChange.map { [$0] } ?? []
+        }
+    }
+
+    private var selectedEmptyMessage: String {
+        switch selection {
+        case .mostTime: return "No places recorded in this period."
+        case .mostVisits: return "No visits recorded in this period."
+        case .new: return "No new places with enough recorded history."
+        case .changed: return "No meaningful place change to show yet."
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Place story").font(.title2.bold())
+            Picker("Place story", selection: $selection) {
+                ForEach(MonthlyPlaceSection.allCases) { section in
+                    Text(section.rawValue).tag(section)
+                }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("month-place-story-picker")
+
+            Text(selection.rawValue).font(.headline)
+            if selectedPlaces.isEmpty {
+                Text(selectedEmptyMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                ForEach(selectedPlaces.prefix(5)) { place in
+                    MonthlyPlaceStoryRow(place: place, detail: detail(for: place), periodTitle: periodTitle,
+                                         interval: interval, segments: segments, now: now)
+                }
+            }
+
+            if story.allPlaces.count > 5 {
+                NavigationLink {
+                    MonthlyPlaceStoryList(places: story.allPlaces, periodTitle: periodTitle,
+                                          interval: interval, segments: segments, now: now)
+                } label: {
+                    Label("See all places", systemImage: "list.bullet")
+                        .font(.subheadline.weight(.medium))
+                }
+                .accessibilityIdentifier("month-see-all-places")
+            }
+        }
+    }
+
+    private func detail(for place: MonthlyInsights.PlaceStory) -> String {
+        switch selection {
+        case .mostTime: return formatHours(place.hours)
+        case .mostVisits: return "\(place.visits) \(place.visits == 1 ? "visit" : "visits")"
+        case .new: return formatHours(place.hours)
+        case .changed:
+            return "\(place.delta >= 0 ? "+" : "−")\(formatHours(abs(place.delta))) vs last month"
+        }
+    }
+}
+
+private struct MonthlyPlaceStoryList: View {
+    let places: [MonthlyInsights.PlaceStory]
+    let periodTitle: String
+    let interval: DateInterval
+    let segments: [InsightSegment]
+    let now: Date
+
+    var body: some View {
+        List {
+            Section("All places in this period") {
+                ForEach(places) { place in
+                    MonthlyPlaceStoryRow(place: place, detail: "\(formatHours(place.hours)) · \(place.visits) \(place.visits == 1 ? "visit" : "visits")",
+                                          periodTitle: periodTitle, interval: interval, segments: segments, now: now)
+                }
+            }
+        }
+        .navigationTitle("Places")
+        .navigationBarTitleDisplayMode(.inline)
+        .safeAreaInset(edge: .top) { PeriodBanner(title: periodTitle, interval: interval) }
+        .accessibilityIdentifier("month-all-places")
+    }
+}
+
+private struct MonthlyPlaceStoryRow: View {
+    let place: MonthlyInsights.PlaceStory
+    let detail: String
+    let periodTitle: String
+    let interval: DateInterval
+    let segments: [InsightSegment]
+    let now: Date
+
+    var body: some View {
+        NavigationLink {
+            InsightPlaceHistoryView(placeName: place.name, periodTitle: periodTitle, interval: interval,
+                                    rows: InsightsSnapshot.sliceRows(forPlace: place.name, segments: segments,
+                                                                      interval: interval, now: now))
+        } label: {
+            HStack(spacing: 10) {
+                ActivityIcon(activity: place.activity, context: place.name,
+                             color: insightColor(for: place.category), size: 34)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(place.name).font(.subheadline.weight(.medium)).lineLimit(1)
+                    Text(place.category).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text(detail).font(.caption.bold().monospacedDigit()).multilineTextAlignment(.trailing)
+                Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(place.name), \(detail)")
     }
 }
 

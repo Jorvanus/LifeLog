@@ -182,6 +182,57 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertFalse(element("insights-travel-summary").exists)
     }
 
+    func testMonthInsightsCalendarHasWeekdaysAndLegend() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+        app.tabBars.buttons["Insights"].tap()
+
+        XCTAssertTrue(app.buttons["Month"].waitForExistence(timeout: 5))
+        app.buttons["Month"].tap()
+        XCTAssertTrue(element("insights-month-calendar").waitForExistence(timeout: 10))
+        XCTAssertTrue(element("month-calendar-weekdays").waitForExistence(timeout: 5))
+        XCTAssertTrue(element("month-calendar-legend").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["No data"].exists)
+        XCTAssertTrue(app.staticTexts["Mostly Home"].exists)
+        XCTAssertTrue(app.staticTexts["Activity"].exists)
+        XCTAssertTrue(app.staticTexts["Away from Home"].exists)
+    }
+
+    func testMonthPlaceStoryUsesFocusedSections() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+        app.tabBars.buttons["Insights"].tap()
+
+        XCTAssertTrue(app.buttons["Month"].waitForExistence(timeout: 5))
+        app.buttons["Month"].tap()
+        XCTAssertTrue(element("insights-month-places").waitForExistence(timeout: 10))
+        XCTAssertTrue(element("month-place-story-picker").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Most time"].exists)
+        XCTAssertTrue(app.buttons["Most visits"].exists)
+        XCTAssertTrue(app.buttons["New"].exists)
+        XCTAssertTrue(app.buttons["Changed"].exists)
+        XCTAssertFalse(app.staticTexts["Biggest change from last month"].exists)
+
+        app.buttons["New"].tap()
+        XCTAssertTrue(app.staticTexts["New"].exists)
+    }
+
+    func testMonthAnalysisKeepsChangesAndBalanceActionable() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+        app.tabBars.buttons["Insights"].tap()
+
+        XCTAssertTrue(app.buttons["Month"].waitForExistence(timeout: 5))
+        app.buttons["Month"].tap()
+        XCTAssertTrue(element("insights-month-changes").waitForExistence(timeout: 10))
+        XCTAssertTrue(element("insights-month-balance").waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Proportion of recorded time by life area"].exists)
+        XCTAssertFalse(app.staticTexts["Meaningful differences from last month"].exists)
+    }
+
     func testDaySummaryOmitsUnavailableMetricsWithoutZeroPlaceholders() {
         app.terminate()
         app.launchArguments = ["-uiTesting", "-ui-test-seed"]

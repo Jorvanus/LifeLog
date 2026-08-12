@@ -215,7 +215,8 @@ struct InsightGapDetailView: View {
     }
 }
 
-private struct PeriodBanner: View {
+// Shared by all Insights drill-down destinations, including the Month place list.
+struct PeriodBanner: View {
     let title: String
     let interval: DateInterval
     var body: some View {
