@@ -33,6 +33,41 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(element("saved-places-link").waitForExistence(timeout: 5))
     }
 
+    /// Insights opens on Day by default. The seeded open Home stay (`UITestSeedData`)
+    /// is the Current Activity card's only reachability check — tapping it opens the
+    /// same `VisitEditor` Timeline's own current-activity card opens.
+    func testInsightsDayShowsCurrentActivityCard() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+        app.tabBars.buttons["Insights"].tap()
+        let card = element("insights-current-activity-card")
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        card.tap()
+        XCTAssertTrue(element("choose-location-link").waitForExistence(timeout: 5))
+    }
+
+    /// The day bar is Day's primary visual — reachable, and distinct from the
+    /// donut, which stays available lower on the same screen.
+    func testInsightsDayTimelineBarAndDonutAreBothReachable() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+        app.tabBars.buttons["Insights"].tap()
+        XCTAssertTrue(element("insights-day-bar").waitForExistence(timeout: 5))
+        XCTAssertTrue(element("insights-donut-chart").waitForExistence(timeout: 5))
+    }
+
+    /// The seeded unidentified and low-confidence stays give "Needs your
+    /// attention" something to show without needing a fixture of its own.
+    func testInsightsDayShowsNeedsAttentionForSeededIssues() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+        app.tabBars.buttons["Insights"].tap()
+        XCTAssertTrue(element("insights-needs-attention").waitForExistence(timeout: 5))
+    }
+
     func testSavedPlacesScreenIsReachableFromSettings() {
         app.tabBars.buttons["Settings"].tap()
         let savedPlaces = element("saved-places-link")

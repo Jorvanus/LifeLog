@@ -30,6 +30,27 @@ struct InsightsView: View {
     @State private var trendSeries: [InsightsTrendSeries] = []
     @State private var habits: [InsightsHabit] = []
     @State private var weeklyRhythm = WeekdayPattern.empty
+    /// The day's segments over the full, uncapped 24-hour interval -- unlike
+    /// `snapshot.segments`, which stops at `now` for today. Only populated for
+    /// `window == .day`; the day bar is the only thing that reads it.
+    @State private var daySegments: [InsightSegment] = []
+    @State private var selectedDaySegment: InsightSegment?
+    /// Shared by the Current Activity card and Needs Attention rows -- both are
+    /// "open this one Visit," the same action `VisitEditor` already exists for.
+    @State private var editingVisit: Visit?
+    @State private var addVisitRange = DateInterval(start: .now, duration: 0)
+    @State private var isAddingVisit = false
+    @State private var todaySteps: Double?
+    @State private var lastNightSleep: SleepSummary?
+    /// Up to `InsightsTrends.habitWeeks` of completed weeks' per-category hours,
+    /// the same fetch `trendSeries`/`habits` already use -- never includes the
+    /// in-progress week (`InsightsTrends.range` ends before it), which is what
+    /// keeps the Week rolling baseline from comparing a partial week as if it
+    /// were whole.
+    @State private var weeklyBaselineTotals: [WeeklyTotals] = []
+    @State private var weekSteps: Double?
+    @State private var weekAverageNightlySleep: TimeInterval?
+    @State private var weekDays: [WeeklyStrip.Day] = []
 
     private var interval: DateInterval { window.interval(containing: anchorDate) }
     private var sleepRefreshKey: String {
@@ -42,19 +63,13 @@ struct InsightsView: View {
                 ScrollView {
                     LazyVStack(spacing: 22) {
                         controls
-                        highlightsSection
-                        healthSetupSection
-                        donutSection
-                        if window == .day { dailyTimelineSection }
-                        awayFromHomeSection
-                        activityChangesSection
-                        trendsSection
-                        weekdayPatternsSection
-                        habitsSection
-                        trendLinesSection
-                        topActivitiesSection
-                        placesSection
-                        topPlacesSection
+                        if window == .day {
+                            dayLayout
+                        } else if window == .week {
+                            weekLayout
+                        } else {
+                            standardLayout
+                        }
                     }
                     .padding(.horizontal, 18)
                     .padding(.bottom, 28)
@@ -111,6 +126,21 @@ struct InsightsView: View {
                     )
                     .presentationDetents([.medium, .large])
                 }
+            }
+            .sheet(item: $selectedDaySegment, onDismiss: reloadInsights) { segment in
+                if let visit = segment.visit {
+                    NavigationStack { VisitEditor(visit: visit) }
+                        .presentationDetents([.large])
+                } else {
+                    ManualVisitView(range: DateInterval(start: segment.start, end: segment.end))
+                }
+            }
+            .sheet(item: $editingVisit, onDismiss: reloadInsights) { visit in
+                NavigationStack { VisitEditor(visit: visit) }
+                    .presentationDetents([.large])
+            }
+            .sheet(isPresented: $isAddingVisit, onDismiss: reloadInsights) {
+                ManualVisitView(range: addVisitRange)
             }
             .sheet(item: $exportFile) { file in
                 NavigationStack {
@@ -182,7 +212,14 @@ struct InsightsView: View {
         let dayInterval = DateInterval(start: interval.start, end: max(interval.start, queryEnd))
 
         if window == .day {
-            if let steps = await activityData.stepCount(for: dayInterval) {
+            weekSteps = nil
+            weekAverageNightlySleep = nil
+            // Stashed here, not re-queried by the Day summary card: this is
+            // already the one place Insights asks HealthKit for today's steps
+            // and last night's sleep.
+            let steps = await activityData.stepCount(for: dayInterval)
+            todaySteps = steps
+            if let steps {
                 let baseline = await activityData.stepHistory(
                     forSameWeekdayAs: interval.start,
                     through: interval.contains(now) ? now : nil,
@@ -194,11 +231,26 @@ struct InsightsView: View {
                     found.append(highlight)
                 }
             }
-            if let night = await activityData.sleepSummary(for: dayInterval),
+            let night = await activityData.sleepSummary(for: dayInterval)
+            lastNightSleep = night
+            if let night,
                let average = await activityData.averageNightlySleep(before: interval.start, nights: 14),
                let highlight = DayHighlights.sleep(lastNight: night.totalSleep, averageNight: average) {
                 found.append(highlight)
             }
+        } else if window == .week {
+            todaySteps = nil
+            lastNightSleep = nil
+            // Same one-call-per-metric shape as Day's steps/sleep above, just
+            // over the week's own interval -- `stepCount`/`averageNightlySleep`
+            // already accept an arbitrary span, so this is not seven daily calls.
+            weekSteps = await activityData.stepCount(for: dayInterval)
+            weekAverageNightlySleep = await activityData.averageNightlySleep(before: interval.end, nights: 7)
+        } else {
+            todaySteps = nil
+            lastNightSleep = nil
+            weekSteps = nil
+            weekAverageNightlySleep = nil
         }
         if let highlight = DayHighlights.activity(from: snapshot.comparisons, window: window) {
             found.append(highlight)
@@ -223,8 +275,12 @@ struct InsightsView: View {
             found.append(highlight)
         }
         guard !Task.isCancelled else { return }
-        highlights = variedHighlights(found)
-        highlightPage = min(highlightPage, max(0, found.count - 1))
+        // Day's carousel is capped at three, deliberately -- a daily review
+        // screen names what stood out, it does not repeat every comparison
+        // available. Week/Month/Year are unchanged.
+        let ordered = variedHighlights(found)
+        highlights = window == .day ? Array(ordered.prefix(3)) : ordered
+        highlightPage = min(highlightPage, max(0, highlights.count - 1))
     }
 
     /// Every visit to places matching this name, unscoped by date — the archive
@@ -339,6 +395,12 @@ struct InsightsView: View {
             ].filter { !$0.isEmpty }
             habits = InsightsTrends.habits(from: allWeeks)
             weeklyRhythm = data.weekdayPatterns
+            // Already the completed-weeks-only fetch Week's rolling baseline needs
+            // -- `InsightsTrends.range` ends before the in-progress week, so this
+            // can never include a partial week. Kept as the full fetched span
+            // (not sliced to a fixed count here) so the Week section can choose
+            // its own baseline width without a second fetch.
+            weeklyBaselineTotals = allWeeks
             Diagnostics.performance(context, subsystem: "Insights", operation: "trend history",
                                     startedAt: startedAt, itemCount: data.itemCount)
         } catch {
@@ -349,6 +411,7 @@ struct InsightsView: View {
             trendSeries = []
             habits = []
             weeklyRhythm = WeekdayPattern.empty
+            weeklyBaselineTotals = []
         }
     }
 
@@ -430,6 +493,55 @@ struct InsightsView: View {
             }
             Spacer(minLength: 0)
         }
+    }
+
+    /// Week/Month/Year's existing section list, unchanged. Day gets a different
+    /// shape entirely -- see `dayLayout` -- because a single day answers a
+    /// different question ("how did today go, what needs a look") than a period
+    /// answers ("what changed, what's the pattern").
+    @ViewBuilder private var standardLayout: some View {
+        highlightsSection
+        healthSetupSection
+        donutSection
+        awayFromHomeSection
+        activityChangesSection
+        trendsSection
+        weekdayPatternsSection
+        habitsSection
+        trendLinesSection
+        topActivitiesSection
+        placesSection
+        topPlacesSection
+    }
+
+    /// A practical daily-review screen, not a smaller period view: what's
+    /// happening right now, the day so far at a glance, a short summary, what
+    /// needs attention, and — last, not first — what stood out. The donut stays
+    /// reachable (its tap-to-inspect interaction is unchanged) but is no longer
+    /// the lead visual; the day bar is.
+    @ViewBuilder private var dayLayout: some View {
+        currentActivitySection
+        dayTimelineBarSection
+        donutSection
+        daySummarySection
+        needsAttentionSection
+        highlightsSection
+        healthSetupSection
+    }
+
+    /// "How did this week compare with usual" — a different question from
+    /// Month/Year's "what's the pattern," so a different layout, not a smaller
+    /// one: the seven days at a glance, a scorecard, what actually changed
+    /// against a rolling baseline (not just the single preceding week), and a
+    /// commute summary when there's a real one to show. The donut stays
+    /// reachable but demoted, same as Day.
+    @ViewBuilder private var weekLayout: some View {
+        weeklyStripSection
+        weeklyScorecardSection
+        weeklyRoutineChangesSection
+        weeklyCommuteSection
+        donutSection
+        healthSetupSection
     }
 
     private var controls: some View {
@@ -558,10 +670,6 @@ struct InsightsView: View {
         .lifeCard()
     }
 
-    /// Space between blocks in the day bar. Named because the widths have to be
-    /// divided over what is left *after* the gaps are taken out.
-    private static let dayBarGap: CGFloat = 2
-
     /// The Saved Place explicitly given the Home role. A fact the owner stated, not
     /// a name match — so "Homemaker Centre" was never mistaken for it, and a home
     /// saved under any other name still counts.
@@ -569,40 +677,387 @@ struct InsightsView: View {
         savedPlaces.first { $0.homeWorkRole == .home }
     }
 
-    private var dailyTimelineSection: some View {
+    /// Mirrors `homePlace`. The Week commute summary only shows once both
+    /// roles are configured — commute detection has nothing to anchor either
+    /// end to otherwise.
+    private var workPlace: SavedPlace? {
+        savedPlaces.first { $0.homeWorkRole == .work }
+    }
+
+    /// The same live-stay concept Timeline's own current-activity card already
+    /// uses (`TimelineView.current`), not a second definition of "current" —
+    /// only meaningful when looking at today, since a past day has nothing
+    /// still open.
+    private var currentVisit: Visit? {
+        guard isCurrentWindow else { return nil }
+        return visits.first { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored && $0.departure == nil }
+    }
+
+    /// A compact summary, not Timeline's full card: place, activity, elapsed
+    /// time, and — only when the same flags Timeline already checks say so — a
+    /// "Needs checking" flag. Absent entirely rather than showing a placeholder
+    /// when there is nothing currently open, the same way Timeline shows nothing
+    /// extra beyond its own "waiting" state rather than a duplicate live card.
+    @ViewBuilder private var currentActivitySection: some View {
+        if let visit = currentVisit {
+            Button { editingVisit = visit } label: {
+                HStack(spacing: 14) {
+                    Circle().fill(.green).frame(width: 10, height: 10)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            Text(visit.displayPlaceName).font(.headline).lineLimit(1)
+                            if visit.needsCategorisation || visit.needsConfirmation {
+                                Label("Needs checking", systemImage: "questionmark.circle.fill")
+                                    .font(.caption2.bold()).foregroundStyle(.orange)
+                                    .labelStyle(.iconOnly)
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                        Text(visit.suspectedActivity).font(.subheadline).foregroundStyle(.secondary)
+                        Text("Since \(visit.arrival.formatted(date: .omitted, time: .shortened)) · \(formattedDuration(now.timeIntervalSince(visit.arrival)))")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(.tertiary)
+                }
+                .padding(18)
+                .lifeCard()
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("insights-current-activity-card")
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(
+                "Current activity: \(visit.displayPlaceName), \(visit.suspectedActivity), "
+                + "since \(visit.arrival.formatted(date: .omitted, time: .shortened)), "
+                + formattedDuration(now.timeIntervalSince(visit.arrival))
+                + (visit.needsCategorisation || visit.needsConfirmation ? ", needs checking" : "")
+            )
+            .accessibilityHint("Opens the editor for this visit")
+        }
+    }
+
+    /// The day's primary visual: every post-resolution segment at its true
+    /// position on a fixed 24-hour scale. `daySegments` (built in
+    /// `reloadInsights`) is the uncapped counterpart of `snapshot.segments`, so
+    /// this bar shows the whole day, not just what has elapsed so far.
+    private var dayTimelineBarSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Your day").font(.title2.bold())
-            Text("A 24-hour view of where your time went").font(.subheadline).foregroundStyle(.secondary)
-            GeometryReader { proxy in
-                // Each block used to take its share of the *full* width, and then the
-                // HStack added a gap between every pair on top of that, so the bar
-                // overran the card by two points per block — worse the more broken up
-                // the day was. The gaps come out of the width first now.
-                let segments = snapshot.segments
-                let gaps = Self.dayBarGap * CGFloat(max(segments.count - 1, 0))
-                let available = max(proxy.size.width - gaps, 1)
-                HStack(spacing: Self.dayBarGap) {
-                    ForEach(segments) { segment in
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(segment.color)
-                            .frame(width: available * segment.hours / max(snapshot.totalHours, 0.01))
-                            .accessibilityLabel("\(segment.activity), \(formatHours(segment.hours))")
+            Text("Tap any part of the day to open it").font(.subheadline).foregroundStyle(.secondary)
+            DayTimelineBar(segments: daySegments, interval: interval, now: now) { segment in
+                // A commute segment has no backing Visit and nothing recorded to
+                // add — the same "nothing to open" `InsightSliceEditor` already
+                // treats it as for a category slice.
+                guard segment.visit != nil || segment.isUnlogged else { return }
+                selectedDaySegment = segment
+            }
+            let pastUnloggedHours = daySegments
+                .filter { $0.isUnlogged && $0.end <= now }
+                .reduce(0) { $0 + $1.hours }
+            if pastUnloggedHours > 0.25 {
+                // The honest caveat on every number on this screen, kept where the day
+                // is rather than filed under the app's own plumbing. Only what has
+                // already passed counts here -- the rest of today is not "unlogged",
+                // it just hasn't happened.
+                Text("\(formatHours(pastUnloggedHours)) of today so far is not logged.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(20).lifeCard()
+        .accessibilityIdentifier("insights-day-bar")
+    }
+
+    /// A short, factual roll-up — not a second copy of `awayFromHomeSection`'s
+    /// big-number treatment, which Week/Month/Year still get. Steps and sleep
+    /// are read from the `todaySteps`/`lastNightSleep` `reloadHighlights` already
+    /// fetched; travel and exercise are summed straight from `daySegments`, no
+    /// second HealthKit call. A value simply has no row when there's nothing to
+    /// show it — no "0 steps" when Health isn't connected.
+    private var daySummarySection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Day summary").font(.title2.bold())
+            VStack(spacing: 10) {
+                daySummaryRow(icon: "house.fill", label: "At Home",
+                             value: formatHours(max(0, snapshot.loggedHours - snapshot.awayFromHomeHours)))
+                daySummaryRow(icon: "figure.walk.departure", label: "Away from Home",
+                             value: formatHours(snapshot.awayFromHomeHours))
+                let travel = InsightsSnapshot.travelHours(in: daySegments)
+                if travel > 0.01 {
+                    daySummaryRow(icon: "car.fill", label: "Travelling", value: formatHours(travel))
+                }
+                if let todaySteps, todaySteps > 0 {
+                    daySummaryRow(icon: "shoeprints.fill", label: "Steps", value: Int(todaySteps).formatted())
+                }
+                if let lastNightSleep, lastNightSleep.totalSleep > 0 {
+                    daySummaryRow(icon: "bed.double.fill", label: "Last night’s sleep",
+                                 value: formatHours(lastNightSleep.totalSleep / 3600))
+                }
+                let workout = InsightsSnapshot.fitnessHours(in: daySegments)
+                if workout > 0.01 {
+                    daySummaryRow(icon: "figure.run", label: "Exercise", value: formatHours(workout))
+                }
+            }
+        }
+        .padding(20).lifeCard()
+        .accessibilityIdentifier("insights-day-summary")
+    }
+
+    private func daySummaryRow(icon: String, label: String, value: String) -> some View {
+        HStack {
+            Label(label, systemImage: icon).font(.subheadline).foregroundStyle(.secondary)
+            Spacer()
+            Text(value).font(.subheadline.bold()).monospacedDigit()
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label): \(value)")
+    }
+
+    private enum NeedsAttentionItem: Identifiable {
+        case review(ReviewQueue.Entry)
+        case gap(InsightSegment)
+
+        var id: String {
+            switch self {
+            case .review(let entry): "review-\(entry.id)"
+            case .gap(let segment): "gap-\(segment.start.timeIntervalSinceReferenceDate)"
+            }
+        }
+    }
+
+    /// Two existing detection paths, not new ones: `ReviewQueue.entries` is the
+    /// exact function/ordering Timeline's own review card already uses, and
+    /// `InsightsSnapshot.meaningfulGaps` reads the same `daySegments` the day bar
+    /// draws. Capped short — this names what needs a look, it does not replace
+    /// the day bar as the place to browse everything.
+    private var needsAttentionItems: [NeedsAttentionItem] {
+        let review = ReviewQueue.entries(in: visits, now: now).prefix(3).map { NeedsAttentionItem.review($0) }
+        let gaps = InsightsSnapshot.meaningfulGaps(in: daySegments, before: now).prefix(2).map { NeedsAttentionItem.gap($0) }
+        return Array((review + gaps).prefix(4))
+    }
+
+    @ViewBuilder private var needsAttentionSection: some View {
+        let items = needsAttentionItems
+        if !items.isEmpty {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Needs your attention").font(.title2.bold())
+                VStack(spacing: 10) {
+                    ForEach(items) { needsAttentionRow($0) }
+                }
+            }
+            .padding(20).lifeCard()
+            .accessibilityIdentifier("insights-needs-attention")
+        }
+    }
+
+    @ViewBuilder
+    private func needsAttentionRow(_ item: NeedsAttentionItem) -> some View {
+        switch item {
+        case .review(let entry):
+            Button { editingVisit = entry.visit } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "questionmark.circle.fill").foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(entry.visit.displayPlaceName).font(.subheadline.weight(.medium)).lineLimit(1)
+                        Text(entry.reason.prompt).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(entry.visit.displayPlaceName), \(entry.reason.prompt)")
+            .accessibilityHint("Opens the editor for this visit")
+        case .gap(let segment):
+            Button {
+                addVisitRange = DateInterval(start: segment.start, end: segment.end)
+                isAddingVisit = true
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "clock.badge.questionmark").foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Nothing logged").font(.subheadline.weight(.medium))
+                        Text("\(segment.start.formatted(date: .omitted, time: .shortened))–\(segment.end.formatted(date: .omitted, time: .shortened)) · \(formatHours(segment.hours))")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Nothing logged, \(formatHours(segment.hours)), from \(segment.start.formatted(date: .omitted, time: .shortened)) to \(segment.end.formatted(date: .omitted, time: .shortened))")
+            .accessibilityHint("Add a visit for this time")
+        }
+    }
+
+    /// The seven-day glance: tapping a column reuses the window picker
+    /// `InsightsView` already has (`window = .day`, `anchorDate = <that day>`)
+    /// rather than pushing a second screen for what is already reachable from
+    /// this one.
+    private var weeklyStripSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("This week").font(.title2.bold())
+            Text("Tap a day to open it in Day Insights").font(.subheadline).foregroundStyle(.secondary)
+            WeeklyStrip(days: weekDays, today: now) { date in
+                anchorDate = date
+                window = .day
+            }
+        }
+        .padding(20).lifeCard()
+        .accessibilityIdentifier("insights-weekly-strip")
+    }
+
+    /// Reuses `daySummaryRow` from the Day layout — the same label/value row
+    /// style, just a different set of facts. A row is simply absent when
+    /// there's nothing to show it (no Health access, nothing at Work this
+    /// week) rather than a placeholder zero.
+    private var weeklyScorecardSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Week scorecard").font(.title2.bold())
+            VStack(spacing: 10) {
+                daySummaryRow(icon: "house.fill", label: "At Home",
+                             value: formatHours(max(0, snapshot.loggedHours - snapshot.awayFromHomeHours)))
+                let categoryHours = InsightsSnapshot.categoryHours(in: snapshot.segments)
+                let workHours = categoryHours["Work"] ?? 0
+                if workHours > 0.01 {
+                    daySummaryRow(icon: "briefcase.fill", label: "At Work", value: formatHours(workHours))
+                }
+                let travel = InsightsSnapshot.travelHours(in: snapshot.segments)
+                if travel > 0.01 {
+                    daySummaryRow(icon: "car.fill", label: "Travelling", value: formatHours(travel))
+                }
+                if let weekAverageNightlySleep, weekAverageNightlySleep > 0 {
+                    daySummaryRow(icon: "bed.double.fill", label: "Sleep average",
+                                 value: formatHours(weekAverageNightlySleep / 3600))
+                }
+                if let weekSteps, weekSteps > 0 {
+                    // Divided by the days actually elapsed in the week so far,
+                    // not always 7 -- a Tuesday viewing of the current week
+                    // shouldn't have its daily average diluted by Wed–Sun,
+                    // which haven't happened yet.
+                    let elapsedSeconds = min(now, interval.end).timeIntervalSince(interval.start)
+                    let elapsedDays = max(1, min(7, Int(ceil(elapsedSeconds / 86_400))))
+                    daySummaryRow(icon: "shoeprints.fill", label: "Steps",
+                                 value: "\(Int(weekSteps).formatted()) total · \(Int(weekSteps / Double(elapsedDays)).formatted())/day avg")
+                }
+                let exercise = InsightsSnapshot.fitnessHours(in: snapshot.segments)
+                if exercise > 0.01 {
+                    daySummaryRow(icon: "figure.run", label: "Exercise", value: formatHours(exercise))
+                }
+            }
+        }
+        .padding(20).lifeCard()
+        .accessibilityIdentifier("insights-week-scorecard")
+    }
+
+    /// How many of `weeklyBaselineTotals`' completed weeks count as "usual" —
+    /// within the requested 6–8, fixed rather than adaptive so the comparison
+    /// basis stated in the section subtitle is always literally true.
+    private static let weekBaselineWeeks = 8
+    /// Sleep already has its own scorecard row; Home is deliberately *not*
+    /// excluded here even though `InsightsTrends.habitExclusions` excludes it
+    /// from the habits card — that exclusion is about presence never being
+    /// news ("everyone is home every week"), but a change in *how much* time
+    /// was spent at Home is exactly what this section exists to say.
+    private static let weekRoutineChangeExclusions: Set<String> = ["Sleep", "Unlogged", "Uncategorised"]
+
+    private struct WeekRoutineChange: Identifiable {
+        let category: String
+        let latest: Double
+        let baseline: Double
+        var id: String { category }
+        var delta: Double { latest - baseline }
+    }
+
+    /// This week's per-category hours appended to the rolling baseline and
+    /// run through the exact same `InsightsTrends.series` math the trend
+    /// lines already use — the same "mean of the *nonzero* earlier weeks"
+    /// baseline, so one quiet holiday week can't silently drag a category's
+    /// usual down without it showing up as a real change either.
+    private var weekRoutineChanges: [WeekRoutineChange] {
+        guard !weeklyBaselineTotals.isEmpty else { return [] }
+        let thisWeek = WeeklyTotals(weekStart: interval.start, hours: InsightsSnapshot.categoryHours(in: snapshot.segments))
+        let combined = Array(weeklyBaselineTotals.suffix(Self.weekBaselineWeeks)) + [thisWeek]
+        guard combined.count > 1 else { return [] }
+        let categories = Set(combined.flatMap { $0.hours.keys }).subtracting(Self.weekRoutineChangeExclusions)
+        let changes = categories.compactMap { category -> WeekRoutineChange? in
+            let series = InsightsTrends.series(for: category, title: category,
+                                               symbol: insightSymbol(for: category), weeks: combined)
+            guard series.baseline > 0 else { return nil }
+            let change = abs(series.latest - series.baseline) / series.baseline
+            guard change >= InsightsTrends.noticeableChange else { return nil }
+            return WeekRoutineChange(category: category, latest: series.latest, baseline: series.baseline)
+        }
+        return Array(changes.sorted { abs($0.delta) > abs($1.delta) }.prefix(3))
+    }
+
+    @ViewBuilder private var weeklyRoutineChangesSection: some View {
+        let changes = weekRoutineChanges
+        if !changes.isEmpty {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("What changed").font(.title2.bold())
+                Text("Compared with your last \(Self.weekBaselineWeeks) weeks")
+                    .font(.subheadline).foregroundStyle(.secondary)
+                VStack(spacing: 10) {
+                    ForEach(changes) { change in
+                        HStack(spacing: 14) {
+                            Image(systemName: change.delta >= 0 ? "arrow.up.right" : "arrow.down.right")
+                                .font(.headline).foregroundStyle(change.delta >= 0 ? .orange : .blue)
+                                .frame(width: 36, height: 36)
+                                .background((change.delta >= 0 ? Color.orange : Color.blue).opacity(0.1), in: Circle())
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(change.category).font(.subheadline.weight(.medium))
+                                Text("\(formatHours(change.latest)) vs usual \(formatHours(change.baseline))")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("\(change.category), \(formatHours(change.latest)) this week, usually \(formatHours(change.baseline))")
                     }
                 }
             }
-            .frame(height: 34)
-            HStack { Text("12am"); Spacer(); Text("6am"); Spacer(); Text("12pm"); Spacer(); Text("6pm"); Spacer(); Text("Now") }
-                .font(.caption2).foregroundStyle(.secondary)
-            // The grouped-by-activity bar that sat here is gone. It said the same thing
-            // as the donut below — largest first, same colours — in a second shape, and
-            // the donut says it better because it is labelled.
-            if snapshot.unloggedHours > 0.25 {
-                // The honest caveat on every number on this screen, kept where the day
-                // is rather than filed under the app's own plumbing.
-                Text("\(formatHours(snapshot.unloggedHours)) of the day is not logged.")
-                    .font(.caption).foregroundStyle(.secondary)
+            .padding(20).lifeCard()
+            .accessibilityIdentifier("insights-week-routine-changes")
+        }
+    }
+
+    /// `nil` whenever there isn't a real commute to summarise: no Home/Work
+    /// roles configured, or the week's own confidence gate
+    /// (`InsightsSnapshot.weekCommuteSummary`) isn't met. `commutes` is
+    /// recomputed here rather than cached — it runs over `visits`, already
+    /// bounded to this period, the same cost `CommuteDetection` already pays
+    /// elsewhere on this screen.
+    private var weeklyCommuteSummary: InsightsSnapshot.WeekCommuteSummary? {
+        guard homePlace != nil, workPlace != nil else { return nil }
+        let commutes = CommuteDetection.commutes(in: visits, savedPlaces: savedPlaces, now: now)
+        let baselineWeeks = Array(weeklyBaselineTotals.suffix(Self.weekBaselineWeeks))
+        let nonzero = baselineWeeks.map { $0.hours[CommuteDetection.categoryName] ?? 0 }.filter { $0 > 0 }
+        let baselineHours = nonzero.isEmpty ? nil : nonzero.reduce(0, +) / Double(nonzero.count)
+        return InsightsSnapshot.weekCommuteSummary(commutes: commutes, weekInterval: interval, baselineHours: baselineHours)
+    }
+
+    @ViewBuilder private var weeklyCommuteSection: some View {
+        if let summary = weeklyCommuteSummary {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Commute").font(.title2.bold())
+                VStack(spacing: 10) {
+                    daySummaryRow(icon: "calendar", label: "Commute days", value: "\(summary.days)")
+                    daySummaryRow(icon: "clock.fill", label: "Total time", value: formatHours(summary.totalHours))
+                    daySummaryRow(icon: "gauge.medium", label: "Average", value: "\(Int(summary.averageMinutes.rounded()))m")
+                    if let change = summary.changeFromUsual {
+                        let direction = change >= 0 ? "more" : "less"
+                        daySummaryRow(
+                            icon: change >= 0 ? "arrow.up.right" : "arrow.down.right",
+                            label: "Vs usual", value: "\(formatHours(abs(change))) \(direction)"
+                        )
+                    }
+                }
             }
-        }.padding(20).lifeCard()
+            .padding(20).lifeCard()
+            .accessibilityIdentifier("insights-week-commute")
+        }
     }
 
     private var awayFromHomeSection: some View {
@@ -1091,6 +1546,45 @@ struct InsightsView: View {
                            startedAt: startedAt,
                            budget: Diagnostics.PerformanceBudget.insights(window: window),
                            itemCount: visits.count)
+
+        // The day bar's own segments, over the *uncapped* calendar day rather
+        // than `snapshot.analysisInterval` (which stops at `now` for today) --
+        // built from the exact same `InsightsSnapshot.makeSegments` the donut
+        // and header total already use, just given the full range. Nothing
+        // beyond `now` has a visit yet, so that portion resolves to trailing
+        // `.unlogged` segments on its own; the bar renders those distinctly
+        // rather than reporting them as missing time.
+        if window == .day {
+            let locationVisits = visits.filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
+            daySegments = InsightsSnapshot.makeSegments(visits: visits, locationVisits: locationVisits,
+                                                        range: interval, now: now, savedPlaces: savedPlaces)
+        } else {
+            daySegments = []
+        }
+
+        // The weekly strip's seven columns, one `makeSegments` call each, all
+        // over `visits` already fetched for this period -- no new query. Each
+        // day's segments are exactly what opening that day in Day Insights
+        // would build, so the strip can never disagree with the screen it
+        // links to.
+        if window == .week {
+            let locationVisits = visits.filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
+            let calendar = Calendar.current
+            var days: [WeeklyStrip.Day] = []
+            var dayStart = interval.start
+            while dayStart < interval.end {
+                let dayEnd = min(calendar.date(byAdding: .day, value: 1, to: dayStart) ?? interval.end, interval.end)
+                guard dayEnd > dayStart else { break }
+                let dayInterval = DateInterval(start: dayStart, end: dayEnd)
+                let segments = InsightsSnapshot.makeSegments(visits: visits, locationVisits: locationVisits,
+                                                             range: dayInterval, now: now, savedPlaces: savedPlaces)
+                days.append(WeeklyStrip.Day(date: dayStart, segments: segments))
+                dayStart = dayEnd
+            }
+            weekDays = days
+        } else {
+            weekDays = []
+        }
     }
 
     // Both derived from `snapshot.segments` -- the exact post-resolution slivers

@@ -539,6 +539,77 @@ extension InsightsSnapshot {
                           interval: DateInterval, now: Date = .now) -> [SliceRow] {
         sliceRows(matching: { $0.placeName == name }, in: segments, interval: interval, now: now)
     }
+
+    /// The Day summary's own small aggregates -- built from the same resolved
+    /// `segments` as everything else here, never a second pass over raw visits.
+
+    /// Every category's hours in one pass, for a caller (the Week scorecard,
+    /// the rolling-baseline comparison) that needs more than one category out
+    /// of segments already built for the period being looked at — reading this
+    /// off `snapshot.segments` is what keeps "this week's" numbers consistent
+    /// with the donut and Timeline without a second pass over raw visits.
+    static func categoryHours(in segments: [InsightSegment]) -> [String: Double] {
+        var totals: [String: Double] = [:]
+        for segment in segments where !segment.isUnlogged {
+            totals[segment.category, default: 0] += segment.hours
+        }
+        return totals
+    }
+
+    /// Journey time: Travel (device-sourced movement) and Commute (the synthesised
+    /// gap between Home and Work) are two different categories today, but both
+    /// answer "how much of the day was spent getting somewhere."
+    static func travelHours(in segments: [InsightSegment]) -> Double {
+        let totals = categoryHours(in: segments)
+        return (totals["Travel"] ?? 0) + (totals[CommuteDetection.categoryName] ?? 0)
+    }
+
+    /// Every category `ActivityCatalog` groups under "Fitness" — a workout
+    /// summary line without a second HealthKit round-trip, since a walk, run, or
+    /// tracked workout already arrived as a visit and was already categorised.
+    static func fitnessHours(in segments: [InsightSegment]) -> Double {
+        categoryHours(in: segments)["Fitness"] ?? 0
+    }
+
+    /// Unlogged stretches worth a person's attention: long enough that "nothing
+    /// recorded" is more likely a real gap than a moment between two callbacks,
+    /// and already over -- there is nothing to say yet about the part of today
+    /// that has not happened.
+    static func meaningfulGaps(in segments: [InsightSegment], before now: Date,
+                               minimumHours: Double = 0.5) -> [InsightSegment] {
+        segments.filter { $0.isUnlogged && $0.end <= now && $0.hours >= minimumHours }
+            .sorted { $0.hours > $1.hours }
+    }
+
+    /// The week's commute, only once there is enough of it to call a pattern.
+    struct WeekCommuteSummary {
+        let days: Int
+        let totalHours: Double
+        let averageMinutes: Double
+        /// This week's total commute hours against the rolling baseline for the
+        /// same "Commute" category — `nil` when there isn't a real baseline yet
+        /// (mirrors `InsightsTrends.message`'s own "not enough history" guard).
+        let changeFromUsual: Double?
+    }
+
+    /// `CommuteDetection` carries no confidence of its own — this is the one
+    /// place that gates on there being enough of a pattern to call a summary
+    /// rather than a single coincidental day. Two distinct calendar days is a
+    /// deliberately low bar: a single one-off commute is a data point, not
+    /// something worth characterising as "the commute."
+    static let minimumConfidentCommuteDays = 2
+
+    static func weekCommuteSummary(commutes: [Commute], weekInterval: DateInterval,
+                                   baselineHours: Double?) -> WeekCommuteSummary? {
+        let weekCommutes = commutes.filter { $0.start >= weekInterval.start && $0.start < weekInterval.end }
+        let days = Set(weekCommutes.map { Calendar.current.startOfDay(for: $0.start) })
+        guard days.count >= minimumConfidentCommuteDays else { return nil }
+        let totalHours = weekCommutes.reduce(0) { $0 + $1.duration } / 3600
+        let averageMinutes = totalHours * 60 / Double(weekCommutes.count)
+        let changeFromUsual = baselineHours.flatMap { $0 > 0 ? totalHours - $0 : nil }
+        return WeekCommuteSummary(days: days.count, totalHours: totalHours,
+                                  averageMinutes: averageMinutes, changeFromUsual: changeFromUsual)
+    }
 }
 
 
