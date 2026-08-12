@@ -61,7 +61,15 @@ struct PlaceHistoryView: View {
         // One full pass is unavoidable: SwiftData cannot group, and the names live
         // across every source. This is a Settings screen rather than the launch
         // path, and the result is cached in state for the life of the screen.
-        let visits = (try? context.fetch(FetchDescriptor<Visit>())) ?? []
+        let allVisits = (try? context.fetch(FetchDescriptor<Visit>())) ?? []
+        // Place History is a route from Insights as well as Settings. Keep its
+        // summary aligned with the same source visibility policy: imported journal
+        // and device records remain eligible when Insights says they are, while
+        // ignored/superseded records never become a misleading place result.
+        let locationVisits = allVisits.filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
+        let visits = allVisits.filter {
+            ActivityLocationPolicy.shouldShowInInsights($0, locationVisits: locationVisits)
+        }
         var counts: [String: [String: Int]] = [:]
         for visit in visits {
             let name = visit.placeName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -135,7 +143,7 @@ private struct PlaceVisitAnalytics {
     }
 }
 
-private struct PlaceHistoryDetail: View {
+struct PlaceHistoryDetail: View {
     @Environment(\.modelContext) private var context
     let placeName: String
     @State private var band: PlaceTimeBand = .allDay
@@ -224,7 +232,11 @@ private struct PlaceHistoryDetail: View {
         // whitespace normalization, so fetch the names and apply the shared
         // fallback identity in memory. This keeps bulk corrections consistent
         // with the other place-history consumers.
-        let visits = (try? context.fetch(FetchDescriptor<Visit>())) ?? []
+        let allVisits = (try? context.fetch(FetchDescriptor<Visit>())) ?? []
+        let locationVisits = allVisits.filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
+        let visits = allVisits.filter {
+            ActivityLocationPolicy.shouldShowInInsights($0, locationVisits: locationVisits)
+        }
         matching = visits.filter { NameKey.same($0.placeName, placeName) }
         breakdown = PlaceTimeBand.allCases.filter { $0 != .allDay }.map { slot in
             var counts: [String: Int] = [:]

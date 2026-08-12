@@ -51,6 +51,7 @@ struct InsightsView: View {
     @State private var weekSteps: Double?
     @State private var weekAverageNightlySleep: TimeInterval?
     @State private var weekDays: [WeeklyStrip.Day] = []
+    @State private var monthDays: [MonthlyInsights.Day] = []
 
     private var interval: DateInterval { window.interval(containing: anchorDate) }
     private var sleepRefreshKey: String {
@@ -67,6 +68,8 @@ struct InsightsView: View {
                             dayLayout
                         } else if window == .week {
                             weekLayout
+                        } else if window == .month {
+                            monthLayout
                         } else {
                             standardLayout
                         }
@@ -542,6 +545,99 @@ struct InsightsView: View {
         weeklyCommuteSection
         donutSection
         healthSetupSection
+    }
+
+    /// Month answers "what changed in my life this month?" rather than presenting
+    /// the same long-term sections as Year. These cards all read the same resolved
+    /// current/previous segments as the donut.
+    @ViewBuilder private var monthLayout: some View {
+        monthlyHeadlineSection
+        monthlyChangesSection
+        monthlyBalanceSection
+        monthlyPlacesSection
+        monthlyCalendarSection
+        healthSetupSection
+    }
+
+    private var monthlyInsights: MonthlyInsights {
+        MonthlyInsights.make(current: snapshot.segments, previous: snapshot.previousSegments,
+                             currentInterval: interval,
+                             previousInterval: window.previousComparisonInterval(for: interval), now: now)
+    }
+
+    @ViewBuilder private var monthlyHeadlineSection: some View {
+        if let headline = monthlyInsights.headline {
+            VStack(alignment: .leading, spacing: 7) {
+                Text("This month").font(.title2.bold())
+                Text(headline).font(.title3.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+                Text("Compared with last month").font(.subheadline).foregroundStyle(.secondary)
+            }
+            .padding(20).lifeCard()
+            .accessibilityIdentifier("insights-month-headline")
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("This month. \(headline). Compared with last month")
+        }
+    }
+
+    @ViewBuilder private var monthlyChangesSection: some View {
+        let changes = monthlyInsights.changes
+        if !changes.isEmpty {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("What changed").font(.title2.bold())
+                Text("Meaningful differences from last month").font(.subheadline).foregroundStyle(.secondary)
+                ForEach(changes.prefix(6)) { change in
+                    HStack(spacing: 12) {
+                        Image(systemName: insightSymbol(for: change.category))
+                            .foregroundStyle(insightColor(for: change.category))
+                            .frame(width: 36, height: 36)
+                            .background(insightColor(for: change.category).opacity(0.12), in: Circle())
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(change.category).font(.subheadline.weight(.medium))
+                            Text(change.delta >= 0 ? "\(formatHours(change.delta)) more" : "\(formatHours(abs(change.delta))) less")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if let percentage = change.percentage {
+                            Text(monthlyPercentageText(percentage))
+                                .font(.subheadline.bold().monospacedDigit())
+                        } else {
+                            Text("New").font(.caption.bold())
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(change.category), \(change.delta >= 0 ? "more" : "less") \(formatHours(abs(change.delta))) than last month")
+                }
+            }
+            .padding(20).lifeCard()
+            .accessibilityIdentifier("insights-month-changes")
+        }
+    }
+
+    private func monthlyPercentageText(_ percentage: Double) -> String {
+        "\(Int((abs(percentage) * 100).rounded()))%"
+    }
+
+    private var monthlyBalanceSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Monthly balance").font(.title2.bold())
+            Text("Time grouped from your activity definitions").font(.subheadline).foregroundStyle(.secondary)
+            if monthlyInsights.balance.isEmpty {
+                InsightEmptyRow(icon: "chart.bar.xaxis", title: "Not enough recorded activity", detail: "These groups appear once the month has usable data.")
+            } else {
+                ForEach(monthlyInsights.balance) { item in
+                    HStack(spacing: 11) {
+                        Image(systemName: item.symbol).foregroundStyle(item.color).frame(width: 26)
+                        Text(item.name).font(.subheadline)
+                        Spacer()
+                        Text(formatHours(item.hours)).font(.subheadline.bold().monospacedDigit())
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(item.name), \(formatHours(item.hours))")
+                }
+            }
+        }
+        .padding(20).lifeCard()
+        .accessibilityIdentifier("insights-month-balance")
     }
 
     private var controls: some View {
@@ -1060,6 +1156,70 @@ struct InsightsView: View {
         }
     }
 
+    private var monthlyPlacesSection: some View {
+        let story = monthlyInsights
+        return VStack(alignment: .leading, spacing: 16) {
+            Text("Place story").font(.title2.bold())
+            monthlyPlaceList(title: "Most time", places: story.placesByTime) { formatHours($0.hours) }
+            monthlyPlaceList(title: "Most visits", places: story.placesByVisits) { "\($0.visits) \($0.visits == 1 ? "visit" : "visits")" }
+            monthlyPlaceList(title: "New this month", places: story.newPlaces,
+                             empty: "No new places with enough recorded history.") { formatHours($0.hours) }
+            if let place = story.biggestPlaceChange {
+                monthlyPlaceList(title: "Biggest change from last month", places: [place]) {
+                    "\($0.delta >= 0 ? "+" : "−")\(formatHours(abs($0.delta))) vs last month"
+                }
+            }
+        }
+        .padding(20).lifeCard()
+        .accessibilityIdentifier("insights-month-places")
+    }
+
+    @ViewBuilder private func monthlyPlaceList(title: String, places: [MonthlyInsights.PlaceStory],
+                                               empty: String = "No places recorded yet.",
+                                               detail: @escaping (MonthlyInsights.PlaceStory) -> String) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text(title).font(.headline)
+            if places.isEmpty {
+                Text(empty).font(.caption).foregroundStyle(.secondary)
+            } else {
+                ForEach(places) { place in
+                    NavigationLink { PlaceHistoryDetail(placeName: place.name) } label: {
+                        HStack(spacing: 10) {
+                            ActivityIcon(activity: place.activity, context: place.name,
+                                         color: insightColor(for: place.category), size: 34)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(place.name).font(.subheadline.weight(.medium)).lineLimit(1)
+                                Text(place.category).font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text(detail(place)).font(.caption.bold().monospacedDigit())
+                            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(place.name), \(detail(place))")
+                }
+            }
+        }
+    }
+
+    private var monthlyCalendarSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Month at a glance").font(.title2.bold())
+            Text("Tap any day to open Day Insights").font(.subheadline).foregroundStyle(.secondary)
+            MonthCalendarHeatmap(days: monthDays) { date in
+                anchorDate = date
+                window = .day
+            }
+            HStack(spacing: 8) {
+                Circle().fill(.secondary.opacity(0.12)).frame(width: 10, height: 10)
+                Text("Little or nothing recorded").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(20).lifeCard()
+        .accessibilityIdentifier("insights-month-calendar")
+    }
+
     private var awayFromHomeSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Time away from Home").font(.title2.bold())
@@ -1467,7 +1627,8 @@ struct InsightsView: View {
         let currentInterval = window.interval(containing: anchorDate)
         let fetchEnd = currentInterval.contains(now) ? now : currentInterval.end
         let analysisInterval = DateInterval(start: currentInterval.start, end: fetchEnd)
-        let fetchStart = window.previousComparisonInterval(for: analysisInterval).start
+        let comparisonBasis = window == .month && currentInterval.contains(now) ? currentInterval : analysisInterval
+        let fetchStart = window.previousComparisonInterval(for: comparisonBasis).start
         let fetchStartedAt = Date.now
         let descriptor = FetchDescriptor<Visit>(
             predicate: #Predicate { visit in
@@ -1584,6 +1745,17 @@ struct InsightsView: View {
             weekDays = days
         } else {
             weekDays = []
+        }
+
+        if window == .month {
+            let locationVisits = visits.filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
+            monthDays = MonthlyInsights.daySummaries(
+                segments: InsightsSnapshot.makeSegments(visits: visits, locationVisits: locationVisits,
+                                                        range: interval, now: now, savedPlaces: savedPlaces),
+                interval: interval, now: now
+            )
+        } else {
+            monthDays = []
         }
     }
 

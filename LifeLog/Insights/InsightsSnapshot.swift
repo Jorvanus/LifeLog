@@ -14,6 +14,9 @@ struct InsightsSnapshot {
     let generatedAt: Date
     let analysisInterval: DateInterval
     let segments: [InsightSegment]
+    /// The immediately preceding completed comparison period, resolved with the
+    /// same source visibility and overlap rules as `segments`.
+    let previousSegments: [InsightSegment]
     let slices: [TimeSlice]
     let placeTotals: [PlaceTotal]
     let comparisons: [TrendComparison]
@@ -31,7 +34,7 @@ struct InsightsSnapshot {
     static let empty = InsightsSnapshot(
         generatedAt: .distantPast,
         analysisInterval: DateInterval(start: .distantPast, duration: 0),
-        segments: [], slices: [], placeTotals: [], comparisons: [],
+        segments: [], previousSegments: [], slices: [], placeTotals: [], comparisons: [],
         loggedHours: 0, totalHours: 0, mappablePlaces: [],
         mapRegion: MKCoordinateRegion(
             center: .init(latitude: -27.47, longitude: 153.03),
@@ -86,7 +89,12 @@ struct InsightsSnapshot {
         let analysisInterval = interval.contains(now)
             ? DateInterval(start: interval.start, end: min(interval.end, now))
             : interval
-        let previousInterval = window.previousComparisonInterval(for: analysisInterval)
+        // Month is explicitly compared with the previous completed calendar month;
+        // comparing the current month's partial elapsed days would make a month look
+        // quieter simply because it is still in progress.
+        let previousInterval = window == .month && interval.contains(now)
+            ? window.previousComparisonInterval(for: interval)
+            : window.previousComparisonInterval(for: analysisInterval)
 
         // Location visits are prepared once and reused by both periods. This avoids an
         // all-history scan for each individual walking or travel record.
@@ -140,6 +148,7 @@ struct InsightsSnapshot {
             generatedAt: now,
             analysisInterval: analysisInterval,
             segments: segments,
+            previousSegments: previousSegments,
             slices: slices,
             placeTotals: placeTotals,
             comparisons: makeComparisons(current: slices, previous: previousSlices),

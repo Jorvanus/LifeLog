@@ -2,6 +2,11 @@
 
 ## 2026-08-12
 
+### Month Insights now answers “What changed in my life this month?”
+
+- Month now has a dedicated monthly headline, conservative activity-change cards, a derived high-level balance, a place story with Place History routes, and a full calendar heatmap that keeps quiet days visible and opens Day Insights when tapped.
+- Monthly comparisons use the previous completed calendar month and require both absolute and percentage movement before calling a change meaningful. Imported journal and device-recorded history continue through the existing Insights source-visibility policy.
+
 ### Insights' Week window now answers "how did this week compare with usual"
 
 - Week used to fall through to the same section list Month/Year get. It now has its own layout: a seven-day mini-calendar (one compact chronological bar per day, so a quiet or unlogged day is still visible rather than disappearing; tap a day to open it in Day Insights); a weekly scorecard (time at Home, at Work, travelling, sleep average, total/average daily steps, exercise — each row simply absent when the data doesn't exist rather than shown as a placeholder zero); "What changed," a rolling-baseline comparison against the last 8 completed weeks rather than only the single preceding week, showing only changes past the existing 10% noticeable-change threshold; and a Commute summary, shown only once Home and Work Saved Place roles are both configured and the week's commutes span at least 2 distinct days.
