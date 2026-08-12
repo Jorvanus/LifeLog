@@ -72,11 +72,15 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         row.tap()
 
-        let bar = app.navigationBars["Edit Activity"]
+        // The merged detail/editor screen titles itself with the activity's own
+        // name, not a generic "Edit Activity" — same screen the Activities tab
+        // reaches, just with its editable section visible from here too.
+        XCTAssertTrue(element("activity-detail-screen").waitForExistence(timeout: 5))
+        let bar = app.navigationBars["At home"]
         XCTAssertTrue(bar.waitForExistence(timeout: 5))
         // The back button takes its title from the screen behind it, which is the
         // vocabulary editor — "Activity Labels" — not the Activities tab.
-        XCTAssertTrue(bar.buttons["Activity Labels"].exists, "Pushed editor should keep a back button")
+        XCTAssertTrue(bar.buttons["Activity Labels"].exists, "Pushed detail screen should keep a back button")
         XCTAssertTrue(bar.buttons["Save"].exists)
         XCTAssertFalse(bar.buttons["Cancel"].exists, "Cancel is only for the modal add flow")
     }
@@ -208,7 +212,15 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         row.tap()
 
+        // Now below the editable fields (name, colour, category, icon) that the
+        // merged detail/editor screen shows first, past what a lazy List
+        // materialises without being scrolled to.
         let visitsLink = element("activity-visits-link")
+        var attempts = 0
+        while !visitsLink.exists && attempts < 6 {
+            app.swipeUp()
+            attempts += 1
+        }
         XCTAssertTrue(visitsLink.waitForExistence(timeout: 5))
         visitsLink.tap()
 
@@ -319,7 +331,16 @@ final class LifeLogUITests: XCTestCase {
         row.tap()
 
         XCTAssertTrue(element("activity-detail-screen").waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Total occasions"].waitForExistence(timeout: 5))
+        // The merged detail/editor screen puts the editable fields (name, colour,
+        // category, icon) above the stats now, which pushes "Total occasions" past
+        // what a lazy List materialises without being scrolled to first.
+        let totalOccasions = app.staticTexts["Total occasions"]
+        var attempts = 0
+        while !totalOccasions.exists && attempts < 6 {
+            app.swipeUp()
+            attempts += 1
+        }
+        XCTAssertTrue(totalOccasions.waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Top locations"].exists)
     }
 

@@ -53,7 +53,6 @@
 		5E61FCDEA2963BF1B47F033E /* ActivityLocationPolicy+Stays.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB4629526B6F96DB1A875096 /* ActivityLocationPolicy+Stays.swift */; };
 		603EE8045255EDB80EBAF9A9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D936E236D5176123EE3DAD91 /* Assets.xcassets */; };
 		62708509D15EF3727EB360AE /* LocationDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C707C98C486A8C44AF8282B /* LocationDiagnostics.swift */; };
-		629EADEB7147BEBE2E65B67F /* ActivityUsageSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8ABE902EDCD1B0688A85F3B /* ActivityUsageSummary.swift */; };
 		6553C656B5B57C95FD3C068D /* ActivityByPlaceAndTimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F469964444018ECD3F42398 /* ActivityByPlaceAndTimeTests.swift */; };
 		6554E3838F5DFE0ED57AF0DD /* LocationArrivalConfirmationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 136C28CBCB9BB1FEB539118A /* LocationArrivalConfirmationTests.swift */; };
 		65BEF358D163A3AFD09FD53F /* InsightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C47343A6D2D648151441966B /* InsightsView.swift */; };
@@ -230,7 +229,6 @@
 		E0C0DCB07A02A2ACCBB9675B /* WiFiAnchor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WiFiAnchor.swift; sourceTree = "<group>"; };
 		E17E384A813C0062E6F2396F /* LocalBackupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalBackupTests.swift; sourceTree = "<group>"; };
 		E305C81E7DB9868FD552A196 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		E8ABE902EDCD1B0688A85F3B /* ActivityUsageSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityUsageSummary.swift; sourceTree = "<group>"; };
 		E994216449FEE07C0269FBF5 /* OnThisDay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnThisDay.swift; sourceTree = "<group>"; };
 		EE32D8BC301AC2222273125B /* CategoryPalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoryPalette.swift; sourceTree = "<group>"; };
 		EEFDDF4EACA429A5EF239A02 /* InsightsAggregationCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsAggregationCache.swift; sourceTree = "<group>"; };
@@ -364,7 +362,6 @@
 				98C72A01A9290E364CC44885 /* ActivityDetailView.swift */,
 				0A4A988EA9373A6B2EDDBFDA /* ActivityGroupsView.swift */,
 				5571B29E1C385CB9678F5265 /* ActivityIconPicker.swift */,
-				E8ABE902EDCD1B0688A85F3B /* ActivityUsageSummary.swift */,
 				AE2A7E5BDFE16CB763B3CAC1 /* SettingsView.swift */,
 			);
 			path = Settings;
@@ -618,7 +615,6 @@
 				191DB660068417FD031E1BE8 /* ActivityLocationPolicy.swift in Sources */,
 				D5919F29402485F86391FB7E /* ActivitySampleReader.swift in Sources */,
 				2D56F4D28D9354CCD3A11E8C /* ActivityStatistics.swift in Sources */,
-				629EADEB7147BEBE2E65B67F /* ActivityUsageSummary.swift in Sources */,
 				F2D8C8A33ED10E3EB3080491 /* ArchiveRetrospectives.swift in Sources */,
 				8780A4D21182FFD13BE7914C /* CardStyle.swift in Sources */,
 				ADE2D54F1402CDAB3B91B332 /* CategoryPalette.swift in Sources */,
@@ -845,7 +841,7 @@
 				CODE_SIGN_ENTITLEMENTS = LifeLog/LifeLog.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 125;
+				CURRENT_PROJECT_VERSION = 126;
 				DEVELOPMENT_TEAM = 337KNRL5L8;
 				INFOPLIST_FILE = LifeLog/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
@@ -853,7 +849,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.51.0;
+				MARKETING_VERSION = 1.52.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aaronbaxter.LifeLog;
 				SDKROOT = iphoneos;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -965,7 +961,7 @@
 				CODE_SIGN_ENTITLEMENTS = LifeLog/LifeLog.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 125;
+				CURRENT_PROJECT_VERSION = 126;
 				DEVELOPMENT_TEAM = 337KNRL5L8;
 				INFOPLIST_FILE = LifeLog/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
@@ -973,7 +969,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.51.0;
+				MARKETING_VERSION = 1.52.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aaronbaxter.LifeLog;
 				SDKROOT = iphoneos;
 				SWIFT_EMIT_LOC_STRINGS = YES;

@@ -2,6 +2,11 @@
 
 ## 2026-08-12
 
+### An activity's stats and its editor are now one screen, not two
+
+- Tapping an activity from the Activities tab opened a read-only stats page — occasions, top locations, totals — with no way to change its colour, icon or category. That editing only existed on a completely different screen, reachable only from Settings → Activity Labels, so there was no way to fix an activity's colour from the page you were already looking at it on. `ActivityDetailView` now carries both: stats plus (once the activity is adopted into the catalogue) name, colour, category, icon, its full visit history, and delete — reached identically from either the Activities tab or Settings. Renaming still offers to carry existing visits across, or merge into another activity if the new name already exists, exactly as it did before.
+- The old edit-only screen (`ActivityEditor`) is now a plain creation form for a brand new activity, since editing an existing one lives on the merged page. `ActivityUsageSummary` was fully redundant with stats the merged page already shows, and is removed.
+
 ### "At home" and "Home time" are now one activity, not two
 
 - `InferenceEngine` silently split every automatic home arrival by time of day — "At home" before 8am or after 6pm, "Home time" in between — while "Set as Home" always wrote "At home" regardless of the hour. The same place fragmented into two labels depending purely on when an automatic guess happened to land, for no reason anyone asked for. The time-of-day split is gone; every "home" arrival is "At home" now, and every existing visit and catalogue entry still holding "Home time" is renamed across in one pass at next launch (same pattern already used to merge the old "Working" label into "Work").
