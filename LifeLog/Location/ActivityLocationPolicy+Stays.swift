@@ -138,6 +138,7 @@ extension ActivityLocationPolicy {
             // so its duration cannot grow and excluded from every screen.
             stay.departure = stay.arrival
             stay.source = supersededLocationSource
+            stay.locationResolutionExplanation = .duplicate
             merged += 1
             LocationDiagnostics.record(.merged, subject: "Overlapping stay",
                                        reason: "two records claim the same minutes at one place",
@@ -224,15 +225,41 @@ extension ActivityLocationPolicy {
                 continue
             }
 
-            let sameName = previous.placeName.caseInsensitiveCompare(candidate.placeName) == .orderedSame
+            let sameIdentity: Bool
+            if let previousIdentifier = previous.mapsIdentifier,
+               let candidateIdentifier = candidate.mapsIdentifier {
+                // A Maps identity is specific to one POI. In particular, do not let
+                // neighbouring businesses merge just because Core Location delivered
+                // two close callbacks while the person was moving between them.
+                sameIdentity = previousIdentifier == candidateIdentifier
+            } else if previous.hasPlaceholderName || candidate.hasPlaceholderName {
+                // A still-identifying callback carries no venue claim of its own. It
+                // may refine the named arrival it represents, but only at a much
+                // tighter radius than a confirmed same-venue replay.
+                sameIdentity = true
+            } else {
+                // Older and hand-pinned visits have no Maps identifier. Their stable
+                // normalised name remains the compatibility identity in that case.
+                sameIdentity = NameKey.matching(previous.placeName) == NameKey.matching(candidate.placeName)
+            }
             let distance = CLLocation(latitude: previous.latitude, longitude: previous.longitude)
                 .distance(from: CLLocation(latitude: candidate.latitude, longitude: candidate.longitude))
             // A named Saved Place and an earlier “Identifying…” callback can be
-            // the same Core Location arrival. Names need not match, but require a
-            // tighter coordinate tolerance in that case so nearby businesses are
-            // never folded together merely because their callbacks were close.
+            // the same Core Location arrival. Names need not match, but the tighter
+            // placeholder radius keeps a nearby business from being folded in.
+            let replayTolerance: CLLocationDistance
+            if previous.hasPlaceholderName || candidate.hasPlaceholderName {
+                replayTolerance = 60
+            } else if previous.mapsIdentifier != nil && previous.mapsIdentifier == candidate.mapsIdentifier {
+                // An exact Maps POI identity is stronger than either GPS fix. Its
+                // entrance, car park, and indoor location can legitimately land a
+                // few hundred metres apart without becoming a different business.
+                replayTolerance = 350
+            } else {
+                replayTolerance = 250
+            }
             let sameArrival = abs(previous.arrival.timeIntervalSince(candidate.arrival)) <= 60 &&
-                distance <= (sameName ? 250 : 100)
+                sameIdentity && distance <= replayTolerance
             if sameArrival {
                 // Merge repeated callbacks that describe the same arrival.
                 previous.arrival = min(previous.arrival, candidate.arrival)
@@ -246,6 +273,9 @@ extension ActivityLocationPolicy {
                     previous.userActivity = candidate.userActivity
                     previous.recognitionConfidence = candidate.recognitionConfidence
                 }
+                previous.locationResolutionExplanation =
+                    (previous.mapsIdentifier != nil && previous.mapsIdentifier == candidate.mapsIdentifier)
+                    ? .mapsIdentifier : .coordinateTime
                 // The candidate's interval now lives on `previous`, including its
                 // open-endedness, so the superseded row must not stay open itself.
                 // `closeSupersededOpenLocations` only fetches live locations and can
@@ -253,6 +283,7 @@ extension ActivityLocationPolicy {
                 // for the life of the store.
                 candidate.departure = candidate.arrival
                 candidate.source = supersededLocationSource
+                candidate.locationResolutionExplanation = .duplicate
                 removed += 1
                 LocationDiagnostics.record(.superseded, subject: "Duplicate callback",
                                            reason: "same arrival within 60s and \(Int(distance.rounded())) m",
@@ -264,6 +295,7 @@ extension ActivityLocationPolicy {
                 // entire Insights interval.
                 if previous.departure == nil, candidate.arrival > previous.arrival {
                     previous.departure = candidate.arrival
+                    previous.locationResolutionExplanation = .coordinateTime
                     LocationDiagnostics.record(.closed, subject: "Open stay",
                                                reason: "a later arrival proves it ended",
                                                evidence: "\(previous.placeName) closed at \(candidate.placeName)'s arrival",
@@ -274,6 +306,7 @@ extension ActivityLocationPolicy {
                     // A person cannot be at two places at once, so it's the earlier stay's
                     // own recorded departure that's wrong here, not the later arrival.
                     previous.departure = max(previous.arrival, candidate.arrival)
+                    previous.locationResolutionExplanation = .coordinateTime
                     LocationDiagnostics.record(.closed, subject: "Overlapping stay",
                                                reason: "a later arrival precedes this stay's recorded departure",
                                                evidence: "\(previous.placeName) trimmed to \(candidate.placeName)'s arrival",

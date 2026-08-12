@@ -2,6 +2,16 @@
 
 ## 2026-08-12
 
+### Every automatic location repair now keeps its reason
+
+- Automatic stays now persist the decision that resolved them: a Maps identifier, a Saved Place, coordinate-and-time matching, a duplicate callback, movement evidence, or a low-confidence result that was ignored. The explanation is retained with the visit (and included in local backups), so it survives the short-lived diagnostic journal and can still explain why a timeline row was changed later.
+- Added the V6→V7 lightweight migration: existing history deliberately starts without a manufactured explanation, and new explanations persist once recorded.
+
+### Location callbacks now distinguish nearby businesses more safely
+
+- Automatic location resolution now treats a shared Maps identity as the strongest proof that two close callbacks describe the same venue. For older records without one, it falls back to a normalised matching name; an unresolved “Identifying…” callback can still refine a nearby named arrival, but only within a tighter radius. Two different named businesses are no longer folded into one visit simply because they are close together and their callbacks arrived within a minute.
+- Added deterministic callback-replay coverage for Home → destination → Home, a delayed departure delivered after a newer arrival, repeated arrivals, GPS drift around one Maps-identified venue, neighbouring different businesses, and a long journey followed by its destination.
+
 ### Maps visit identity now backs the remaining recurrence and monitoring signals
 
 - The V6 migration already gave every Maps-resolved `Visit` a durable identifier alongside `SavedPlace`, and several matching sites already preferred it over a name. Two more did not: place scoring's recurrence signal (has this exact spot come up before) and the monitored-places ranking (which visits count toward a Saved Place's usage) both matched by name/proximity only, even though both sides can carry the same identifier today. Both now check the Maps identifier first — two records can only share one by being the same physical POI, which name matching can't guarantee — falling back to name, then proximity/geofence, exactly as documented elsewhere in this pipeline.

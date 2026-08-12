@@ -1236,6 +1236,96 @@ struct ActivityLocationPolicyTests {
         #expect(matched === park)
     }
 
+    @Test("Location callback replay keeps Home, destination, Home as three consecutive stays")
+    func replaysHomeDestinationHomeCallbacks() throws {
+        let replay = try LocationCallbackReplay(base: base)
+        try replay.arrive("Home", at: 0, latitude: -23.3700, longitude: 150.5100, mapsIdentifier: "home")
+        try replay.arrive("Shops", at: 60, latitude: -23.4300, longitude: 150.4500, mapsIdentifier: "shops")
+        try replay.arrive("Home", at: 120, latitude: -23.3701, longitude: 150.5101, mapsIdentifier: "home")
+
+        let stays = try replay.liveStays()
+        #expect(stays.map(\.placeName) == ["Home", "Shops", "Home"])
+        #expect(stays.map(\.departure) == [replay.time(60), replay.time(120), nil])
+    }
+
+    @Test("A delayed departure replay closes its original stay after a newer arrival")
+    func replaysDelayedDepartureAfterNewerArrival() throws {
+        let replay = try LocationCallbackReplay(base: base)
+        try replay.arrive("Home", at: 0, latitude: -23.3700, longitude: 150.5100, mapsIdentifier: "home")
+        try replay.arrive("Shops", at: 60, latitude: -23.4300, longitude: 150.4500, mapsIdentifier: "shops")
+        try replay.depart(arrival: 0, departure: 45, latitude: -23.3701, longitude: 150.5101)
+
+        let stays = try replay.liveStays()
+        #expect(stays[0].placeName == "Home")
+        #expect(stays[0].departure == replay.time(45))
+        #expect(stays[0].locationResolutionExplanation == .coordinateTime)
+        #expect(stays[1].placeName == "Shops")
+        #expect(stays[1].departure == nil)
+    }
+
+    @Test("Repeated arrival callbacks replay as one live stay")
+    func replaysDuplicateArrivals() throws {
+        let replay = try LocationCallbackReplay(base: base)
+        try replay.arrive("Home", at: 0, latitude: -23.3700, longitude: 150.5100, mapsIdentifier: "home")
+        try replay.arrive("Home", at: 0.5, latitude: -23.3702, longitude: 150.5101, mapsIdentifier: "home")
+
+        let stays = try replay.liveStays()
+        let superseded = try replay.supersededStays()
+        #expect(stays.count == 1)
+        #expect(superseded.count == 1)
+    }
+
+    @Test("A same-venue replay tolerates GPS drift when Maps identity agrees")
+    func replaysSameVenueWithGPSDrift() throws {
+        let replay = try LocationCallbackReplay(base: base)
+        try replay.arrive("Rockhampton Mall", at: 0, latitude: -23.3740, longitude: 150.5110, mapsIdentifier: "mall")
+        // Around 220 m away: too large for a raw-fix retry, but still one mall POI.
+        try replay.arrive("Rockhampton Mall", at: 20.0 / 60, latitude: -23.3720, longitude: 150.5110, mapsIdentifier: "mall")
+
+        let stays = try replay.liveStays()
+        let superseded = try replay.supersededStays()
+        #expect(stays.count == 1)
+        #expect(superseded.count == 1)
+    }
+
+    @Test("Nearby named businesses replay as separate destinations")
+    func preservesNearbyDifferentBusinessesDuringReplay() throws {
+        let replay = try LocationCallbackReplay(base: base)
+        try replay.arrive("Coffee House", at: 0, latitude: -23.3700, longitude: 150.5100, mapsIdentifier: "coffee-house")
+        // About 22 m away, so time and distance alone would look duplicate-like.
+        try replay.arrive("Chemist", at: 30, latitude: -23.3702, longitude: 150.5100, mapsIdentifier: "chemist")
+
+        let stays = try replay.liveStays()
+        #expect(stays.map(\.placeName) == ["Coffee House", "Chemist"])
+        #expect(stays[0].departure == replay.time(30))
+        #expect(try replay.supersededStays().isEmpty)
+    }
+
+    @Test("Callback repairs persist why each row was retained or superseded")
+    func persistsCallbackResolutionExplanation() throws {
+        let replay = try LocationCallbackReplay(base: base)
+        try replay.arrive("Cafe", at: 0, latitude: -23.3700, longitude: 150.5100, mapsIdentifier: "cafe")
+        try replay.arrive("Cafe", at: 0.5, latitude: -23.3702, longitude: 150.5101, mapsIdentifier: "cafe")
+
+        let kept = try #require(replay.liveStays().first)
+        let superseded = try #require(replay.supersededStays().first)
+        #expect(kept.locationResolutionExplanation == .mapsIdentifier)
+        #expect(superseded.locationResolutionExplanation == .duplicate)
+    }
+
+    @Test("A long journey replay followed by a destination preserves both records")
+    func replaysLongTravelThenDestination() throws {
+        let replay = try LocationCallbackReplay(base: base)
+        try replay.arrive("Home", at: 0, latitude: -23.3700, longitude: 150.5100, mapsIdentifier: "home")
+        try replay.travel(from: 15, to: 375)
+        try replay.arrive("Airport", at: 375, latitude: -23.3810, longitude: 150.4750, mapsIdentifier: "airport")
+
+        let stays = try replay.liveStays()
+        #expect(stays.map(\.placeName) == ["Home", "Airport"])
+        #expect(stays[0].departure == replay.time(375))
+        #expect(try replay.travelRecords().count == 1)
+    }
+
     @Test("Departure coordinate distinguishes overlapping arrivals")
     func departureCoordinateDistinguishesOverlappingArrivals() {
         let cafe = Visit(arrival: base,
@@ -1348,6 +1438,7 @@ struct ActivityLocationPolicyTests {
 
         #expect(superseded == 1)
         #expect(driveBy.resolutionState == .superseded)
+        #expect(driveBy.locationResolutionExplanation == .movement)
         #expect(!ActivityLocationPolicy.shouldShowInTimeline(driveBy, locationVisits: []))
     }
 
@@ -1938,5 +2029,68 @@ struct ActivityLocationPolicyTests {
             configurations: configuration
         )
         return ModelContext(container)
+    }
+}
+
+/// Replays persisted Core Location facts in the same order they are delivered. The
+/// recorder supplies coordinates and timestamps; the resolver remains the single
+/// source of truth for closing, retaining, and superseding their timeline rows.
+@MainActor
+private final class LocationCallbackReplay {
+    private let context: ModelContext
+    private let base: Date
+
+    init(base: Date) throws {
+        self.base = base
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: Visit.self, SavedPlace.self, VisitCorrection.self,
+                                           DiagnosticEvent.self, configurations: configuration)
+        context = ModelContext(container)
+    }
+
+    func time(_ minutes: Double) -> Date { base.addingTimeInterval(minutes * 60) }
+
+    func arrive(_ name: String, at minutes: Double, latitude: Double, longitude: Double,
+                mapsIdentifier: String) throws {
+        context.insert(Visit(arrival: time(minutes), latitude: latitude, longitude: longitude,
+                             placeName: name, inferredActivity: "Visiting", source: "automatic",
+                             recognitionConfidence: "learned", mapsIdentifier: mapsIdentifier))
+        try resolve()
+    }
+
+    func depart(arrival: Double, departure: Double, latitude: Double, longitude: Double) throws {
+        let visits = try context.fetch(FetchDescriptor<Visit>())
+        let coordinate = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+        let matched = ActivityLocationPolicy.matchDeparture(
+            coordinate: coordinate, arrival: time(arrival), departure: time(departure), visits: visits
+        )
+        #expect(matched != nil, "The replayed departure must resolve to its original arrival")
+        matched?.departure = time(departure)
+        matched?.locationResolutionExplanation = .coordinateTime
+        try resolve()
+    }
+
+    func travel(from start: Double, to end: Double) throws {
+        context.insert(Visit(arrival: time(start), departure: time(end), latitude: 0, longitude: 0,
+                             placeName: "In transit", inferredActivity: "Travelling", source: "motion"))
+        try resolve()
+    }
+
+    func liveStays() throws -> [Visit] {
+        try context.fetch(FetchDescriptor<Visit>(sortBy: [SortDescriptor(\.arrival)]))
+            .filter(ActivityLocationPolicy.isLocationVisit)
+    }
+
+    func supersededStays() throws -> [Visit] {
+        try context.fetch(FetchDescriptor<Visit>()).filter(ActivityLocationPolicy.isSupersededLocation)
+    }
+
+    func travelRecords() throws -> [Visit] {
+        try context.fetch(FetchDescriptor<Visit>()).filter { $0.source == "motion" }
+    }
+
+    private func resolve() throws {
+        try ActivityLocationPolicy.resolveLocationCallbacks(context: context)
+        try context.save()
     }
 }

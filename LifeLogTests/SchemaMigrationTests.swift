@@ -269,6 +269,30 @@ struct SchemaMigrationTests {
         #expect(resaved[0].placeFieldProvenance == "maps")
     }
 
+    @Test("A V6 store gains an empty resolution explanation that then persists")
+    func migratesV6StoreAddingResolutionExplanation() throws {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LifeLog-v6-\(UUID().uuidString).store")
+        defer { try? FileManager.default.removeItem(at: storeURL) }
+        let arrival = Date(timeIntervalSince1970: 1_800_000_000)
+        let v6Schema = Schema(versionedSchema: LifeLogSchemaV6.self)
+        let configuration = ModelConfiguration("LifeLogMigrationFixture", schema: v6Schema,
+                                               url: storeURL, allowsSave: true, cloudKitDatabase: .none)
+        let container = try ModelContainer(for: v6Schema, configurations: [configuration])
+        let seed = ModelContext(container)
+        seed.insert(LifeLogSchemaV6.Visit(arrival: arrival, latitude: -23.4455, longitude: 150.4522,
+                                           placeName: "Home", inferredActivity: "At home",
+                                           note: "V6 fixture", source: "automatic"))
+        try seed.save()
+
+        let context = ModelContext(try openVersionedStore(at: storeURL))
+        let visit = try #require(context.fetch(FetchDescriptor<Visit>()).first)
+        #expect(visit.resolutionExplanation == nil)
+        visit.locationResolutionExplanation = .mapsIdentifier
+        try context.save()
+        #expect(try context.fetch(FetchDescriptor<Visit>()).first?.resolutionExplanation == "matched-maps-identifier")
+    }
+
     @Test("A V1 store carrying place types migrates to V2 without losing visits or places")
     func migratesV1StoreDroppingPlaceType() throws {
         let storeURL = FileManager.default.temporaryDirectory
@@ -362,7 +386,7 @@ struct SchemaMigrationTests {
     /// way to what the app actually ships. Left at V5 while the app moved to V6, these
     /// tests would keep passing without once exercising the new stage.
     private func openVersionedStore(at url: URL) throws -> ModelContainer {
-        let schema = Schema(versionedSchema: LifeLogSchemaV6.self)
+        let schema = Schema(versionedSchema: LifeLogSchemaV7.self)
         let configuration = ModelConfiguration(
             "LifeLogMigrationFixture", schema: schema, url: url,
             allowsSave: true, cloudKitDatabase: .none

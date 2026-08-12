@@ -199,6 +199,7 @@ enum WorkoutJourneys {
 
             stay.departure = stay.arrival
             stay.source = ActivityLocationPolicy.supersededLocationSource
+            stay.locationResolutionExplanation = .movement
             passed.append((stay, reason))
         }
         return passed

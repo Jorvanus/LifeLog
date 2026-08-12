@@ -26,6 +26,9 @@ enum IgnoredLocations {
         let visitKey = stableKey(for: visit)
         if ignored { keys.insert(visitKey) } else { keys.remove(visitKey) }
         UserDefaults.standard.set(Array(keys), forKey: storageKey)
+        if ignored, ["low", "medium"].contains(visit.recognitionConfidence?.lowercased()) {
+            visit.locationResolutionExplanation = .lowConfidence
+        }
     }
 
     private static var storedKeys: Set<String> {

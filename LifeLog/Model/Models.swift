@@ -9,6 +9,19 @@ enum VisitResolutionState: String, Codable, Sendable {
     case ignored
 }
 
+/// The durable reason an automatic callback was kept, merged, or withdrawn. This is
+/// deliberately separate from its current state: a superseded row still needs to say
+/// whether it was a duplicate or movement evidence, and an accepted row needs to say
+/// what made its place identity trustworthy.
+enum LocationResolutionExplanation: String, Codable, Sendable {
+    case mapsIdentifier = "matched-maps-identifier"
+    case savedPlace = "matched-saved-place"
+    case coordinateTime = "matched-coordinate-time"
+    case duplicate = "superseded-duplicate"
+    case movement = "ignored-movement"
+    case lowConfidence = "ignored-low-confidence"
+}
+
 @Model
 final class SavedPlace {
     var name: String
@@ -77,6 +90,9 @@ final class Visit {
     /// Where the current place fields came from: `maps`, `saved-place`, `manual`,
     /// or `name-fallback`. It makes identifier-less history explainable.
     var placeFieldProvenance: String?
+    /// Why the callback resolver accepted, combined, or withdrew this automatic
+    /// stay. It stays with the visit so the explanation survives diagnostics trimming.
+    var resolutionExplanation: String?
     var candidateData: Data?
     /// The originating HealthKit sample UUID(s) for a health-imported visit (a merged
     /// sleep session can span several samples). Lets a later anchored-query deletion
@@ -93,6 +109,7 @@ final class Visit {
          note: String = "", source: String = "automatic",
          recognitionConfidence: String? = nil, candidateData: Data? = nil,
          mapsIdentifier: String? = nil, placeFieldProvenance: String? = nil,
+         resolutionExplanation: String? = nil,
          healthKitSampleIDs: [UUID]? = nil, routeData: Data? = nil) {
         self.arrival = arrival; self.departure = departure
         self.latitude = latitude; self.longitude = longitude
@@ -104,6 +121,7 @@ final class Visit {
         self.recognitionConfidence = recognitionConfidence.map { TextSafety.clean($0, maximumLength: 20) }
         self.mapsIdentifier = mapsIdentifier.map { TextSafety.clean($0, maximumLength: 120) }
         self.placeFieldProvenance = placeFieldProvenance.map { TextSafety.clean($0, maximumLength: 30) }
+        self.resolutionExplanation = resolutionExplanation.map { TextSafety.clean($0, maximumLength: 40) }
         self.candidateData = candidateData
         self.healthKitSampleIDs = healthKitSampleIDs
         self.routeData = routeData
@@ -167,6 +185,10 @@ final class Visit {
         return activityCategory
     }
     var coordinate: CLLocationCoordinate2D { .init(latitude: latitude, longitude: longitude) }
+    var locationResolutionExplanation: LocationResolutionExplanation? {
+        get { resolutionExplanation.flatMap(LocationResolutionExplanation.init(rawValue:)) }
+        set { resolutionExplanation = newValue?.rawValue }
+    }
 
     var route: [RoutePoint] {
         get {

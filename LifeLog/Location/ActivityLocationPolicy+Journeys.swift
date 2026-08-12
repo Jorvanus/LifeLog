@@ -276,6 +276,7 @@ extension ActivityLocationPolicy {
             // row is kept for inspection but never reaches Timeline or Insights again.
             stay.departure = stay.arrival
             stay.source = supersededLocationSource
+            stay.locationResolutionExplanation = .movement
             rejoined += 1
         }
         return rejoined

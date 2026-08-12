@@ -407,6 +407,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             // Core Location can replay the same arrival after a visit was closed. Keep
             // the original record and update its bounds instead of creating a new card.
             duplicate.arrival = min(duplicate.arrival, safeArrival)
+            duplicate.locationResolutionExplanation = .coordinateTime
             if duplicate.needsCategorisation { identifyPlace(duplicate, accuracy: accuracy) }
             reconcileActivity(with: duplicate, context: context)
             _ = try? ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "arrival merge")
@@ -425,6 +426,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 // A later CLVisit callback often has a more accurate, earlier arrival than
                 // the one-shot sample used to make the current location visible immediately.
                 latest.arrival = min(latest.arrival, safeArrival)
+                latest.locationResolutionExplanation = .coordinateTime
                 reconcileActivity(with: latest, context: context)
                 _ = try? ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "arrival refresh")
                 save(context)
@@ -471,7 +473,8 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                          placeName: name, inferredActivity: activity,
                          recognitionConfidence: saved == nil ? nil : "learned",
                          mapsIdentifier: saved?.mapsIdentifier,
-                         placeFieldProvenance: saved == nil ? nil : "saved-place")
+                         placeFieldProvenance: saved == nil ? nil : "saved-place",
+                         resolutionExplanation: saved == nil ? nil : LocationResolutionExplanation.savedPlace.rawValue)
         context.insert(item)
         _ = PlaceScoreLifecycle.rescore(
             item, stage: .arrival, context: context, savedPlaces: savedPlaceCache,
@@ -544,6 +547,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             return
         }
         matched.departure = max(matched.arrival, min(departure, .now))
+        matched.locationResolutionExplanation = .coordinateTime
         _ = PlaceScoreLifecycle.rescore(
             matched, stage: .departure, context: context, savedPlaces: savedPlaceCache,
             accuracy: accuracy
@@ -792,12 +796,14 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                     visit.inferredActivity = match.suggestedActivity
                     visit.mapsIdentifier = match.mapsIdentifier
                     visit.placeFieldProvenance = match.mapsIdentifier == nil ? "name-fallback" : "maps"
+                    visit.locationResolutionExplanation = match.mapsIdentifier == nil ? .coordinateTime : .mapsIdentifier
                     cache(match, context: context)
                 } else if let likely = evaluation.selected {
                     visit.placeName = likely.name
                     visit.inferredActivity = likely.suggestedActivity
                     visit.mapsIdentifier = likely.mapsIdentifier
                     visit.placeFieldProvenance = likely.mapsIdentifier == nil ? "name-fallback" : "maps"
+                    visit.locationResolutionExplanation = likely.mapsIdentifier == nil ? .coordinateTime : .mapsIdentifier
                 } else {
                     reverseGeocode(visit)
                     return
@@ -848,6 +854,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 visit.placeName = TextSafety.clean(resolvedName, maximumLength: 120)
                 visit.recognitionConfidence = "low"
                 visit.placeFieldProvenance = "name-fallback"
+                visit.locationResolutionExplanation = .lowConfidence
                 LocationDiagnostics.record(.promoted, subject: "Unnamed stay",
                                            reason: "no Maps match; reverse geocoding supplied a name",
                                            evidence: visit.placeName, context: context)
@@ -871,6 +878,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         visit.placeName = Visit.unknownPlaceName
         visit.recognitionConfidence = "low"
         visit.placeFieldProvenance = "name-fallback"
+        visit.locationResolutionExplanation = .lowConfidence
         visit.inferredActivity = "Visiting"
         _ = try? ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "unknown place")
         save(context)
