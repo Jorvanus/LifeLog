@@ -1,8 +1,8 @@
 # SwiftData schema migrations
 
-LifeLog stores `Visit`, `SavedPlace`, `VisitCorrection`, `DiagnosticEvent`, and `LocationEvent` as `LifeLogSchemaV6` (`6.0.0`), opened through `LifeLogMigrationPlan`. V1 is the frozen shape from the unversioned store immediately before versioning; V2 removed `Visit.placeCategory` and `SavedPlace.category`; V3 added `Visit.routeData`; V4 added `SavedPlace.mapsIdentifier`; V5 added the raw location journal; and V6 added Maps identity and provenance to visits.
+LifeLog stores `Visit`, `SavedPlace`, `VisitCorrection`, `DiagnosticEvent`, and `LocationEvent` as `LifeLogSchemaV7` (`7.0.0`), opened through `LifeLogMigrationPlan`. V1 is the frozen shape from the unversioned store immediately before versioning; V2 removed `Visit.placeCategory` and `SavedPlace.category`; V3 added `Visit.routeData`; V4 added `SavedPlace.mapsIdentifier`; V5 added the raw location journal; V6 added Maps identity and provenance to visits; and V7 added the persisted location-resolution explanation.
 
-V1 and V2 are frozen snapshots that define their own models. Only the newest version may point at the live model types — two versions that both point there hash identically and SwiftData rejects the plan with "Duplicate version checksums detected". So before adding a property, freeze the current version by copying the live model definitions into it, exactly as shipped, and give the new version the live types.
+V1 through V6 are frozen snapshots that define their own models. Only the newest version may point at the live model types — two versions that both point there hash identically and SwiftData rejects the plan with "Duplicate version checksums detected". So before adding a property, freeze the current version by copying the live model definitions into it, exactly as shipped, and give the new version the live types.
 
 Before adding any persisted property or model:
 
@@ -12,4 +12,4 @@ Before adding any persisted property or model:
 4. Run the migration test against a copied device store. Never use the original protected store for development experiments.
 5. Only then update `LifeLogApp` (and the store-recovery report text) to open the new version and ship the change.
 
-The fixture test intentionally starts with the exact unversioned schema shipped immediately before the V1 baseline, writes representative data to a temporary SQLite store, closes it, and opens the same path with the versioned plan. This is the minimum regression gate for data-loss protection; future schema versions must retain this test and add an explicit V1 → V2 assertion. A copied pre-versioned device store remains the final proof because no synthetic fixture can prove every historical store variant.
+The fixture suite intentionally starts with the exact unversioned schema shipped immediately before the V1 baseline, writes representative data to a temporary SQLite store, closes it, and opens the same path with the versioned plan. It also exercises the frozen version hops through V7, including V6 → V7’s optional resolution explanation. Future versions must retain the full-chain fixture and add an explicit previous-version → current-version assertion. A copied pre-versioned device store remains the final proof because no synthetic fixture can prove every historical store variant.

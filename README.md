@@ -39,12 +39,14 @@ just regenerate.
 - Background location is designed for low-power visit/significant-change monitoring, not continuous GPS tracking.
 - Data remains in local SwiftData storage protected by the device data-protection class.
 - Correcting a located visit creates or updates a reusable `SavedPlace` geofence. Future visits within its radius inherit the corrected name, category, and activity.
-- Location visits take priority over device activity: walking, workouts, sleep, or travel are shown only for time that is not already covered by a place visit.
-- Connect Apple Health and Motion Activity from LifeLog Settings. Health data is imported for the most recent 30 days and iPhone motion history for the most recent 7 days.
+- Location visits take priority over passive device activity: movement inside a destination does not create a second Timeline card. Measured sleep and a deliberately started workout remain visible because they are direct evidence, not a passive movement guess.
+- Timeline opens on today but can jump to any archived day without loading the complete archive. Insights supports day, week, month, and year windows.
+- Connect Apple Health and Motion Activity from LifeLog Settings. Routine Health refresh uses a bounded window sized to the gap since the last import (2–30 days), manual Health re-import reads 30 days, and iPhone motion history reads the most recent 7 days.
 
 ## Next milestones
 
-See `TODO.md`, which is the live list. The near-term priorities are reading the
-archive as a journal (Timeline is still today-only, and there is no search),
-proving geofencing and the Wi-Fi anchor on the actual phone, and giving the
-Insights aggregation its first tests.
+See `TODO.md`, which is the audited live list. The near-term priorities are proving
+the rebuilt sleep/no-Watch path on real hardware, adding explicit archive search,
+and completing location-quality and hardware validation. The test targets currently
+cover location replay and invariants, Saved Place learning, archive/Insights
+aggregation, migrations, import recovery, and UI reachability.

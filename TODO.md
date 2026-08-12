@@ -1,305 +1,156 @@
-# LifeLog — what's next
+# LifeLog — current roadmap
 
-Audited against `main` on 2026-08-12. This is intentionally an **open-work**
-list: shipped work has been removed, historical counts have not been carried
-forward as if they were current, and hardware items remain only where the code
-exists but has not yet been proven on the owner’s iPhone. LifeLog is still a
-private, single-phone app; the App Store work is deliberately separate below.
+Audited against `main` at `718c3ee` on 2026-08-12. This is an open-work list,
+not a history of shipped features. Completed callback replay, resolver invariants,
+conservative Saved Place learning, resolution diagnostics, sleep-evidence plumbing,
+and the first archive-query pass have been removed.
 
-## The next three code changes
+LifeLog is a private app for one iPhone 17 Pro Max. Real-device correctness and a
+responsive 32,000-row archive outrank App Store preparation and speculative features.
 
-1. [ ] **Make location resolution an invariant of every store mutation.** Run
-   the resolver after arrivals, departures, corrections, Saved Place edits and
-   relaunch recovery. Add one diagnostic validator for: at most one current
-   resolved visit, no resolved overlaps or negative durations, no superseded
-   visit in Timeline/Insights, and no automation replacing a user correction.
+## Next three deliverables
 
-2. [ ] **Make Saved Place learning conservative and reversible.** Do not turn
-   one high scoring Maps result into a permanent Saved Place. Require repeated
-   corroborating visits or a correction, preserve competing evidence, and add
-   an alias/cluster rule for GPS drift around large venues without merging two
-   genuinely different businesses.
+1. [ ] **Prove the shipped sleep-evidence update on real hardware.** The app now
+   rebuilds a complete affected night, waits to acknowledge Health observer delivery
+   until import finishes, distinguishes measured sleep from estimated time in bed,
+   and supports confirmed manual sleep. Run its deterministic suite when the Xcode 27
+   beta services are healthy, then prove on the phone: Watch worn overnight, Watch not
+   worn with an iPhone Sleep Schedule, no sleep source, delayed Watch sync, one deleted
+   stage, a deleted night, and partial/denied Health access. Completion means one
+   correct overnight entry, no duplicate in-bed card beside measured sleep, and a
+   useful Settings/Diagnostics explanation for every case.
 
-3. [ ] **Make the archive searchable at archive scale.** Provide one scoped
-   search over place, activity and note, surface note-bearing visits in the
-   results and Timeline, and keep the query/index work off the main actor so
-   nine years of data stays responsive.
+2. [ ] **Add archive search without putting notes on Timeline’s normal path.** Build
+   one explicit search screen for place and activity, with note search as a slower
+   opt-in mode. Reuse `VisitHistoryQuery`, add result limits/paging, and measure it on
+   the 32,000-row archive. Decide from measurements whether normalized place, Maps ID,
+   activity, and arrival-day fields need persisted indexes; do not attempt another
+   schema migration merely because an index sounds useful. Completion means ordinary
+   Timeline never fetches note text for search and a broad query cannot freeze the UI.
 
-## Device proof and data-quality work
+3. [ ] **Make location quality and hardware proof visible.** Detect reduced-accuracy
+   location, show it in Settings and Diagnostics, and prevent approximate fixes from
+   teaching a Saved Place or winning fine-distance comparisons. Then run the existing
+   hardware checklist with detailed diagnostics: named Saved Place arrival, geofence
+   exit, Wi-Fi departure assistance, region ranking, noisy signal, repeated callback,
+   and an outdoor continuous walk that must not satisfy the stationary fallback.
 
-- [ ] **Reproduce or retire the stale “Today’s Journey” theory.** It was seen
-  once after midnight while the app had been backgrounded: the view’s day
-  boundary is held in a clock refreshed only by its minute loop. Capture the
-  relevant Diagnostics/scene state if it happens again; if confirmed, refresh
-  that clock on foreground and when the view becomes active.
+## Correctness and recovery
 
-- [ ] **Force one real background-save failure.** Raise the three store files’
-  protection class to `NSFileProtectionComplete` after launch, lock the phone,
-  cause a background save, relaunch, and verify the pending failure reaches
-  Diagnostics. The queue and unit test exist; device proof does not.
+- [ ] **Refresh Timeline’s day boundary on foreground.** The minute clock can remain
+  stale when the app crosses midnight in the background. Update it on scene activation
+  and add a deterministic midnight/background fixture; do not wait for a second field
+  report to fix the known lifecycle gap.
 
-- [ ] **Run the location hardware checklist during ordinary use.** Verify a
-  Saved Place names an entry without a Maps request, a geofence exit closes at
-  the crossing, Wi-Fi assists a departure, the region-ranking diagnostic makes
-  sensible choices within iOS’s 20-region cap, and the first Core Motion import
-  records its proof. Keep the resulting Diagnostics/backup, not personal data
-  in source control.
+- [ ] **Audit cross-visit `DateInterval` construction.** `CommuteDetection` previously
+  trapped when overlapping manual visits produced an end before a start. Inspect every
+  interval built from two different visits, guard invalid ordering, and add overlapping
+  manual-entry fixtures. Decide whether Add Visit should warn about or resolve overlaps
+  rather than leaving every downstream calculation to defend itself.
 
-- [ ] **Exercise real callback traces with detailed diagnostics enabled.**
-  Record an arrival, departure, geofence crossing and a noisy/poor-signal case;
-  inspect the journal beside that day’s Timeline. Add deterministic replay
-  fixtures for delayed and repeated callbacks, departure-before-arrival,
-  coordinate drift, overlapping geofences, missing departures, relaunch with
-  an open visit, and Home → destination → Home.
+- [ ] **Prove protected-store recovery on the phone.** After a successful foreground
+  open, apply complete protection to the three store files, lock the phone, provoke a
+  background save failure, then verify the pending failure appears after relaunch.
+  Preserve the aggregate diagnostic evidence, never the personal store.
 
-- [ ] **Finish proving the live-location confirmation fallbacks.** On-device
-  2026-08-10 confirmed `CLLocationUpdate.stationary` does not reliably settle
-  `true` even after 7+ seconds indoors while genuinely still, on this OS —
-  every sample across several full-length bursts read `stationary=false`.
-  Two fallbacks now cover that in `LocationRecorder.swift`: a `CLVisit`
-  arrival with zero live samples uses Core Location's own coordinate instead
-  of being discarded, and a sample cluster that stays within tolerance over
-  `minimumStationarySpan` confirms without the flag at all. Both are proven
-  once, manually, indoors, stationary. Still needed: repeat outdoors and in
-  poor signal, confirm continuous walking never satisfies the distance-cluster
-  fallback either, and confirm a bad-signal burst still ends cleanly rather
-  than confirming a wrong location.
+- [ ] **Validate a copied pre-versioned device store.** Synthetic V1–V7 migrations
+  cover the declared schemas, but only a copy of the historical device store proves
+  the real upgrade. Work on a copy and leave the original protected store untouched.
 
-- [ ] **Handle reduced-accuracy location honestly.** Detect it in Settings and
-  Diagnostics, explain its effect, and prevent it from teaching Saved Places or
-  driving fine distance comparisons.
+- [ ] **Make Home and Work explicit Saved Place roles.** Remove name-keyword discovery,
+  migrate behavior without renaming the owner’s places, and then lock recurring-trip
+  and commute semantics with tests. Location remains primary: movement inside a
+  destination must never become a separate activity card.
 
-- [ ] **Calibrate rather than cargo-cult thresholds.** Review a few weeks of
-  real traces before trusting `walkingBurstGap`,
-  `maximumStayShareConsumedByJourney`, `passingStayCoverage`,
-  `passingStayPace`, and `LocationArrivalConfirmation`'s
-  `minimumStationarySpan`/`stationaryClusterFloor`/
-  `stationaryClusterAccuracyMultiplier` (added 2026-08-10 from a single indoor
-  session, not weeks of traces); record why each change is made and what
-  cases it changes.
+- [ ] **Choose the Health re-import boundary.** Routine Health refresh is bounded and
+  the manual re-import reads 30 days. If older workout routes matter, add a date-range
+  import with progress, cancellation, retry, and a clear inserted/updated/deleted
+  summary. Otherwise document 30 days as an intentional limit.
 
-- [ ] **Complete the Health and motion device matrix.** Test denial, partial
-  permission, no data, disconnected Watch, duplicate/deleted samples, DST and
-  timezone changes. Watch one overnight sleep observer path end-to-end, grant
-  Workout Routes then re-import, and show the age of the last received sample
-  instead of treating “prompt shown” as proof of Health access.
+## Archive performance and storage
 
-- [ ] **Decide the Health re-import product boundary.** It currently rereads a
-  fixed 30-day window. If older workout routes matter, design a date-range
-  import with progress, cancellation, retry and an understandable summary.
+- [ ] **Finish the broad-query audit.** Most history-facing views are now bounded, but
+  broad collections remain in Diagnostics, Settings, Places, and journal compaction.
+  Classify each as bounded-by-retention, genuinely whole-store, or accidental. Replace
+  accidental queries; for intentional whole-store tools, load on demand away from the
+  interaction path and show progress.
 
-- [ ] **Make Home and Work explicit Saved Place roles.** Stop discovering them
-  from name keywords; then add recurring-trip tests and decide whether a
-  commute deserves its own Timeline row. Keep location first: movement inside
-  a destination must not become a separate visit.
+- [ ] **Run the complete physical-phone budget after the sleep/data-shape changes.**
+  Measure cold/warm launch, Timeline return from Insights/Settings/Visit Editor,
+  Activities, day/week/month/year Insights, editor opening, and archive search. Keep
+  aggregate timings only and investigate any main-thread interaction over 250 ms.
 
-## UI things to consider
+- [ ] **Protect exports and temporary files consistently.** Backups and reports need
+  an explicit strong protection class, short expiry after sharing, low-storage
+  preflight, and failure behavior that never deletes source records. Show count,
+  estimated size, and irreversible scope before bulk deletion or compaction.
 
-- [ ] Replace green model-oriented confidence labels (`Low`, `Medium`,
-  `Learned`) with decision-oriented states such as **Needs checking**,
-  **Suggested** and **Confirmed**. Do not show a badge when it gives no useful
-  action or assurance.
+- [ ] **Add retention controls for sensitive local evidence.** Detailed callback
+  diagnostics are opt-in and bounded, but still need automatic expiry plus clear
+  count/size/delete controls for coordinates, Health/Motion-derived rows, imported
+  journal data, diagnostics, exports, and all app data.
 
-- [ ] Build visual regression coverage from approved screenshots. Existing UI
-  tests prove reachability, not overlapping or unreadable text. Cover normal
-  and Accessibility XXXL text in light and dark appearance, then review Place
-  History, Visit Editor and Add Visit at the largest size. Timeline's own
-  journey row belongs on this list too, proven fragile twice on 2026-08-12: a
-  long place name floated the row's connecting dot off-centre (fixed size
-  reserved for a one-line name, not updated when a wrapped title grew the
-  row), and separately left a wide dead gap before the duration column for a
-  short name (`maxWidth: .infinity` reserving a box sized off available width
-  rather than what the text needed) — both invisible to reachability tests
-  and only caught by eye against real long place names in the simulator.
+## Testability and diagnostics
 
-- [ ] Expand interaction coverage for the Insights donut: select/deselect
-  several segments, including Sleep, scroll away and back, and verify the
-  chart remains accessible and tappable.
+- [ ] **Make MapKit lookup deterministic.** Inject the search transport and test cache
+  expiry, cancellation, retry, bounded/deduplicated candidates, lookup opt-out, and
+  manual-pin fallback without live Apple Maps.
 
-- [ ] Add a day-level investigation view that places raw location callbacks,
-  resolver decisions and the final Timeline side by side. Mark location-journal
-  exports conspicuously as sensitive personal location data.
+- [ ] **Add visual regression coverage.** Current UI tests prove reachability, not
+  layout. Capture approved light/dark screenshots at normal and Accessibility XXXL for
+  Timeline rows, Place History, Visit Editor, Add Visit, Diagnostics resolution choices,
+  sleep fallback, and the Insights donut.
 
-- [ ] Make all permission and recovery states useful on screen: precise versus
-  approximate location, Health’s last successful sample, background-location
-  availability, low storage, failed import/export, and backup restore outcome.
+- [ ] **Isolate UI-test preferences.** Seeded tests already use an in-memory store, but
+  every app-owned `UserDefaults` marker also needs a scratch suite/reset so test order
+  cannot change one-shot repairs, hardware evidence, or permission-facing state.
 
-- [ ] Revisit the activity catalogue workflow after real use: recently used,
-  history-only and unused labels are now separated, and stats/edit are one
-  screen rather than two as of 2026-08-12 — bulk adoption and colour/icon
-  choices still need to remain understandable now that they live alongside
-  an activity's history rather than on their own dedicated screen.
+- [ ] **Calibrate thresholds from real traces.** Review several weeks before changing
+  `walkingBurstGap`, passing-stay thresholds, journey absorption, or stationary-cluster
+  values. Record the trace pattern and the deterministic fixtures changed by any new
+  threshold.
 
-- [ ] **Reconcile `InsightSliceEditor`'s header total with its own entry
-  list.** The header shows the category's deduplicated segment total, the
-  same figure the donut wedge and "N logged" text use; the rows below it show
-  each visit's raw, unclamped duration via `Visit.duration(in:)`, which does
-  not subtract time another category's segment already claimed. Two
-  overlapping visits (a Home stay spanning hours a Sleep record also covers)
-  can make the rows sum to far more than the header says. Either compute each
-  row's actual post-resolution contribution, or change the wording so it
-  stops implying the rows sum to the header figure.
+- [ ] **Add a day investigation screen only if Diagnostics remains too fragmented.**
+  Resolution choices and the callback journal are now inspectable without Timeline.
+  If real debugging still requires manual cross-referencing, add a day view aligning
+  callbacks, resolver decisions, and final stays. Mark any export as precise, sensitive
+  location data.
 
-## Insight enhancements
+## Product and UI follow-ups
 
-- [ ] **Implement Waking Life Balance Ratio**: Add a 4-part segmented balance visual (Work, Fitness, Social, Home) with ratio baseline comparison.
-- [ ] **Add Commute Overhead & Transit Impact Trend**: Surface weekly commuting hours and trend changes derived from `CommuteDetection`.
-- [ ] **Track Exploration & Novelty Index**: Calculate percentage of time spent at new/unfamiliar places vs. routine locations.
-- [ ] **Calculate Peak Dwell & Focus Duration**: Display average stay length per venue category and place type.
-- [ ] **Add micro-insight badges to Timeline visit cards** (*First time here*,
-  *Milestone visit*, *Longest stay*). Place History's headers already carry
-  the equivalent (*Peak visit hour*, *Average stay*, *Lifetime hours*,
-  shipped 2026-08-10 as a plain Form section matching that screen's own
-  styling). A first attempt at the Timeline version shipped the same day and
-  was reverted immediately: stacked capsule/pill badges broke the card onto
-  extra lines and looked wrong against Timeline's card style. Review any
-  future attempt against the actual card before shipping it, not assumed to
-  fit the space.
-- [ ] **Segment Insights View into Focused Tabs**: Group the 13 long scrollable cards in `InsightsView` into `[ Overview | Habits & Trends | Places ]` tabs.
+- [ ] Replace internal confidence words (`Low`, `Medium`, `Learned`) with actionable
+  states such as **Needs checking**, **Suggested**, and **Confirmed**. Hide badges that
+  provide neither an action nor assurance.
 
-- [ ] Correct the highest-value imported place history and adopt active
-  activity labels. Inference from place and time band, weighted toward
-  corrections and LifeLog-created entries over bulk-imported defaults, now
-  exists and only gets better answers once this curation happens — it isn't a
-  replacement for doing it.
+- [ ] Reconcile `InsightSliceEditor` totals. Its header uses deduplicated segment time
+  while rows show raw visit duration, so overlapping Home/Sleep records need either
+  post-resolution row contributions or wording that does not imply the rows add up.
 
-- [ ] Surface recurring commute patterns and meaningful changes in time away
-  from Home only after explicit Home/Work roles and the underlying location
-  validation are trustworthy.
+- [ ] Review the activity catalogue after real use: recently used, history-only, and
+  unused labels are separated; confirm bulk adoption and icon/colour editing remain
+  understandable beside activity history.
 
-- [ ] Let place-score and correction evidence explain an insight’s confidence;
-  never promote an inferred pattern as fact merely because the archive is large.
+- [ ] Improve Insights only after the above evidence is trustworthy. Candidate work,
+  in order: commute overhead after explicit Home/Work roles; focused Overview/Trends/
+  Places sections; waking-life balance; exploration/novelty; dwell/focus duration.
+  Insights must show its evidence and uncertainty rather than turning archive size into
+  false confidence. Timeline micro-badges remain deferred after the first design made
+  cards wrap badly.
 
-## Other things to consider and improve
+- [ ] Consider photos, read-only App Intents/Shortcuts, widgets, and multi-device sync
+  only after local retention, deletion, backup, and recovery behavior is designed.
 
-- [ ] **Give `VisitCorrection` a Maps identifier, a V7 candidate.** The V6
-  migration gave `Visit` and `SavedPlace` a durable Maps identifier and most
-  matching sites now prefer it over a name (2026-08-12 closed the last two:
-  place-score recurrence and monitored-places ranking). `VisitCorrection` has
-  no identifier field at all, by original design ("labels and confidence
-  only; precise coordinates remain in the visit") — so the `priorCorrections`
-  signal in `PlaceScoring.swift` is still name/proximity only. Deliberately
-  left out of the 2026-08-12 pass pending a decision on whether a correction
-  is worth a schema bump for, or whether resolving it back to its visit's own
-  identifier at read time is enough.
+## Deliberately deferred
 
-- [ ] **Validate a copied pre-versioned device store.** The synthetic migration suite now passes after correcting its V4 model-type mismatch and rebuilding the legacy fixture from the exact unversioned V1 shape. That proves the declared migration stages, but only a copied store from before versioning can prove the real on-device upgrade path. Keep the original protected store untouched.
-
-- [ ] Make MapKit lookup work testable: inject the search transport, test cache
-  expiry/cancellation/retry paths without live Maps, keep candidate payloads
-  bounded and deduplicated, and make lookup opt-out plus a manual-pin fallback
-  explicit.
-
-- [ ] Add automatic expiry to opt-in detailed location diagnostics and clear
-  retention/deletion controls for coordinates, imported journals, Health and
-  Motion records, Diagnostics, exports and all app data. Show count, storage
-  estimate and irreversible scope before deletion.
-
-- [ ] Protect data interchange: set an explicit strong file-protection class
-  on backups/exports, shorten temporary share-file lifetime or clear after the
-  share sheet, preflight low storage, and never delete a source record because
-  an export failed.
-
-- [ ] Keep import and restore resilient: visible progress, cancel/retry,
-  malformed/duplicate/compactable-row summary, plus a personal-device
-  regression checklist for fresh install, upgrade, migration, store recovery,
-  backup restore, permission changes and relaunch.
-
-- [ ] Isolate UI-test state completely. A seeded run must use/reset a scratch
-  defaults suite for every app-owned key, not just its in-memory SwiftData
-  store, so test order cannot change results.
-
-- [ ] **Audit for other unguarded `DateInterval(start:end:)` construction.**
-  `CommuteDetection.commutes` crashed on-device 2026-08-10
-  (`EXC_BREAKPOINT`/`SIGTRAP`) when a manually added visit overlapped the
-  stay before it: `stays` there is sorted by arrival, and the code trusted
-  that order alone to guarantee `end >= start`, which `DateInterval.init`
-  requires or traps on. Manual visits go through no overlap resolution at
-  all — `ManualVisitView` only clamps a visit's own arrival against its own
-  departure — so the same shape can occur wherever else two different
-  visits' dates are combined the same way. Grep for other
-  `DateInterval(start:end:)` sites built from two visits and confirm each
-  tolerates an out-of-order pair, or consider warning about/resolving an
-  overlap at Add Visit save time instead of patching each crash site as it's
-  found.
-
-- [ ] Re-run archive performance on the physical phone after each data-shape
-  change. Keep aggregate timing only; investigate any main-thread stall over
-  250 ms.
-
-- [ ] Re-audit newly adopted iOS SDK capabilities only when a public SDK is
-  actually installed and a concrete LifeLog problem justifies the deployment
-  target change. Do not reserve roadmap space for unverified beta APIs.
-
-- [ ] Consider notes/photos, read-only App Intents/Shortcuts, widgets and
-  multi-device sync only after their local privacy, retention, deletion and
-  recovery behaviour is designed.
-
-## If LifeLog goes on the App Store
-
-This is a separate release programme, not a switch to flip. Before submitting,
-build a release checklist around the exact build and its actual behaviour:
-
-- [ ] **Set up distribution and honest store metadata.** Enrol and configure
-  App Store Connect, choose category/age rating/price/territories, supply a
-  support URL and current screenshots, test the release archive on real
-  hardware, and write review notes that explain why foreground and background
-  location, Health and Motion are core to the journal. Do not claim features
-  the app has not proven on-device.
-
-- [ ] **Publish a plain privacy policy and complete the App Privacy answers
-  from a verified data map.** Include precise location, place names, notes,
-  Health/Motion-derived records, diagnostics, backups/exports and any MapKit
-  request. State what stays on device, what leaves the device, retention,
-  deletion and how support requests are handled. Re-check this with every SDK
-  or dependency update.
-
-- [ ] **Audit the privacy manifest and required-reason APIs before every
-  upload.** The current manifest declares UserDefaults, while export cleanup
-  also reads file timestamps. Inventory app and SDK calls, declare only
-  Apple-approved reasons that accurately match functionality, and run archive
-  validation before App Store Connect does it.
-
-- [ ] **Turn diagnostic and data ownership into a consumer-safe experience.**
-  Detailed location trace must be off by default, time-limited, clearly marked
-  sensitive on export, and easy to delete. Backups/exports need explicit file
-  protection and a disclosure at sharing time. Provide in-app deletion for all
-  stored personal data; if an account or server is introduced later, add the
-  corresponding account deletion flow and public process.
-
-- [ ] **Design permissions for denial and review.** Give each permission a
-  short, feature-specific explanation immediately before requesting it; keep a
-  capable app when any is denied; ensure `Info.plist` wording, Settings copy,
-  the privacy policy and review notes agree; and test fresh-install, upgrade,
-  approximate-location, background-denial and Health partial-access paths.
-
-- [ ] **Keep Health data within Apple’s rules.** Use it only for the stated
-  health/fitness experience, never for advertising or data brokerage, and do
-  not put personal HealthKit-derived information in iCloud or another remote
-  store without a design and review that meets Apple’s HealthKit terms. The
-  current app has no CloudKit sync; treat enabling it as a new privacy review.
-
-- [ ] **Meet baseline quality and accessibility.** Exercise VoiceOver, Dynamic
-  Type, contrast, keyboard/focus, error recovery, offline Maps fallback,
-  network loss, low storage and battery impact on supported devices. Resolve
-  crashes, stalled imports and misleading automation before submission.
-
-- [ ] **Review all third-party and system surfaces.** Maintain licences,
-  dependency privacy manifests, support/contact route, export control, and a
-  release-only diagnostic policy. Never ship personal backups, diagnostics,
-  signing material or test fixtures containing real locations.
-
-Official references: [App Store Review Guidelines](https://developer.apple.com/app-store/review/guidelines/), [App Privacy Details](https://developer.apple.com/app-store/app-privacy-details/), [required-reason APIs](https://developer.apple.com/documentation/BundleResources/describing-use-of-required-reason-api), and [HealthKit privacy](https://developer.apple.com/documentation/healthkit/protecting-user-privacy).
-
-## Deliberately not doing
-
-- **A duplicate-label merge tool.** The prior archive audit found insufficient
-  genuine duplicates to justify its complexity; keep normalisation and rename
-  paths good instead.
-- **Movement/Health as a primary place-inference signal.** It remains weaker
-  than location and can mislabel a legitimate stay. Use it to resolve journeys
-  only after the location evidence is sound.
-- **Standalone time-of-day inference.** Time becomes useful only when combined
-  with a trusted place and correction history.
-- **Persisting an Apple Maps “place type.”** It is an inference hint, not a
-  stable fact. Preserve evidence and provenance instead.
+- **App Store release work.** Distribution metadata, public privacy policy, consumer
+  deletion, release diagnostics, accessibility certification, and submission review
+  form a separate programme if this stops being a private personal app.
+- **A duplicate-label merge tool.** The archive audit did not find enough genuine
+  duplicates to justify it; keep normalization and rename paths reliable.
+- **Movement as primary place inference.** Health and Motion may resolve journeys but
+  must not overrule trusted location evidence or create a place.
+- **Persisting an Apple Maps place type.** It is an inference hint, not stable identity;
+  retain Maps ID, candidates, provenance, and correction evidence instead.
+- **A schema bump solely for `VisitCorrection.mapsIdentifier`.** First measure whether
+  resolving the correction through its visit is sufficient. Schema risk needs a real
+  correctness or performance benefit.

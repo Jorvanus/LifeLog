@@ -7,6 +7,7 @@
 - Health sleep changes now rebuild the complete affected night instead of piecing together individual Watch sync fragments. Deleted samples reconcile only the relevant overnight evidence, so one edited stage no longer removes an otherwise valid night.
 - When no wearable sleep is available, LifeLog can record Health’s time-in-bed estimate as `In bed` rather than calling it sleep, and Settings offers a clearly confirmed manual sleep entry for nights without a tracker.
 - Settings and Diagnostics now report whether recent Health evidence was measured sleep, estimated time in bed, or absent. Background Health deliveries remain pending until LifeLog has processed them, rather than being acknowledged before the import finishes.
+- The project roadmap and supporting README, migration, and performance guides now reflect the shipped resolver, Saved Place, archive, Diagnostics, and V7 schema work; the active list is limited to genuinely unfinished implementation and device proof.
 
 ### Large archives now use bounded history lookups
 
