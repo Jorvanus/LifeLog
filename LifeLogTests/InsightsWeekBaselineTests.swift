@@ -99,4 +99,29 @@ struct InsightsWeekBaselineTests {
         #expect(totals["Home"] == 1)
         #expect(totals["Work"] == 2)
     }
+
+    @Test("Resolved segment identity survives an inserted segment")
+    func segmentIdentitySurvivesSequenceChange() {
+        let firstVisit = Visit(arrival: start, departure: start.addingTimeInterval(3_600),
+                               latitude: -23.37, longitude: 150.51, placeName: "Home",
+                               inferredActivity: "At home", source: "automatic")
+        let secondVisit = Visit(arrival: start.addingTimeInterval(7_200),
+                                departure: start.addingTimeInterval(10_800),
+                                latitude: -23.38, longitude: 150.52, placeName: "Office",
+                                inferredActivity: "Working", source: "automatic")
+        let first = InsightSegment.visit(firstVisit, visibleFrom: firstVisit.arrival,
+                                         visibleTo: firstVisit.departure!, now: start)
+        let second = InsightSegment.visit(secondVisit, visibleFrom: secondVisit.arrival,
+                                          visibleTo: secondVisit.departure!, now: start)
+        let inserted = InsightSegment.unlogged(index: 0,
+                                               from: start.addingTimeInterval(3_600),
+                                               to: start.addingTimeInterval(7_200))
+
+        let original = [first, second]
+        let revised = [first, inserted, second]
+
+        #expect(revised.map(\.id) == [first.id, inserted.id, second.id])
+        #expect(revised[0].id == original[0].id)
+        #expect(revised[2].id == original[1].id)
+    }
 }

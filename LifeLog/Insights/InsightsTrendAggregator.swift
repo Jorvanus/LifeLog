@@ -24,7 +24,8 @@ struct InsightsTrendData: Sendable {
 /// could absorb.
 @ModelActor
 actor InsightsTrendAggregator {
-    func load(endingAt now: Date, calendar: Calendar = .current) throws -> InsightsTrendData {
+    func load(endingAt now: Date, calendar: Calendar = .current,
+              scope: InsightsScope = .allHistory) throws -> InsightsTrendData {
         let habitSpan = InsightsTrends.range(endingAt: now, weeks: InsightsTrends.habitWeeks, calendar: calendar)
         let start = habitSpan.start
         let end = habitSpan.end
@@ -32,7 +33,7 @@ actor InsightsTrendAggregator {
             predicate: #Predicate { $0.arrival < end && ($0.departure ?? end) >= start },
             sortBy: [SortDescriptor(\.arrival)]
         )
-        let visits = try modelContext.fetch(descriptor)
+        let visits = scope.filtering(try modelContext.fetch(descriptor))
         let savedPlaces = try modelContext.fetch(FetchDescriptor<SavedPlace>())
         // Resolved once here, not per week and not a second time for the weekday
         // chart below — CommuteDetection.commutes sorts the whole array and does

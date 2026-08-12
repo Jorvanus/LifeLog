@@ -2,6 +2,14 @@
 
 ## 2026-08-12
 
+### Insights can be filtered by data source
+
+- Added a compact, persistent Insights scope control for all history, device and manual records, imported journal entries, or confirmed/corrected locations; the selected scope now carries through charts, comparisons, trends, places, travel, Health summaries, drill-downs, and exports with clear empty states.
+
+### Insights comparison and weekly bars keep their identity
+
+- Comparison details now name the actual baseline period, and weekly resolved bars use stable segment identity when corrections or imports change the sequence.
+
 ### Apple Health workout labels are human readable
 
 - Day and other Insights Health summaries now show friendly workout names such as Walking instead of raw HealthKit enum values.

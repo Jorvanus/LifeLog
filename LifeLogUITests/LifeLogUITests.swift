@@ -621,6 +621,42 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertFalse(app.navigationBars["Choose Date"].exists)
     }
 
+    func testInsightsScopePickerPersistsAndShowsScopedEmptyState() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+        app.tabBars.buttons["Insights"].tap()
+
+        let scopePicker = element("insights-scope-picker")
+        XCTAssertTrue(scopePicker.waitForExistence(timeout: 10))
+        scopePicker.tap()
+        XCTAssertTrue(app.buttons["All history"].waitForExistence(timeout: 5))
+        app.buttons["All history"].tap()
+
+        scopePicker.tap()
+        XCTAssertTrue(app.buttons["Imported journal only"].waitForExistence(timeout: 5))
+        app.buttons["Imported journal only"].tap()
+        let periodPicker = element("insights-period-picker")
+        XCTAssertTrue(periodPicker.waitForExistence(timeout: 5))
+        XCTAssertTrue(periodPicker.label.contains("Imported journal only"))
+        XCTAssertTrue(element("insights-scope-empty-state").waitForExistence(timeout: 5))
+
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+        app.tabBars.buttons["Insights"].tap()
+        let relaunchedPeriodPicker = element("insights-period-picker")
+        XCTAssertTrue(relaunchedPeriodPicker.waitForExistence(timeout: 10))
+        XCTAssertTrue(relaunchedPeriodPicker.label.contains("Imported journal only"))
+
+        // Leave the simulator's persistent preference at the product default for
+        // the other deterministic UI tests in this target.
+        let relaunchedScopePicker = element("insights-scope-picker")
+        relaunchedScopePicker.tap()
+        XCTAssertTrue(app.buttons["All history"].waitForExistence(timeout: 5))
+        app.buttons["All history"].tap()
+    }
+
     /// Keep visual evidence for the four primary tabs at the combinations that have
     /// actually exposed layout regressions: the normal and largest accessibility text
     /// sizes in both interface styles. XCTest's frame assertions cannot see text

@@ -22,9 +22,11 @@ enum TrendExport {
         let confidence: String
     }
 
-    static func makeFile(format: String, visits: [Visit], interval: DateInterval, now: Date) -> TrendExportFile? {
+    static func makeFile(format: String, visits: [Visit], interval: DateInterval, now: Date,
+                         scope: InsightsScope = .allHistory) -> TrendExportFile? {
         ExportFileCleanup.removeExpired()
-        let rows = visits.filter { $0.resolutionState != .ignored && $0.resolutionState != .superseded && overlaps($0, interval: interval, now: now) }
+        let rows = visits.filter { scope.includes($0) && $0.resolutionState != .ignored &&
+            $0.resolutionState != .superseded && overlaps($0, interval: interval, now: now) }
             .sorted { $0.arrival < $1.arrival }
             .map { visit in
                 Row(

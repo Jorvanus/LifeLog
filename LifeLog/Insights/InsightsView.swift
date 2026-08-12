@@ -12,6 +12,7 @@ struct InsightsView: View {
     @Query private var savedPlaces: [SavedPlace]
     @State private var visits: [Visit] = []
     @State private var window: InsightWindow = .day
+    @AppStorage(InsightsScope.storageKey) private var scopeRawValue = InsightsScope.allHistory.rawValue
     @State private var anchorDate = Date.now
     @State private var choosingDate = false
     @State private var draftAnchorDate = Date.now
@@ -63,8 +64,14 @@ struct InsightsView: View {
     @State private var previousHealthSummary: HealthInsightsSummary?
 
     private var interval: DateInterval { window.interval(containing: anchorDate) }
+    private var insightsScope: InsightsScope {
+        InsightsScope(rawValue: scopeRawValue) ?? .allHistory
+    }
+    private var scopeSubtitle: String {
+        "\(insightsScope.title) · \(formatHours(snapshot.loggedHours)) recorded hours"
+    }
     private var sleepRefreshKey: String {
-        "\(window.rawValue)-\(interval.start.timeIntervalSinceReferenceDate)-\(interval.end.timeIntervalSinceReferenceDate)"
+        "\(window.rawValue)-\(insightsScope.rawValue)-\(interval.start.timeIntervalSinceReferenceDate)-\(interval.end.timeIntervalSinceReferenceDate)"
     }
     var body: some View {
         NavigationStack {
@@ -139,7 +146,7 @@ struct InsightsView: View {
             .sheet(item: $selectedComparison) { comparison in
                 NavigationStack {
                     InsightComparisonDetailView(comparison: comparison, periodTitle: periodTitle,
-                                                baselineTitle: "last (window.title.lowercased())")
+                                                baselineTitle: "last \(window.title.lowercased())")
                 }
                 .presentationDetents([.medium, .large])
             }
@@ -190,7 +197,7 @@ struct InsightsView: View {
                 // Health visits. Re-querying and re-importing the entire period while
                 // changing tabs delays the first useful frame, so refresh only the
                 // short windows where a newly synced night can affect the screen.
-                guard window == .day || window == .week else { return }
+                guard insightsScope.includesHealthData, window == .day || window == .week else { return }
                 let queryEnd = interval.contains(now) ? now : interval.end
                 let queryInterval = DateInterval(start: interval.start, end: queryEnd)
                 _ = await activityData.refreshSleep(for: queryInterval, context: context)
@@ -203,6 +210,7 @@ struct InsightsView: View {
             }
             .onChange(of: window) { _, _ in reloadInsights() }
             .onChange(of: anchorDate) { _, _ in reloadInsights() }
+            .onChange(of: scopeRawValue) { _, _ in reloadInsights() }
             .task(id: highlightKey) { await reloadHighlights() }
             .task(id: trendKey) {
                 guard window != .day else {
@@ -227,18 +235,23 @@ struct InsightsView: View {
     /// The trends only move when the week does, so stepping through days inside one
     /// week never re-reads a season of history.
     private var trendKey: String {
-        "\(window.rawValue)-\(InsightsTrends.range(endingAt: now).start.timeIntervalSinceReferenceDate)"
+        "\(window.rawValue)-\(insightsScope.rawValue)-\(InsightsTrends.range(endingAt: now).start.timeIntervalSinceReferenceDate)"
     }
 
     private var annualKey: String {
-        "\(window.rawValue)-\(interval.start.timeIntervalSinceReferenceDate)-\(Int(now.timeIntervalSinceReferenceDate / 3600))"
+        "\(window.rawValue)-\(insightsScope.rawValue)-\(interval.start.timeIntervalSinceReferenceDate)-\(Int(now.timeIntervalSinceReferenceDate / 3600))"
     }
 
     private var healthSummaryKey: String {
-        "\(window.rawValue)-\(interval.start.timeIntervalSinceReferenceDate)-\(Int(now.timeIntervalSinceReferenceDate / 60))"
+        "\(window.rawValue)-\(insightsScope.rawValue)-\(interval.start.timeIntervalSinceReferenceDate)-\(Int(now.timeIntervalSinceReferenceDate / 60))"
     }
 
     private func reloadHealthSummary() async {
+        guard insightsScope.includesHealthData else {
+            healthSummary = nil
+            previousHealthSummary = nil
+            return
+        }
         let end = interval.contains(now) ? now : interval.end
         let current = DateInterval(start: interval.start, end: max(interval.start, end))
         healthSummary = await activityData.healthSummary(for: current)
@@ -255,7 +268,7 @@ struct InsightsView: View {
     /// which happens once a minute while the screen is open.
     private var highlightKey: String {
         let leadingPlace = snapshot.placeTotals.first
-        return "\(window.rawValue)-\(interval.start.timeIntervalSinceReferenceDate)-\(snapshot.comparisons.count)-\(leadingPlace?.id ?? "none")-\(leadingPlace?.hours ?? 0)"
+        return "\(window.rawValue)-\(insightsScope.rawValue)-\(interval.start.timeIntervalSinceReferenceDate)-\(snapshot.comparisons.count)-\(leadingPlace?.id ?? "none")-\(leadingPlace?.hours ?? 0)"
     }
 
     private func reloadHighlights() async {
@@ -269,7 +282,7 @@ struct InsightsView: View {
             // Stashed here, not re-queried by the Day summary card: this is
             // already the one place Insights asks HealthKit for today's steps
             // and last night's sleep.
-            let steps = await activityData.stepCount(for: dayInterval)
+            let steps = insightsScope.includesHealthData ? await activityData.stepCount(for: dayInterval) : nil
             todaySteps = steps
             if let steps {
                 let baseline = await activityData.stepHistory(
@@ -283,7 +296,7 @@ struct InsightsView: View {
                     found.append(highlight)
                 }
             }
-            let night = await activityData.sleepSummary(for: dayInterval)
+            let night = insightsScope.includesHealthData ? await activityData.sleepSummary(for: dayInterval) : nil
             lastNightSleep = night
             if let night,
                let average = await activityData.averageNightlySleep(before: interval.start, nights: 14),
@@ -296,8 +309,10 @@ struct InsightsView: View {
             // Same one-call-per-metric shape as Day's steps/sleep above, just
             // over the week's own interval -- `stepCount`/`averageNightlySleep`
             // already accept an arbitrary span, so this is not seven daily calls.
-            weekSteps = await activityData.stepCount(for: dayInterval)
-            weekAverageNightlySleep = await activityData.averageNightlySleep(before: interval.end, nights: 7)
+            weekSteps = insightsScope.includesHealthData ? await activityData.stepCount(for: dayInterval) : nil
+            weekAverageNightlySleep = insightsScope.includesHealthData
+                ? await activityData.averageNightlySleep(before: interval.end, nights: 7)
+                : nil
             monthSteps = nil
             monthAverageNightlySleep = nil
         } else if window == .month {
@@ -308,12 +323,12 @@ struct InsightsView: View {
             // Query the month once per metric for the scorecard. The day count
             // used for the displayed average is capped at elapsed days below,
             // so a current month is not diluted by future dates.
-            monthSteps = await activityData.stepCount(for: dayInterval)
+            monthSteps = insightsScope.includesHealthData ? await activityData.stepCount(for: dayInterval) : nil
             let elapsedSeconds = max(0, dayInterval.duration)
             let elapsedNights = max(1, Int(ceil(elapsedSeconds / 86_400)))
-            monthAverageNightlySleep = await activityData.averageNightlySleep(
-                before: dayInterval.end, nights: elapsedNights
-            )
+            monthAverageNightlySleep = insightsScope.includesHealthData
+                ? await activityData.averageNightlySleep(before: dayInterval.end, nights: elapsedNights)
+                : nil
         } else {
             todaySteps = nil
             lastNightSleep = nil
@@ -355,15 +370,17 @@ struct InsightsView: View {
 
     /// Every visit to places matching this name, unscoped by date — the archive
     /// retrospectives need to know what happened before the window being looked
-    /// at, not just within it. Automatic/manual only, the same location-visit
-    /// sources `leadingPlace` itself is built from; device activity carries no
-    /// place worth matching against.
+    /// at, not just within it. Keep it bounded to history before the selected
+    /// period and apply the same source scope as the visible place story.
     private func placeHistory(matching name: String) -> [Visit] {
         let descriptor = FetchDescriptor<Visit>(
-            predicate: #Predicate { $0.source == "automatic" || $0.source == "manual" }
+            predicate: #Predicate { $0.arrival < interval.end }
         )
         let all = (try? context.fetch(descriptor)) ?? []
-        return all.filter { NameKey.matching($0.placeName) == NameKey.matching(name) }
+        return all.filter {
+            insightsScope.includes($0) && ActivityLocationPolicy.isLocationVisit($0) &&
+            NameKey.matching($0.placeName) == NameKey.matching(name)
+        }
     }
 
     /// This period's total against the same period a year ago. A fetch of its own,
@@ -374,9 +391,9 @@ struct InsightsView: View {
         let start = yearAgoInterval.start
         let end = yearAgoInterval.end
         let descriptor = FetchDescriptor<Visit>(
-            predicate: #Predicate { $0.source != "imported-journal" && $0.arrival < end && ($0.departure ?? end) >= start }
+            predicate: #Predicate { $0.arrival < end && ($0.departure ?? end) >= start }
         )
-        guard let visits = try? context.fetch(descriptor) else { return nil }
+        guard let visits = try? context.fetch(descriptor).filter(insightsScope.includes) else { return nil }
         let yearAgoHours = InsightsSnapshot.categoryHours(visits: visits, range: yearAgoInterval, now: now)
             .values.reduce(0, +)
         return ArchiveRetrospectives.yearOverYear(loggedHours: snapshot.loggedHours,
@@ -399,7 +416,8 @@ struct InsightsView: View {
     /// Health recovery therefore belongs in an ordinary card where its action remains
     /// obvious, tappable, and readable at larger text sizes.
     @ViewBuilder private var healthSetupSection: some View {
-        if needsHealthSetup || activityData.lastImport != nil || healthSummary?.hasData != nil {
+        if insightsScope.includesHealthData &&
+            (needsHealthSetup || activityData.lastImport != nil || healthSummary?.hasData != nil) {
             VStack(alignment: .leading, spacing: 10) {
                 Label("Apple Health", systemImage: "heart.text.square")
                     .font(.headline)
@@ -502,9 +520,12 @@ struct InsightsView: View {
         let startedAt = Date.now
         let container = context.container
         let capturedNow = now
+        let capturedScope = insightsScope
         do {
             let data = try await Task.detached(priority: .userInitiated) {
-                try await InsightsTrendAggregator(modelContainer: container).load(endingAt: capturedNow)
+                try await InsightsTrendAggregator(modelContainer: container).load(
+                    endingAt: capturedNow, scope: capturedScope
+                )
             }.value
             guard !Task.isCancelled else { return }
             let allWeeks = data.weeklyTotals
@@ -883,6 +904,8 @@ struct InsightsView: View {
                     VStack(spacing: 2) {
                         Text(periodTitle).font(.title3.bold()).foregroundStyle(.primary)
                         Text(periodSubtitle).font(.caption).foregroundStyle(.secondary)
+                        Text(scopeSubtitle).font(.caption2).foregroundStyle(.secondary)
+                            .accessibilityIdentifier("insights-scope-summary")
                     }
                     .frame(minHeight: 44)
                     .contentShape(Rectangle())
@@ -893,7 +916,7 @@ struct InsightsView: View {
                 // black — the least readable thing on the screen, and the one telling
                 // you which day you are looking at.
                 .buttonStyle(.plain)
-                .accessibilityLabel("\(periodTitle), \(periodSubtitle)")
+                .accessibilityLabel("\(periodTitle), \(periodSubtitle), \(scopeSubtitle)")
                 .accessibilityHint("Choose a different date")
                 .accessibilityIdentifier("insights-period-picker")
                 Spacer()
@@ -904,6 +927,14 @@ struct InsightsView: View {
                 }
                 .disabled(isCurrentWindow)
                 .accessibilityLabel("Next \(window.title.lowercased())")
+            }
+            InsightsScopeMenu(rawValue: $scopeRawValue, recordedHours: snapshot.loggedHours)
+            if snapshot.generatedAt != .distantPast && snapshot.loggedHours <= 0.01 {
+                Text(insightsScope.emptyState)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityIdentifier("insights-scope-empty-state")
             }
             Picker("Time window", selection: $window) {
                 ForEach(InsightWindow.allCases) { Text($0.title).tag($0) }
@@ -930,8 +961,16 @@ struct InsightsView: View {
                 .dynamicTypeSize(...DynamicTypeSize.accessibility2)
                 Spacer()
                 Menu {
-                    Button("Export CSV") { exportFile = TrendExport.makeFile(format: "csv", visits: visits, interval: snapshot.analysisInterval, now: snapshot.generatedAt) }
-                    Button("Export JSON") { exportFile = TrendExport.makeFile(format: "json", visits: visits, interval: snapshot.analysisInterval, now: snapshot.generatedAt) }
+                    Button("Export CSV") {
+                        exportFile = TrendExport.makeFile(format: "csv", visits: visits,
+                                                          interval: snapshot.analysisInterval,
+                                                          now: snapshot.generatedAt, scope: insightsScope)
+                    }
+                    Button("Export JSON") {
+                        exportFile = TrendExport.makeFile(format: "json", visits: visits,
+                                                          interval: snapshot.analysisInterval,
+                                                          now: snapshot.generatedAt, scope: insightsScope)
+                    }
                 } label: {
                     Image(systemName: "square.and.arrow.up").font(.title3.bold())
                 }
@@ -1903,6 +1942,11 @@ struct InsightsView: View {
         // Let the Year shell render before its archive-scale place-history work.
         await Task.yield()
         let historical = annualHistoricalPlaces()
+        guard insightsScope.includesHealthData else {
+            annualHealth = .empty
+            annualInsights = makeAnnualInsights(health: annualHealth, historicalOverride: historical)
+            return
+        }
         annualInsights = makeAnnualInsights(health: annualHealth, historicalOverride: historical)
         let year = interval
         let calendar = Calendar.current
@@ -1954,8 +1998,9 @@ struct InsightsView: View {
             predicate: #Predicate { $0.arrival < interval.start },
             sortBy: [SortDescriptor(\.arrival)]
         ))) ?? []
-        let locationVisits = all.filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
-        return all.filter {
+        let scoped = all.filter(insightsScope.includes)
+        let locationVisits = scoped.filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
+        return scoped.filter {
             $0.arrival < interval.start &&
             ActivityLocationPolicy.shouldShowInInsights($0, locationVisits: locationVisits, now: now)
         }
@@ -1973,6 +2018,7 @@ struct InsightsView: View {
     private func reloadInsights() {
         // Fetch only the selected and comparison periods. Keeping the nine-year journal
         // archive out of memory is substantially cheaper than trimming useful history.
+        let scope = insightsScope
         let currentInterval = window.interval(containing: anchorDate)
         let fetchEnd = currentInterval.contains(now) ? now : currentInterval.end
         let analysisInterval = DateInterval(start: currentInterval.start, end: fetchEnd)
@@ -1986,7 +2032,7 @@ struct InsightsView: View {
             sortBy: [SortDescriptor(\.arrival)]
         )
         do {
-            var fetched = try context.fetch(descriptor)
+            var fetched = scope.filtering(try context.fetch(descriptor))
             // Preserve a current multi-day location whose arrival predates the comparison
             // range without widening the main archive query.
             do {
@@ -1995,7 +2041,7 @@ struct InsightsView: View {
                     sortBy: [SortDescriptor(\.arrival)]
                 )
                 let existingIDs = Set(fetched.map { ObjectIdentifier($0) })
-                fetched.append(contentsOf: try context.fetch(activeDescriptor).filter {
+                fetched.append(contentsOf: try context.fetch(activeDescriptor).filter(scope.includes).filter {
                     !existingIDs.contains(ObjectIdentifier($0))
                 })
             } catch {
@@ -2011,7 +2057,7 @@ struct InsightsView: View {
             // after the narrow fetch fails and is itself filtered in memory.
             do {
                 let fallback = try context.fetch(FetchDescriptor<Visit>(sortBy: [SortDescriptor(\.arrival)]))
-                visits = fallback.filter {
+                visits = scope.filtering(fallback).filter {
                     ($0.arrival >= fetchStart && $0.arrival < fetchEnd) || $0.departure == nil
                 }
                 Diagnostics.record(error, context: context, subsystem: "Insights",
@@ -2047,7 +2093,7 @@ struct InsightsView: View {
             guard let role = place.homeWorkRole else { return nil }
             return "\(role.rawValue):\(place.latitude),\(place.longitude),\(place.radius)"
         }.sorted().joined(separator: "|")
-        let cacheKey = "\(window.rawValue)|\(anchorDate.timeIntervalSinceReferenceDate)|\(Int(now.timeIntervalSinceReferenceDate / 60))|\(visits.count)|\(homeKey)|\(rolesKey)"
+        let cacheKey = "\(window.rawValue)|\(scope.rawValue)|\(anchorDate.timeIntervalSinceReferenceDate)|\(Int(now.timeIntervalSinceReferenceDate / 60))|\(visits.count)|\(homeKey)|\(rolesKey)"
         snapshot = snapshotCache.snapshot(key: cacheKey, generation: aggregationGeneration) {
             InsightsSnapshot.make(visits: visits, window: window, anchorDate: anchorDate, now: now,
                                   home: home, savedPlaces: savedPlaces)

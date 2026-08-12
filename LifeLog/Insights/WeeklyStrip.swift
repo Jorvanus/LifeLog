@@ -54,7 +54,7 @@ struct WeeklyStrip: View {
             let gaps = CGFloat(max(day.segments.count - 1, 0))
             let available = max(proxy.size.height - gaps, 1)
             VStack(spacing: 1) {
-                ForEach(Array(day.segments.enumerated()), id: \.offset) { _, segment in
+                ForEach(day.segments) { segment in
                     Rectangle()
                         .fill(segment.isUnlogged ? Color.secondary.opacity(0.15) : segment.color)
                         .frame(height: available * segment.hours / totalHours)
