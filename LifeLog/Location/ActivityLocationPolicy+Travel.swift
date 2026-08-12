@@ -15,12 +15,13 @@ extension ActivityLocationPolicy {
     static func updateTravelDescriptions(context: ModelContext) throws {
         let visits = try fetchPolicyVisits(context: context)
         let locations = visits.filter { isLocationVisit($0) && !$0.isIgnored }
+        let savedPlaces = try context.fetch(FetchDescriptor<SavedPlace>())
         for activity in visits where isTravelActivity(activity) && !activity.isIgnored {
             let end = activity.departure ?? .now
             guard let destination = locations
                 .filter({ $0.arrival >= end })
                 .min(by: { $0.arrival < $1.arrival }),
-                  let label = destinationLabel(for: destination, locations: locations) else {
+                  let label = destinationLabel(for: destination, locations: locations, savedPlaces: savedPlaces) else {
                 continue
             }
 
@@ -32,20 +33,19 @@ extension ActivityLocationPolicy {
                 activity.userActivity == "Travelling" ||
                 activity.userActivity == "In transit"
             activity.inferredActivity = description
-            activity.recognitionConfidence = destinationConfidence(for: destination, locations: locations)
+            activity.recognitionConfidence = destinationConfidence(for: destination, locations: locations, savedPlaces: savedPlaces)
             if isGeneratedActivity {
                 activity.userActivity = description
             }
         }
     }
 
-    private static func destinationLabel(for destination: Visit, locations: [Visit]) -> String? {
-        let destinationText = destination.placeName.lowercased()
-        if InferenceEngine.canonicalActivity(placeName: destination.placeName) == "Working" {
-            return "Work"
-        }
-        if destinationText.contains("home") {
-            return "Home"
+    private static func destinationLabel(for destination: Visit, locations: [Visit],
+                                         savedPlaces: [SavedPlace]) -> String? {
+        switch SavedPlaceRole.of(destination, in: savedPlaces) {
+        case .home: return "Home"
+        case .work: return "Work"
+        case nil: break
         }
 
         let key = NameKey.matching(destination.placeName)
@@ -57,9 +57,9 @@ extension ActivityLocationPolicy {
         return TextSafety.clean(destination.placeName, maximumLength: 80)
     }
 
-    private static func destinationConfidence(for destination: Visit, locations: [Visit]) -> String {
-        let text = destination.placeName.lowercased()
-        if InferenceEngine.canonicalActivity(placeName: destination.placeName) == "Working" || text.contains("home") {
+    private static func destinationConfidence(for destination: Visit, locations: [Visit],
+                                               savedPlaces: [SavedPlace]) -> String {
+        if SavedPlaceRole.of(destination, in: savedPlaces) != nil {
             return "learned"
         }
         let key = NameKey.matching(destination.placeName)

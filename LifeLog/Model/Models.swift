@@ -33,6 +33,34 @@ enum LocationResolutionExplanation: String, Codable, Sendable {
     }
 }
 
+/// An explicit Home/Work designation on a `SavedPlace`. Commute detection and
+/// travel labelling used to guess this from the place's own name — a false
+/// positive for anywhere merely containing the word ("Homeward Bound Café"), and a
+/// false negative for a workplace the owner didn't name "Work". A role is a fact
+/// the owner stated, not a guess.
+enum SavedPlaceRole: String, Codable, Sendable {
+    case home
+    case work
+
+    /// The role of the Saved Place this visit belongs to, if any. Maps identifier
+    /// wins whenever both sides have one — two visits can only share one by being
+    /// the same physical place — falling back to geofence-radius membership for a
+    /// visit with no identifier, the same precedence `SavedPlaceLearning`/
+    /// `PlaceScoring` already use to resolve a visit's Saved Place elsewhere.
+    static func of(_ visit: Visit, in savedPlaces: [SavedPlace]) -> SavedPlaceRole? {
+        if let identifier = visit.mapsIdentifier,
+           let match = savedPlaces.first(where: { $0.mapsIdentifier == identifier }) {
+            return match.homeWorkRole
+        }
+        guard visit.latitude != 0 || visit.longitude != 0 else { return nil }
+        let location = CLLocation(latitude: visit.latitude, longitude: visit.longitude)
+        return savedPlaces.first { place in
+            guard place.homeWorkRole != nil else { return false }
+            return location.distance(from: CLLocation(latitude: place.latitude, longitude: place.longitude)) <= place.radius
+        }?.homeWorkRole
+    }
+}
+
 @Model
 final class SavedPlace {
     var name: String
@@ -46,6 +74,10 @@ final class SavedPlace {
     /// Apple — or by the person — stops matching its own history. The identifier
     /// survives both. Nil for places pinned by hand or learned from a coordinate.
     var mapsIdentifier: String?
+    /// Raw storage for `homeWorkRole`. V8 migration backfills this for whatever the
+    /// owner already had named "Home"/"Work"; new nil is the default for everything
+    /// else, including a place that merely mentions the word in its name.
+    var role: String?
 
     init(name: String, latitude: Double, longitude: Double, radius: Double = 100,
          defaultActivity: String = "", mapsIdentifier: String? = nil) {
@@ -57,6 +89,11 @@ final class SavedPlace {
     }
 
     var coordinate: CLLocationCoordinate2D { .init(latitude: latitude, longitude: longitude) }
+
+    var homeWorkRole: SavedPlaceRole? {
+        get { role.flatMap(SavedPlaceRole.init(rawValue:)) }
+        set { role = newValue?.rawValue }
+    }
 }
 
 /// One fix along a movement record's path. A journey is a sequence of these rather

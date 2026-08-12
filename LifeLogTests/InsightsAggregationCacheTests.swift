@@ -218,9 +218,10 @@ struct InsightsAwayFromHomeTests {
     @Test("A night slept at home is not time away from home")
     func sleepInsideHomeIsNotAway() {
         let visits = [stay(0, 12, place: "Home", activity: "At home"), sleep(0, 7)]
+        let home = InsightsSnapshot.HomePlace(latitude: -23.378, longitude: 150.511, radius: 100)
         let snapshot = InsightsSnapshot.make(
             visits: visits, window: .day, anchorDate: day,
-            now: day.addingTimeInterval(12 * 3600)
+            now: day.addingTimeInterval(12 * 3600), home: home
         )
         #expect(snapshot.awayFromHomeHours == 0)
     }
@@ -280,17 +281,19 @@ struct InsightsAwayFromHomeTests {
         #expect(snapshot.awayFromHomeHours == 0)
     }
 
-    /// With no home saved the wording is genuinely all there is, so the older reading
-    /// has to survive rather than every hour becoming time away.
-    @Test("Without a saved home the name is still read")
-    func withoutASavedHomeTheNameIsUsed() {
+    /// No guessing from wording: a stay merely called "Home" does not make Insights
+    /// invent a home that was never saved. The older name-substring fallback made a
+    /// café called "Homeward Bound" count as home too, which is exactly the false
+    /// positive an explicit Saved Place role exists to remove.
+    @Test("Without a saved home, nothing is read as home")
+    func withoutASavedHomeNothingIsHome() {
         let visits = [stay(0, 12, place: "Home", activity: "At home",
                            latitude: -23.378, longitude: 150.511)]
         let snapshot = InsightsSnapshot.make(
             visits: visits, window: .day, anchorDate: day,
             now: day.addingTimeInterval(12 * 3600), home: nil
         )
-        #expect(snapshot.awayFromHomeHours == 0)
+        #expect(snapshot.awayFromHomeHours > 0)
     }
 
     /// A visit that names its own place is away from home whatever else claims

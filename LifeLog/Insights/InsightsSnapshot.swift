@@ -70,16 +70,17 @@ struct InsightsSnapshot {
         }
     }
 
-    /// Falls back to the wording when no home has been saved, because then the name is
-    /// genuinely all there is — but the saved place wins wherever there is one.
+    /// No guessing from wording: without a place explicitly given the Home role,
+    /// nothing is home. A name/activity substring test used to make "Homemaker
+    /// Centre" or a suburb called Homebush count as home, and a real home saved
+    /// under any other name not count at all.
     private static func isHome(_ visit: Visit, home: HomePlace?) -> Bool {
-        if let home { return home.contains(visit) }
-        return visit.displayPlaceName.localizedCaseInsensitiveContains("home")
-            || visit.suspectedActivity.localizedCaseInsensitiveContains("home")
+        guard let home else { return false }
+        return home.contains(visit)
     }
 
     static func make(visits: [Visit], window: InsightWindow, anchorDate: Date, now: Date,
-                     home: HomePlace? = nil) -> InsightsSnapshot {
+                     home: HomePlace? = nil, savedPlaces: [SavedPlace] = []) -> InsightsSnapshot {
         let interval = window.interval(containing: anchorDate)
         // Current periods end “now”; otherwise future time would dominate the donut as unlogged.
         let analysisInterval = interval.contains(now)
@@ -94,13 +95,15 @@ struct InsightsSnapshot {
             visits: visits,
             locationVisits: locationVisits,
             range: analysisInterval,
-            now: now
+            now: now,
+            savedPlaces: savedPlaces
         )
         let previousSegments = makeSegments(
             visits: visits,
             locationVisits: locationVisits,
             range: previousInterval,
-            now: now
+            now: now,
+            savedPlaces: savedPlaces
         )
         let slices = makeSlices(from: segments)
         let previousSlices = makeSlices(from: previousSegments)
@@ -168,10 +171,10 @@ struct InsightsSnapshot {
     // nonisolated so InsightsTrendAggregator can call this from inside its own
     // @ModelActor isolation — it touches no UI state, only the Visit array it's given.
     nonisolated static func categoryHours(visits: [Visit], range: DateInterval, now: Date,
-                                          commutes: [Commute]? = nil) -> [String: Double] {
+                                          commutes: [Commute]? = nil, savedPlaces: [SavedPlace] = []) -> [String: Double] {
         let locationVisits = visits.filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
         let segments = makeSegments(visits: visits, locationVisits: locationVisits,
-                                    range: range, now: now, precomputedCommutes: commutes)
+                                    range: range, now: now, precomputedCommutes: commutes, savedPlaces: savedPlaces)
         var totals: [String: Double] = [:]
         for segment in segments where !segment.isUnlogged {
             totals[segment.category, default: 0] += segment.hours
@@ -184,10 +187,10 @@ struct InsightsSnapshot {
     /// chart describes a usual week rather than making a month look four times busier
     /// than a week simply because it contains four Mondays.
     nonisolated static func weekdayPatterns(visits: [Visit], range: DateInterval, now: Date,
-                                            commutes: [Commute]? = nil) -> [WeekdayPattern] {
+                                            commutes: [Commute]? = nil, savedPlaces: [SavedPlace] = []) -> [WeekdayPattern] {
         let locationVisits = visits.filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
         let segments = makeSegments(visits: visits, locationVisits: locationVisits,
-                                    range: range, now: now, precomputedCommutes: commutes)
+                                    range: range, now: now, precomputedCommutes: commutes, savedPlaces: savedPlaces)
         return makeWeekdayPatterns(from: segments, weekdayOccurrences: weekdayOccurrences(in: range))
     }
 
@@ -196,7 +199,8 @@ struct InsightsSnapshot {
     // than two definitions that can silently disagree.
     nonisolated static func makeSegments(visits: [Visit], locationVisits: [Visit],
                                          range: DateInterval, now: Date,
-                                         precomputedCommutes: [Commute]? = nil) -> [InsightSegment] {
+                                         precomputedCommutes: [Commute]? = nil,
+                                         savedPlaces: [SavedPlace] = []) -> [InsightSegment] {
         let orderedVisits = visits
             .filter { $0.overlaps(range, now: now) && $0.resolutionState != .ignored && $0.resolutionState != .superseded }
             .filter { ActivityLocationPolicy.shouldShowInInsights($0, locationVisits: locationVisits, now: now) }
@@ -215,7 +219,7 @@ struct InsightsSnapshot {
         // 6,000 rows take several seconds. Keep only visits active at the
         // current boundary while walking the already sorted timeline.
         // Derived once for the window rather than per boundary slice.
-        let commutes = precomputedCommutes ?? CommuteDetection.commutes(in: visits, now: now)
+        let commutes = precomputedCommutes ?? CommuteDetection.commutes(in: visits, savedPlaces: savedPlaces, now: now)
         let arrivalSorted = orderedVisits.sorted { $0.arrival < $1.arrival }
         var nextArrival = 0
         var activeVisits: [Visit] = []

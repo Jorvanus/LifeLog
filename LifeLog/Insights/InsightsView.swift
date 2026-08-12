@@ -560,11 +560,11 @@ struct InsightsView: View {
     /// divided over what is left *after* the gaps are taken out.
     private static let dayBarGap: CGFloat = 2
 
-    /// The place the person themselves named Home. An exact name match rather than a
-    /// contains, so "Homemaker Centre" is not mistaken for it.
+    /// The Saved Place explicitly given the Home role. A fact the owner stated, not
+    /// a name match — so "Homemaker Centre" was never mistaken for it, and a home
+    /// saved under any other name still counts.
     private var homePlace: SavedPlace? {
-        savedPlaces.first { $0.name.trimmingCharacters(in: .whitespacesAndNewlines)
-            .caseInsensitiveCompare("Home") == .orderedSame }
+        savedPlaces.first { $0.homeWorkRole == .home }
     }
 
     private var dailyTimelineSection: some View {
@@ -1073,9 +1073,17 @@ struct InsightsView: View {
         // counts as time away from it, and a stale snapshot would not know.
         let home = InsightsSnapshot.HomePlace(homePlace)
         let homeKey = home.map { "\($0.latitude),\($0.longitude),\($0.radius)" } ?? "none"
-        let cacheKey = "\(window.rawValue)|\(anchorDate.timeIntervalSinceReferenceDate)|\(Int(now.timeIntervalSinceReferenceDate / 60))|\(visits.count)|\(homeKey)"
+        // Commute detection now reads every roled place, not just Home — moving Work
+        // or clearing its role changes what counts as commuting just as much as Home
+        // moving does, and a stale snapshot would not know either.
+        let rolesKey = savedPlaces.compactMap { place -> String? in
+            guard let role = place.homeWorkRole else { return nil }
+            return "\(role.rawValue):\(place.latitude),\(place.longitude),\(place.radius)"
+        }.sorted().joined(separator: "|")
+        let cacheKey = "\(window.rawValue)|\(anchorDate.timeIntervalSinceReferenceDate)|\(Int(now.timeIntervalSinceReferenceDate / 60))|\(visits.count)|\(homeKey)|\(rolesKey)"
         snapshot = snapshotCache.snapshot(key: cacheKey, generation: aggregationGeneration) {
-            InsightsSnapshot.make(visits: visits, window: window, anchorDate: anchorDate, now: now, home: home)
+            InsightsSnapshot.make(visits: visits, window: window, anchorDate: anchorDate, now: now,
+                                  home: home, savedPlaces: savedPlaces)
         }
         Diagnostics.budget(context, subsystem: "Insights", operation: "\(window.rawValue) snapshot rebuild",
                            startedAt: startedAt,

@@ -61,6 +61,7 @@ struct ManualVisitView: View {
     /// — imported-journal too — since `VisitSuggestion` now needs the same picture
     /// of "already covered" that Insights uses to report unlogged time.
     @Query private var visits: [Visit]
+    @Query private var savedPlaces: [SavedPlace]
 
     init(range: DateInterval) {
         self.range = range
@@ -73,7 +74,7 @@ struct ManualVisitView: View {
     }
 
     private var suggestions: [VisitSuggestion] {
-        VisitSuggestion.make(from: visits, range: range)
+        VisitSuggestion.make(from: visits, range: range, savedPlaces: savedPlaces)
     }
 
     var body: some View {

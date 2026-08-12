@@ -42,6 +42,7 @@ actor ActivityImportActor {
     // the same way it always has.
     private var boundableStays: [Visit] = []
     private var healthVisits: [Visit] = []
+    private var savedPlaces: [SavedPlace] = []
 
     func prepare() throws {
         modelContext.autosaveEnabled = false
@@ -52,6 +53,7 @@ actor ActivityImportActor {
         locations = existing.filter { $0.source == "automatic" || $0.source == "manual" }
         boundableStays = locations.map(Self.detachedCopy)
         healthVisits = existing.filter { $0.source.hasPrefix("health-") }
+        savedPlaces = try modelContext.fetch(FetchDescriptor<SavedPlace>())
     }
 
     private static func detachedCopy(of stay: Visit) -> Visit {
@@ -372,9 +374,11 @@ actor ActivityImportActor {
     }
 
     private func destinationLabel(_ destination: Visit) -> String? {
-        let text = destination.placeName.lowercased()
-        if text.contains("work") || text.contains("office") { return "Work" }
-        if text.contains("home") { return "Home" }
+        switch SavedPlaceRole.of(destination, in: savedPlaces) {
+        case .home: return "Home"
+        case .work: return "Work"
+        case nil: break
+        }
         let name = destination.placeName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !Visit.isPlaceholderName(name) else { return nil }
         let matching = locations.filter { $0.placeName.localizedCaseInsensitiveCompare(name) == .orderedSame }

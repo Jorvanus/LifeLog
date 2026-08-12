@@ -293,6 +293,38 @@ struct SchemaMigrationTests {
         #expect(try context.fetch(FetchDescriptor<Visit>()).first?.resolutionExplanation == "matched-maps-identifier")
     }
 
+    @Test("A V7 store backfills the Home/Work role for exactly-named places, never a substring match")
+    func migratesV7StoreAddingSavedPlaceRole() throws {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LifeLog-v7-\(UUID().uuidString).store")
+        defer { try? FileManager.default.removeItem(at: storeURL) }
+        let v7Schema = Schema(versionedSchema: LifeLogSchemaV7.self)
+        let configuration = ModelConfiguration("LifeLogMigrationFixture", schema: v7Schema,
+                                               url: storeURL, allowsSave: true, cloudKitDatabase: .none)
+        let container = try ModelContainer(for: v7Schema, configurations: [configuration])
+        let seed = ModelContext(container)
+        seed.insert(LifeLogSchemaV7.SavedPlace(name: "Home", latitude: -23.37, longitude: 150.51,
+                                               radius: 100, defaultActivity: "At home"))
+        seed.insert(LifeLogSchemaV7.SavedPlace(name: "work", latitude: -23.42, longitude: 150.55,
+                                               radius: 100, defaultActivity: "Working"))
+        seed.insert(LifeLogSchemaV7.SavedPlace(name: "Gym", latitude: -23.44, longitude: 150.46,
+                                               radius: 100, defaultActivity: "Exercising"))
+        // Would have matched the old substring keyword test; must not be backfilled.
+        seed.insert(LifeLogSchemaV7.SavedPlace(name: "Homemaker Centre", latitude: -23.40, longitude: 150.48,
+                                               radius: 200, defaultActivity: "Shopping"))
+        try seed.save()
+
+        let context = ModelContext(try openVersionedStore(at: storeURL))
+        let places = try context.fetch(FetchDescriptor<SavedPlace>())
+        #expect(places.count == 4)
+        #expect(places.first { $0.name == "Home" }?.homeWorkRole == .home)
+        // Case-insensitive exact match, and the name itself is never touched.
+        #expect(places.first { $0.name == "work" }?.homeWorkRole == .work)
+        #expect(places.first { $0.name == "work" }?.name == "work")
+        #expect(places.first { $0.name == "Gym" }?.homeWorkRole == nil)
+        #expect(places.first { $0.name == "Homemaker Centre" }?.homeWorkRole == nil)
+    }
+
     @Test("A V1 store carrying place types migrates to V2 without losing visits or places")
     func migratesV1StoreDroppingPlaceType() throws {
         let storeURL = FileManager.default.temporaryDirectory
@@ -386,7 +418,7 @@ struct SchemaMigrationTests {
     /// way to what the app actually ships. Left at V5 while the app moved to V6, these
     /// tests would keep passing without once exercising the new stage.
     private func openVersionedStore(at url: URL) throws -> ModelContainer {
-        let schema = Schema(versionedSchema: LifeLogSchemaV7.self)
+        let schema = Schema(versionedSchema: LifeLogSchemaV8.self)
         let configuration = ModelConfiguration(
             "LifeLogMigrationFixture", schema: schema, url: url,
             allowsSave: true, cloudKitDatabase: .none

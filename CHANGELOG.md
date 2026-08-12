@@ -2,6 +2,13 @@
 
 ## 2026-08-12
 
+### Home and Work are now explicit Saved Place roles, not a name guess
+
+- Commute detection, travel-destination labelling ("Travelling to Work"), and the Insights "away from home" segment used to independently re-derive Home/Work by testing a place's *name* for the words "home"/"work" — a false positive for a café called "Homeward Bound," a false negative for an unnamed office, and two implementations that didn't even agree with each other. `SavedPlace` now has an explicit `role` (Home/Work/none), and every one of those consumers trusts it instead.
+- A new V7→V8 migration backfills the role onto whatever the owner already had named exactly "Home"/"Work" (case-insensitive, never a substring — a real "Homemaker Centre" is untouched), without renaming anything. `SavedPlaceRole.of(_:in:)` is the one shared resolver (Maps identifier first, then geofence-radius membership) every consumer now calls.
+- The Saved Place editor (Settings → Locations → a place) gets an explicit Role control, so an existing place can be marked Home or Work without renaming it. The "Set as Home"/"Set as Work" quick labels on an uncategorised visit now also set this role on whichever place they learn or update.
+- `InferenceEngine`'s own Home/Work keyword guesses are unchanged — they still suggest a default activity for a place LifeLog has never seen before, which is a different question from "is this the owner's home or work."
+
 ### Timeline refreshes its day boundary immediately on foreground
 
 - The minute clock that decides what "today" is drives itself with a 60-second sleeping `Task`, which iOS suspends in the background — so returning to the app could show up to a minute of stale data, long enough to miss a midnight crossing entirely. Timeline now refreshes the clock immediately on scene activation instead of waiting for that loop to resume.

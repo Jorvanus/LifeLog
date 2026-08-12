@@ -47,7 +47,7 @@ enum CommuteDetection {
     /// guess dressed up as a measurement.
     static let longestPlausible: TimeInterval = 4 * 60 * 60
 
-    static func commutes(in visits: [Visit], now: Date = .now) -> [Commute] {
+    static func commutes(in visits: [Visit], savedPlaces: [SavedPlace] = [], now: Date = .now) -> [Commute] {
         let stays = visits
             .filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
             .filter { $0.resolutionState != .superseded }
@@ -55,13 +55,13 @@ enum CommuteDetection {
 
         var commutes: [Commute] = []
         for (index, origin) in stays.enumerated() {
-            guard let kind = endpoint(origin), let departure = origin.departure else { continue }
+            guard let kind = endpoint(origin, savedPlaces: savedPlaces), let departure = origin.departure else { continue }
             // Everything between the two ends must be brief enough to be a stop on the
             // way rather than a destination of its own.
             var cursor = index + 1
             while cursor < stays.count {
                 let candidate = stays[cursor]
-                if let candidateKind = endpoint(candidate) {
+                if let candidateKind = endpoint(candidate, savedPlaces: savedPlaces) {
                     // Home to home, or work to work, is not a commute — the person
                     // returned to where they started.
                     guard candidateKind != kind else { break }
@@ -93,15 +93,17 @@ enum CommuteDetection {
 
     private enum Endpoint { case home, work }
 
-    /// Recognised the same way the travel labelling already recognises them, by the
-    /// place's own name. A person whose office is not named for work would need to
-    /// say so explicitly; marking a Saved Place as home or work is the better answer
-    /// and is on the roadmap.
-    private static func endpoint(_ visit: Visit) -> Endpoint? {
+    /// Recognised by the visit's Saved Place role, an explicit fact the owner
+    /// stated — not by guessing from the place's name, which used to make a café
+    /// called "Homeward Bound" a false positive and an unnamed office a false
+    /// negative.
+    private static func endpoint(_ visit: Visit, savedPlaces: [SavedPlace]) -> Endpoint? {
         guard !visit.hasPlaceholderName else { return nil }
-        if InferenceEngine.canonicalActivity(placeName: visit.placeName) == "Working" { return .work }
-        if visit.placeName.localizedCaseInsensitiveContains("home") { return .home }
-        return nil
+        switch SavedPlaceRole.of(visit, in: savedPlaces) {
+        case .home: return .home
+        case .work: return .work
+        case nil: return nil
+        }
     }
 
     private static func duration(of visit: Visit, now: Date) -> TimeInterval {

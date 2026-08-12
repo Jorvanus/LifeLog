@@ -33,10 +33,11 @@ actor InsightsTrendAggregator {
             sortBy: [SortDescriptor(\.arrival)]
         )
         let visits = try modelContext.fetch(descriptor)
+        let savedPlaces = try modelContext.fetch(FetchDescriptor<SavedPlace>())
         // Resolved once here, not per week and not a second time for the weekday
         // chart below — CommuteDetection.commutes sorts the whole array and does
         // not depend on which range is being segmented.
-        let commutes = CommuteDetection.commutes(in: visits, now: now)
+        let commutes = CommuteDetection.commutes(in: visits, savedPlaces: savedPlaces, now: now)
         let allWeeks = InsightsTrends.weeklyTotals(visits: visits, now: now,
                                                     weeks: InsightsTrends.habitWeeks, calendar: calendar,
                                                     commutes: commutes)

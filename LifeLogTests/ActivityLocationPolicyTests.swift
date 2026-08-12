@@ -724,6 +724,34 @@ struct ActivityLocationPolicyTests {
         #expect(walks.isEmpty, "Movement inside a place is absorbed, as it always was")
     }
 
+    @Test("An explicit Home role never shortcuts the route-based absorption rule")
+    func homeRoleDoesNotBypassRouteEvidence() throws {
+        let context = try makeContext()
+        // Named unlike "Home" on purpose — the role, not the name, is what's set.
+        let cottage = SavedPlace(name: "The Cottage", latitude: -23.3700, longitude: 150.5100)
+        cottage.homeWorkRole = .home
+        let home = Visit(arrival: base, latitude: -23.3700, longitude: 150.5100,
+                         placeName: "The Cottage", inferredActivity: "At home", source: "automatic")
+        let pacing = walk(from: 60, to: 80, path: [
+            (-23.3700, 150.5100), (-23.3701, 150.5102), (-23.3699, 150.5101), (-23.3700, 150.5100)
+        ])
+        context.insert(cottage)
+        [home, pacing].forEach(context.insert)
+        try context.save()
+
+        try ActivityLocationPolicy.reconcileAll(context: context, now: base.addingTimeInterval(3 * 60 * 60))
+        try context.save()
+
+        let stays = try context.fetch(FetchDescriptor<Visit>()).filter(ActivityLocationPolicy.isLocationVisit)
+        let walks = try context.fetch(FetchDescriptor<Visit>()).filter { $0.source == "health-workout" }
+
+        // Identical outcome to the unroled case above: role is read only by commute
+        // detection and travel labelling, never by stay/journey reconciliation.
+        #expect(stays.count == 1, "The person never left, so the stay is not split")
+        #expect(home.departure == nil)
+        #expect(walks.isEmpty, "Movement inside a place is absorbed regardless of its role")
+    }
+
     @Test("A recorded path is simplified without losing the shape of the walk")
     func simplifiesARecordedPath() {
         // A straight kilometre sampled every second, as Health delivers it.
@@ -947,6 +975,17 @@ struct ActivityLocationPolicyTests {
         #expect(unsaved.isIgnored == false)
     }
 
+    /// Matches the coordinates `stay("Home", ...)`/`stay("Work", ...)` fixtures use
+    /// throughout this file, so commute detection has an explicit role to resolve
+    /// instead of guessing from the name.
+    private var homeWorkPlaces: [SavedPlace] {
+        let home = SavedPlace(name: "Home", latitude: -23.37, longitude: 150.51)
+        home.homeWorkRole = .home
+        let work = SavedPlace(name: "Work", latitude: -23.42, longitude: 150.55)
+        work.homeWorkRole = .work
+        return [home, work]
+    }
+
     /// Shaped like a captured day: work to home with a six-minute Apple Maps match in
     /// the middle, which is a business passed at speed rather than a destination.
     @Test("A commute survives a brief stop on the way")
@@ -956,7 +995,7 @@ struct ActivityLocationPolicyTests {
                              latitude: -23.40, longitude: 150.52)
         let home = stay("Home", from: 81, to: 200, latitude: -23.37, longitude: 150.51)
 
-        let commutes = CommuteDetection.commutes(in: [work, drivePast, home],
+        let commutes = CommuteDetection.commutes(in: [work, drivePast, home], savedPlaces: homeWorkPlaces,
                                                  now: base.addingTimeInterval(300 * 60))
 
         #expect(commutes.count == 1)
@@ -972,27 +1011,45 @@ struct ActivityLocationPolicyTests {
         let now = base.addingTimeInterval(600 * 60)
         let home = stay("Home", from: 0, to: 60, latitude: -23.37, longitude: 150.51)
         let work = stay("Work", from: 90, to: 400, latitude: -23.42, longitude: 150.55)
-        #expect(CommuteDetection.commutes(in: [home, work], now: now).first?.direction == .toWork)
+        #expect(CommuteDetection.commutes(in: [home, work], savedPlaces: homeWorkPlaces, now: now).first?.direction == .toWork)
 
         // The gym to work is a journey, but it is not a commute.
         let gym = stay("Gracemere Gym", from: 0, to: 60, latitude: -23.44, longitude: 150.46)
-        #expect(CommuteDetection.commutes(in: [gym, work], now: now).isEmpty)
+        #expect(CommuteDetection.commutes(in: [gym, work], savedPlaces: homeWorkPlaces, now: now).isEmpty)
 
         // Leaving home and coming back to it is not a commute either.
         let homeAgain = stay("Home", from: 90, to: 200, latitude: -23.37, longitude: 150.51)
-        #expect(CommuteDetection.commutes(in: [home, homeAgain], now: now).isEmpty)
+        #expect(CommuteDetection.commutes(in: [home, homeAgain], savedPlaces: homeWorkPlaces, now: now).isEmpty)
 
         // A real errand between the two ends breaks the journey in half.
         let shops = stay("Gracemere Shopping World", from: 65, to: 85,
                          latitude: -23.44, longitude: 150.46)
-        #expect(CommuteDetection.commutes(in: [home, shops, work], now: now).isEmpty)
+        #expect(CommuteDetection.commutes(in: [home, shops, work], savedPlaces: homeWorkPlaces, now: now).isEmpty)
+    }
+
+    @Test("Only home and work make a commute, by role rather than name")
+    func commuteEndpointsAreRoleNotName() {
+        let now = base.addingTimeInterval(600 * 60)
+        // Named indistinguishably from an ordinary business, but explicitly roled.
+        let cottage = SavedPlace(name: "The Cottage", latitude: -23.37, longitude: 150.51)
+        cottage.homeWorkRole = .home
+        let hq = SavedPlace(name: "Acme HQ", latitude: -23.42, longitude: 150.55)
+        hq.homeWorkRole = .work
+        let home = stay("The Cottage", from: 0, to: 60, latitude: -23.37, longitude: 150.51)
+        let work = stay("Acme HQ", from: 90, to: 400, latitude: -23.42, longitude: 150.55)
+        #expect(CommuteDetection.commutes(in: [home, work], savedPlaces: [cottage, hq], now: now).first?.direction == .toWork)
+
+        // A place merely called "Home"/"Work", with no role saved, is not an endpoint
+        // — the false positive the old keyword match would have produced.
+        #expect(CommuteDetection.commutes(in: [home, work], savedPlaces: [], now: now).isEmpty)
     }
 
     @Test("A commute is counted rather than reported as unlogged time")
     func commuteFillsTheGapBetweenHomeAndWork() {
         let home = stay("Home", from: 0, to: 60, latitude: -23.37, longitude: 150.51)
         let work = stay("Work", from: 85, to: 400, latitude: -23.42, longitude: 150.55)
-        let commutes = CommuteDetection.commutes(in: [home, work], now: base.addingTimeInterval(600 * 60))
+        let commutes = CommuteDetection.commutes(in: [home, work], savedPlaces: homeWorkPlaces,
+                                                  now: base.addingTimeInterval(600 * 60))
 
         // The interval between the two arrivals, and nothing outside it.
         #expect(CommuteDetection.commute(covering: base.addingTimeInterval(70 * 60), in: commutes) != nil)
@@ -1085,6 +1142,9 @@ struct ActivityLocationPolicyTests {
             userActivity: "Travelling",
             source: "motion"
         )
+        let office = SavedPlace(name: "Office", latitude: -27.46, longitude: 153.04)
+        office.homeWorkRole = .work
+        context.insert(office)
         context.insert(work)
         context.insert(travel)
         try context.save()
@@ -1163,6 +1223,9 @@ struct ActivityLocationPolicyTests {
             userActivity: "Commuting",
             source: "motion"
         )
+        let office = SavedPlace(name: "Office", latitude: -27.46, longitude: 153.04)
+        office.homeWorkRole = .work
+        context.insert(office)
         context.insert(work)
         context.insert(travel)
         try context.save()

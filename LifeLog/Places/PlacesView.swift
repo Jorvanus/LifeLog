@@ -175,11 +175,23 @@ private struct SavedPlaceEditor: View {
     @State private var longitudeDraft: Double = 0
     @State private var radiusDraft: Double = 100
     @State private var defaultActivityDraft = ""
+    @State private var roleDraft: SavedPlaceRole?
 
     var body: some View {
         Form {
             Section("Place") {
                 TextField("Name", text: $nameDraft)
+            }
+            Section {
+                Picker("Role", selection: $roleDraft) {
+                    Text("None").tag(SavedPlaceRole?.none)
+                    Text("Home").tag(SavedPlaceRole?.some(.home))
+                    Text("Work").tag(SavedPlaceRole?.some(.work))
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("saved-place-role-picker")
+            } footer: {
+                Text("Home and Work are used for commute detection and travel labelling — a fact you set, not a guess from the name. Renaming this place afterwards keeps the role.")
             }
             Section("Map location") {
                 let coordinate = CLLocationCoordinate2D(latitude: latitudeDraft, longitude: longitudeDraft)
@@ -252,6 +264,7 @@ private struct SavedPlaceEditor: View {
                 longitudeDraft = place.longitude
                 radiusDraft = place.radius
                 defaultActivityDraft = place.defaultActivity
+                roleDraft = place.homeWorkRole
                 loadedDraft = true
             }
             let coordinate = CLLocationCoordinate2D(latitude: latitudeDraft, longitude: longitudeDraft)
@@ -307,6 +320,7 @@ private struct SavedPlaceEditor: View {
         place.longitude = longitudeDraft
         place.radius = radiusDraft
         place.defaultActivity = defaultActivityDraft
+        place.homeWorkRole = roleDraft
         do {
             try SavedPlaceLearning.apply(place, context: context)
             try context.save()

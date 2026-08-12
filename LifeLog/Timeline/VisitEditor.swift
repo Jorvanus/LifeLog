@@ -41,6 +41,10 @@ struct VisitEditor: View {
     @State private var latitudeDraft: Double = 0
     @State private var longitudeDraft: Double = 0
     @State private var recognitionConfidenceDraft: String?
+    /// Set only by a "Set as Home"/"Set as Work" quick label, and applied to
+    /// whichever Saved Place `persistChanges` resolves or creates -- without
+    /// renaming an existing place the person already named something else.
+    @State private var pendingQuickLabelRole: SavedPlaceRole?
 
     // Read once on appear rather than derived in `body`. Both were recomputed on
     // every evaluation: the catalogue is a JSON decode and a localised sort, and the
@@ -82,12 +86,12 @@ struct VisitEditor: View {
             if canLearnPlace, visit.needsCategorisation || visit.needsConfirmation {
                 Section("Quick labels") {
                     Button {
-                        applyQuickLabel(name: "Home", activity: "At home")
+                        applyQuickLabel(name: "Home", activity: "At home", role: .home)
                     } label: {
                         Label("Set as Home", systemImage: "house.fill")
                     }
                     Button {
-                        applyQuickLabel(name: "Work", activity: "Working")
+                        applyQuickLabel(name: "Work", activity: "Working", role: .work)
                     } label: {
                         Label("Set as Work", systemImage: "building.2.fill")
                     }
@@ -493,10 +497,11 @@ struct VisitEditor: View {
         reloadVisitsHere()
     }
 
-    private func applyQuickLabel(name: String, activity: String) {
+    private func applyQuickLabel(name: String, activity: String, role: SavedPlaceRole) {
         placeNameDraft = name
         activityDraft = activity
         recognitionConfidenceDraft = "confirmed"
+        pendingQuickLabelRole = role
         learnPlace()
     }
 
@@ -658,6 +663,11 @@ struct VisitEditor: View {
                 previousPlaceName: correctionBaseline?.placeName,
                 context: context
             )
+            if let pendingQuickLabelRole {
+                result?.place.homeWorkRole = pendingQuickLabelRole
+                self.pendingQuickLabelRole = nil
+                try context.save()
+            }
             // A correction can also create a Saved Place. That useful side effect
             // must not erase the audit row that prevents later automation from
             // appearing to be the person's choice.

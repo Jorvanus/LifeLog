@@ -55,11 +55,6 @@ responsive 32,000-row archive outrank App Store preparation and speculative feat
   cover the declared schemas, but only a copy of the historical device store proves
   the real upgrade. Work on a copy and leave the original protected store untouched.
 
-- [ ] **Make Home and Work explicit Saved Place roles.** Remove name-keyword discovery,
-  migrate behavior without renaming the owner’s places, and then lock recurring-trip
-  and commute semantics with tests. Location remains primary: movement inside a
-  destination must never become a separate activity card.
-
 - [ ] **Choose the Health re-import boundary.** Routine Health refresh is bounded and
   the manual re-import reads 30 days. If older workout routes matter, add a date-range
   import with progress, cancellation, retry, and a clear inserted/updated/deleted

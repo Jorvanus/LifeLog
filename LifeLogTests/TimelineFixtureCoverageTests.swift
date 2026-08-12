@@ -694,9 +694,22 @@ struct TimelineFixtureCoverageTests {
         // A real commute is already accounted for by CommuteDetection -- the same
         // computation Insights itself uses -- so it is not "missing" and is not
         // offered here either; suggesting it would fight the donut right next to it.
-        let commuteVisits = [stay("Home", from: 0, to: 60), stay("Work", from: 85, to: 400)]
+        func roledStay(_ name: String, from: Double, to: Double,
+                       latitude: Double, longitude: Double) -> Visit {
+            Visit(arrival: base.addingTimeInterval(from * 60), departure: base.addingTimeInterval(to * 60),
+                  latitude: latitude, longitude: longitude, placeName: name,
+                  inferredActivity: "Visiting", source: "automatic", recognitionConfidence: "learned")
+        }
+        let home = SavedPlace(name: "Home", latitude: -23.37, longitude: 150.51)
+        home.homeWorkRole = .home
+        let work = SavedPlace(name: "Work", latitude: -23.42, longitude: 150.55)
+        work.homeWorkRole = .work
+        let commuteVisits = [
+            roledStay("Home", from: 0, to: 60, latitude: -23.37, longitude: 150.51),
+            roledStay("Work", from: 85, to: 400, latitude: -23.42, longitude: 150.55)
+        ]
         let commuteRange = DateInterval(start: base, end: base.addingTimeInterval(400 * 60))
-        #expect(VisitSuggestion.make(from: commuteVisits, range: commuteRange).isEmpty)
+        #expect(VisitSuggestion.make(from: commuteVisits, range: commuteRange, savedPlaces: [home, work]).isEmpty)
 
         // A gap of seconds is not a visit, and neither is a day-long one.
         let brief = [stay("Cafe", from: 0, to: 60), stay("Gym", from: 61, to: 120)]

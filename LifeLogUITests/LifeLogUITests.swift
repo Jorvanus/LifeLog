@@ -41,6 +41,31 @@ final class LifeLogUITests: XCTestCase {
         XCTAssertTrue(element("saved-places-screen").waitForExistence(timeout: 5))
     }
 
+    /// The seeded "Home" place (`UITestSeedData`) is the explicit Home/Work role
+    /// affordance's only reachability check — a segmented control, not a rename.
+    func testSavedPlaceRoleControlIsReachable() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+        app.tabBars.buttons["Settings"].tap()
+        let savedPlaces = element("saved-places-link")
+        XCTAssertTrue(savedPlaces.waitForExistence(timeout: 5))
+        savedPlaces.tap()
+        XCTAssertTrue(element("saved-places-screen").waitForExistence(timeout: 5))
+        let home = app.staticTexts["Home"]
+        var attempts = 0
+        while !home.exists && attempts < 6 {
+            app.swipeUp()
+            attempts += 1
+        }
+        XCTAssertTrue(home.waitForExistence(timeout: 5))
+        home.tap()
+        let rolePicker = element("saved-place-role-picker")
+        XCTAssertTrue(rolePicker.waitForExistence(timeout: 5))
+        XCTAssertTrue(rolePicker.buttons["Home"].exists)
+        XCTAssertTrue(rolePicker.buttons["Work"].exists)
+    }
+
     /// HealthKit and Core Motion fail or need recovery in different places. Keeping
     /// their controls independently addressable prevents a Health button silently
     /// becoming the only apparent way to fix Motion access.

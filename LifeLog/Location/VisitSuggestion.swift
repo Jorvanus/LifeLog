@@ -30,7 +30,8 @@ struct VisitSuggestion: Identifiable, Sendable {
     /// — one that didn't know a device-sourced walk or an imported-journal entry
     /// already covered a stretch — meant this list could disagree with what the
     /// donut next to it was reporting as missing.
-    static func make(from visits: [Visit], range: DateInterval, now: Date = .now, limit: Int = 4) -> [VisitSuggestion] {
+    static func make(from visits: [Visit], range: DateInterval, now: Date = .now, limit: Int = 4,
+                     savedPlaces: [SavedPlace] = []) -> [VisitSuggestion] {
         let locationVisits = visits.filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
         // The gap itself comes from every visit source; the human-readable guess
         // ("Home → Work") still needs a real named place on each side, which only a
@@ -40,7 +41,7 @@ struct VisitSuggestion: Identifiable, Sendable {
             .sorted { $0.arrival < $1.arrival }
 
         let segments = InsightsSnapshot.makeSegments(visits: visits, locationVisits: locationVisits,
-                                                      range: range, now: now)
+                                                      range: range, now: now, savedPlaces: savedPlaces)
         let suggestions = segments.filter(\.isUnlogged).compactMap { segment -> VisitSuggestion? in
             let gap = segment.end.timeIntervalSince(segment.start)
             guard gap >= shortest, gap <= longest,
@@ -49,7 +50,7 @@ struct VisitSuggestion: Identifiable, Sendable {
             else { return nil }
             return VisitSuggestion(start: segment.start, end: segment.end,
                                    place: place(between: before, and: after),
-                                   activity: activity(between: before, and: after))
+                                   activity: activity(between: before, and: after, savedPlaces: savedPlaces))
         }
         // Newest first: a gap from this morning is likelier to be filled in than one
         // from earlier in the window, and the list is short by design.
@@ -64,15 +65,13 @@ struct VisitSuggestion: Identifiable, Sendable {
         return "\(before.displayPlaceName) → \(after.displayPlaceName)"
     }
 
-    private static func activity(between before: Visit, and after: Visit) -> String {
+    private static func activity(between before: Visit, and after: Visit, savedPlaces: [SavedPlace]) -> String {
         if before.displayPlaceName.caseInsensitiveCompare(after.displayPlaceName) == .orderedSame {
             return before.suspectedActivity
         }
         // Between home and work in either direction, the gap is the commute.
-        let names = [before.placeName.lowercased(), after.placeName.lowercased()]
-        let isHome = names.contains { $0.contains("home") }
-        let isWork = names.contains { InferenceEngine.canonicalActivity(placeName: $0) == "Working" }
-        if isHome && isWork { return CommuteDetection.activityName }
+        let roles = Set([before, after].compactMap { SavedPlaceRole.of($0, in: savedPlaces) })
+        if roles == [.home, .work] { return CommuteDetection.activityName }
         return "Travelling"
     }
 }
