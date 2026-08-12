@@ -103,7 +103,14 @@ private, single-phone app; the App Store work is deliberately separate below.
 - [ ] Build visual regression coverage from approved screenshots. Existing UI
   tests prove reachability, not overlapping or unreadable text. Cover normal
   and Accessibility XXXL text in light and dark appearance, then review Place
-  History, Visit Editor and Add Visit at the largest size.
+  History, Visit Editor and Add Visit at the largest size. Timeline's own
+  journey row belongs on this list too, proven fragile twice on 2026-08-12: a
+  long place name floated the row's connecting dot off-centre (fixed size
+  reserved for a one-line name, not updated when a wrapped title grew the
+  row), and separately left a wide dead gap before the duration column for a
+  short name (`maxWidth: .infinity` reserving a box sized off available width
+  rather than what the text needed) — both invisible to reachability tests
+  and only caught by eye against real long place names in the simulator.
 
 - [ ] Expand interaction coverage for the Insights donut: select/deselect
   several segments, including Sleep, scroll away and back, and verify the
@@ -118,8 +125,10 @@ private, single-phone app; the App Store work is deliberately separate below.
   availability, low storage, failed import/export, and backup restore outcome.
 
 - [ ] Revisit the activity catalogue workflow after real use: recently used,
-  history-only and unused labels are now separated, but bulk adoption and
-  colour/icon choices need to remain understandable without a second route.
+  history-only and unused labels are now separated, and stats/edit are one
+  screen rather than two as of 2026-08-12 — bulk adoption and colour/icon
+  choices still need to remain understandable now that they live alongside
+  an activity's history rather than on their own dedicated screen.
 
 - [ ] **Reconcile `InsightSliceEditor`'s header total with its own entry
   list.** The header shows the category's deduplicated segment total, the
@@ -162,6 +171,17 @@ private, single-phone app; the App Store work is deliberately separate below.
   never promote an inferred pattern as fact merely because the archive is large.
 
 ## Other things to consider and improve
+
+- [ ] **Give `VisitCorrection` a Maps identifier, a V7 candidate.** The V6
+  migration gave `Visit` and `SavedPlace` a durable Maps identifier and most
+  matching sites now prefer it over a name (2026-08-12 closed the last two:
+  place-score recurrence and monitored-places ranking). `VisitCorrection` has
+  no identifier field at all, by original design ("labels and confidence
+  only; precise coordinates remain in the visit") — so the `priorCorrections`
+  signal in `PlaceScoring.swift` is still name/proximity only. Deliberately
+  left out of the 2026-08-12 pass pending a decision on whether a correction
+  is worth a schema bump for, or whether resolving it back to its visit's own
+  identifier at read time is enough.
 
 - [ ] **Validate a copied pre-versioned device store.** The synthetic migration suite now passes after correcting its V4 model-type mismatch and rebuilding the legacy fixture from the exact unversioned V1 shape. That proves the declared migration stages, but only a copied store from before versioning can prove the real on-device upgrade path. Keep the original protected store untouched.
 
