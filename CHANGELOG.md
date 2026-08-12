@@ -2,6 +2,10 @@
 
 ## 2026-08-12
 
+### A Timeline row's connecting dot no longer floats away from a long place name
+
+- Diagnosed from a real screen: a long place name ("Rockhampton Child Safety Service Centre", "State Government Building") wraps its Timeline row title to two or three lines, but the dot-and-line column on the left was fixed at a flat 108pt regardless — sized for a one-line name — so on a taller, wrapped row the dot stayed pinned where a short row would have centred it instead of following the card down, landing near the top instead of the middle. Both the dot/line column and the card content now share a `minHeight` instead of a fixed `height`, so they grow together and the dot stays centred whatever the name wraps to, while a short single-line row renders pixel-identical to before. Verified by seeding a two-line name in the simulator and comparing before/after screenshots.
+
 ### An activity's stats and its editor are now one screen, not two
 
 - Tapping an activity from the Activities tab opened a read-only stats page — occasions, top locations, totals — with no way to change its colour, icon or category. That editing only existed on a completely different screen, reachable only from Settings → Activity Labels, so there was no way to fix an activity's colour from the page you were already looking at it on. `ActivityDetailView` now carries both: stats plus (once the activity is adopted into the catalogue) name, colour, category, icon, its full visit history, and delete — reached identically from either the Activities tab or Settings. Renaming still offers to carry existing visits across, or merge into another activity if the new name already exists, exactly as it did before.

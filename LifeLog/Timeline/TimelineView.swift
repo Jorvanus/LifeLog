@@ -876,7 +876,7 @@ private struct JourneyRow: View {
                         Circle().fill(Color.lifeBackground).frame(width: 18, height: 18)
                             .overlay(Circle().stroke(color, lineWidth: 2))
                             .overlay(Circle().fill(color).frame(width: 8, height: 8))
-                    }.frame(width: 38, height: 108)
+                    }.frame(width: 38).frame(minHeight: 108)
                     HStack(spacing: 14) {
                         ActivityIcon(activity: visit.suspectedActivity, context: visit.displayPlaceName,
                                      color: color, size: 58)
@@ -891,7 +891,14 @@ private struct JourneyRow: View {
                         Image(systemName: "chevron.right")
                             .font(.subheadline.weight(.semibold)).foregroundStyle(.tertiary)
                     }
-                    .padding(.horizontal, 14).frame(height: 108)
+                    // journeyDetails below is .fixedSize(vertical:) so a long place
+                    // name wrapping to 2-3 lines grows past 108pt -- this used to be
+                    // a hard `height: 108` on both the card and the dot/line column
+                    // at left, so a tall card's dot stayed pinned where a 108pt row
+                    // would have centred it, floating near the top instead of the
+                    // middle. `minHeight` lets both grow together and keeps the
+                    // common (single/double-line) case pixel-identical.
+                    .padding(.horizontal, 14).frame(minHeight: 108)
                     .lifeCard()
                 }
             }
