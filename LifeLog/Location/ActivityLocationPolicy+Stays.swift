@@ -17,9 +17,30 @@ extension ActivityLocationPolicy {
     static func resolveAfterLocationMutation(context: ModelContext, reason: String) throws -> Int {
         let repairs = try resolveLocationCallbacks(context: context)
         try updateTravelDescriptions(context: context)
+        // Persists what the resolver has just finished deciding — source strings,
+        // place names and confidence may all have just changed above — so every
+        // reader of `resolutionState` sees the same settled answer instead of each
+        // re-deriving it from raw fields. The single automation actor for the whole
+        // store; see `Visit.setResolutionState` for what it is not allowed to touch.
+        try reconcileResolutionStates(context: context)
         let report = try validateLocationResolution(context: context)
         report.record(context: context, reason: reason, repairs: repairs)
         return repairs
+    }
+
+    /// Applies `derivedAutomaticResolutionState` to every visit as the resolver's
+    /// automation actor. A visit the person has ignored, or confirmed, is left
+    /// exactly as it was — `setResolutionState` enforces both, not this loop —
+    /// so this can safely run unconditionally on every resolve rather than trying
+    /// to track which visits actually need a second look.
+    @discardableResult
+    static func reconcileResolutionStates(context: ModelContext) throws -> Int {
+        let visits = try context.fetch(FetchDescriptor<Visit>())
+        var changed = 0
+        for visit in visits where visit.setResolutionState(derivedAutomaticResolutionState(for: visit), actor: .automation) {
+            changed += 1
+        }
+        return changed
     }
 
     /// Read-only validation for the resolved location timeline. Raw, superseded
@@ -139,6 +160,7 @@ extension ActivityLocationPolicy {
             stay.departure = stay.arrival
             stay.source = supersededLocationSource
             stay.locationResolutionExplanation = .duplicate
+            stay.setResolutionState(.superseded, actor: .automation)
             merged += 1
             LocationDiagnostics.record(.merged, subject: "Overlapping stay",
                                        reason: "two records claim the same minutes at one place",
@@ -284,6 +306,7 @@ extension ActivityLocationPolicy {
                 candidate.departure = candidate.arrival
                 candidate.source = supersededLocationSource
                 candidate.locationResolutionExplanation = .duplicate
+                candidate.setResolutionState(.superseded, actor: .automation)
                 removed += 1
                 LocationDiagnostics.record(.superseded, subject: "Duplicate callback",
                                            reason: "same arrival within 60s and \(Int(distance.rounded())) m",

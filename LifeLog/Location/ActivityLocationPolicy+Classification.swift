@@ -17,6 +17,33 @@ extension ActivityLocationPolicy {
         visit.source == "automatic-superseded"
     }
 
+    /// What the resolver would derive for a visit's resolution state from its
+    /// current fields alone — never `.ignored`, which is a person's decision and
+    /// no combination of fields implies it. Shared by `Visit.init` (a fresh
+    /// visit has nothing else to go on), the V8→V9 migration's backfill (before
+    /// the legacy ignore registry can be converted), and `reconcileResolutionStates`
+    /// (the resolver's own ongoing use, after every location-affecting mutation).
+    ///
+    /// Takes raw values rather than a `Visit` so `Visit.init` can call it before
+    /// `self` exists; `derivedAutomaticResolutionState(for:)` below is the usual
+    /// entry point once a visit is in hand.
+    nonisolated static func derivedAutomaticResolutionState(
+        source: String, placeName: String, recognitionConfidence: String?
+    ) -> VisitResolutionState {
+        if source == supersededLocationSource { return .superseded }
+        if source == "automatic" && (Visit.isPlaceholderName(placeName) || recognitionConfidence == nil) {
+            return .provisional
+        }
+        return .resolved
+    }
+
+    nonisolated static func derivedAutomaticResolutionState(for visit: Visit) -> VisitResolutionState {
+        derivedAutomaticResolutionState(
+            source: visit.source, placeName: visit.placeName,
+            recognitionConfidence: visit.recognitionConfidence
+        )
+    }
+
 
     /// Whether a visit belongs on a given day's timeline. A stay counts for every day
     /// it covers rather than the day it began: Core Location records one arrival per

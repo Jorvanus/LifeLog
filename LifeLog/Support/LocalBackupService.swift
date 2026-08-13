@@ -27,6 +27,12 @@ struct LifeLogBackup: Codable {
         let mapsIdentifier: String?; let placeFieldProvenance: String?
         /// Optional so older local backups restore without manufacturing an answer.
         let resolutionExplanation: String?
+        /// Optional so backups made before the V9 migration still restore. Present,
+        /// these round-trip a visit's durable identity and resolution state exactly
+        /// — including `.ignored` — instead of leaving `Visit.init` to regenerate a
+        /// fresh identity and re-derive a state with no ignore of its own to go on.
+        let stableID: UUID?
+        let resolutionState: String?
     }
     // `placeCategory`/`category` were dropped when LifeLog stopped modelling a
     // place type. Older backups still restore: JSON keys with no matching
@@ -52,7 +58,7 @@ enum LocalBackupService {
         let corrections = try context.fetch(FetchDescriptor<VisitCorrection>())
         let locationEvents = try context.fetch(FetchDescriptor<LocationEvent>())
         let document = LifeLogBackup(version: LifeLogBackup.currentVersion, createdAt: .now,
-            visits: visits.map { .init(arrival: $0.arrival, departure: $0.departure, latitude: $0.latitude, longitude: $0.longitude, placeName: $0.placeName, inferredActivity: $0.inferredActivity, userActivity: $0.userActivity, note: $0.note, source: $0.source, recognitionConfidence: $0.recognitionConfidence, candidateData: $0.candidateData, mapsIdentifier: $0.mapsIdentifier, placeFieldProvenance: $0.placeFieldProvenance, resolutionExplanation: $0.resolutionExplanation) },
+            visits: visits.map { .init(arrival: $0.arrival, departure: $0.departure, latitude: $0.latitude, longitude: $0.longitude, placeName: $0.placeName, inferredActivity: $0.inferredActivity, userActivity: $0.userActivity, note: $0.note, source: $0.source, recognitionConfidence: $0.recognitionConfidence, candidateData: $0.candidateData, mapsIdentifier: $0.mapsIdentifier, placeFieldProvenance: $0.placeFieldProvenance, resolutionExplanation: $0.resolutionExplanation, stableID: $0.stableID, resolutionState: $0.resolutionStateRaw) },
             savedPlaces: places.map { .init(name: $0.name, latitude: $0.latitude, longitude: $0.longitude, radius: $0.radius, defaultActivity: $0.defaultActivity, mapsIdentifier: $0.mapsIdentifier) },
             corrections: corrections.map { .init(changedAt: $0.changedAt, visitArrival: $0.visitArrival, latitude: $0.latitude, longitude: $0.longitude, previousPlaceName: $0.previousPlaceName, newPlaceName: $0.newPlaceName, previousActivity: $0.previousActivity, newActivity: $0.newActivity, previousConfidence: $0.previousConfidence, newConfidence: $0.newConfidence, reason: $0.reason) },
             diagnostics: diagnostics.map { .init(createdAt: $0.createdAt, subsystem: $0.subsystem, severity: $0.severity, message: $0.message) },
@@ -70,7 +76,11 @@ enum LocalBackupService {
         let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
         let backup = try decoder.decode(LifeLogBackup.self, from: data)
         guard backup.version == LifeLogBackup.currentVersion else { throw CocoaError(.fileReadCorruptFile) }
-        for record in backup.visits { context.insert(Visit(arrival: record.arrival, departure: record.departure, latitude: record.latitude, longitude: record.longitude, placeName: record.placeName, inferredActivity: record.inferredActivity, userActivity: record.userActivity, note: record.note, source: record.source, recognitionConfidence: record.recognitionConfidence, candidateData: record.candidateData, mapsIdentifier: record.mapsIdentifier, placeFieldProvenance: record.placeFieldProvenance, resolutionExplanation: record.resolutionExplanation)) }
+        for record in backup.visits {
+            context.insert(Visit(arrival: record.arrival, departure: record.departure, latitude: record.latitude, longitude: record.longitude, placeName: record.placeName, inferredActivity: record.inferredActivity, userActivity: record.userActivity, note: record.note, source: record.source, recognitionConfidence: record.recognitionConfidence, candidateData: record.candidateData, mapsIdentifier: record.mapsIdentifier, placeFieldProvenance: record.placeFieldProvenance, resolutionExplanation: record.resolutionExplanation,
+                stableID: record.stableID ?? UUID(),
+                resolutionState: record.resolutionState.flatMap(VisitResolutionState.init(rawValue:))))
+        }
         for record in backup.savedPlaces { context.insert(SavedPlace(name: record.name, latitude: record.latitude, longitude: record.longitude, radius: record.radius, defaultActivity: record.defaultActivity, mapsIdentifier: record.mapsIdentifier)) }
         for record in backup.corrections { context.insert(VisitCorrection(changedAt: record.changedAt, visitArrival: record.visitArrival, latitude: record.latitude, longitude: record.longitude, previousPlaceName: record.previousPlaceName, newPlaceName: record.newPlaceName, previousActivity: record.previousActivity, newActivity: record.newActivity, previousConfidence: record.previousConfidence, newConfidence: record.newConfidence, reason: record.reason)) }
         for record in backup.diagnostics { context.insert(DiagnosticEvent(createdAt: record.createdAt, subsystem: record.subsystem, severity: record.severity, message: record.message)) }

@@ -2,6 +2,16 @@
 
 ## 2026-08-13
 
+### Ignored visits now survive backup and restore
+
+- Every visit gained a stable identifier and a persisted resolution state
+  (provisional, resolved, superseded, or ignored), replacing an ignore
+  registry keyed by an identifier that never survived a restore. Existing
+  ignored visits, and superseded callbacks, carry over automatically on
+  first launch after updating; a person's ignore or confirmed correction is
+  never touched by the automatic resolver that otherwise keeps this state
+  current.
+
 ### Donut selection closes properly after adding a visit, and its evidence line is gone
 
 - Tapping a donut wedge, then Add Visit, then Save left the stale "Unlogged"

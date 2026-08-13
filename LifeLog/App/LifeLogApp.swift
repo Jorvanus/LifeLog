@@ -13,7 +13,7 @@ struct LifeLogApp: App {
         // Keep the SwiftData schema limited to the timeline models. User-editable
         // activities live in a versioned UserDefaults payload, avoiding a risky
         // model migration for existing protected timeline stores.
-        let schema = Schema(versionedSchema: LifeLogSchemaV8.self)
+        let schema = Schema(versionedSchema: LifeLogSchemaV9.self)
         storeConfiguration = ModelConfiguration(
             "LifeLog",
             schema: schema,
@@ -71,10 +71,15 @@ struct LifeLogApp: App {
             configurations: [configuration]
         )
         StoreProtection.prepareForBackgroundAccess(storeURL: configuration.url)
+        let context = ModelContext(container)
+        // Legacy ignored keys can only be matched to their visits by
+        // `persistentModelID` while this is still the same store the keys were
+        // recorded against — before a restore or another migration replaces it —
+        // so this runs first, before anything else touches the store.
+        try VisitResolutionMigration.convertLegacyIgnoredKeysIfNeeded(context: context)
         // A background callback may have been persisted just before termination.
         // Resolve before any screen reads the store so relaunch cannot resurrect an
         // older open stay or an overlap that Timeline would need to hide.
-        let context = ModelContext(container)
         _ = try ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "relaunch recovery")
         try context.save()
         return container
@@ -82,7 +87,7 @@ struct LifeLogApp: App {
 
     private func retryStoreOpening() {
         do {
-            let schema = Schema(versionedSchema: LifeLogSchemaV8.self)
+            let schema = Schema(versionedSchema: LifeLogSchemaV9.self)
             modelContainer = try Self.openContainer(configuration: storeConfiguration, schema: schema)
             storeOpenError = nil
         } catch {

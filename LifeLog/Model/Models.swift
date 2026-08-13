@@ -9,6 +9,16 @@ enum VisitResolutionState: String, Codable, Sendable {
     case ignored
 }
 
+/// Who is asking to change a visit's resolution state, so `setResolutionState`
+/// can enforce the one rule that matters: automation moves a visit between
+/// provisional, resolved and superseded on its own, but ignoring — and un-
+/// ignoring — is exclusively a person's call, and a resolver pass must never
+/// quietly undo either a person's ignore or a person's confirmed correction.
+enum VisitResolutionActor: Sendable {
+    case automation
+    case user
+}
+
 /// The durable reason an automatic callback was kept, merged, or withdrawn. This is
 /// deliberately separate from its current state: a superseded row still needs to say
 /// whether it was a duplicate or movement evidence, and an accepted row needs to say
@@ -150,6 +160,26 @@ final class Visit {
     /// place candidates, so a journey needs no relationship and no cascade rules.
     /// Nil for stays, and for movement whose source recorded no coordinates.
     var routeData: Data?
+    /// A durable identity independent of `persistentModelID`, which SwiftData
+    /// assigns from the store's own row identity and which a backup/restore
+    /// round trip does not preserve — a restored store gets entirely new ones.
+    /// This is what the resolution-state migration gave every visit so ignoring
+    /// (and, eventually, export) survives a restore.
+    ///
+    /// The inline default is required, not decorative: both this and
+    /// `resolutionStateRaw` below are non-optional, and a structural migration
+    /// populates an existing row's new column from the property's own declared
+    /// default, not by re-running `init`. Without one, migrating an existing
+    /// store fails outright ("missing attribute values on mandatory destination
+    /// attribute") before `didMigrate` ever gets a chance to backfill anything.
+    /// The V8→V9 migration stage overwrites every row with its own unique value
+    /// immediately afterward — see `LifeLogMigrationPlan` — so every visit in an
+    /// existing store ends up with a real one, not this shared placeholder.
+    var stableID: UUID = UUID()
+    /// Raw storage for `resolutionState`. Written only through `setResolutionState`
+    /// — see that method for the invariants automation must not violate. Same
+    /// inline-default requirement as `stableID`.
+    var resolutionStateRaw: String = VisitResolutionState.provisional.rawValue
 
     init(arrival: Date, departure: Date? = nil, latitude: Double, longitude: Double,
          placeName: String = Visit.identifyingPlaceName,
@@ -158,7 +188,8 @@ final class Visit {
          recognitionConfidence: String? = nil, candidateData: Data? = nil,
          mapsIdentifier: String? = nil, placeFieldProvenance: String? = nil,
          resolutionExplanation: String? = nil,
-         healthKitSampleIDs: [UUID]? = nil, routeData: Data? = nil) {
+         healthKitSampleIDs: [UUID]? = nil, routeData: Data? = nil,
+         stableID: UUID = UUID(), resolutionState: VisitResolutionState? = nil) {
         self.arrival = arrival; self.departure = departure
         self.latitude = latitude; self.longitude = longitude
         self.placeName = TextSafety.clean(placeName, maximumLength: 120)
@@ -173,6 +204,14 @@ final class Visit {
         self.candidateData = candidateData
         self.healthKitSampleIDs = healthKitSampleIDs
         self.routeData = routeData
+        self.stableID = stableID
+        // A fresh visit has no history to derive from, so its own fields decide:
+        // the same rule `ActivityLocationPolicy.derivedAutomaticResolutionState`
+        // applies to an existing one. An explicit override — restoring a backup
+        // that already recorded a state, or a test fixture — is taken as given.
+        self.resolutionStateRaw = (resolutionState ?? ActivityLocationPolicy.derivedAutomaticResolutionState(
+            source: source, placeName: placeName, recognitionConfidence: recognitionConfidence
+        )).rawValue
     }
 
     var activity: String {
@@ -236,6 +275,61 @@ final class Visit {
     var locationResolutionExplanation: LocationResolutionExplanation? {
         get { resolutionExplanation.flatMap(LocationResolutionExplanation.init(rawValue:)) }
         set { resolutionExplanation = newValue?.rawValue }
+    }
+
+    /// Falls back to `.provisional` only for a row `resolutionStateRaw` could not
+    /// decode — never expected once every visit has been through the V9 migration
+    /// (or `Visit.init`, for one created since), but a decode failure should read
+    /// as "needs a look" rather than crash or silently claim `.resolved`.
+    var resolutionState: VisitResolutionState {
+        VisitResolutionState(rawValue: resolutionStateRaw) ?? .provisional
+    }
+
+    /// The one place `resolutionStateRaw` is ever written. Two invariants hold
+    /// regardless of what's asked for:
+    ///
+    /// - Automation (the location resolver) can move a visit between provisional,
+    ///   resolved and superseded, but can neither set nor clear `.ignored` — that
+    ///   is exclusively a person's decision, made through `isIgnored`.
+    /// - Automation cannot change the state of a visit the person has confirmed
+    ///   (`recognitionConfidence == "confirmed"`). A later resolver pass finding
+    ///   new evidence must not quietly re-open a correction someone already made.
+    ///
+    /// A person's own action (`actor: .user`) is exempt from both: unignoring a
+    /// visit, or a confirmed correction settling what state it should be in, are
+    /// exactly the cases these guards exist to still allow.
+    @discardableResult
+    func setResolutionState(_ newState: VisitResolutionState, actor: VisitResolutionActor) -> Bool {
+        if actor == .automation {
+            guard resolutionState != .ignored else { return false }
+            guard newState != .ignored else { return false }
+            guard recognitionConfidence?.lowercased() != "confirmed" else { return false }
+        }
+        guard resolutionStateRaw != newState.rawValue else { return false }
+        resolutionStateRaw = newState.rawValue
+        return true
+    }
+
+    /// A person's ignore/unignore, the only door `setResolutionState` leaves open
+    /// to automation everywhere else. Unignoring does not simply clear back to
+    /// `.provisional` — it hands the visit back to whatever the resolver would
+    /// currently derive for it, so a place that was already resolved before it
+    /// was ignored does not reappear looking unresolved.
+    var isIgnored: Bool {
+        get { resolutionState == .ignored }
+        set {
+            // A visit not yet in a store is not yet in the timeline either, so
+            // ignoring it is premature — nothing to hide from anywhere yet, and
+            // the object may still be discarded rather than inserted.
+            guard modelContext != nil else { return }
+            let target: VisitResolutionState = newValue
+                ? .ignored
+                : ActivityLocationPolicy.derivedAutomaticResolutionState(for: self)
+            setResolutionState(target, actor: .user)
+            if newValue, ["low", "medium"].contains(recognitionConfidence?.lowercased()) {
+                locationResolutionExplanation = .lowConfidence
+            }
+        }
     }
 
     var route: [RoutePoint] {

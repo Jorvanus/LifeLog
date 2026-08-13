@@ -657,6 +657,15 @@ struct VisitEditor: View {
             visit.recognitionConfidence = "confirmed"
             visit.placeFieldProvenance = "manual"
         }
+        if corrected {
+            // `setResolutionState` refuses this exact change from automation once
+            // `recognitionConfidence` reads "confirmed" — by design, so a later
+            // resolver pass can never re-open what a person just settled. That
+            // guard has nothing to do with the person's own action right here,
+            // which is why this uses `.user` rather than relying on the next
+            // automatic resolve to notice the correction on its own.
+            visit.setResolutionState(.resolved, actor: .user)
+        }
         if forceLearning || corrected {
             let result = try SavedPlaceLearning.upsert(
                 from: visit,

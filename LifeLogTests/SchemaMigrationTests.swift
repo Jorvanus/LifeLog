@@ -10,6 +10,7 @@ import Testing
 // entity names. SwiftData registers model metadata process-wide, so these fixture
 // migrations must not be constructed concurrently by Swift Testing.
 @Suite(.serialized)
+@MainActor
 struct SchemaMigrationTests {
     @Test("Store recovery exports do not modify the original files")
     func exportsRecoveryCopyWithoutDeletingSource() throws {
@@ -325,6 +326,162 @@ struct SchemaMigrationTests {
         #expect(places.first { $0.name == "Homemaker Centre" }?.homeWorkRole == nil)
     }
 
+    @Test("A copy of the current V8 store gains a stable ID and a derived resolution state for every visit")
+    func migratesV8StoreAddingResolutionState() throws {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LifeLog-v8-\(UUID().uuidString).store")
+        defer { try? FileManager.default.removeItem(at: storeURL) }
+        let arrival = Date(timeIntervalSince1970: 1_800_000_000)
+        let v8Schema = Schema(versionedSchema: LifeLogSchemaV8.self)
+        let configuration = ModelConfiguration("LifeLogMigrationFixture", schema: v8Schema,
+                                               url: storeURL, allowsSave: true, cloudKitDatabase: .none)
+        do {
+            let container = try ModelContainer(for: v8Schema, configurations: [configuration])
+            let seed = ModelContext(container)
+            // Still identifying: no place name and no confidence yet.
+            let provisional = LifeLogSchemaV8.Visit(arrival: arrival, latitude: -23.37, longitude: 150.51,
+                                                     placeName: "Identifying…", inferredActivity: "Visiting",
+                                                     note: "provisional", source: "automatic")
+            seed.insert(provisional)
+            // Named and confident: an ordinary settled automatic stay.
+            let resolved = LifeLogSchemaV8.Visit(arrival: arrival.addingTimeInterval(3_600), latitude: -23.37,
+                                                  longitude: 150.51, placeName: "Home", inferredActivity: "At home",
+                                                  note: "resolved", source: "automatic")
+            resolved.recognitionConfidence = "learned"
+            seed.insert(resolved)
+            // A duplicate callback the pre-V9 resolver already folded away.
+            let superseded = LifeLogSchemaV8.Visit(arrival: arrival.addingTimeInterval(3_660), latitude: -23.37,
+                                                    longitude: 150.51, placeName: "Home", inferredActivity: "At home",
+                                                    note: "superseded", source: "automatic-superseded")
+            seed.insert(superseded)
+            // A manual entry: never provisional regardless of place name, since only
+            // an automatic stay waits on Core Location to identify itself.
+            let manual = LifeLogSchemaV8.Visit(arrival: arrival.addingTimeInterval(7_200), latitude: -23.37,
+                                                longitude: 150.51, placeName: "Corner Cafe",
+                                                inferredActivity: "Eating", note: "manual", source: "manual")
+            seed.insert(manual)
+            try seed.save()
+        }
+
+        let context = ModelContext(try openVersionedStore(at: storeURL))
+        let visits = try context.fetch(FetchDescriptor<Visit>(sortBy: [SortDescriptor(\.arrival)]))
+        #expect(visits.count == 4)
+
+        // Every visit gets its own stable ID -- not the single shared default the
+        // structural step alone would have left every row with.
+        let stableIDs = Set(visits.map(\.stableID))
+        #expect(stableIDs.count == 4, "each visit must get a distinct stable ID, not one shared default")
+
+        #expect(visits.first { $0.note == "provisional" }?.resolutionState == .provisional)
+        #expect(visits.first { $0.note == "resolved" }?.resolutionState == .resolved)
+        #expect(visits.first { $0.note == "superseded" }?.resolutionState == .superseded)
+        #expect(visits.first { $0.note == "manual" }?.resolutionState == .resolved)
+        // Nothing in a V8 store carried an ignore -- that only ever lived in
+        // UserDefaults, matched separately by `VisitResolutionMigration`.
+        #expect(visits.allSatisfy { $0.resolutionState != .ignored })
+    }
+
+    @Test("Reopening an already-migrated store leaves stable IDs and resolution state untouched")
+    func migratingV9StoreTwiceIsIdempotent() throws {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LifeLog-v8-relaunch-\(UUID().uuidString).store")
+        defer { try? FileManager.default.removeItem(at: storeURL) }
+        let arrival = Date(timeIntervalSince1970: 1_800_000_000)
+        let v8Schema = Schema(versionedSchema: LifeLogSchemaV8.self)
+        let configuration = ModelConfiguration("LifeLogMigrationFixture", schema: v8Schema,
+                                               url: storeURL, allowsSave: true, cloudKitDatabase: .none)
+        do {
+            let container = try ModelContainer(for: v8Schema, configurations: [configuration])
+            let seed = ModelContext(container)
+            seed.insert(LifeLogSchemaV8.Visit(arrival: arrival, latitude: -23.37, longitude: 150.51,
+                                              placeName: "Home", inferredActivity: "At home",
+                                              note: "fixture", source: "automatic"))
+            try seed.save()
+        }
+
+        // First "launch": migrates V8 -> V9 and backfills.
+        let firstStableID: UUID
+        let firstState: VisitResolutionState
+        do {
+            let context = ModelContext(try openVersionedStore(at: storeURL))
+            let visit = try #require(context.fetch(FetchDescriptor<Visit>()).first)
+            firstStableID = visit.stableID
+            firstState = visit.resolutionState
+            try ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "test relaunch 1")
+            try context.save()
+        }
+
+        // Second "launch" against the same file: the migration stage does not run
+        // again (SwiftData tracks the store's own version), so this is exercising
+        // that reopening and re-resolving is itself a no-op.
+        do {
+            let context = ModelContext(try openVersionedStore(at: storeURL))
+            let visit = try #require(context.fetch(FetchDescriptor<Visit>()).first)
+            #expect(visit.stableID == firstStableID)
+            #expect(visit.resolutionState == firstState)
+            let changed = try ActivityLocationPolicy.reconcileResolutionStates(context: context)
+            #expect(changed == 0, "re-resolving an already-settled visit must not report a change")
+        }
+    }
+
+    @Test("A visit ignored under the legacy UserDefaults registry stays ignored after migrating and converting")
+    func convertsLegacyIgnoredVisitAcrossMigration() throws {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LifeLog-v8-ignored-\(UUID().uuidString).store")
+        defer { try? FileManager.default.removeItem(at: storeURL) }
+        let defaults = try #require(UserDefaults(suiteName: UUID().uuidString))
+        let arrival = Date(timeIntervalSince1970: 1_800_000_000)
+        let v8Schema = Schema(versionedSchema: LifeLogSchemaV8.self)
+        let configuration = ModelConfiguration("LifeLogMigrationFixture", schema: v8Schema,
+                                               url: storeURL, allowsSave: true, cloudKitDatabase: .none)
+        var legacyKey = ""
+        let untouchedArrival = arrival.addingTimeInterval(3_600)
+        do {
+            let container = try ModelContainer(for: v8Schema, configurations: [configuration])
+            let seed = ModelContext(container)
+            let ignored = LifeLogSchemaV8.Visit(arrival: arrival, latitude: -23.37, longitude: 150.51,
+                                                placeName: "A misidentified drive-by", inferredActivity: "Visiting",
+                                                note: "should stay ignored", source: "automatic")
+            ignored.recognitionConfidence = "low"
+            seed.insert(ignored)
+            let kept = LifeLogSchemaV8.Visit(arrival: untouchedArrival, latitude: -23.42, longitude: 150.55,
+                                             placeName: "Work", inferredActivity: "Working",
+                                             note: "never ignored", source: "automatic")
+            kept.recognitionConfidence = "learned"
+            seed.insert(kept)
+            try seed.save()
+            // Written exactly as `IgnoredLocations.setIgnored(true, for:)` wrote it
+            // before V9: a key built from this row's own `persistentModelID`.
+            legacyKey = "persistent:\(String(describing: ignored.persistentModelID))"
+        }
+        IgnoredLocations.importKeys([legacyKey], defaults: defaults)
+
+        let context = ModelContext(try openVersionedStore(at: storeURL))
+        // Mirrors what `LifeLogApp.openContainer` does on a real launch: convert
+        // before the resolver's own automation pass runs.
+        let converted = try VisitResolutionMigration.convertLegacyIgnoredKeysIfNeeded(context: context, defaults: defaults)
+        #expect(converted == 1)
+        try ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "test migration")
+        try context.save()
+
+        let visits = try context.fetch(FetchDescriptor<Visit>())
+        let ignoredVisit = try #require(visits.first { $0.note == "should stay ignored" })
+        let keptVisit = try #require(visits.first { $0.note == "never ignored" })
+        #expect(ignoredVisit.isIgnored)
+        #expect(ignoredVisit.resolutionState == .ignored)
+        // The resolver's automatic pass, which runs immediately after conversion
+        // in the same store open, must not have pulled it back to visible.
+        #expect(!keptVisit.isIgnored)
+        #expect(keptVisit.resolutionState == .resolved)
+        #expect(IgnoredLocations.storedKeys(defaults: defaults).isEmpty, "the legacy registry is retired once converted")
+
+        // A second "launch" against the same store and the same UserDefaults suite
+        // must not re-scan or change anything -- the flag alone decides that.
+        let secondConverted = try VisitResolutionMigration.convertLegacyIgnoredKeysIfNeeded(context: context, defaults: defaults)
+        #expect(secondConverted == 0)
+        #expect(try #require(context.fetch(FetchDescriptor<Visit>()).first { $0.note == "should stay ignored" }).isIgnored)
+    }
+
     @Test("A V1 store carrying place types migrates to V2 without losing visits or places")
     func migratesV1StoreDroppingPlaceType() throws {
         let storeURL = FileManager.default.temporaryDirectory
@@ -418,7 +575,7 @@ struct SchemaMigrationTests {
     /// way to what the app actually ships. Left at V5 while the app moved to V6, these
     /// tests would keep passing without once exercising the new stage.
     private func openVersionedStore(at url: URL) throws -> ModelContainer {
-        let schema = Schema(versionedSchema: LifeLogSchemaV8.self)
+        let schema = Schema(versionedSchema: LifeLogSchemaV9.self)
         let configuration = ModelConfiguration(
             "LifeLogMigrationFixture", schema: schema, url: url,
             allowsSave: true, cloudKitDatabase: .none

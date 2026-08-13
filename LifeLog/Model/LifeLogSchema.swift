@@ -566,8 +566,80 @@ enum LifeLogSchemaV7: VersionedSchema {
 /// travel labelling no longer guess from the place's name. The migration backfills
 /// the role for whatever the owner already named "Home"/"Work" — see
 /// `LifeLogMigrationPlan`'s V7→V8 stage — without renaming anything.
+///
+/// Frozen now that V9 needs a real snapshot to migrate from, the same reason V1
+/// through V7 are frozen above.
 enum LifeLogSchemaV8: VersionedSchema {
     static let versionIdentifier = Schema.Version(8, 0, 0)
+    static var models: [any PersistentModel.Type] {
+        [Visit.self, SavedPlace.self, VisitCorrection.self, DiagnosticEvent.self, LocationEvent.self]
+    }
+    @Model final class Visit {
+        var arrival: Date; var departure: Date?; var latitude: Double; var longitude: Double
+        var placeName: String; var inferredActivity: String; var userActivity: String?
+        var note: String; var source: String; var recognitionConfidence: String?
+        var mapsIdentifier: String?; var placeFieldProvenance: String?; var resolutionExplanation: String?
+        var candidateData: Data?; var healthKitSampleIDs: [UUID]?; var routeData: Data?
+        init(arrival: Date, latitude: Double, longitude: Double, placeName: String,
+             inferredActivity: String, note: String, source: String) {
+            self.arrival = arrival; self.latitude = latitude; self.longitude = longitude
+            self.placeName = placeName; self.inferredActivity = inferredActivity
+            self.note = note; self.source = source
+        }
+    }
+    @Model final class SavedPlace {
+        var name: String; var latitude: Double; var longitude: Double; var radius: Double
+        var defaultActivity: String; var mapsIdentifier: String?; var role: String?
+        init(name: String, latitude: Double, longitude: Double, radius: Double, defaultActivity: String) {
+            self.name = name; self.latitude = latitude; self.longitude = longitude
+            self.radius = radius; self.defaultActivity = defaultActivity
+        }
+    }
+    @Model final class VisitCorrection {
+        var changedAt: Date; var visitArrival: Date; var latitude: Double; var longitude: Double
+        var previousPlaceName: String; var newPlaceName: String; var previousActivity: String; var newActivity: String
+        var previousConfidence: String; var newConfidence: String; var reason: String
+        init(changedAt: Date, visitArrival: Date, latitude: Double, longitude: Double, previousPlaceName: String,
+             newPlaceName: String, previousActivity: String, newActivity: String, previousConfidence: String,
+             newConfidence: String, reason: String) {
+            self.changedAt = changedAt; self.visitArrival = visitArrival; self.latitude = latitude; self.longitude = longitude
+            self.previousPlaceName = previousPlaceName; self.newPlaceName = newPlaceName; self.previousActivity = previousActivity
+            self.newActivity = newActivity; self.previousConfidence = previousConfidence; self.newConfidence = newConfidence; self.reason = reason
+        }
+    }
+    @Model final class DiagnosticEvent {
+        var createdAt: Date; var subsystem: String; var severity: String; var message: String; var category: String = "general"
+        init(createdAt: Date, subsystem: String, severity: String, message: String, category: String) {
+            self.createdAt = createdAt; self.subsystem = subsystem; self.severity = severity; self.message = message; self.category = category
+        }
+    }
+    @Model final class LocationEvent {
+        var recordedAt: Date; var callbackType: String; var callbackAt: Date; var arrival: Date?; var departure: Date?
+        var latitude: Double; var longitude: Double; var accuracy: Double; var distanceFromCurrentVisit: Double?
+        var transition: String; var visitArrival: Date?
+        init(recordedAt: Date, callbackType: String, callbackAt: Date, latitude: Double, longitude: Double, accuracy: Double, transition: String) {
+            self.recordedAt = recordedAt; self.callbackType = callbackType; self.callbackAt = callbackAt
+            self.latitude = latitude; self.longitude = longitude; self.accuracy = accuracy; self.transition = transition
+        }
+    }
+}
+
+/// V9 gives every `Visit` a stable UUID identity (`stableID`) and a persisted
+/// resolution state (`resolutionStateRaw`: provisional, resolved, superseded or
+/// ignored), replacing a UserDefaults registry keyed by
+/// `String(describing: persistentModelID)` — an identifier SwiftData assigns from
+/// the store's own row identity, which a backup/restore round trip never
+/// preserves, so a restored store silently forgot every ignored visit.
+///
+/// See `LifeLogMigrationPlan`'s V8→V9 stage for the backfill (a fresh, unique
+/// `stableID` per row, and each visit's resolution state derived the same way
+/// `ActivityLocationPolicy.derivedAutomaticResolutionState` derives it going
+/// forward), and `VisitResolutionMigration` for the separate, one-time,
+/// post-open conversion of the legacy ignore registry — which needs
+/// `UserDefaults` and its own idempotence, neither of which a migration stage's
+/// `didMigrate` is positioned to own.
+enum LifeLogSchemaV9: VersionedSchema {
+    static let versionIdentifier = Schema.Version(9, 0, 0)
     static var models: [any PersistentModel.Type] {
         [LifeLog.Visit.self, LifeLog.SavedPlace.self, LifeLog.VisitCorrection.self,
          LifeLog.DiagnosticEvent.self, LifeLog.LocationEvent.self]
@@ -578,7 +650,7 @@ enum LifeLogMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
         [LifeLogSchemaV1.self, LifeLogSchemaV2.self, LifeLogSchemaV3.self,
          LifeLogSchemaV4.self, LifeLogSchemaV5.self, LifeLogSchemaV6.self,
-         LifeLogSchemaV7.self, LifeLogSchemaV8.self]
+         LifeLogSchemaV7.self, LifeLogSchemaV8.self, LifeLogSchemaV9.self]
     }
 
     /// Dropping a property, adding an optional one and adding a whole model are all
@@ -598,18 +670,45 @@ enum LifeLogMigrationPlan: SchemaMigrationPlan {
             // "Homemaker Centre" is left alone) needs its role backfilled, or every
             // installed store would silently lose commute detection until the owner
             // re-set it by hand. The name itself is never touched.
+            // `didMigrate` runs against V8's own model, not the live one — this stage
+            // predates V8 being frozen, when V8 still pointed at `LifeLog.SavedPlace`
+            // directly and that fetch was correct. Now that V9 is the version pointing
+            // at live models, this must fetch `LifeLogSchemaV8.SavedPlace` instead, and
+            // write its raw `role` string directly: `homeWorkRole` is a convenience
+            // only the live type has.
             .custom(
                 fromVersion: LifeLogSchemaV7.self,
                 toVersion: LifeLogSchemaV8.self,
                 willMigrate: nil,
                 didMigrate: { context in
-                    let places = try context.fetch(FetchDescriptor<LifeLog.SavedPlace>())
+                    let places = try context.fetch(FetchDescriptor<LifeLogSchemaV8.SavedPlace>())
                     for place in places {
                         if place.name.caseInsensitiveCompare("Home") == .orderedSame {
-                            place.homeWorkRole = .home
+                            place.role = SavedPlaceRole.home.rawValue
                         } else if place.name.caseInsensitiveCompare("Work") == .orderedSame {
-                            place.homeWorkRole = .work
+                            place.role = SavedPlaceRole.work.rawValue
                         }
+                    }
+                    try context.save()
+                }
+            ),
+            // Custom, not lightweight: `stableID` is non-optional, so the structural
+            // step ahead of `didMigrate` fills it with a single default value shared
+            // by every existing row — the same UUID for all of them until this
+            // overwrites each one individually. `resolutionStateRaw` gets a uniform
+            // "provisional" default the same way; this replaces it with what each
+            // visit's own fields actually derive. Ignored state is deliberately not
+            // touched here — see `VisitResolutionMigration` for why that is a
+            // separate, post-open step rather than part of this stage.
+            .custom(
+                fromVersion: LifeLogSchemaV8.self,
+                toVersion: LifeLogSchemaV9.self,
+                willMigrate: nil,
+                didMigrate: { context in
+                    let visits = try context.fetch(FetchDescriptor<LifeLog.Visit>())
+                    for visit in visits {
+                        visit.stableID = UUID()
+                        visit.resolutionStateRaw = ActivityLocationPolicy.derivedAutomaticResolutionState(for: visit).rawValue
                     }
                     try context.save()
                 }

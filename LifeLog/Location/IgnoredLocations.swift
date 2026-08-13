@@ -1,77 +1,64 @@
 import Foundation
 import SwiftData
 
-/// Ignore state is deliberately kept outside SwiftData so adding this feature
-/// does not require migrating the user's protected Visit store.
+/// The legacy home for ignore state, before the V9 migration gave every `Visit`
+/// its own persisted `resolutionState`. Kept only as the source
+/// `VisitResolutionMigration`'s one-time conversion reads from: a key built from
+/// `String(describing: persistentModelID)` was never portable through backup and
+/// restore, since restoring rebuilds the store with entirely new identifiers —
+/// which is exactly why a restored store silently forgot every ignored visit.
 enum IgnoredLocations {
     private static let storageKey = "LifeLog.IgnoredLocations.v1"
 
-    static func contains(_ visit: Visit) -> Bool {
-        guard isPersisted(visit) else { return false }
-        let stable = stableKey(for: visit)
-        if storedKeys.contains(stable) { return true }
-        // Preserve existing ignores while migrating from the old coordinate key.
-        let legacy = legacyKey(for: visit)
-        guard storedKeys.contains(legacy) else { return false }
-        var keys = storedKeys
-        keys.remove(legacy)
-        keys.insert(stable)
-        UserDefaults.standard.set(Array(keys), forKey: storageKey)
-        return true
+    static func storedKeys(defaults: UserDefaults = .standard) -> Set<String> {
+        Set(defaults.stringArray(forKey: storageKey) ?? [])
     }
 
-    static func setIgnored(_ ignored: Bool, for visit: Visit) {
-        guard isPersisted(visit) else { return }
-        var keys = storedKeys
-        let visitKey = stableKey(for: visit)
-        if ignored { keys.insert(visitKey) } else { keys.remove(visitKey) }
-        UserDefaults.standard.set(Array(keys), forKey: storageKey)
-        if ignored, ["low", "medium"].contains(visit.recognitionConfidence?.lowercased()) {
-            visit.locationResolutionExplanation = .lowConfidence
-        }
+    static func removeAll(defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: storageKey)
     }
 
-    private static var storedKeys: Set<String> {
-        Set(UserDefaults.standard.stringArray(forKey: storageKey) ?? [])
+    /// Retained for `LocalBackupService`: an old backup's `ignoredVisitKeys`
+    /// still decode, and importing them here lets `VisitResolutionMigration`
+    /// convert them on the very next store open exactly as it would a key
+    /// written by this device.
+    static func exportKeys(defaults: UserDefaults = .standard) -> [String] {
+        Array(storedKeys(defaults: defaults))
+    }
+    static func importKeys(_ keys: [String], defaults: UserDefaults = .standard) {
+        defaults.set(keys, forKey: storageKey)
     }
 
-    static func exportKeys() -> [String] { Array(storedKeys) }
-    static func importKeys(_ keys: [String]) { UserDefaults.standard.set(keys, forKey: storageKey) }
-
-    /// A visit only has a durable identifier once it belongs to a store. Before that
-    /// `persistentModelID` is temporary, and recording an ignore against it would
-    /// write a key that matches whichever unsaved visit came next — hiding a record
-    /// nobody hid. Ignoring is a decision about something in the timeline, so a visit
-    /// that is not in the timeline yet simply has no ignore state.
-    private static func isPersisted(_ visit: Visit) -> Bool {
-        visit.modelContext != nil
-    }
-
-    /// SwiftData assigns this identifier independently of mutable visit fields,
-    /// so edits to arrival time or coordinates cannot orphan an ignore state.
-    private static func stableKey(for visit: Visit) -> String {
+    /// SwiftData assigns this identifier from the store's own row identity, which
+    /// a `.custom` migration preserves in place — so immediately after the V8→V9
+    /// migration, before anything else touches the store, it still matches what
+    /// was recorded against the same row before the schema changed.
+    ///
+    /// The full description is not itself stable, though the row identity inside
+    /// it is: `String(describing:)` on a `PersistentIdentifier` also embeds the
+    /// underlying `NSManagedObjectID`'s in-memory pointer, which is different on
+    /// every fetch — confirmed by direct testing to change across a plain reopen
+    /// with no migration involved at all, let alone one that runs a stage. Only
+    /// the `x-coredata://<store>/<entity>/p<n>` fragment inside the parentheses
+    /// is the part that survives, which is why matching goes through
+    /// `stableURIFragment` rather than comparing this whole string.
+    static func legacyStableKey(for visit: Visit) -> String {
         "persistent:\(String(describing: visit.persistentModelID))"
     }
 
-    private static func legacyKey(for visit: Visit) -> String {
+    /// Pulls the `<x-coredata://...>` fragment out of a key built by
+    /// `legacyStableKey`, on either side of a comparison — the already-stored
+    /// legacy text and a freshly computed one are both full descriptions, and
+    /// only this fragment is safe to compare between them.
+    static func stableURIFragment(_ key: String) -> String? {
+        guard let start = key.firstIndex(of: "<"), let end = key.firstIndex(of: ">"), start < end else { return nil }
+        return String(key[start...end])
+    }
+
+    /// The key format used before `persistentModelID` became the identity —
+    /// checked as a fallback so a visit ignored that far back, and never opened
+    /// since (which would have healed it onto the stable key), still converts.
+    static func legacyCoordinateKey(for visit: Visit) -> String {
         "\(visit.arrival.timeIntervalSinceReferenceDate)|\(visit.latitude)|\(visit.longitude)|\(visit.source)"
-    }
-}
-
-extension Visit {
-    var isIgnored: Bool {
-        get { IgnoredLocations.contains(self) }
-        set { IgnoredLocations.setIgnored(newValue, for: self) }
-    }
-
-    /// Derived from persisted source/confidence fields and the stable ignore
-    /// registry, so resolution survives relaunch without another schema field.
-    var resolutionState: VisitResolutionState {
-        if isIgnored { return .ignored }
-        if ActivityLocationPolicy.isSupersededLocation(self) { return .superseded }
-        if source == "automatic" && (hasPlaceholderName || recognitionConfidence == nil) {
-            return .provisional
-        }
-        return .resolved
     }
 }

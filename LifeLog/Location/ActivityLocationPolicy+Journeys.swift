@@ -277,6 +277,7 @@ extension ActivityLocationPolicy {
             stay.departure = stay.arrival
             stay.source = supersededLocationSource
             stay.locationResolutionExplanation = .movement
+            stay.setResolutionState(.superseded, actor: .automation)
             rejoined += 1
         }
         return rejoined
