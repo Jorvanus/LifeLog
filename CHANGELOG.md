@@ -2,6 +2,21 @@
 
 ## 2026-08-13
 
+### Unlogged Insights slices can be filled in again
+
+- Tapping the "Unlogged" wedge in the day Breakdown donut, or any unlogged
+  slice elsewhere in Insights, now offers an Add Visit action instead of a
+  dead-end "No recorded visits" message. Also gave Unlogged slices a
+  clock/question-mark icon in place of a leftover moon icon, and fixed two
+  drill-down rows that were showing their date/time formatting code as
+  literal text instead of the formatted value.
+
+### Insights and Store Recovery cards share one padding and corner radius
+
+- Standardised the handful of Insights and Health Trends cards that used
+  18pt internal padding to the 20pt used everywhere else, and aligned Store
+  Recovery's two callout cards to the app-wide 22pt corner radius.
+
 ### A quieter Insights story
 
 - Reduced repeated instructions and selector labels across Day, Week, Month, and Year Insights while keeping comparison, source, confidence, and empty-state explanations visible.
