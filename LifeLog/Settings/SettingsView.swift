@@ -86,7 +86,7 @@ struct SettingsView: View {
                     Text("Reads the iPhone’s walking, running, cycling, and vehicle history. The iPhone retains roughly one week, so LifeLog collects it regularly.")
                 }
                 Section {
-                    if let progress = activityData.importProgress {
+                    if let progress = activityData.ui.progress {
                         VStack(alignment: .leading, spacing: 9) {
                             HStack {
                                 Text(progress.title).font(.subheadline.weight(.medium))
@@ -119,7 +119,7 @@ struct SettingsView: View {
                         }
                         .accessibilityIdentifier("activity-import-progress")
                     }
-                    if let imported = activityData.lastImport {
+                    if let imported = activityData.ui.lastImport {
                         adaptiveValue("Last import", value: imported.formatted(date: .abbreviated, time: .shortened))
                     }
                 } header: {
@@ -309,23 +309,23 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var appleHealthControls: some View {
-        adaptiveValue("Status", value: activityData.healthStatus)
-        adaptiveValue("Sleep evidence", value: activityData.sleepEvidenceStatus)
-        if !activityData.unaskedHealthTypes.isEmpty {
+        adaptiveValue("Status", value: activityData.ui.authorizationStatus)
+        adaptiveValue("Sleep evidence", value: activityData.ui.sleepEvidenceStatus)
+        if !activityData.ui.unaskedTypes.isEmpty {
             Button("Connect Apple Health") {
                 Task { await activityData.requestHealthAccess() }
             }
             .accessibilityIdentifier("connect-health")
-            Text("Not yet asked for: \(activityData.unaskedHealthTypes.formatted(.list(type: .and))). Only these appear on the permission sheet — iOS does not re-ask for the rest.")
+            Text("Not yet asked for: \(activityData.ui.unaskedTypes.formatted(.list(type: .and))). Only these appear on the permission sheet — iOS does not re-ask for the rest.")
                 .font(.caption).foregroundStyle(.secondary)
-        } else if activityData.healthStatus != "Connected"
-                    && activityData.healthStatus != "Unavailable on this device" {
+        } else if activityData.ui.authorizationStatus != "Connected"
+                    && activityData.ui.authorizationStatus != "Unavailable on this device" {
             Button("Open Apple Health") { openAppleHealth() }
                 .accessibilityIdentifier("open-health")
             Text("In Health, go to Sharing → Apps → LifeLog to review what LifeLog can read.")
                 .font(.caption).foregroundStyle(.secondary)
         }
-        if !activityData.isImporting {
+        if !activityData.ui.isImporting {
             Button("Re-import Health history") { activityData.reimportHealthHistory() }
                 .accessibilityIdentifier("reimport-health")
             Text("Reads the last 30 days again. Use it after granting Workout Routes to add paths to walks already imported without one; existing entries are updated, not duplicated.")
@@ -339,8 +339,8 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var motionActivityControls: some View {
-        adaptiveValue("Status", value: activityData.motionStatus)
-        switch activityData.motionStatus {
+        adaptiveValue("Status", value: activityData.ui.motionStatus)
+        switch activityData.ui.motionStatus {
         case "Not requested":
             Button("Enable Motion Activity") { activityData.requestMotionAccess() }
                 .accessibilityIdentifier("enable-motion-activity")
@@ -355,7 +355,7 @@ struct SettingsView: View {
             Text("Motion & Fitness is restricted by this iPhone’s settings and cannot be enabled from LifeLog.")
                 .font(.caption).foregroundStyle(.secondary)
         case "Connected":
-            if !activityData.isImporting {
+            if !activityData.ui.isImporting {
                 Button("Refresh Motion Activity") { activityData.refreshMotionHistory() }
                     .accessibilityIdentifier("refresh-motion-activity")
             }

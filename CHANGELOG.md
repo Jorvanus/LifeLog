@@ -2,6 +2,12 @@
 
 ## 2026-08-13
 
+### Health updates stay out of the way
+
+- Apple Health imports now use dedicated authorization, observer, summary, motion,
+  and publication coordination, so bursts and cancelled refreshes do not leave
+  stale progress or delay the Timeline and Insights screens.
+
 ### Location recording is easier to recover and diagnose
 
 - Location callbacks now pass through focused arrival, mutation, geofence, Maps,

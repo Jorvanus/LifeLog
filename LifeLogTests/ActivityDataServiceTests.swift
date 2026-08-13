@@ -33,4 +33,34 @@ struct ActivityDataServiceTests {
         let twelveHoursAgo = now.addingTimeInterval(-12 * 60 * 60)
         #expect(ActivityDataService.healthImportWindowDays(since: twelveHoursAgo, now: now) == 2)
     }
+
+    @Test("Health authorisation states distinguish no permission, partial permission, and an unavailable check")
+    func authorizationPresentationIsHonest() {
+        #expect(HealthAuthorizationService.status(unaskedCount: 4, totalCount: 4, hadUnknownResult: false) == "Not connected")
+        #expect(HealthAuthorizationService.status(unaskedCount: 1, totalCount: 4, hadUnknownResult: false) == "Partly connected")
+        #expect(HealthAuthorizationService.status(unaskedCount: 0, totalCount: 4, hadUnknownResult: false) == "Connected")
+        #expect(HealthAuthorizationService.status(unaskedCount: 0, totalCount: 4, hadUnknownResult: true) == "Couldn’t check")
+    }
+
+    @Test("Superseded imports cannot publish progress or invalidate a newer import")
+    func importPublicationRejectsStaleWork() {
+        var coordinator = IncrementalImportCoordinator()
+        let first = coordinator.begin()
+        let second = coordinator.begin()
+        #expect(coordinator.mayPublish(first) == false)
+        #expect(coordinator.mayPublish(second))
+        coordinator.finish(first)
+        #expect(coordinator.mayPublish(second))
+        coordinator.finish(second)
+        #expect(coordinator.mayPublish(second) == false)
+    }
+
+    @Test("Health summaries use stable date-scoped cache keys")
+    func healthSummaryCacheKeyIsDateScoped() {
+        let interval = DateInterval(start: now, duration: 86_400)
+        #expect(HealthSummaryReader.cacheKey(for: interval) == HealthSummaryReader.cacheKey(for: interval))
+        #expect(HealthSummaryReader.cacheKey(for: interval) != HealthSummaryReader.cacheKey(
+            for: DateInterval(start: now.addingTimeInterval(1), duration: 86_400)
+        ))
+    }
 }

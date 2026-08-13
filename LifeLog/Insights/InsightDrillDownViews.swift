@@ -194,7 +194,7 @@ struct InsightSleepDetailView: View {
             Section("About this data") {
                 Text(summary == nil ? "No Apple Health sleep samples were available. Recorded sleep-looking visits are shown as LifeLog activity only." : "Source: Apple Health. Sleep stages come from Health data when available. The score is a LifeLog estimate, not an Apple Watch or Apple Health score.")
                     .font(.footnote).foregroundStyle(.secondary)
-                if let imported = activityData.lastImport {
+                if let imported = activityData.ui.lastImport {
                     Text("Last successful Health import: \(imported.formatted(date: .abbreviated, time: .shortened))")
                         .font(.footnote).foregroundStyle(.secondary)
                 }

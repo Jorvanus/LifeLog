@@ -4,27 +4,6 @@ import HealthKit
 import SwiftData
 import Observation
 
-/// HealthKit’s observer callback is not annotated `Sendable`, but its completion has
-/// to follow the import across executors. This box is the one ownership boundary: it
-/// serialises access and invokes the callback at most once, even if a launch is torn
-/// down while a queued replacement import completes.
-private final class HealthObserverDelivery: @unchecked Sendable {
-    private let lock = NSLock()
-    private var completion: HKObserverQueryCompletionHandler?
-
-    init(_ completion: @escaping HKObserverQueryCompletionHandler) {
-        self.completion = completion
-    }
-
-    func finish() {
-        lock.lock()
-        let callback = completion
-        completion = nil
-        lock.unlock()
-        callback?()
-    }
-}
-
 /// Sleep details read from HealthKit for one selected overnight session.
 /// The score is LifeLog's transparent estimate; Apple does not expose its private
 /// Sleep Score as a public HealthKit value.
@@ -54,14 +33,13 @@ final class ActivityDataService {
     private let sampleReader = ActivitySampleReader()
     private var importWriter: ActivityImportActor?
     private var importTask: Task<Void, Never>?
-    private var importID: UUID?
     private var stepCache: [String: Double] = [:]
     private var healthObserverQueries: [HKQuery] = []
     /// HealthKit requires observer completion only after the anchored work has been
     /// processed. Coalesce arrivals while an import is active instead of acknowledging
     /// a Watch sync that is still waiting behind another batch.
-    private var observerCompletions: [HealthObserverDelivery] = []
-    private var healthImportQueuedForObserver = false
+    private let observerDeliveryCoordinator = HealthObserverDeliveryCoordinator()
+    private var importCoordinator = IncrementalImportCoordinator()
     private var healthSummaryCache: [String: HealthInsightsSummary] = [:]
     private let sleepAnchorKey = "LifeLog.HealthKit.sleepAnchor.v1"
     private let workoutAnchorKey = "LifeLog.HealthKit.workoutAnchor.v1"
@@ -76,22 +54,28 @@ final class ActivityDataService {
     )
     private static let uiTestHealthImportDate = Date(timeIntervalSinceReferenceDate: 789_004_800)
 
-    var healthStatus = ProcessInfo.processInfo.arguments.contains("-ui-test-health-connected") ? "Connected" : "Not connected"
+    let ui = HealthUIFacade()
+    var healthStatus: String { get { ui.authorizationStatus } set { ui.authorizationStatus = newValue } }
     /// Health categories iOS has never shown a prompt for. Non-empty means a sheet is
     /// still available for them; everything else has been asked once and cannot be
     /// asked again from inside the app.
-    var unaskedHealthTypes: [String] = []
-    var motionStatus = "Not requested"
-    var lastImport: Date? = ProcessInfo.processInfo.arguments.contains("-ui-test-health-connected")
-        ? uiTestHealthImportDate
-        : UserDefaults.standard.object(forKey: "LifeLog.HealthLastSuccessfulImport") as? Date
-    var lastError: String?
-    var importProgress: ActivityImportProgress?
+    var unaskedHealthTypes: [String] { get { ui.unaskedTypes } set { ui.unaskedTypes = newValue } }
+    var motionStatus: String { get { ui.motionStatus } set { ui.motionStatus = newValue } }
+    var lastImport: Date? { get { ui.lastImport } set { ui.lastImport = newValue } }
+    var lastError: String? { get { ui.lastError } set { ui.lastError = newValue } }
+    var importProgress: ActivityImportProgress? { get { ui.progress } set { ui.progress = newValue } }
     /// Evidence wording is intentionally narrower than Health authorisation: HealthKit
     /// does not reveal read denials, but a successful query can say what arrived.
-    var sleepEvidenceStatus = "No sleep evidence imported yet"
+    var sleepEvidenceStatus: String { get { ui.sleepEvidenceStatus } set { ui.sleepEvidenceStatus = newValue } }
 
-    var isImporting: Bool { importProgress?.isActive == true }
+    var isImporting: Bool { ui.isImporting }
+
+    init() {
+        ui.authorizationStatus = usesUITestHealthFixture ? "Connected" : "Not connected"
+        ui.lastImport = usesUITestHealthFixture
+            ? Self.uiTestHealthImportDate
+            : UserDefaults.standard.object(forKey: "LifeLog.HealthLastSuccessfulImport") as? Date
+    }
 
     func connect(_ context: ModelContext, container: ModelContainer) {
         self.context = context
@@ -141,25 +125,18 @@ final class ActivityDataService {
 
     private func processHealthObserverDelivery(_ delivery: HealthObserverDelivery) {
         invalidateHealthSummaryCache()
-        observerCompletions.append(delivery)
-        guard !isImporting else {
-            healthImportQueuedForObserver = true
-            return
-        }
+        guard observerDeliveryCoordinator.receive(delivery, importing: isImporting) else { return }
         // Anchors make this cheap; the two-day read is only the bounded sleep rebuild
         // and catches a complete night that was delivered after waking.
         startImport(healthDays: 2, motionDays: nil)
     }
 
     private func finishHealthObserverDeliveries() {
-        let completions = observerCompletions
-        observerCompletions.removeAll()
-        completions.forEach { $0.finish() }
+        observerDeliveryCoordinator.finishAll()
     }
 
     private func continueQueuedHealthObserverImportIfNeeded() -> Bool {
-        guard healthImportQueuedForObserver else { return false }
-        healthImportQueuedForObserver = false
+        guard observerDeliveryCoordinator.takeReplacementIfNeeded() else { return false }
         startImport(healthDays: 2, motionDays: nil)
         return true
     }
@@ -227,14 +204,12 @@ final class ActivityDataService {
         }
         unaskedHealthTypes = unasked.sorted()
 
-        if unknown && unasked.isEmpty {
-            healthStatus = "Couldn’t check"
-        } else if unasked.isEmpty {
+        healthStatus = HealthAuthorizationService.status(
+            unaskedCount: unasked.count, totalCount: healthTypes.count, hadUnknownResult: unknown
+        )
+        if unasked.isEmpty, healthStatus == "Connected" {
             UserDefaults.standard.set(true, forKey: healthRequestedKey)
-            healthStatus = "Connected"
-        } else if unasked.count == healthTypes.count {
-            healthStatus = "Not connected"
-        } else {
+        } else if healthStatus == "Partly connected" {
             // Naming what is outstanding matters: a route permission missing while
             // sleep and workouts work is invisible otherwise, and it is the difference
             // between a walk having a path and being two timestamps.
@@ -336,8 +311,10 @@ final class ActivityDataService {
 
         let lastMotion = UserDefaults.standard.object(forKey: motionRefreshKey) as? Date
         let motionDue = lastMotion.map { now.timeIntervalSince($0) >= motionRefreshInterval } ?? true
-        let motionDays = motionDue && CMMotionActivityManager.isActivityAvailable()
-            && CMMotionActivityManager.authorizationStatus() == .authorized ? 7 : nil
+        let motionDays = motionDue && MotionActivityReader.isReadable(
+            available: CMMotionActivityManager.isActivityAvailable(),
+            authorization: CMMotionActivityManager.authorizationStatus()
+        ) ? 7 : nil
 
         let lastHealth = UserDefaults.standard.object(forKey: healthRefreshKey) as? Date
         let healthDue = lastHealth.map { now.timeIntervalSince($0) >= healthRefreshInterval } ?? true
@@ -520,7 +497,7 @@ final class ActivityDataService {
     func healthSummary(for interval: DateInterval) async -> HealthInsightsSummary? {
         if usesUITestHealthFixture { return uiTestHealthSummary(for: interval) }
         guard interval.duration > 0, HKHealthStore.isHealthDataAvailable() else { return nil }
-        let key = "\(interval.start.timeIntervalSinceReferenceDate)-\(interval.end.timeIntervalSinceReferenceDate)"
+        let key = HealthSummaryReader.cacheKey(for: interval)
         if let cached = healthSummaryCache[key] { return cached }
         async let fixtures = sampleReader.healthInsightsFixtures(in: interval)
         async let sleep = sleepSummary(for: interval)
@@ -602,7 +579,7 @@ final class ActivityDataService {
         let startedAt = Date.now
         guard HKHealthStore.isHealthDataAvailable(),
               let stepType = HKObjectType.quantityType(forIdentifier: .stepCount) else { return nil }
-        let cacheKey = "\(interval.start.timeIntervalSinceReferenceDate)-\(interval.end.timeIntervalSinceReferenceDate)"
+        let cacheKey = HealthSummaryReader.cacheKey(for: interval)
         if let cached = stepCache[cacheKey] { return cached }
         let predicate = HKQuery.predicateForSamples(
             withStart: interval.start,
@@ -665,8 +642,7 @@ final class ActivityDataService {
             return
         }
         importTask?.cancel()
-        let id = UUID()
-        importID = id
+        let id = importCoordinator.begin()
         importProgress = ActivityImportProgress(state: .preparing, title: "Preparing import…", completed: 0, total: 0)
         lastError = nil
 
@@ -760,6 +736,9 @@ final class ActivityDataService {
                     )
                 }
                 try await importWriter.finish()
+                // A newer request cancels this task and owns all user-visible state.
+                // Its anchor must win too; a superseded read can be replayed safely.
+                guard importCoordinator.mayPublish(id) else { return }
                 // Commit anchors only after all records have been saved. If the
                 // task is cancelled or the store fails, the next launch safely
                 // re-reads that window and the writer's duplicate checks remain
@@ -768,7 +747,6 @@ final class ActivityDataService {
                     UserDefaults.standard.set(sleepResultAnchor, forKey: sleepAnchorKey)
                     UserDefaults.standard.set(workoutResultAnchor, forKey: workoutAnchorKey)
                 }
-                guard importID == id else { return }
                 healthStatus = healthDays == nil ? healthStatus : "Connected"
                 refreshMotionStatus()
                 lastImport = .now
@@ -778,6 +756,7 @@ final class ActivityDataService {
                 importProgress = ActivityImportProgress(state: .complete, title: "Import complete",
                                                         completed: records.count, total: records.count)
                 importTask = nil
+                importCoordinator.finish(id)
                 // Unconditionally, not only when slow. This import has its own store
                 // connection and its save lands on top of whatever the main context
                 // wrote, so "did it run, and when" is the question every visit
@@ -802,21 +781,23 @@ final class ActivityDataService {
                 if healthDays != nil { finishHealthObserverDeliveries() }
             } catch is CancellationError {
                 await importWriter.cancel()
-                guard importID == id else { return }
+                guard importCoordinator.mayPublish(id) else { return }
                 importProgress = ActivityImportProgress(state: .cancelled, title: "Import cancelled",
                                                         completed: importProgress?.completed ?? 0,
                                                         total: importProgress?.total ?? 0)
                 importTask = nil
+                importCoordinator.finish(id)
                 if continueQueuedHealthObserverImportIfNeeded() { return }
                 if healthDays != nil { finishHealthObserverDeliveries() }
             } catch {
                 await importWriter.cancel()
-                guard importID == id else { return }
+                guard importCoordinator.mayPublish(id) else { return }
                 lastError = "Recent activity couldn’t finish importing. Batches already saved remain available."
                 importProgress = ActivityImportProgress(state: .failed, title: "Import failed",
                                                         completed: importProgress?.completed ?? 0,
                                                         total: importProgress?.total ?? 0)
                 importTask = nil
+                importCoordinator.finish(id)
                 Diagnostics.record(error, context: context, subsystem: "Activity Import",
                                    operation: "background import")
                 if continueQueuedHealthObserverImportIfNeeded() { return }
@@ -872,7 +853,7 @@ final class ActivityDataService {
 
     private func updateProgress(id: UUID, state: ActivityImportProgress.State, title: String,
                                 completed: Int, total: Int) {
-        guard importID == id else { return }
+        guard importCoordinator.mayPublish(id) else { return }
         importProgress = ActivityImportProgress(state: state, title: title,
                                                 completed: completed, total: total)
     }
