@@ -281,14 +281,14 @@ struct InsightsDonutChart: View {
                 Text(placeName).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             if let visit = segment.visit {
+                // The reasoning behind the confidence label -- "Evidence: ..." -- used
+                // to print here too, but this card is a compact glance, not the place to
+                // audit an inference: the same detail is on Timeline, and "View entry"
+                // below opens the full editor's own "Inferred activity evidence" section
+                // for whoever wants it.
                 Text(visit.confidenceLabel)
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(visit.recognitionConfidence == "confirmed" ? .green : .secondary)
-                Text("Evidence: \(evidenceText(for: visit))")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
             } else {
                 Text("No inferred activity")
                     .font(.caption2)
@@ -321,7 +321,10 @@ struct InsightsDonutChart: View {
     }
 
     private func evidenceText(for visit: Visit) -> String {
-        var evidence = visit.inferenceEvidence
+        // "Place name: X" duplicates the place name this card already shows on its
+        // own line just above; dropping it here, not in `Visit.inferenceEvidence`
+        // itself, since VisitEditor's fuller evidence list doesn't repeat it nearby.
+        var evidence = visit.inferenceEvidence.filter { !$0.hasPrefix("Place name:") }
         let key = visit.placeName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if !key.isEmpty, key != "identifying…", key != "unknown place" {
             let recurrence = segments.compactMap(\.visit).filter { candidate in

@@ -9,6 +9,7 @@ struct InsightActivityDetailView: View {
     let rows: [SliceRow]
     var isUnlogged: Bool = false
     @State private var addingVisit = false
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         List {
@@ -49,7 +50,12 @@ struct InsightActivityDetailView: View {
         .navigationTitle(activity)
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .top) { PeriodBanner(title: periodTitle, interval: interval) }
-        .sheet(isPresented: $addingVisit) { ManualVisitView(range: interval) }
+        // This screen's own `rows` was computed once, from what Insights knew before
+        // the visit existed, so it stays stale even after the visit is saved. Rather
+        // than re-querying just to re-show the same now-wrong "Unlogged" placeholder,
+        // close back to Insights -- the outer sheet's `onDismiss: reloadInsights`
+        // (in InsightsView) picks up the new visit from there.
+        .sheet(isPresented: $addingVisit, onDismiss: { dismiss() }) { ManualVisitView(range: interval) }
         .accessibilityIdentifier("insight-activity-detail")
     }
 }
@@ -206,12 +212,13 @@ struct InsightGapDetailView: View {
     let gap: InsightSegment
     let periodTitle: String
     @State private var adding = false
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         List {
             Section("Unlogged time") {
                 LabeledContent("Period", value: periodTitle)
-                LabeledContent("Gap", value: "(gap.start.formatted(date: .omitted, time: .shortened))–(gap.end.formatted(date: .omitted, time: .shortened))")
+                LabeledContent("Gap", value: "\(gap.start.formatted(date: .omitted, time: .shortened))–\(gap.end.formatted(date: .omitted, time: .shortened))")
                 LabeledContent("Duration", value: formatHours(gap.hours))
             }
             Section {
@@ -224,7 +231,12 @@ struct InsightGapDetailView: View {
         }
         .navigationTitle("Timeline gap")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $adding) { ManualVisitView(range: DateInterval(start: gap.start, end: gap.end)) }
+        // Same reasoning as `InsightActivityDetailView`: this screen describes one
+        // specific gap that no longer exists once a visit fills it, so close back to
+        // Insights rather than linger showing a gap that was just resolved.
+        .sheet(isPresented: $adding, onDismiss: { dismiss() }) {
+            ManualVisitView(range: DateInterval(start: gap.start, end: gap.end))
+        }
         .accessibilityIdentifier("insight-gap-detail")
     }
 }

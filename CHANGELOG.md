@@ -2,6 +2,17 @@
 
 ## 2026-08-13
 
+### Donut selection closes properly after adding a visit, and its evidence line is gone
+
+- Tapping a donut wedge, then Add Visit, then Save left the stale "Unlogged"
+  (or "No recorded visits") screen sitting open instead of returning to
+  Insights with the new visit reflected — the sheet now closes back out so
+  the outer reload picks it up. The same fix applies to the Day timeline
+  bar's own gap screen. Also dropped the donut's centre-card "Evidence:
+  ..." line entirely — that reasoning is still available on Timeline and
+  in the full visit editor behind "View entry," and in the donut it was
+  often just repeating the place name already shown above it.
+
 ### Location search finds anywhere you've been, and Choose on Map suggests real places
 
 - Typing a place name in "Where?" now also searches every place you've ever
