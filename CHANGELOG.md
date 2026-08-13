@@ -2,6 +2,16 @@
 
 ## 2026-08-13
 
+### Location search finds anywhere you've been, and Choose on Map suggests real places
+
+- Typing a place name in "Where?" now also searches every place you've ever
+  recorded a visit at, not just the ones already nearby or promoted to a
+  Saved Place — fixing old entries no longer requires standing near the
+  place again. "Choose on map" no longer has its own naming field (the name
+  typed on the previous screen is what's used); dropping or moving the pin
+  now lists nearby Apple Maps points of interest and saved places at that
+  exact spot to pick from, instead of only accepting a bare coordinate.
+
 ### Unlogged Insights slices can be filled in again
 
 - Tapping the "Unlogged" wedge in the day Breakdown donut, or any unlogged

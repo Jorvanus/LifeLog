@@ -84,10 +84,32 @@ struct VisitLocationChooser: View {
     /// keystroke -- the list below the text field should react as you type,
     /// not only once you submit (that's what the separate "Search results"
     /// section, and its live Apple Maps request, are for).
+    ///
+    /// While typing, this searches every saved place by name -- not just the
+    /// ones within `load()`'s 800m proximity cutoff. Fixing an old visit means
+    /// standing somewhere else entirely, where a saved place from that day is
+    /// often nowhere near "nearby"; a name match should still find it. Apple's
+    /// own nearby points of interest stay proximity-scoped, since there is no
+    /// bounded list of those to search globally.
     private var filteredNearby: [NearbyPlace] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nearby }
-        return nearby.filter { $0.name.localizedCaseInsensitiveContains(trimmed) }
+        let matchingSaved = savedPlaces
+            .filter { $0.name.localizedCaseInsensitiveContains(trimmed) }
+            .map { place -> NearbyPlace in
+                let distance = anchor.map {
+                    CLLocation(latitude: $0.latitude, longitude: $0.longitude)
+                        .distance(from: CLLocation(latitude: place.latitude, longitude: place.longitude))
+                } ?? 0
+                return NearbyPlace(name: place.name, coordinate: place.coordinate, metres: distance, isKnown: true)
+            }
+        var seen = Set(matchingSaved.map { $0.name.lowercased() })
+        var merged = matchingSaved
+        for poi in nearby where !poi.isKnown && poi.name.localizedCaseInsensitiveContains(trimmed) {
+            guard seen.insert(poi.name.lowercased()).inserted else { continue }
+            merged.append(poi)
+        }
+        return merged.sorted { $0.metres < $1.metres }
     }
 
     var body: some View {
@@ -125,13 +147,13 @@ struct VisitLocationChooser: View {
                 } header: {
                     Text("Search results")
                 } footer: {
-                    Text("From Apple Maps, wherever the place actually is.")
+                    Text("Anywhere you've recorded a visit under this name, plus Apple Maps.")
                 }
             }
 
             Section {
                 NavigationLink {
-                    LocationDetailView(name: query, coordinate: anchor ?? .init(latitude: 0, longitude: 0)) { chosen, coordinate in
+                    ChooseOnMapView(name: query, coordinate: anchor ?? .init(latitude: 0, longitude: 0)) { chosen, coordinate in
                         name = chosen
                         resolution = .matched(name: chosen, coordinate: coordinate)
                     }
@@ -140,7 +162,7 @@ struct VisitLocationChooser: View {
                 }
                 .accessibilityIdentifier("choose-on-map-link")
             } footer: {
-                Text("Drop a pin anywhere — for a place search can't find, or one you'd rather point to yourself.")
+                Text("Drop a pin anywhere — for a place search can't find, or one you'd rather point to yourself. Named above; the map only decides where.")
             }
 
             Section {
@@ -159,12 +181,14 @@ struct VisitLocationChooser: View {
                 }
             } header: {
                 HStack {
-                    Text("Places nearby")
+                    Text(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Places nearby" : "Matching places")
                     Spacer()
                     if anchor != nil { Text("Ordered by distance").font(.caption2).textCase(nil) }
                 }
             } footer: {
-                Text("From Apple Maps, plus places already in your timeline. The arrow beside a name opens it on a map.")
+                Text(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                     ? "From Apple Maps, plus places already in your timeline. The arrow beside a name opens it on a map."
+                     : "Every saved place matching the name, wherever it is, plus nearby Apple Maps points of interest. The arrow beside a name opens it on a map.")
             }
         }
         .navigationTitle("Where?")
@@ -311,6 +335,15 @@ struct VisitLocationChooser: View {
     /// has no way to do. Biased loosely toward `anchor` when one exists so a common
     /// name (a chain café, a bank branch) prefers the nearby result, but Apple Maps
     /// still surfaces a distant, well-matched name over that bias.
+    ///
+    /// Also searches the recorded archive for the same substring, not only
+    /// `savedPlaces` (already covered live, per keystroke, by `filteredNearby`).
+    /// Fixing an old visit at a place that was only ever recorded once or twice --
+    /// never repeated enough to be learned into a Saved Place -- otherwise had no
+    /// way back into this screen at all. Run on submit rather than per keystroke,
+    /// same as the Apple Maps request beside it: an archive substring scan is
+    /// bounded but not free, and this field already has a live, cheap filter for
+    /// the common case.
     private func search() async {
         let cleanedQuery = TextSafety.clean(query, maximumLength: 120)
         guard !cleanedQuery.isEmpty else {
@@ -329,22 +362,175 @@ struct VisitLocationChooser: View {
         }
         let origin = anchor.map { CLLocation(latitude: $0.latitude, longitude: $0.longitude) }
 
+        func distance(to coordinate: CLLocationCoordinate2D) -> CLLocationDistance {
+            origin?.distance(from: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)) ?? 0
+        }
+
+        let historyMatches = ((try? PlaceVisitLookup.matchingPlaces(containing: cleanedQuery, context: context)) ?? [])
+            .map { NearbyPlace(name: $0.name, coordinate: $0.coordinate, metres: distance(to: $0.coordinate), isKnown: true) }
+        var seen = Set(historyMatches.map { $0.name.lowercased() })
+
         do {
             let response = try await MKLocalSearch(request: request).start()
-            searchResults = response.mapItems.compactMap { item -> NearbyPlace? in
+            let mapMatches = response.mapItems.compactMap { item -> NearbyPlace? in
                 guard let itemName = item.name else { return nil }
                 let coordinate = item.location.coordinate
                 guard CLLocationCoordinate2DIsValid(coordinate) else { return nil }
-                let distance = origin?.distance(from: CLLocation(latitude: coordinate.latitude,
-                                                                  longitude: coordinate.longitude)) ?? 0
-                return NearbyPlace(name: TextSafety.clean(itemName, maximumLength: 120),
-                                   coordinate: coordinate, metres: distance, isKnown: false)
-            }.sorted { $0.metres < $1.metres }
+                let cleanedName = TextSafety.clean(itemName, maximumLength: 120)
+                guard seen.insert(cleanedName.lowercased()).inserted else { return nil }
+                return NearbyPlace(name: cleanedName, coordinate: coordinate, metres: distance(to: coordinate), isKnown: false)
+            }
+            searchResults = (historyMatches + mapMatches).sorted { $0.metres < $1.metres }
         } catch {
-            searchResults = []
-            textSearchFailed = true
+            searchResults = historyMatches.sorted { $0.metres < $1.metres }
+            textSearchFailed = historyMatches.isEmpty
         }
         isSearchingByName = false
+    }
+}
+
+/// Drops a pin and, at wherever it lands, offers the same two sources
+/// `VisitLocationChooser` itself starts from: nearby Apple Maps points of
+/// interest and already-saved places. The name was already typed on the
+/// previous screen, so this page carries no naming field of its own -- it
+/// only decides where, either by accepting the bare pin under that name or
+/// by picking a named suggestion at the dropped position outright.
+struct ChooseOnMapView: View {
+    let initialName: String
+    let onUse: (String, CLLocationCoordinate2D) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @Query(sort: \SavedPlace.name) private var savedPlaces: [SavedPlace]
+
+    @State private var coordinate: CLLocationCoordinate2D
+    @State private var position: MapCameraPosition
+    @State private var suggestions: [VisitLocationChooser.NearbyPlace] = []
+    @State private var isSearching = false
+    @State private var searchTask: Task<Void, Never>?
+
+    init(name: String, coordinate: CLLocationCoordinate2D,
+         onUse: @escaping (String, CLLocationCoordinate2D) -> Void) {
+        self.initialName = name
+        self.onUse = onUse
+        _coordinate = State(initialValue: coordinate)
+        _position = State(initialValue: .region(MKCoordinateRegion(
+            center: coordinate, latitudinalMeters: 320, longitudinalMeters: 320)))
+    }
+
+    private var trimmedName: String { TextSafety.clean(initialName, maximumLength: 120) }
+
+    var body: some View {
+        Form {
+            Section {
+                MapReader { proxy in
+                    Map(position: $position) {
+                        Marker(trimmedName.isEmpty ? "Selected location" : trimmedName, coordinate: coordinate)
+                    }
+                    .frame(height: 260)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .onTapGesture(coordinateSpace: .local) { point in
+                        guard let updated = proxy.convert(point, from: .local),
+                              CLLocationCoordinate2DIsValid(updated) else { return }
+                        coordinate = updated
+                        refreshSuggestions()
+                    }
+                }
+                .accessibilityIdentifier("choose-on-map-view")
+            } header: {
+                Text("Map")
+            } footer: {
+                Text("Tap the map to move the pin.")
+            }
+
+            Section {
+                Button {
+                    onUse(trimmedName, coordinate)
+                    dismiss()
+                } label: {
+                    Label(trimmedName.isEmpty ? "Use this exact spot" : "Use “\(trimmedName)” at this spot",
+                          systemImage: "mappin.and.ellipse")
+                }
+                .disabled(trimmedName.isEmpty)
+                .accessibilityIdentifier("use-dropped-pin")
+            } footer: {
+                Text(trimmedName.isEmpty
+                     ? "Type a name on the previous screen to use this exact pin."
+                     : "Uses the pin's position with the name you typed.")
+            }
+
+            Section {
+                if isSearching {
+                    HStack(spacing: 10) { ProgressView(); Text("Looking near the pin…") }
+                } else if suggestions.isEmpty {
+                    Text("Nothing found at this spot.").font(.subheadline).foregroundStyle(.secondary)
+                } else {
+                    ForEach(suggestions) { place in
+                        Button {
+                            onUse(place.name, place.coordinate)
+                            dismiss()
+                        } label: {
+                            HStack(spacing: 8) {
+                                if place.isKnown {
+                                    Image(systemName: "clock.arrow.trianglehead.counterclockwise.rotate.90")
+                                        .font(.caption).foregroundStyle(.blue)
+                                        .accessibilityLabel("Used before")
+                                }
+                                Text(place.name).foregroundStyle(.primary)
+                                Spacer()
+                                Text("\(Int(place.metres.rounded())) m")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            } header: {
+                Text("Near this pin")
+            } footer: {
+                Text("From Apple Maps and places you've already saved, closest to the pin first. Picking one uses its own name and exact position instead of the pin.")
+            }
+        }
+        .navigationTitle("Choose on Map")
+        .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("choose-on-map-screen")
+        .task { refreshSuggestions() }
+    }
+
+    /// Re-run at the new pin position rather than the map's original centre --
+    /// the whole point of dropping a pin is to point somewhere the initial
+    /// anchor didn't already cover.
+    private func refreshSuggestions() {
+        searchTask?.cancel()
+        isSearching = true
+        let target = coordinate
+        searchTask = Task {
+            var results: [VisitLocationChooser.NearbyPlace] = []
+            let origin = CLLocation(latitude: target.latitude, longitude: target.longitude)
+            var known = Set<String>()
+            for place in savedPlaces {
+                let distance = origin.distance(from: CLLocation(latitude: place.latitude, longitude: place.longitude))
+                guard distance <= 400 else { continue }
+                known.insert(place.name.lowercased())
+                results.append(.init(name: place.name, coordinate: place.coordinate, metres: distance, isKnown: true))
+            }
+            let request = MKLocalPointsOfInterestRequest(center: target, radius: 200)
+            if let response = try? await MKLocalSearch(request: request).start() {
+                for item in response.mapItems {
+                    guard let itemName = item.name, !known.contains(itemName.lowercased()) else { continue }
+                    let itemCoordinate = item.location.coordinate
+                    guard CLLocationCoordinate2DIsValid(itemCoordinate) else { continue }
+                    results.append(.init(
+                        name: TextSafety.clean(itemName, maximumLength: 120),
+                        coordinate: itemCoordinate,
+                        metres: origin.distance(from: CLLocation(latitude: itemCoordinate.latitude,
+                                                                 longitude: itemCoordinate.longitude)),
+                        isKnown: false
+                    ))
+                }
+            }
+            guard !Task.isCancelled else { return }
+            suggestions = results.sorted { $0.metres < $1.metres }
+            isSearching = false
+        }
     }
 }
 

@@ -811,6 +811,41 @@ enum PlaceVisitLookup {
         ))
         return candidates.filter { $0.id != identifier && NameKey.matching($0.placeName) == key }
     }
+
+    /// Distinct places a name substring has ever been recorded at -- not only the
+    /// ones that went on to become a `SavedPlace`. A place visited once or twice
+    /// years ago, never repeated often enough to be learned, was otherwise
+    /// unfindable when fixing up an old entry: `VisitLocationChooser` only offered
+    /// what's nearby now or a fresh Apple Maps search, neither of which helps when
+    /// the person isn't standing there anymore.
+    ///
+    /// The predicate narrows in the store first, same as `visits(named:)` above, so
+    /// this stays a bounded query even against a large archive. `fetchLimit` caps
+    /// the rows read before dedup rather than the number of distinct places
+    /// returned, which is deliberate: a very common substring ("home") could
+    /// otherwise page through thousands of rows before finding a second distinct
+    /// name, and this is a live-search affordance, not an archive browser.
+    @MainActor
+    static func matchingPlaces(containing substring: String, limit: Int = 400,
+                               context: ModelContext) throws -> [(name: String, coordinate: CLLocationCoordinate2D)] {
+        let trimmed = substring.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2, !Visit.isPlaceholderName(trimmed) else { return [] }
+        var descriptor = FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.placeName.localizedStandardContains(trimmed) },
+            sortBy: [SortDescriptor(\Visit.arrival, order: .reverse)]
+        )
+        descriptor.fetchLimit = limit
+        let candidates = try context.fetch(descriptor)
+        var seen = Set<String>()
+        var results: [(name: String, coordinate: CLLocationCoordinate2D)] = []
+        for visit in candidates {
+            guard visit.latitude != 0 || visit.longitude != 0 else { continue }
+            let key = NameKey.matching(visit.placeName)
+            guard !key.isEmpty, seen.insert(key).inserted else { continue }
+            results.append((visit.placeName, visit.coordinate))
+        }
+        return results
+    }
 }
 
 /// The places either side of a record that has no position of its own.
