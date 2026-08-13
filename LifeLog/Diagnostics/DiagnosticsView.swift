@@ -7,6 +7,7 @@ struct DiagnosticsView: View {
     @Query(sort: \DiagnosticEvent.createdAt, order: .reverse) private var diagnostics: [DiagnosticEvent]
     /// Counted from the store rather than handed over by Insights, so this screen does
     /// not depend on that one having been opened first.
+    // SwiftData's property-wrapper predicate macro cannot capture a static value.
     @Query(filter: #Predicate<Visit> { $0.source == "automatic-superseded" })
     private var supersededVisits: [Visit]
     @Query(filter: #Predicate<Visit> { $0.source == "automatic" })
@@ -281,7 +282,7 @@ struct LocationJournalView: View {
                             Spacer()
                             Text(event.transition)
                                 .font(.caption2.weight(.semibold))
-                                .foregroundStyle(event.transition == "ignored" ? .orange : .secondary)
+                                .foregroundStyle(event.resolverTransition == .ignored ? .orange : .secondary)
                         }
                         Text(detail(for: event)).font(.footnote).foregroundStyle(.secondary)
                         Text(position(of: event)).font(.caption2).foregroundStyle(.tertiary)

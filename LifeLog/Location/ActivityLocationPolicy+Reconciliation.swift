@@ -162,7 +162,7 @@ extension ActivityLocationPolicy {
                                          now: Date = .now) {
         let locations = visits.filter { isLocationVisit($0) && !isSupersededLocation($0) }
         let travel = visits.filter {
-            $0.source == "motion" && $0.recognitionConfidence != "confirmed" && isTravelActivity($0)
+            $0.visitSource == .motion && $0.recognition != .confirmed && isTravelActivity($0)
         }.sorted { $0.arrival < $1.arrival }
         var leader: Visit?
         for candidate in travel {

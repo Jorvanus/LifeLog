@@ -2,6 +2,90 @@ import Foundation
 import SwiftData
 import CoreLocation
 
+enum LocationCallbackType: Codable, Sendable, Equatable, Hashable {
+    case visitArrival, visitDeparture, locationUpdate, geofenceEntry, geofenceExit
+    case authorization, failure, liveLocationSample, liveLocationConfirmed
+    case unknown(String)
+
+    static let visitArrivalRaw = "visit-arrival"
+    static let visitDepartureRaw = "visit-departure"
+    static let locationUpdateRaw = "location-update"
+    static let geofenceEntryRaw = "geofence-entry"
+    static let geofenceExitRaw = "geofence-exit"
+    static let authorizationRaw = "authorization"
+    static let failureRaw = "failure"
+    static let liveLocationSampleRaw = "live-location-sample"
+    static let liveLocationConfirmedRaw = "live-location-confirmed"
+
+    init(rawValue: String) {
+        switch rawValue {
+        case Self.visitArrivalRaw: self = .visitArrival
+        case Self.visitDepartureRaw: self = .visitDeparture
+        case Self.locationUpdateRaw: self = .locationUpdate
+        case Self.geofenceEntryRaw: self = .geofenceEntry
+        case Self.geofenceExitRaw: self = .geofenceExit
+        case Self.authorizationRaw: self = .authorization
+        case Self.failureRaw: self = .failure
+        case Self.liveLocationSampleRaw: self = .liveLocationSample
+        case Self.liveLocationConfirmedRaw: self = .liveLocationConfirmed
+        default: self = .unknown(rawValue)
+        }
+    }
+    var rawValue: String {
+        switch self {
+        case .visitArrival: Self.visitArrivalRaw
+        case .visitDeparture: Self.visitDepartureRaw
+        case .locationUpdate: Self.locationUpdateRaw
+        case .geofenceEntry: Self.geofenceEntryRaw
+        case .geofenceExit: Self.geofenceExitRaw
+        case .authorization: Self.authorizationRaw
+        case .failure: Self.failureRaw
+        case .liveLocationSample: Self.liveLocationSampleRaw
+        case .liveLocationConfirmed: Self.liveLocationConfirmedRaw
+        case .unknown(let raw): raw
+        }
+    }
+    init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    func encode(to encoder: Encoder) throws { var container = encoder.singleValueContainer(); try container.encode(rawValue) }
+}
+
+enum LocationCallbackTransition: Codable, Sendable, Equatable, Hashable {
+    case created, closed, merged, superseded, ignored, none
+    case unknown(String)
+
+    static let createdRaw = "created"
+    static let closedRaw = "closed"
+    static let mergedRaw = "merged"
+    static let supersededRaw = "superseded"
+    static let ignoredRaw = "ignored"
+    static let noneRaw = "none"
+
+    init(rawValue: String) {
+        switch rawValue {
+        case Self.createdRaw: self = .created
+        case Self.closedRaw: self = .closed
+        case Self.mergedRaw: self = .merged
+        case Self.supersededRaw: self = .superseded
+        case Self.ignoredRaw: self = .ignored
+        case Self.noneRaw: self = .none
+        default: self = .unknown(rawValue)
+        }
+    }
+    var rawValue: String {
+        switch self {
+        case .created: Self.createdRaw
+        case .closed: Self.closedRaw
+        case .merged: Self.mergedRaw
+        case .superseded: Self.supersededRaw
+        case .ignored: Self.ignoredRaw
+        case .none: Self.noneRaw
+        case .unknown(let raw): raw
+        }
+    }
+    init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    func encode(to encoder: Encoder) throws { var container = encoder.singleValueContainer(); try container.encode(rawValue) }
+}
+
 /// One raw location callback, as it arrived and as it was acted on.
 ///
 /// Everything else LifeLog records is a conclusion — a visit, a correction, a
@@ -50,7 +134,7 @@ final class LocationEvent {
     init(recordedAt: Date = .now, callbackType: String, callbackAt: Date,
          arrival: Date? = nil, departure: Date? = nil,
          latitude: Double, longitude: Double, accuracy: Double,
-         distanceFromCurrentVisit: Double? = nil, transition: String = "none",
+         distanceFromCurrentVisit: Double? = nil, transition: String = LocationCallbackTransition.noneRaw,
          visitArrival: Date? = nil) {
         self.recordedAt = recordedAt
         self.callbackType = TextSafety.clean(callbackType, maximumLength: 30)
@@ -66,6 +150,8 @@ final class LocationEvent {
     }
 
     var coordinate: CLLocationCoordinate2D { .init(latitude: latitude, longitude: longitude) }
+    var callback: LocationCallbackType { LocationCallbackType(rawValue: callbackType) }
+    var resolverTransition: LocationCallbackTransition { LocationCallbackTransition(rawValue: transition) }
 
     /// How long after the moment it describes the callback actually arrived. Core
     /// Location can deliver a `CLVisit` many minutes late, and a stay that looks

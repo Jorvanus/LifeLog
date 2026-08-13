@@ -288,7 +288,7 @@ struct InsightsDonutChart: View {
                 // for whoever wants it.
                 Text(visit.confidenceLabel)
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(visit.recognitionConfidence == "confirmed" ? .green : .secondary)
+                    .foregroundStyle(visit.recognition == .confirmed ? .green : .secondary)
             } else {
                 Text("No inferred activity")
                     .font(.caption2)

@@ -56,6 +56,9 @@ enum LifeArea: String, CaseIterable, Codable, Identifiable, Sendable, Hashable {
         var definitions: [String: ActivityDefinition] = [:]
         for definition in ActivityCatalog.load() {
             definitions[definition.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()] = definition
+            for legacyName in definition.legacyNames {
+                definitions[legacyName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()] = definition
+            }
         }
         var totals: [LifeArea: Double] = [:]
         for segment in segments where !segment.isUnlogged {

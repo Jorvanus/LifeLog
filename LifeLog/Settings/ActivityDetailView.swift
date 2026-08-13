@@ -358,15 +358,21 @@ struct ActivityDetailView: View {
 
         let previousName = activityName
         let renamed = previousName.caseInsensitiveCompare(cleanName) != .orderedSame
-        // A rename leaves every existing visit holding the old wording, orphaned from
-        // the catalogue. Offer to carry them across rather than silently stranding them.
         let collision = ActivityCatalog.load().first {
             $0.id != definition.id && $0.name.caseInsensitiveCompare(cleanName) == .orderedSame
         }
-        if renamed, statistics.occasions > 0 || collision != nil {
-            renameRequest = RenameRequest(definition: definition, previousName: previousName,
-                                          count: statistics.occasions, mergesInto: collision)
+        // A new name must remain unique. We no longer offer a merge here: merging two
+        // IDs by spelling would undo the identity separation this migration adds.
+        if collision != nil {
+            renameFailed = true
             return
+        }
+        if renamed, let oldIndex = ActivityCatalog.load().firstIndex(where: { $0.id == definition.id }) {
+            var aliases = ActivityCatalog.load()[oldIndex].legacyNames
+            if !aliases.contains(where: { $0.caseInsensitiveCompare(previousName) == .orderedSame }) {
+                aliases.append(previousName)
+            }
+            definition.legacyNames = aliases
         }
         saveActivityColor(categoryColorValue, forActivity: cleanName)
         commit(definition)
@@ -380,6 +386,7 @@ struct ActivityDetailView: View {
             activities.append(definition)
         }
         ActivityCatalog.save(activities)
+        try? ActivityIdentityMigration.upsert(definition, context: context)
         InsightsInvalidation.invalidate(reason: "Activity definition changed", context: context)
         dismiss()
     }
@@ -392,6 +399,7 @@ struct ActivityDetailView: View {
             var activities = ActivityCatalog.load()
             activities.removeAll { $0.id == request.definition.id }
             ActivityCatalog.save(activities)
+            try? ActivityIdentityMigration.deactivate(id: request.definition.id, context: context)
             if updatingVisits {
                 applyVisitRename(from: request.previousName, to: target.name)
             }
@@ -404,6 +412,7 @@ struct ActivityDetailView: View {
                 activities.append(request.definition)
             }
             ActivityCatalog.save(activities)
+            try? ActivityIdentityMigration.upsert(request.definition, context: context)
             if updatingVisits {
                 applyVisitRename(from: request.previousName, to: request.definition.name)
             }
@@ -438,6 +447,7 @@ struct ActivityDetailView: View {
         var activities = ActivityCatalog.load()
         activities.removeAll { $0.id == existingID }
         ActivityCatalog.save(activities)
+        if let existingID { try? ActivityIdentityMigration.deactivate(id: existingID, context: context) }
         InsightsInvalidation.invalidate(reason: "Activity deleted", context: context)
         dismiss()
     }

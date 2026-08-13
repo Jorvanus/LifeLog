@@ -19,6 +19,135 @@ enum VisitResolutionActor: Sendable {
     case user
 }
 
+/// Source values are stored as strings for compatibility with the existing timeline
+/// store and backups. The enum is deliberately lossless: a newer build's source is
+/// readable by an older build as `.unknown(raw)` rather than being recast as a known
+/// source and changing resolver behaviour.
+enum VisitSource: Codable, Sendable, Equatable, Hashable {
+    case automatic, automaticSuperseded, manual, importedJournal, motion
+    case healthSleep, healthWalking, healthWorkout
+    case unknown(String)
+
+    static let automaticRaw = "automatic"
+    static let automaticSupersededRaw = "automatic-superseded"
+    static let manualRaw = "manual"
+    static let importedJournalRaw = "imported-journal"
+    static let motionRaw = "motion"
+    static let healthSleepRaw = "health-sleep"
+    static let healthWalkingRaw = "health-walking"
+    static let healthWorkoutRaw = "health-workout"
+
+    init(rawValue: String) {
+        switch rawValue {
+        case Self.automaticRaw: self = .automatic
+        case Self.automaticSupersededRaw: self = .automaticSuperseded
+        case Self.manualRaw: self = .manual
+        case Self.importedJournalRaw: self = .importedJournal
+        case Self.motionRaw: self = .motion
+        case Self.healthSleepRaw: self = .healthSleep
+        case Self.healthWalkingRaw: self = .healthWalking
+        case Self.healthWorkoutRaw: self = .healthWorkout
+        default: self = .unknown(rawValue)
+        }
+    }
+
+    var rawValue: String {
+        switch self {
+        case .automatic: Self.automaticRaw
+        case .automaticSuperseded: Self.automaticSupersededRaw
+        case .manual: Self.manualRaw
+        case .importedJournal: Self.importedJournalRaw
+        case .motion: Self.motionRaw
+        case .healthSleep: Self.healthSleepRaw
+        case .healthWalking: Self.healthWalkingRaw
+        case .healthWorkout: Self.healthWorkoutRaw
+        case .unknown(let raw): raw
+        }
+    }
+
+    init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    func encode(to encoder: Encoder) throws { var container = encoder.singleValueContainer(); try container.encode(rawValue) }
+
+    var isLocation: Bool { self == .automatic || self == .manual }
+    var isHealth: Bool { self == .healthSleep || self == .healthWalking || self == .healthWorkout }
+    var isDeviceActivity: Bool { self == .motion || isHealth }
+}
+
+enum VisitRecognitionConfidence: Codable, Sendable, Equatable, Hashable {
+    case confirmed, learned, low, medium, high, device, imported
+    case unknown(String)
+
+    static let confirmedRaw = "confirmed"
+    static let learnedRaw = "learned"
+    static let lowRaw = "low"
+    static let mediumRaw = "medium"
+    static let highRaw = "high"
+    static let deviceRaw = "device"
+    static let importedRaw = "imported"
+
+    init?(rawValue: String?) {
+        guard let rawValue else { return nil }
+        switch rawValue {
+        case Self.confirmedRaw: self = .confirmed
+        case Self.learnedRaw: self = .learned
+        case Self.lowRaw: self = .low
+        case Self.mediumRaw: self = .medium
+        case Self.highRaw: self = .high
+        case Self.deviceRaw: self = .device
+        case Self.importedRaw: self = .imported
+        default: self = .unknown(rawValue)
+        }
+    }
+
+    var rawValue: String {
+        switch self {
+        case .confirmed: Self.confirmedRaw
+        case .learned: Self.learnedRaw
+        case .low: Self.lowRaw
+        case .medium: Self.mediumRaw
+        case .high: Self.highRaw
+        case .device: Self.deviceRaw
+        case .imported: Self.importedRaw
+        case .unknown(let raw): raw
+        }
+    }
+
+    init(from decoder: Decoder) throws { self = Self(rawValue: try decoder.singleValueContainer().decode(String.self))! }
+    func encode(to encoder: Encoder) throws { var container = encoder.singleValueContainer(); try container.encode(rawValue) }
+}
+
+enum PlaceFieldProvenance: Codable, Sendable, Equatable, Hashable {
+    case maps, savedPlace, manual, nameFallback
+    case unknown(String)
+
+    static let mapsRaw = "maps"
+    static let savedPlaceRaw = "saved-place"
+    static let manualRaw = "manual"
+    static let nameFallbackRaw = "name-fallback"
+
+    init?(rawValue: String?) {
+        guard let rawValue else { return nil }
+        switch rawValue {
+        case Self.mapsRaw: self = .maps
+        case Self.savedPlaceRaw: self = .savedPlace
+        case Self.manualRaw: self = .manual
+        case Self.nameFallbackRaw: self = .nameFallback
+        default: self = .unknown(rawValue)
+        }
+    }
+    var rawValue: String {
+        switch self {
+        case .maps: Self.mapsRaw
+        case .savedPlace: Self.savedPlaceRaw
+        case .manual: Self.manualRaw
+        case .nameFallback: Self.nameFallbackRaw
+        case .unknown(let raw): raw
+        }
+    }
+    init(from decoder: Decoder) throws { self = Self(rawValue: try decoder.singleValueContainer().decode(String.self))! }
+    func encode(to encoder: Encoder) throws { var container = encoder.singleValueContainer(); try container.encode(rawValue) }
+}
+
 /// The durable reason an automatic callback was kept, merged, or withdrawn. This is
 /// deliberately separate from its current state: a superseded row still needs to say
 /// whether it was a duplicate or movement evidence, and an accepted row needs to say
@@ -78,6 +207,10 @@ final class SavedPlace {
     var longitude: Double
     var radius: Double
     var defaultActivity: String
+    /// Stable activity identity for new and migrated places. `defaultActivity` stays
+    /// as the historical/display snapshot so old backups and imported labels never
+    /// need an eager archive rewrite just to open the app.
+    var activityDefinitionID: UUID?
     /// Apple Maps' own identifier for this place, when it came from a Maps result.
     ///
     /// Names are a poor identity: two businesses share one, and a place renamed by
@@ -90,11 +223,13 @@ final class SavedPlace {
     var role: String?
 
     init(name: String, latitude: Double, longitude: Double, radius: Double = 100,
-         defaultActivity: String = "", mapsIdentifier: String? = nil) {
+         defaultActivity: String = "", mapsIdentifier: String? = nil,
+         activityDefinitionID: UUID? = nil) {
         self.name = TextSafety.clean(name, maximumLength: 100)
         self.latitude = latitude; self.longitude = longitude
         self.radius = min(max(radius, 25), 500)
         self.defaultActivity = TextSafety.clean(defaultActivity, maximumLength: 80)
+        self.activityDefinitionID = activityDefinitionID
         self.mapsIdentifier = mapsIdentifier.map { TextSafety.clean($0, maximumLength: 120) }
     }
 
@@ -103,6 +238,41 @@ final class SavedPlace {
     var homeWorkRole: SavedPlaceRole? {
         get { role.flatMap(SavedPlaceRole.init(rawValue:)) }
         set { role = newValue?.rawValue }
+    }
+}
+
+/// The durable source of truth for an activity's presentation and Insights grouping.
+///
+/// The UserDefaults `ActivityDefinition` value remains a compatibility snapshot for
+/// V1/V2 backups while `ActivityDefinitionRecord` gives Visits and Saved Places a
+/// stable identity. Deleted definitions are retained so historical activity IDs do
+/// not get silently reassigned to another, similarly named activity.
+@Model
+final class ActivityDefinitionRecord {
+    @Attribute(.unique) var stableID: UUID
+    var name: String
+    var category: String
+    var symbol: String
+    var colorHex: String?
+    var lifeArea: String
+    var isActive: Bool
+    var createdAt: Date
+    var modifiedAt: Date
+
+    init(stableID: UUID = UUID(), name: String, category: String = "Other",
+         symbol: String = "circle.fill", colorHex: String? = nil,
+         lifeArea: String? = nil, isActive: Bool = true,
+         createdAt: Date = .now, modifiedAt: Date = .now) {
+        self.stableID = stableID
+        self.name = TextSafety.clean(name, maximumLength: 80)
+        self.category = TextSafety.clean(category, maximumLength: 40)
+        self.symbol = TextSafety.clean(symbol, maximumLength: 60)
+        self.colorHex = colorHex
+        self.lifeArea = lifeArea.flatMap { LifeArea(rawValue: $0)?.rawValue }
+            ?? LifeArea.default(for: name, category: category).rawValue
+        self.isActive = isActive
+        self.createdAt = createdAt
+        self.modifiedAt = modifiedAt
     }
 }
 
@@ -139,6 +309,10 @@ final class Visit {
     var placeName: String
     var inferredActivity: String
     var userActivity: String?
+    /// Stable identity of the chosen activity. The labels above deliberately remain
+    /// snapshots: imports and old backups can continue to show exactly what they
+    /// recorded until the staged resolver can safely match them.
+    var activityDefinitionID: UUID?
     var note: String
     var source: String
     var recognitionConfidence: String?
@@ -184,7 +358,8 @@ final class Visit {
     init(arrival: Date, departure: Date? = nil, latitude: Double, longitude: Double,
          placeName: String = Visit.identifyingPlaceName,
          inferredActivity: String = "Visiting", userActivity: String? = nil,
-         note: String = "", source: String = "automatic",
+         activityDefinitionID: UUID? = nil,
+         note: String = "", source: String = VisitSource.automaticRaw,
          recognitionConfidence: String? = nil, candidateData: Data? = nil,
          mapsIdentifier: String? = nil, placeFieldProvenance: String? = nil,
          resolutionExplanation: String? = nil,
@@ -195,6 +370,7 @@ final class Visit {
         self.placeName = TextSafety.clean(placeName, maximumLength: 120)
         self.inferredActivity = TextSafety.clean(inferredActivity, maximumLength: 80)
         self.userActivity = userActivity.map { TextSafety.clean($0, maximumLength: 80) }
+        self.activityDefinitionID = activityDefinitionID
         self.note = TextSafety.clean(note, maximumLength: 2_000)
         self.source = TextSafety.clean(source, maximumLength: 40)
         self.recognitionConfidence = recognitionConfidence.map { TextSafety.clean($0, maximumLength: 20) }
@@ -218,6 +394,9 @@ final class Visit {
         guard let userActivity, !userActivity.isEmpty else { return inferredActivity }
         return userActivity
     }
+    var visitSource: VisitSource { VisitSource(rawValue: source) }
+    var recognition: VisitRecognitionConfidence? { VisitRecognitionConfidence(rawValue: recognitionConfidence) }
+    var placeProvenance: PlaceFieldProvenance? { PlaceFieldProvenance(rawValue: placeFieldProvenance) }
     var duration: TimeInterval { max(0, (departure ?? Date()).timeIntervalSince(arrival)) }
 
     /// Names LifeLog assigns before a place is known. They are not real labels, so
@@ -234,7 +413,7 @@ final class Visit {
     /// resolved a place name for it, and the person has not said what they were
     /// doing. Place name is the signal here — LifeLog no longer models a place type.
     var needsCategorisation: Bool {
-        source == "automatic" && hasPlaceholderName && userActivity?.isEmpty != false
+        visitSource == .automatic && hasPlaceholderName && userActivity?.isEmpty != false
     }
 
     /// A named guess LifeLog is not sure about. Apple Maps can return a nearby
@@ -242,10 +421,10 @@ final class Visit {
     /// — and simply writing that name in would look like a settled fact. The place
     /// has a name, so it is not "uncategorised"; it still needs a person to agree.
     var needsConfirmation: Bool {
-        guard source == "automatic", !hasPlaceholderName,
+        guard visitSource == .automatic, !hasPlaceholderName,
               userActivity?.isEmpty != false else { return false }
-        switch recognitionConfidence?.lowercased() {
-        case "low", "medium": return true
+        switch recognition {
+        case .low, .medium: return true
         default: return false
         }
     }
@@ -417,16 +596,16 @@ final class Visit {
     /// derived from existing local fields so no new persisted schema is needed.
     var inferenceEvidence: [String] {
         var evidence: [String] = []
-        if recognitionConfidence == "learned" { evidence.append("Saved place") }
+        if recognition == .learned { evidence.append("Saved place") }
         if !hasPlaceholderName { evidence.append("Place name: \(placeName)") }
         let hour = Calendar.current.component(.hour, from: arrival)
         if hour < 11 { evidence.append("Morning time") }
         else if hour < 17 { evidence.append("Afternoon time") }
         else { evidence.append("Evening time") }
-        if source == "motion" || source == "health-walking" || source == "health-workout" {
+        if visitSource == .motion || visitSource == .healthWalking || visitSource == .healthWorkout {
             evidence.append("Device movement")
         }
-        if source == "automatic" && recognitionConfidence != "learned" {
+        if visitSource == .automatic && recognition != .learned {
             evidence.append("On-device inference")
         }
         return evidence

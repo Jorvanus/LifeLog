@@ -2,6 +2,18 @@
 
 ## 2026-08-13
 
+### History remains readable as LifeLog evolves
+
+- LifeLog now understands the source and confidence of recorded activity through
+  stable internal values while preserving unfamiliar historical values exactly as
+  recorded in Timeline, diagnostics, exports, and backups.
+
+### Activities now have durable identities
+
+- LifeLog now stages activity definitions into the timeline store and links existing
+  visits and Saved Places in small background-safe batches, preserving old labels and
+  backups while making future activity changes independent of archive size.
+
 ### Health updates stay out of the way
 
 - Apple Health imports now use dedicated authorization, observer, summary, motion,

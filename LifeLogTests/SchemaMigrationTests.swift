@@ -122,6 +122,37 @@ struct SchemaMigrationTests {
         #expect(reread[0].routeDistance > 0)
     }
 
+    @Test("A V9 store gains optional activity identities without rewriting snapshots")
+    func migratesV9StoreAddingActivityIdentity() throws {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LifeLog-v9-\(UUID().uuidString).store")
+        defer { try? FileManager.default.removeItem(at: storeURL) }
+        let schema = Schema(versionedSchema: LifeLogSchemaV9.self)
+        let configuration = ModelConfiguration("LifeLogMigrationFixture", schema: schema, url: storeURL,
+                                               allowsSave: true, cloudKitDatabase: .none)
+        do {
+            let container = try ModelContainer(for: schema, configurations: [configuration])
+            let context = ModelContext(container)
+            context.insert(LifeLogSchemaV9.Visit(arrival: Date(timeIntervalSince1970: 1_800_000_000),
+                                                  latitude: -23.4, longitude: 150.5,
+                                                  placeName: "Cafe", inferredActivity: "Coffee",
+                                                  note: "V9 snapshot", source: "automatic"))
+            context.insert(LifeLogSchemaV9.SavedPlace(name: "Cafe", latitude: -23.4,
+                                                       longitude: 150.5, radius: 80,
+                                                       defaultActivity: "Coffee"))
+            try context.save()
+        }
+
+        let context = ModelContext(try openVersionedStore(at: storeURL))
+        let visit = try context.fetch(FetchDescriptor<Visit>()).first
+        let place = try context.fetch(FetchDescriptor<SavedPlace>()).first
+        #expect(visit?.activity == "Coffee")
+        #expect(visit?.activityDefinitionID == nil)
+        #expect(place?.defaultActivity == "Coffee")
+        #expect(place?.activityDefinitionID == nil)
+        #expect(try context.fetch(FetchDescriptor<ActivityDefinitionRecord>()).isEmpty)
+    }
+
     @Test("A V3 store gains Maps identity without losing its places")
     func migratesV3StoreAddingMapsIdentifier() throws {
         let storeURL = FileManager.default.temporaryDirectory
@@ -575,7 +606,7 @@ struct SchemaMigrationTests {
     /// way to what the app actually ships. Left at V5 while the app moved to V6, these
     /// tests would keep passing without once exercising the new stage.
     private func openVersionedStore(at url: URL) throws -> ModelContainer {
-        let schema = Schema(versionedSchema: LifeLogSchemaV9.self)
+        let schema = Schema(versionedSchema: LifeLogSchemaV10.self)
         let configuration = ModelConfiguration(
             "LifeLogMigrationFixture", schema: schema, url: url,
             allowsSave: true, cloudKitDatabase: .none

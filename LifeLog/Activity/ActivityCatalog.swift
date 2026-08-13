@@ -10,6 +10,10 @@ struct ActivityDefinition: Codable, Identifiable, Hashable, Sendable {
     /// Stored per activity so a user can change Insights grouping without changing
     /// the existing editable activity category or any place data.
     var lifeArea: String
+    /// Historical display labels which still point to this definition. This is a
+    /// compatibility alias, not a normalised search key: two separately-created
+    /// labels are never combined merely because their spelling looks alike.
+    var legacyNames: [String]
 
     init(id: UUID = UUID(), name: String, category: String = "Other", symbol: String = "circle.fill",
          lifeArea: String? = nil) {
@@ -20,9 +24,10 @@ struct ActivityDefinition: Codable, Identifiable, Hashable, Sendable {
         self.colorHex = nil
         self.lifeArea = lifeArea.flatMap { LifeArea(rawValue: $0)?.rawValue }
             ?? LifeArea.default(for: self.name, category: self.category).rawValue
+        self.legacyNames = []
     }
 
-    private enum CodingKeys: String, CodingKey { case id, name, category, symbol, colorHex, lifeArea }
+    private enum CodingKeys: String, CodingKey { case id, name, category, symbol, colorHex, lifeArea, legacyNames }
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -33,6 +38,130 @@ struct ActivityDefinition: Codable, Identifiable, Hashable, Sendable {
         let storedArea = try values.decodeIfPresent(String.self, forKey: .lifeArea)
         self.init(id: id, name: name, category: category, symbol: symbol, lifeArea: storedArea)
         colorHex = try values.decodeIfPresent(String.self, forKey: .colorHex)
+        legacyNames = try values.decodeIfPresent([String].self, forKey: .legacyNames) ?? []
+    }
+
+    func matchesSnapshot(_ value: String) -> Bool {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.caseInsensitiveCompare(trimmed) == .orderedSame ||
+            legacyNames.contains { $0.caseInsensitiveCompare(trimmed) == .orderedSame }
+    }
+}
+
+/// Staged bridge from the historic UserDefaults catalogue to the versioned store.
+///
+/// This deliberately uses exact display labels for legacy rows. Normalising names
+/// here would make separately-created activities such as `Cafe` and `Café` share a
+/// definition, which is irreversible data loss. New mutations should pass an ID
+/// directly; the name lookup exists only for old snapshots waiting for a batch.
+@MainActor
+enum ActivityIdentityMigration {
+    static let batchSize = 500
+
+    struct Progress: Sendable, Equatable {
+        let adoptedDefinitions: Int
+        let linkedVisits: Int
+        let linkedPlaces: Int
+        let hasMore: Bool
+    }
+
+    /// Imports each legacy definition by its pre-existing UUID. IDs, not names, are
+    /// the deduplication key: two similar labels remain two activities by design.
+    static func adoptLegacyDefinitions(context: ModelContext,
+                                       definitions: [ActivityDefinition] = ActivityCatalog.load()) throws -> Int {
+        let existing = try context.fetch(FetchDescriptor<ActivityDefinitionRecord>())
+        let existingIDs = Set(existing.map(\.stableID))
+        var adopted = 0
+        for definition in definitions where !existingIDs.contains(definition.id) {
+            context.insert(ActivityDefinitionRecord(
+                stableID: definition.id, name: definition.name, category: definition.category,
+                symbol: definition.symbol, colorHex: definition.colorHex,
+                lifeArea: definition.lifeArea
+            ))
+            adopted += 1
+        }
+        if adopted > 0 { try context.save() }
+        return adopted
+    }
+
+    /// Links one bounded page of old rows. A completed label must exactly equal one
+    /// persisted definition; ambiguous or imported labels remain snapshots until the
+    /// owner explicitly adopts/categorises them.
+    static func backfillNextBatch(context: ModelContext, limit: Int = batchSize) throws -> Progress {
+        let adopted = try adoptLegacyDefinitions(context: context)
+        let definitions = try context.fetch(FetchDescriptor<ActivityDefinitionRecord>())
+        let exactIDs = Dictionary(grouping: definitions.filter(\.isActive), by: \.name)
+            .compactMapValues { $0.count == 1 ? $0[0].stableID : nil }
+
+        var visitDescriptor = FetchDescriptor<Visit>(predicate: #Predicate { $0.activityDefinitionID == nil },
+                                                      sortBy: [SortDescriptor(\.arrival)])
+        visitDescriptor.fetchLimit = limit
+        let visits = try context.fetch(visitDescriptor)
+        var linkedVisits = 0
+        for visit in visits {
+            if let id = exactIDs[visit.activity] {
+                visit.activityDefinitionID = id
+                linkedVisits += 1
+            }
+        }
+
+        var placeDescriptor = FetchDescriptor<SavedPlace>(predicate: #Predicate { $0.activityDefinitionID == nil },
+                                                           sortBy: [SortDescriptor(\.name)])
+        placeDescriptor.fetchLimit = limit
+        let places = try context.fetch(placeDescriptor)
+        var linkedPlaces = 0
+        for place in places {
+            if let id = exactIDs[place.defaultActivity] {
+                place.activityDefinitionID = id
+                linkedPlaces += 1
+            }
+        }
+        if linkedVisits > 0 || linkedPlaces > 0 { try context.save() }
+        return Progress(adoptedDefinitions: adopted, linkedVisits: linkedVisits,
+                        linkedPlaces: linkedPlaces,
+                        hasMore: visits.count == limit || places.count == limit)
+    }
+
+    /// A rename changes one definition. Visit and place snapshots stay untouched so
+    /// old imports/export formats remain intelligible; migrated rows continue to
+    /// point at the same ID and therefore require no archive rewrite.
+    static func rename(id: UUID, to name: String, context: ModelContext) throws {
+        let descriptor = FetchDescriptor<ActivityDefinitionRecord>(predicate: #Predicate { $0.stableID == id })
+        guard let record = try context.fetch(descriptor).first else { return }
+        let cleaned = TextSafety.clean(name, maximumLength: 80)
+        guard !cleaned.isEmpty else { return }
+        record.name = cleaned
+        record.modifiedAt = .now
+        try context.save()
+    }
+
+    /// Mirrors a catalogue edit into the durable record. The UserDefaults value is
+    /// retained during the staged rollout for older backups and views not yet moved
+    /// to IDs; the UUID is the only identity used when deciding which row to edit.
+    static func upsert(_ definition: ActivityDefinition, context: ModelContext) throws {
+        let descriptor = FetchDescriptor<ActivityDefinitionRecord>(predicate: #Predicate { $0.stableID == definition.id })
+        if let record = try context.fetch(descriptor).first {
+            record.name = definition.name
+            record.category = definition.category
+            record.symbol = definition.symbol
+            record.colorHex = definition.colorHex
+            record.lifeArea = definition.lifeArea
+            record.isActive = true
+            record.modifiedAt = .now
+        } else {
+            context.insert(ActivityDefinitionRecord(stableID: definition.id, name: definition.name,
+                                                    category: definition.category, symbol: definition.symbol,
+                                                    colorHex: definition.colorHex, lifeArea: definition.lifeArea))
+        }
+        try context.save()
+    }
+
+    static func deactivate(id: UUID, context: ModelContext) throws {
+        let descriptor = FetchDescriptor<ActivityDefinitionRecord>(predicate: #Predicate { $0.stableID == id })
+        guard let record = try context.fetch(descriptor).first else { return }
+        record.isActive = false
+        record.modifiedAt = .now
+        try context.save()
     }
 }
 
@@ -153,7 +282,7 @@ enum ActivityCatalog {
         let key = activity.trimmingCharacters(in: .whitespacesAndNewlines)
         // The person's own list first. It is the one they edit, so a group they chose
         // has to outrank anything LifeLog assumes about the name.
-        if let match = load().first(where: { $0.name.caseInsensitiveCompare(key) == .orderedSame }) {
+        if let match = load().first(where: { $0.matchesSnapshot(key) }) {
             return match.category
         }
         // Then what LifeLog ships, read from `defaults` rather than restated. Reached
@@ -173,7 +302,7 @@ enum ActivityCatalog {
     /// imported/deleted labels use the same category/name fallback as Insights.
     static func lifeArea(for activity: String, category: String? = nil) -> LifeArea {
         let key = activity.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let definition = load().first(where: { $0.name.caseInsensitiveCompare(key) == .orderedSame }),
+        if let definition = load().first(where: { $0.matchesSnapshot(key) }),
            let area = LifeArea(rawValue: definition.lifeArea) {
             return area
         }
@@ -417,12 +546,16 @@ enum ActivityCatalog {
     @discardableResult
     static func adoptFromHistory(_ name: String) -> Bool {
         var catalogue = load()
-        let key = NameKey.matching(name)
-        guard !key.isEmpty, !catalogue.contains(where: { NameKey.matching($0.name) == key }) else {
+        let label = TextSafety.clean(name, maximumLength: 80)
+        // This is intentionally an exact (case-insensitive) label comparison, not
+        // `NameKey.matching`: accent/punctuation folding is useful for finding a
+        // place, but would turn two deliberately distinct activity definitions into
+        // one identity before the person ever had a chance to choose.
+        guard !label.isEmpty, !catalogue.contains(where: { $0.matchesSnapshot(label) }) else {
             return false
         }
-        let category = suggestedCategory(for: name)
-        catalogue.append(ActivityDefinition(name: name, category: category,
+        let category = suggestedCategory(for: label)
+        catalogue.append(ActivityDefinition(name: label, category: category,
                                             symbol: ActivityIcons.symbol(forCategory: category)))
         save(catalogue)
         return true
@@ -430,8 +563,8 @@ enum ActivityCatalog {
 
     /// Whether a label is already in the catalogue, matched the way adoption matches.
     static func isAdopted(_ name: String) -> Bool {
-        let key = NameKey.matching(name)
-        return !key.isEmpty && load().contains { NameKey.matching($0.name) == key }
+        let label = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !label.isEmpty && load().contains { $0.matchesSnapshot(label) }
     }
 
     private static let workingRenamedKey = "LifeLog.ActivityCatalog.workingRenamed.v1"

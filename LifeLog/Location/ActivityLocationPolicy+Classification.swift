@@ -10,11 +10,11 @@ import CoreLocation
 /// sites — only the text moved.
 extension ActivityLocationPolicy {
     nonisolated static func isLocationVisit(_ visit: Visit) -> Bool {
-        visit.source == "automatic" || visit.source == "manual"
+        visit.visitSource.isLocation
     }
 
     nonisolated static func isSupersededLocation(_ visit: Visit) -> Bool {
-        visit.source == "automatic-superseded"
+        visit.visitSource == .automaticSuperseded
     }
 
     /// What the resolver would derive for a visit's resolution state from its
@@ -30,8 +30,8 @@ extension ActivityLocationPolicy {
     nonisolated static func derivedAutomaticResolutionState(
         source: String, placeName: String, recognitionConfidence: String?
     ) -> VisitResolutionState {
-        if source == supersededLocationSource { return .superseded }
-        if source == "automatic" && (Visit.isPlaceholderName(placeName) || recognitionConfidence == nil) {
+        if VisitSource(rawValue: source) == .automaticSuperseded { return .superseded }
+        if VisitSource(rawValue: source) == .automatic && (Visit.isPlaceholderName(placeName) || recognitionConfidence == nil) {
             return .provisional
         }
         return .resolved
@@ -54,7 +54,7 @@ extension ActivityLocationPolicy {
     }
 
     nonisolated static func isDeviceActivity(_ visit: Visit) -> Bool {
-        visit.source == "motion" || visit.source.hasPrefix("health-")
+        visit.visitSource.isDeviceActivity
     }
 
 
@@ -68,7 +68,7 @@ extension ActivityLocationPolicy {
     /// A workout is someone pressing Start. It is a first-hand statement that this
     /// stretch of time was a walk, and no Core Location *guess* outranks it.
     nonisolated static func isWorkoutSession(_ visit: Visit) -> Bool {
-        visit.source == "health-workout"
+        visit.visitSource == .healthWorkout
     }
 
 
@@ -98,7 +98,7 @@ extension ActivityLocationPolicy {
     /// two faults locked each other in. Both paths ask the same question now.
     nonisolated static func isDeclaredJourney(source: String, route: [RoutePoint],
                                               stays: [Visit]) -> Bool {
-        guard source == "health-workout" else { return false }
+        guard VisitSource(rawValue: source) == .healthWorkout else { return false }
         return !stays.contains { leftStay(route: route, stay: $0) == false }
     }
 

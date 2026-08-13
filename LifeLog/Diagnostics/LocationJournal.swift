@@ -21,16 +21,14 @@ enum LocationJournal {
     /// diagnostics that outlive a single investigation.
     static let retentionLimit = 500
 
-    enum Transition: String {
-        case created, closed, merged, superseded, ignored, none
-    }
+    typealias Transition = LocationCallbackTransition
 
     /// - Parameters:
     ///   - openVisit: the visit in progress when the callback landed, for the distance
     ///     between them. Nil when nothing was open, which is recorded as nil rather
     ///     than zero — "no stay was running" and "the callback was here" are different
     ///     facts and only one of them is a distance.
-    static func record(_ callbackType: String, at coordinate: CLLocationCoordinate2D,
+    static func record(_ callbackType: LocationCallbackType, at coordinate: CLLocationCoordinate2D,
                        callbackAt: Date, arrival: Date? = nil, departure: Date? = nil,
                        accuracy: CLLocationAccuracy = -1,
                        transition: Transition = .none,
@@ -44,7 +42,7 @@ enum LocationJournal {
                 .distance(from: CLLocation(latitude: visit.latitude, longitude: visit.longitude))
         }
         context.insert(LocationEvent(
-            callbackType: callbackType, callbackAt: callbackAt,
+            callbackType: callbackType.rawValue, callbackAt: callbackAt,
             arrival: arrival, departure: departure,
             latitude: coordinate.latitude, longitude: coordinate.longitude,
             accuracy: accuracy, distanceFromCurrentVisit: distance,
@@ -52,6 +50,19 @@ enum LocationJournal {
         ))
         trim(context)
         try? context.save()
+    }
+
+    /// Compatibility entry point for stored/replayed callback strings. It keeps
+    /// unknown values intact instead of rejecting a diagnostic from a newer build.
+    static func record(_ callbackType: String, at coordinate: CLLocationCoordinate2D,
+                       callbackAt: Date, arrival: Date? = nil, departure: Date? = nil,
+                       accuracy: CLLocationAccuracy = -1,
+                       transition: Transition = .none,
+                       openVisit: Visit? = nil,
+                       context: ModelContext?) {
+        record(LocationCallbackType(rawValue: callbackType), at: coordinate, callbackAt: callbackAt,
+               arrival: arrival, departure: departure, accuracy: accuracy,
+               transition: transition, openVisit: openVisit, context: context)
     }
 
     /// Counts first and deletes only the overflow, like the diagnostic log it sits

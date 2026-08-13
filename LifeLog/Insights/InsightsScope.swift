@@ -43,9 +43,9 @@ enum InsightsScope: String, CaseIterable, Identifiable, Sendable {
         case .allHistory:
             return true
         case .deviceAndManual:
-            return visit.source != "imported-journal"
+            return visit.visitSource != .importedJournal
         case .importedJournal:
-            return visit.source == "imported-journal"
+            return visit.visitSource == .importedJournal
         case .confirmedLocations:
             return ActivityLocationPolicy.isLocationVisit(visit) && visit.resolutionState == .resolved
         }

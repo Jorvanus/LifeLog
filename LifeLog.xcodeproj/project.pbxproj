@@ -1009,7 +1009,7 @@
 				CODE_SIGN_ENTITLEMENTS = LifeLog/LifeLog.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 145;
+				CURRENT_PROJECT_VERSION = 146;
 				DEVELOPMENT_TEAM = 337KNRL5L8;
 				INFOPLIST_FILE = LifeLog/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
@@ -1017,7 +1017,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.64.0;
+				MARKETING_VERSION = 1.65.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aaronbaxter.LifeLog;
 				SDKROOT = iphoneos;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -1129,7 +1129,7 @@
 				CODE_SIGN_ENTITLEMENTS = LifeLog/LifeLog.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 145;
+				CURRENT_PROJECT_VERSION = 146;
 				DEVELOPMENT_TEAM = 337KNRL5L8;
 				INFOPLIST_FILE = LifeLog/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
@@ -1137,7 +1137,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.64.0;
+				MARKETING_VERSION = 1.65.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aaronbaxter.LifeLog;
 				SDKROOT = iphoneos;
 				SWIFT_EMIT_LOC_STRINGS = YES;

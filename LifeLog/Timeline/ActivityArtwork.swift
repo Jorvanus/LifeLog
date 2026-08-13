@@ -35,7 +35,7 @@ struct ActivityIcon: View {
         // useful fallback for imported labels that have not been adopted yet, but it
         // must not override an icon chosen in Activities.
         if let definition = ActivityCatalog.load().first(where: {
-            $0.name.caseInsensitiveCompare(activity.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame
+            $0.matchesSnapshot(activity)
         }) {
             return definition.symbol
         }

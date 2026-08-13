@@ -111,6 +111,7 @@ struct ActivitiesView: View {
                 ActivityEditor { newActivity in
                     activities.append(newActivity)
                     ActivityCatalog.save(activities)
+                    try? ActivityIdentityMigration.upsert(newActivity, context: context)
                     refreshUsage()
                 }
             }
@@ -118,8 +119,10 @@ struct ActivitiesView: View {
     }
 
     private func delete(_ offsets: IndexSet) {
+        let deleted = offsets.map { activities[$0].id }
         activities.remove(atOffsets: offsets)
         ActivityCatalog.save(activities)
+        for id in deleted { try? ActivityIdentityMigration.deactivate(id: id, context: context) }
         InsightsInvalidation.invalidate(reason: "Activity deleted", context: context)
     }
 

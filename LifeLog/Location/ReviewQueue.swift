@@ -87,7 +87,7 @@ enum ReviewQueue {
 
     /// Why this stay needs a person, or nil if it does not.
     static func reason(for visit: Visit, visitCount: Int, now: Date = .now) -> Reason? {
-        guard visit.source == "automatic", !visit.isIgnored else { return nil }
+        guard visit.visitSource == .automatic, !visit.isIgnored else { return nil }
         if visit.needsCategorisation { return .unidentified }
         if visit.needsConfirmation { return .uncertainMatch }
         // Only a settled-looking stay reaches here, so the bar is higher: it must be

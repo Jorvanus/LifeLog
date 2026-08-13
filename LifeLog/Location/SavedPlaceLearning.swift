@@ -82,7 +82,7 @@ enum SavedPlaceLearning {
     /// own matching Maps identity or name.
     static func learnAutomatically(from selected: PlaceSuggestion, visit: Visit,
                                    context: ModelContext) throws -> SavedPlace? {
-        guard isLocated(visit), visit.source == "automatic",
+        guard isLocated(visit), visit.visitSource == .automatic,
               // A fuzzed or genuinely poor fix is not proof this arrival happened
               // where it says it did; it must not become the anchor of a future
               // geofence.
@@ -269,7 +269,7 @@ enum SavedPlaceLearning {
     /// source. Imported entries often have no coordinates; a matching automatic
     /// visit can safely supply them when time and place/activity evidence agree.
     static func enrichImportedVisits(with coreVisit: Visit, context: ModelContext) throws {
-        guard isLocated(coreVisit), coreVisit.source == "automatic" else { return }
+        guard isLocated(coreVisit), coreVisit.visitSource == .automatic else { return }
         let imported = try context.fetch(FetchDescriptor<Visit>(
             predicate: #Predicate { $0.source == "imported-journal" }
         ))

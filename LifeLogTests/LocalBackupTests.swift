@@ -7,6 +7,43 @@ import Testing
 struct LocalBackupTests {
     private let base = Date(timeIntervalSince1970: 1_800_000_000)
 
+    @Test("Unknown persisted domain values remain lossless and are not reclassified")
+    func unknownRawDomainValuesRemainReadable() throws {
+        let visit = Visit(arrival: base, latitude: 0, longitude: 0, placeName: "Future source",
+                          inferredActivity: "Visiting", source: "satellite-import-v2",
+                          recognitionConfidence: "machine-verified",
+                          placeFieldProvenance: "nearby-device-cache")
+        #expect(visit.visitSource == .unknown("satellite-import-v2"))
+        #expect(visit.recognition == .unknown("machine-verified"))
+        #expect(visit.placeProvenance == .unknown("nearby-device-cache"))
+        #expect(visit.visitSource.isLocation == false)
+
+        let callback = LocationEvent(callbackType: "beacon-entry-v2", callbackAt: base,
+                                     latitude: 0, longitude: 0, accuracy: 10,
+                                     transition: "deferred")
+        #expect(callback.callback == .unknown("beacon-entry-v2"))
+        #expect(callback.resolverTransition == .unknown("deferred"))
+
+        let diagnostic = DiagnosticEvent(subsystem: "Future subsystem", severity: "notice",
+                                         message: "Kept as evidence", category: "retention-v2")
+        #expect(diagnostic.diagnosticSubsystem == .unknown("Future subsystem"))
+        #expect(diagnostic.diagnosticSeverity == .unknown("notice"))
+        #expect(diagnostic.diagnosticCategory == .unknown("retention-v2"))
+
+        let context = try makeContext()
+        context.insert(visit)
+        context.insert(callback)
+        try context.save()
+        let backup = try LocalBackupService.makeBackup(context: context, diagnostics: [diagnostic])
+        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(LifeLogBackup.self, from: backup)
+        #expect(decoded.visits.first?.source == "satellite-import-v2")
+        #expect(decoded.visits.first?.recognitionConfidence == "machine-verified")
+        #expect(decoded.visits.first?.placeFieldProvenance == "nearby-device-cache")
+        #expect(decoded.locationEvents?.first?.callbackType == "beacon-entry-v2")
+        #expect(decoded.locationEvents?.first?.transition == "deferred")
+    }
+
     @Test("Local backup round-trips into an empty store")
     func roundTrip() throws {
         let sourceContext = try makeContext()
@@ -379,10 +416,62 @@ struct LocalBackupTests {
         #expect(validation.resolvedOverlaps == 0)
     }
 
+    @Test("Activity identity migration keeps similar names separate and links only exact snapshots")
+    func activityIdentityMigrationIsConservative() throws {
+        let context = try makeContext()
+        let defaultsSuite = "ActivityIdentityMigration.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: defaultsSuite)!
+        defer { defaults.removePersistentDomain(forName: defaultsSuite) }
+        let cafe = ActivityDefinition(name: "Cafe", category: "Food & Drink", symbol: "cup.and.saucer.fill")
+        let accented = ActivityDefinition(name: "Café", category: "Social", symbol: "person.2.fill")
+        try ActivityCatalog.withStorage(defaults) {
+            ActivityCatalog.save([cafe, accented])
+            context.insert(Visit(arrival: base, latitude: 0, longitude: 0, placeName: "A", inferredActivity: "Cafe"))
+            context.insert(Visit(arrival: base.addingTimeInterval(60), latitude: 0, longitude: 0, placeName: "B", inferredActivity: "Café"))
+            context.insert(Visit(arrival: base.addingTimeInterval(120), latitude: 0, longitude: 0, placeName: "C", inferredActivity: "CAFE"))
+            try context.save()
+            #expect(ActivityCatalog.adoptFromHistory("Cafe!") == true)
+            #expect(ActivityCatalog.load().count == 3)
+            let progress = try ActivityIdentityMigration.backfillNextBatch(context: context)
+            #expect(progress.adoptedDefinitions == 3)
+        }
+        let definitions = try context.fetch(FetchDescriptor<ActivityDefinitionRecord>())
+        #expect(definitions.count == 3)
+        #expect(Set(definitions.map(\.stableID)).isSuperset(of: Set([cafe.id, accented.id])))
+        let visits = try context.fetch(FetchDescriptor<Visit>(sortBy: [SortDescriptor(\.arrival)]))
+        #expect(visits[0].activityDefinitionID == cafe.id)
+        #expect(visits[1].activityDefinitionID == accented.id)
+        #expect(visits[2].activityDefinitionID == nil)
+    }
+
+    @Test("Activity identity backfill is bounded for a large archive")
+    func activityIdentityBackfillIsBounded() throws {
+        let context = try makeContext()
+        let defaultsSuite = "ActivityIdentityMigration.large.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: defaultsSuite)!
+        defer { defaults.removePersistentDomain(forName: defaultsSuite) }
+        let work = ActivityDefinition(name: "Work", category: "Work", symbol: "briefcase.fill")
+        try ActivityCatalog.withStorage(defaults) {
+            ActivityCatalog.save([work])
+            for index in 0..<32_000 {
+                context.insert(Visit(arrival: base.addingTimeInterval(Double(index)), latitude: 0, longitude: 0,
+                                     placeName: "Office", inferredActivity: "Work"))
+            }
+            try context.save()
+            let clock = ContinuousClock()
+            let start = clock.now
+            let progress = try ActivityIdentityMigration.backfillNextBatch(context: context)
+            #expect(progress.linkedVisits == ActivityIdentityMigration.batchSize)
+            #expect(clock.now - start < .seconds(10))
+        }
+        let linked = try context.fetch(FetchDescriptor<Visit>(predicate: #Predicate { $0.activityDefinitionID != nil })).count
+        #expect(linked == ActivityIdentityMigration.batchSize)
+    }
+
     private func makeContext() throws -> ModelContext {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(
-            for: Visit.self, SavedPlace.self, VisitCorrection.self, DiagnosticEvent.self, LocationEvent.self,
+            for: Visit.self, SavedPlace.self, ActivityDefinitionRecord.self, VisitCorrection.self, DiagnosticEvent.self, LocationEvent.self,
             configurations: configuration
         )
         return ModelContext(container)

@@ -42,7 +42,7 @@ enum SleepSessionRepair {
             previous.healthKitSampleIDs = ids.isEmpty ? nil : Array(ids)
             // A person's own confirmation on either half of the duplicate outranks
             // the device guess the survivor would otherwise keep.
-            if previous.recognitionConfidence != "confirmed", candidate.recognitionConfidence == "confirmed" {
+            if previous.recognition != .confirmed, candidate.recognition == .confirmed {
                 previous.recognitionConfidence = candidate.recognitionConfidence
                 previous.userActivity = candidate.userActivity
             }

@@ -164,7 +164,7 @@ struct TravelInsights {
         let text = "\(visit.activity) \(visit.inferredActivity) \(visit.placeName)".lowercased()
         if text.contains("flight") || text.contains("plane") { return .flight }
         if ActivityLocationPolicy.isWalkingActivity(visit) { return .walking }
-        if visit.source == "motion" && text.contains("travel") { return .vehicle }
+        if visit.visitSource == .motion && text.contains("travel") { return .vehicle }
         if text.contains("automotive") || text.contains("vehicle") || text.contains("driv") || text.contains("car") {
             return .vehicle
         }

@@ -22,13 +22,13 @@ enum ActivityByPlaceAndTime {
     /// what an old app guessed it was. Weighting it above "learned"/"confirmed"
     /// would let that guess outvote the person's own corrections of it.
     static func weight(source: String, recognitionConfidence: String?) -> Int {
-        if recognitionConfidence == "confirmed" { return 5 }
-        switch source {
-        case "imported-journal": return 1
-        case "automatic", "manual":
-            switch recognitionConfidence {
-            case "learned": return 3
-            case "high", "medium": return 2
+        if VisitRecognitionConfidence(rawValue: recognitionConfidence) == .confirmed { return 5 }
+        switch VisitSource(rawValue: source) {
+        case .importedJournal: return 1
+        case .automatic, .manual:
+            switch VisitRecognitionConfidence(rawValue: recognitionConfidence) {
+            case .learned: return 3
+            case .high, .medium: return 2
             default: return 1
             }
         default: return 1
@@ -61,7 +61,8 @@ enum ActivityByPlaceAndTime {
         // A correction is the person saying so directly, worth the same as a
         // confirmed visit regardless of what the visit it corrected once said.
         for correction in corrections where band.contains(correction.visitArrival) {
-            votes[correction.newActivity, default: 0] += weight(source: "manual", recognitionConfidence: "confirmed")
+            votes[correction.newActivity, default: 0] += weight(source: VisitSource.manualRaw,
+                                                                  recognitionConfidence: VisitRecognitionConfidence.confirmedRaw)
         }
 
         guard let best = votes.max(by: { $0.value < $1.value }), best.value >= minimumEvidence else { return nil }

@@ -137,7 +137,7 @@ struct JournalCSVImporter {
     }
 
     private static func importKey(for visit: Visit) -> String? {
-        guard visit.source == "imported-journal" else { return nil }
+        guard visit.visitSource == .importedJournal else { return nil }
         return importKey(start: visit.arrival, place: visit.placeName, activity: visit.activity)
     }
 

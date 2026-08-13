@@ -9,7 +9,7 @@ import SwiftUI
 
 func activityColor(_ activity: String) -> Color {
     let key = activity.trimmingCharacters(in: .whitespacesAndNewlines)
-    if let definition = ActivityCatalog.load().first(where: { $0.name.caseInsensitiveCompare(key) == .orderedSame }),
+    if let definition = ActivityCatalog.load().first(where: { $0.matchesSnapshot(key) }),
        let colorHex = definition.colorHex, let color = Color(hex: colorHex) { return color }
     if let stored = UserDefaults.standard.string(forKey: "LifeLog.ActivityColor.\(key)"),
        let color = Color(hex: stored) { return color }

@@ -96,7 +96,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     private struct PendingArrival {
         let coordinate: CLLocationCoordinate2D?
         let arrival: Date
-        let callbackType: String
+        let callbackType: LocationCallbackType
         let accuracy: CLLocationAccuracy
     }
 
@@ -276,16 +276,16 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             // launch before writing a new durable arrival.
             beginLocationConfirmation(
                 pendingArrival: .init(coordinate: coordinate, arrival: arrival,
-                                      callbackType: "visit-arrival", accuracy: accuracy)
+                                      callbackType: .visitArrival, accuracy: accuracy)
             )
         case let .visitDeparture(coordinate, arrival, departure, accuracy):
             closeVisit(at: coordinate, arrival: arrival, departure: departure,
-                       callbackType: "visit-departure", accuracy: accuracy)
+                       callbackType: .visitDeparture, accuracy: accuracy)
         case let .locationSample(sample):
             let location = CLLocation(coordinate: sample.coordinate, altitude: 0,
                                       horizontalAccuracy: sample.accuracy, verticalAccuracy: -1,
                                       timestamp: sample.timestamp)
-            recordLocationEvidence(location, callbackType: "location-update")
+            recordLocationEvidence(location, callbackType: .locationUpdate)
         case .failure:
             cancelLocationConfirmation()
             lastError = "Location updates are temporarily unavailable."
@@ -293,7 +293,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         }
     }
 
-    private func recordLocationEvidence(_ location: CLLocation, callbackType: String,
+    private func recordLocationEvidence(_ location: CLLocation, callbackType: LocationCallbackType,
                                         transition: LocationJournal.Transition = .none) {
         latestLocationTimestamp = location.timestamp
         identifyRecentUnknown(near: location, accuracy: location.horizontalAccuracy)
@@ -366,7 +366,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         Diagnostics.record(context, subsystem: "Core Location",
                            message: "Live location sample \(confirmation.samples.count)/\(LocationArrivalConfirmation.maximumSamples): stationary=\(update.stationary), accuracy=\(Int(location.horizontalAccuracy.rounded())) m, elapsed=\(Int(Date.now.timeIntervalSince(confirmation.startedAt).rounded())) s.",
                            severity: "info")
-        recordLocationEvidence(location, callbackType: "live-location-sample")
+        recordLocationEvidence(location, callbackType: .liveLocationSample)
         if confirmation.hasReachedSampleLimit {
             finishLocationConfirmation(reason: "sample limit")
         }
@@ -415,7 +415,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 return
             }
         }
-        recordLocationEvidence(location, callbackType: "live-location-confirmed", transition: .created)
+        recordLocationEvidence(location, callbackType: .liveLocationConfirmed, transition: .created)
         if let arrival {
             createVisit(at: location.coordinate, arrival: arrival.arrival,
                         callbackType: arrival.callbackType, accuracy: location.horizontalAccuracy)
@@ -434,7 +434,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     }
 
     private func createVisit(at coordinate: CLLocationCoordinate2D, arrival: Date,
-                             callbackType: String = "visit-arrival",
+                             callbackType: LocationCallbackType = .visitArrival,
                              accuracy: CLLocationAccuracy = -1) {
         guard let context, CLLocationCoordinate2DIsValid(coordinate) else { return }
         let callbackStartedAt = Date.now
@@ -528,7 +528,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         context.insert(item)
         _ = PlaceScoreLifecycle.rescore(
             item, stage: .arrival, context: context, savedPlaces: savedPlaceCache,
-            accuracy: accuracy, geofenceTriggered: callbackType == "geofence-entry"
+            accuracy: accuracy, geofenceTriggered: callbackType == .geofenceEntry
         )
         WiFiAnchor.save(nil)
         sampleWiFiAnchor()
@@ -545,7 +545,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                                openVisit: item, context: context)
         Diagnostics.locationMetric(context, operation: "callback_to_save",
                                    durationMs: Int((Date.now.timeIntervalSince(callbackStartedAt) * 1000).rounded()))
-        if callbackType == "geofence-entry", saved != nil {
+        if callbackType == .geofenceEntry, saved != nil {
             HardwareValidation.recordFirst(.namedGeofenceEntry, context: context,
                 message: "A Saved Place geofence named an arrival locally; no Maps lookup was needed.")
         }
@@ -574,7 +574,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     }
 
     private func closeVisit(at coordinate: CLLocationCoordinate2D, arrival: Date, departure: Date,
-                            callbackType: String = "visit-departure",
+                            callbackType: LocationCallbackType = .visitDeparture,
                             accuracy: CLLocationAccuracy = -1) {
         guard let context else { return }
         let resolutionStartedAt = Date.now
@@ -740,7 +740,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             // confirmed location and the arrival is discarded, not recorded.
             beginLocationConfirmation(
                 pendingArrival: .init(coordinate: place.coordinate, arrival: event.date,
-                                      callbackType: "geofence-entry", accuracy: -1)
+                                      callbackType: .geofenceEntry, accuracy: -1)
             )
         case .unsatisfied:
             closeMonitoredVisit(named: place.name, at: event.date, coordinate: place.coordinate)
@@ -769,7 +769,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                                         coordinate: coordinate, placeScoreAlreadyApplied: true
                                        ), context: context)
         if let coordinate {
-            LocationJournal.record("geofence-exit", at: coordinate, callbackAt: departure,
+            LocationJournal.record(.geofenceExit, at: coordinate, callbackAt: departure,
                                    departure: open.departure, transition: .closed,
                                    openVisit: open, context: context)
         }

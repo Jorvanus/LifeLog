@@ -139,7 +139,7 @@ struct PlaceHistoryDetail: View {
 
     /// A person's own choice is never overwritten by a bulk change.
     private var protectedCount: Int {
-        scoped.filter { $0.recognitionConfidence == "confirmed" }.count
+        scoped.filter { VisitRecognitionConfidence(rawValue: $0.recognitionConfidence) == .confirmed }.count
     }
     private var scoped: [PlaceHistoryEntry] {
         matching.filter { band.contains($0.arrival) }
@@ -248,7 +248,7 @@ struct PlaceHistoryDetail: View {
             }
             for visit in entries where
                 (NameKey.same(visit.placeName, placeName) || visit.mapsIdentifier == mapsIdentifier) &&
-                visit.recognitionConfidence != "confirmed" {
+                VisitRecognitionConfidence(rawValue: visit.recognitionConfidence) != .confirmed {
                 visit.userActivity = activity
                 changed += 1
             }

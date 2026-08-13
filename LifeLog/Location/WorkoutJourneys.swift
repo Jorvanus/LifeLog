@@ -157,7 +157,7 @@ enum WorkoutJourneys {
         for stay in stays where ActivityLocationPolicy.isLocationVisit(stay) && !ActivityLocationPolicy.isSupersededLocation(stay) {
             // Only Core Location's own guess is ever withdrawn. A place the person
             // entered themselves is not a guess and is never touched.
-            guard stay.source == "automatic", !stay.isIgnored else { continue }
+            guard stay.visitSource == .automatic, !stay.isIgnored else { continue }
             let stayEnd = stay.departure ?? now
             let duration = stayEnd.timeIntervalSince(stay.arrival)
             guard duration > 0 else { continue }
@@ -264,7 +264,7 @@ enum WorkoutJourneys {
         guard !sessions.isEmpty else { return [] }
         let occupied = sessions.map(\.interval)
         var changed: [(Visit, String)] = []
-        for activity in activities where activity.source == "health-walking" || activity.source == "motion" {
+        for activity in activities where activity.visitSource == .healthWalking || activity.visitSource == .motion {
             let end = activity.departure ?? now
             guard end > activity.arrival else { continue }
             let interval = DateInterval(start: activity.arrival, end: end)

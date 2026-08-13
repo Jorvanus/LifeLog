@@ -32,6 +32,8 @@ struct LifeLogBackup: Codable {
         let arrival: Date; let departure: Date?; let latitude: Double; let longitude: Double
         let placeName: String; let inferredActivity: String
         let userActivity: String?; let note: String; let source: String
+        /// Optional because V1/V2 backups store only their display snapshots.
+        let activityDefinitionID: UUID?
         let recognitionConfidence: String?; let candidateData: Data?
         /// Optional so V1 backups remain valid after visits gained Maps identity.
         let mapsIdentifier: String?; let placeFieldProvenance: String?
@@ -55,6 +57,7 @@ struct LifeLogBackup: Codable {
     struct SavedPlaceRecord: Codable {
         let name: String; let latitude: Double; let longitude: Double; let radius: Double
         let defaultActivity: String; let mapsIdentifier: String?
+        let activityDefinitionID: UUID?
         /// V2. Optional so a V1 backup, recorded before Home/Work roles existed,
         /// still decodes.
         let role: String?
@@ -193,8 +196,8 @@ enum LocalBackupService {
     static func encodeBackup(visits: [Visit], places: [SavedPlace], corrections: [VisitCorrection],
                              diagnostics: [DiagnosticEvent], locationEvents: [LocationEvent]) throws -> Data {
         let document = LifeLogBackup(version: LifeLogBackup.currentVersion, createdAt: .now,
-            visits: visits.map { .init(arrival: $0.arrival, departure: $0.departure, latitude: $0.latitude, longitude: $0.longitude, placeName: $0.placeName, inferredActivity: $0.inferredActivity, userActivity: $0.userActivity, note: $0.note, source: $0.source, recognitionConfidence: $0.recognitionConfidence, candidateData: $0.candidateData, mapsIdentifier: $0.mapsIdentifier, placeFieldProvenance: $0.placeFieldProvenance, resolutionExplanation: $0.resolutionExplanation, stableID: $0.stableID, resolutionState: $0.resolutionStateRaw, healthKitSampleIDs: $0.healthKitSampleIDs, routeData: $0.routeData) },
-            savedPlaces: places.map { .init(name: $0.name, latitude: $0.latitude, longitude: $0.longitude, radius: $0.radius, defaultActivity: $0.defaultActivity, mapsIdentifier: $0.mapsIdentifier, role: $0.role) },
+            visits: visits.map { .init(arrival: $0.arrival, departure: $0.departure, latitude: $0.latitude, longitude: $0.longitude, placeName: $0.placeName, inferredActivity: $0.inferredActivity, userActivity: $0.userActivity, note: $0.note, source: $0.source, activityDefinitionID: $0.activityDefinitionID, recognitionConfidence: $0.recognitionConfidence, candidateData: $0.candidateData, mapsIdentifier: $0.mapsIdentifier, placeFieldProvenance: $0.placeFieldProvenance, resolutionExplanation: $0.resolutionExplanation, stableID: $0.stableID, resolutionState: $0.resolutionStateRaw, healthKitSampleIDs: $0.healthKitSampleIDs, routeData: $0.routeData) },
+            savedPlaces: places.map { .init(name: $0.name, latitude: $0.latitude, longitude: $0.longitude, radius: $0.radius, defaultActivity: $0.defaultActivity, mapsIdentifier: $0.mapsIdentifier, activityDefinitionID: $0.activityDefinitionID, role: $0.role) },
             corrections: corrections.map { .init(changedAt: $0.changedAt, visitArrival: $0.visitArrival, latitude: $0.latitude, longitude: $0.longitude, previousPlaceName: $0.previousPlaceName, newPlaceName: $0.newPlaceName, previousActivity: $0.previousActivity, newActivity: $0.newActivity, previousConfidence: $0.previousConfidence, newConfidence: $0.newConfidence, reason: $0.reason) },
             diagnostics: diagnostics.map { .init(createdAt: $0.createdAt, subsystem: $0.subsystem, severity: $0.severity, message: $0.message, category: $0.category) },
             locationEvents: locationEvents.map { .init(recordedAt: $0.recordedAt, callbackType: $0.callbackType,
@@ -231,13 +234,13 @@ enum LocalBackupService {
 
         do {
             for record in backup.visits {
-                context.insert(Visit(arrival: record.arrival, departure: record.departure, latitude: record.latitude, longitude: record.longitude, placeName: record.placeName, inferredActivity: record.inferredActivity, userActivity: record.userActivity, note: record.note, source: record.source, recognitionConfidence: record.recognitionConfidence, candidateData: record.candidateData, mapsIdentifier: record.mapsIdentifier, placeFieldProvenance: record.placeFieldProvenance, resolutionExplanation: record.resolutionExplanation,
+                context.insert(Visit(arrival: record.arrival, departure: record.departure, latitude: record.latitude, longitude: record.longitude, placeName: record.placeName, inferredActivity: record.inferredActivity, userActivity: record.userActivity, activityDefinitionID: record.activityDefinitionID, note: record.note, source: record.source, recognitionConfidence: record.recognitionConfidence, candidateData: record.candidateData, mapsIdentifier: record.mapsIdentifier, placeFieldProvenance: record.placeFieldProvenance, resolutionExplanation: record.resolutionExplanation,
                     healthKitSampleIDs: record.healthKitSampleIDs, routeData: record.routeData,
                     stableID: record.stableID ?? UUID(),
                     resolutionState: record.resolutionState.flatMap(VisitResolutionState.init(rawValue:))))
             }
             for record in backup.savedPlaces {
-                let place = SavedPlace(name: record.name, latitude: record.latitude, longitude: record.longitude, radius: record.radius, defaultActivity: record.defaultActivity, mapsIdentifier: record.mapsIdentifier)
+                let place = SavedPlace(name: record.name, latitude: record.latitude, longitude: record.longitude, radius: record.radius, defaultActivity: record.defaultActivity, mapsIdentifier: record.mapsIdentifier, activityDefinitionID: record.activityDefinitionID)
                 place.role = record.role
                 context.insert(place)
             }
@@ -262,6 +265,9 @@ enum LocalBackupService {
         // that reached this point always finishes in full.
         IgnoredLocations.importKeys(backup.ignoredVisitKeys)
         ActivityCatalog.save(backup.activityDefinitions)
+        // Restore keeps the backup's label snapshots, then adopts their original
+        // UUIDs before later bounded pages fill any IDs the older archive lacked.
+        _ = try? ActivityIdentityMigration.adoptLegacyDefinitions(context: context)
         for (key, value) in backup.preferences where isPortablePreferenceKey(key) {
             UserDefaults.standard.set(value, forKey: key)
         }

@@ -250,7 +250,7 @@ extension ActivityLocationPolicy {
 
     private static func mergeOverlappingStays(in visits: [Visit], context: ModelContext,
                                               now: Date, recordsDiagnostics: Bool) -> Int {
-        let stays = visits.filter { $0.source == "automatic" }
+        let stays = visits.filter { $0.visitSource == .automatic }
             .sorted { $0.arrival < $1.arrival }
         var hosts: [String: Visit] = [:]
         var merged = 0
@@ -268,7 +268,7 @@ extension ActivityLocationPolicy {
             case (nil, _), (_, nil): host.departure = nil
             case let (left?, right?): host.departure = max(left, right)
             }
-            if locationQuality(stay) > locationQuality(host), host.recognitionConfidence != "confirmed" {
+            if locationQuality(stay) > locationQuality(host), host.recognition != .confirmed {
                 host.placeName = stay.placeName
                 host.inferredActivity = stay.inferredActivity
                 host.userActivity = stay.userActivity
@@ -504,7 +504,7 @@ extension ActivityLocationPolicy {
                 case (nil, _), (_, nil): previous.departure = nil
                 case let (left?, right?): previous.departure = max(left, right)
                 }
-                if locationQuality(candidate) > locationQuality(previous), previous.recognitionConfidence != "confirmed" {
+                if locationQuality(candidate) > locationQuality(previous), previous.recognition != .confirmed {
                     previous.placeName = candidate.placeName
                     previous.inferredActivity = candidate.inferredActivity
                     previous.userActivity = candidate.userActivity
@@ -554,8 +554,8 @@ extension ActivityLocationPolicy {
     /// Saved Place while never letting an uncertain Maps result replace a user
     /// confirmation.
     private static func locationQuality(_ visit: Visit) -> Int {
-        if visit.recognitionConfidence == "confirmed" { return 4 }
-        if !visit.needsCategorisation && visit.recognitionConfidence == "learned" { return 3 }
+        if visit.recognition == .confirmed { return 4 }
+        if !visit.needsCategorisation && visit.recognition == .learned { return 3 }
         if !visit.needsCategorisation { return 2 }
         return 1
     }

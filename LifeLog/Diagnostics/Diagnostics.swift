@@ -1,6 +1,93 @@
 import Foundation
 import SwiftData
 
+enum DiagnosticSeverity: Codable, Sendable, Equatable, Hashable {
+    case info, warning, error
+    case unknown(String)
+
+    static let infoRaw = "info"
+    static let warningRaw = "warning"
+    static let errorRaw = "error"
+    init(rawValue: String) {
+        switch rawValue {
+        case Self.infoRaw: self = .info
+        case Self.warningRaw: self = .warning
+        case Self.errorRaw: self = .error
+        default: self = .unknown(rawValue)
+        }
+    }
+    var rawValue: String {
+        switch self {
+        case .info: Self.infoRaw
+        case .warning: Self.warningRaw
+        case .error: Self.errorRaw
+        case .unknown(let raw): raw
+        }
+    }
+    init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    func encode(to encoder: Encoder) throws { var container = encoder.singleValueContainer(); try container.encode(rawValue) }
+}
+
+enum DiagnosticCategory: Codable, Sendable, Equatable, Hashable {
+    case performance, general
+    case unknown(String)
+
+    static let performanceRaw = "performance"
+    static let generalRaw = "general"
+    init(rawValue: String) {
+        switch rawValue {
+        case Self.performanceRaw: self = .performance
+        case Self.generalRaw: self = .general
+        default: self = .unknown(rawValue)
+        }
+    }
+    var rawValue: String {
+        switch self {
+        case .performance: Self.performanceRaw
+        case .general: Self.generalRaw
+        case .unknown(let raw): raw
+        }
+    }
+    init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    func encode(to encoder: Encoder) throws { var container = encoder.singleValueContainer(); try container.encode(rawValue) }
+}
+
+/// Subsystems are intentionally open-ended: diagnostics are often the first feature
+/// to receive a new component name, and an older build must still show that evidence.
+enum DiagnosticSubsystem: Codable, Sendable, Equatable, Hashable {
+    case timeline, insights, coreLocation, healthKit, launch, activities, activityImport, store
+    case unknown(String)
+
+    init(rawValue: String) {
+        switch rawValue {
+        case "Timeline": self = .timeline
+        case "Insights": self = .insights
+        case "Core Location": self = .coreLocation
+        case "HealthKit": self = .healthKit
+        case "Launch": self = .launch
+        case "Activities": self = .activities
+        case "Activity Import": self = .activityImport
+        case "Store": self = .store
+        default: self = .unknown(rawValue)
+        }
+    }
+    var rawValue: String {
+        switch self {
+        case .timeline: "Timeline"
+        case .insights: "Insights"
+        case .coreLocation: "Core Location"
+        case .healthKit: "HealthKit"
+        case .launch: "Launch"
+        case .activities: "Activities"
+        case .activityImport: "Activity Import"
+        case .store: "Store"
+        case .unknown(let raw): raw
+        }
+    }
+    init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    func encode(to encoder: Encoder) throws { var container = encoder.singleValueContainer(); try container.encode(rawValue) }
+}
+
 /// A privacy-safe diagnostic record. Callers must provide generic messages only;
 /// this model intentionally has no coordinate, place, or health-data fields.
 @Model
@@ -13,7 +100,7 @@ final class DiagnosticEvent {
     /// this field was added default to "general" via lightweight migration.
     var category: String = Diagnostics.Category.general
 
-    init(createdAt: Date = .now, subsystem: String, severity: String = "warning", message: String,
+    init(createdAt: Date = .now, subsystem: String, severity: String = DiagnosticSeverity.warningRaw, message: String,
          category: String = Diagnostics.Category.general) {
         self.createdAt = createdAt
         self.subsystem = TextSafety.clean(subsystem, maximumLength: 30)
@@ -21,6 +108,10 @@ final class DiagnosticEvent {
         self.message = TextSafety.clean(message, maximumLength: 200)
         self.category = category
     }
+
+    var diagnosticSubsystem: DiagnosticSubsystem { DiagnosticSubsystem(rawValue: subsystem) }
+    var diagnosticSeverity: DiagnosticSeverity { DiagnosticSeverity(rawValue: severity) }
+    var diagnosticCategory: DiagnosticCategory { DiagnosticCategory(rawValue: category) }
 }
 
 /// Diagnostics waiting for a store that will accept them.
@@ -63,8 +154,8 @@ enum PendingDiagnostics {
 @MainActor
 enum Diagnostics {
     enum Category {
-        static let performance = "performance"
-        static let general = "general"
+        static let performance = DiagnosticCategory.performanceRaw
+        static let general = DiagnosticCategory.generalRaw
     }
 
     /// Performance/budget samples are rare (roughly one per launch or Insights view)
@@ -99,7 +190,7 @@ enum Diagnostics {
     }
 
     static func record(_ context: ModelContext?, subsystem: String, message: String,
-                       severity: String = "warning", category: String = Category.general) {
+                       severity: String = DiagnosticSeverity.warningRaw, category: String = Category.general) {
         guard let context else { return }
         context.insert(DiagnosticEvent(subsystem: subsystem, severity: severity, message: message, category: category))
         trimToRetentionLimit(context, category: category)
@@ -110,7 +201,7 @@ enum Diagnostics {
     /// VisitMutationService uses this so one mutation produces one durable commit,
     /// rather than a diagnostic save followed by a second timeline save.
     static func stage(_ context: ModelContext, subsystem: String, message: String,
-                      severity: String = "warning", category: String = Category.general) {
+                      severity: String = DiagnosticSeverity.warningRaw, category: String = Category.general) {
         context.insert(DiagnosticEvent(subsystem: subsystem, severity: severity, message: message, category: category))
         trimToRetentionLimit(context, category: category)
     }
@@ -125,7 +216,7 @@ enum Diagnostics {
     /// app is running — and only then offered to the store. If the store takes it, the
     /// queue is emptied; if not, it waits for the next launch.
     static func recordDurable(_ context: ModelContext?, subsystem: String, message: String,
-                              severity: String = "warning", defaults: UserDefaults = .standard) {
+                              severity: String = DiagnosticSeverity.warningRaw, defaults: UserDefaults = .standard) {
         PendingDiagnostics.queue(.init(createdAt: .now, subsystem: subsystem,
                                        severity: severity, message: message), defaults: defaults)
         guard let context else { return }

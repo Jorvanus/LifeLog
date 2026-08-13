@@ -50,7 +50,7 @@ actor ActivityImportActor {
             predicate: #Predicate { $0.source != "imported-journal" }
         ))
         visitsBySource = Dictionary(grouping: existing, by: \.source)
-        locations = existing.filter { $0.source == "automatic" || $0.source == "manual" }
+        locations = existing.filter { $0.visitSource.isLocation }
         boundableStays = locations.map(Self.detachedCopy)
         healthVisits = existing.filter { $0.source.hasPrefix("health-") }
         savedPlaces = try modelContext.fetch(FetchDescriptor<SavedPlace>())
@@ -115,7 +115,7 @@ actor ActivityImportActor {
                     // silently overwrite a manual correction with the original device
                     // guess (recognitionConfidence == "confirmed" marks a person-picked
                     // activity; see TimelineView.select/applyQuickLabel).
-                    if existing.recognitionConfidence != "confirmed" {
+                    if existing.recognition != .confirmed {
                         existing.userActivity = record.activity
                     }
                     // A replayed workout can carry a route the first import did not
@@ -124,8 +124,8 @@ actor ActivityImportActor {
                     collapseReplayedTravelFragments(inside: segment, keeping: existing, record: record)
                     continue
                 }
-                if record.source == "motion", overlaps(segment, visits: healthVisits) { continue }
-                if record.source == "health-walking",
+                if VisitSource(rawValue: record.source) == .motion, overlaps(segment, visits: healthVisits) { continue }
+                if VisitSource(rawValue: record.source) == .healthWalking,
                    overlaps(segment, visits: visitsBySource["health-workout", default: []]) { continue }
 
                 let visit = Visit(
@@ -156,10 +156,10 @@ actor ActivityImportActor {
     /// never the person's correction.
     private func collapseReplayedTravelFragments(inside interval: DateInterval, keeping: Visit,
                                                   record: ActivityImportRecord) {
-        guard record.source == "motion",
+        guard VisitSource(rawValue: record.source) == .motion,
               ActivityLocationPolicy.describesTravel("\(record.activity) \(record.name)") else { return }
         let redundant = visitsBySource["motion", default: []].filter { visit in
-            visit !== keeping && visit.recognitionConfidence != "confirmed" &&
+            visit !== keeping && visit.recognition != .confirmed &&
                 ActivityLocationPolicy.describesTravel("\(visit.activity) \(visit.placeName)") &&
                 visit.arrival >= interval.start && (visit.departure ?? .distantFuture) <= interval.end
         }
@@ -177,7 +177,7 @@ actor ActivityImportActor {
         guard !sampleIDs.isEmpty else { return 0 }
         let deleted = Set(sampleIDs)
         func matches(_ visit: Visit) -> Bool {
-            guard visit.recognitionConfidence != "confirmed", let ids = visit.healthKitSampleIDs else { return false }
+            guard visit.recognition != .confirmed, let ids = visit.healthKitSampleIDs else { return false }
             return !Set(ids).isDisjoint(with: deleted)
         }
         // Sleep is reconstructed as a complete night after an anchored update. A
@@ -225,7 +225,7 @@ actor ActivityImportActor {
         let expectedSleep = expected.filter { SleepEvidence.isAutomatic($0.source) }
         let candidates = healthVisits.filter { visit in
             guard SleepEvidence.isAutomatic(visit.source),
-                  visit.recognitionConfidence != "confirmed" else { return false }
+                  visit.recognition != .confirmed else { return false }
             let end = visit.departure ?? .distantFuture
             return windows.contains { $0.start < end && $0.end > visit.arrival }
         }
@@ -307,7 +307,7 @@ actor ActivityImportActor {
     /// withdrawn from one are withdrawn from the other, keeping the pairing intact.
     private func supersedeStaysPassedDuringWorkouts(in records: [ActivityImportRecord]) {
         let sessions = records.compactMap { record -> WorkoutJourneys.WorkoutSession? in
-            guard record.source == "health-workout", record.end > record.start else { return nil }
+            guard VisitSource(rawValue: record.source) == .healthWorkout, record.end > record.start else { return nil }
             return .init(interval: DateInterval(start: record.start, end: record.end),
                          route: record.route)
         }

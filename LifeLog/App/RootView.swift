@@ -88,6 +88,23 @@ struct RootView: View {
             // Whatever a background save could not record about itself is written here,
             // where the store has just opened and is known to be accepting writes.
             Diagnostics.flushPending(context)
+            // V10 deliberately links old activity labels in small pages. Launch must
+            // remain responsive even when an older timeline contains years of visits;
+            // later launches continue from the remaining unlinked snapshots.
+            do {
+                let activityMigration = try ActivityIdentityMigration.backfillNextBatch(context: context)
+                if activityMigration.adoptedDefinitions > 0 || activityMigration.linkedVisits > 0 || activityMigration.linkedPlaces > 0 {
+                    Diagnostics.record(context, subsystem: "Activities",
+                                       message: "Adopted \(activityMigration.adoptedDefinitions) activity definitions; linked \(activityMigration.linkedVisits) visits and \(activityMigration.linkedPlaces) Saved Places\(activityMigration.hasMore ? "; more history remains." : ".")",
+                                       severity: "info")
+                }
+            } catch {
+                // Identity linking is an optimisation/migration aid, never a reason
+                // to block the Timeline from opening with its original label snapshots.
+                Diagnostics.record(context, subsystem: "Activities",
+                                   message: "Activity identity migration will retry: \(error.localizedDescription)",
+                                   severity: "warning")
+            }
             // Needs a context, so it cannot live in `seed()` alongside the other
             // catalogue setup — the visits holding the old wording move with it.
             if let moved = try? ActivityCatalog.mergeWorkingIntoWork(context: context), moved > 0 {

@@ -96,7 +96,7 @@ extension ActivityLocationPolicy {
     nonisolated static func extendStay(upTo movement: DateInterval, stays: [Visit],
                                        activities: [Visit]) -> Bool {
         let candidates = stays.filter { stay in
-            guard stay.source == "automatic", let departure = stay.departure else { return false }
+            guard stay.visitSource == .automatic, let departure = stay.departure else { return false }
             guard departure < movement.start,
                   movement.start.timeIntervalSince(departure) <= departureCatchUp else { return false }
             // Anything recorded inside the gap is evidence of what happened in it, and
@@ -124,7 +124,7 @@ extension ActivityLocationPolicy {
                                                    requiringDeparture: Bool,
                                                    now: Date = .now) -> Visit? {
         stays.filter { stay in
-            guard stay.source == "automatic", stay.arrival < moment else { return false }
+            guard stay.visitSource == .automatic, stay.arrival < moment else { return false }
             guard let departure = stay.departure else { return !requiringDeparture }
             return departure > moment
         }.max { $0.arrival < $1.arrival }
@@ -194,7 +194,7 @@ extension ActivityLocationPolicy {
     /// is bound to then naturally absorbs this record's time as its own, the same way
     /// it already absorbs any other movement recorded inside it.
     private nonisolated static func isWorkoutLeadIn(_ record: Visit, sessions: [WorkoutJourneys.WorkoutSession]) -> Bool {
-        guard record.source == "health-walking" || record.source == "motion",
+        guard VisitSource(rawValue: record.source) == .healthWalking || VisitSource(rawValue: record.source) == .motion,
               let departure = record.departure else { return false }
         return sessions.contains { session in
             let gap = session.interval.start.timeIntervalSince(departure)
@@ -285,7 +285,7 @@ extension ActivityLocationPolicy {
 
     private static func canRejoin(_ previous: Visit, _ stay: Visit, walking: [Visit]) -> Bool {
         // Only LifeLog's own inference is undone; a manual entry is left as written.
-        guard previous.source == "automatic", stay.source == "automatic",
+        guard previous.visitSource == .automatic, stay.visitSource == .automatic,
               let departure = previous.departure, stay.arrival > departure else { return false }
         let gap = DateInterval(start: departure, end: stay.arrival)
         // A long absence is not repaired. Whatever happened in an hour away, claiming
