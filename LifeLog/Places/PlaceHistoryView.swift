@@ -1,14 +1,6 @@
 import SwiftUI
 import SwiftData
 
-struct PlaceHistorySummary: Identifiable {
-    let name: String
-    let count: Int
-    let dominantActivity: String
-    let dominantShare: Int
-    var id: String { name }
-}
-
 /// Lists every place name in the timeline, however it was recorded. Saved Places
 /// only cover geofenced locations, and imported journal rows have no coordinates
 /// at all, so this is the only route to the bulk of an imported history.
@@ -17,6 +9,7 @@ struct PlaceHistoryView: View {
     @State private var summaries: [PlaceHistorySummary] = []
     @State private var loading = true
     @State private var search = ""
+    @State private var reader: VisitArchiveReader?
 
     private var filtered: [PlaceHistorySummary] {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -58,36 +51,24 @@ struct PlaceHistoryView: View {
 
     private func load() async {
         let startedAt = Date.now
-        // One full pass is unavoidable: SwiftData cannot group, and the names live
-        // across every source. This is a Settings screen rather than the launch
-        // path, and the result is cached in state for the life of the screen.
-        let allVisits = (try? context.fetch(FetchDescriptor<Visit>())) ?? []
-        // Place History is a route from Insights as well as Settings. Keep its
-        // summary aligned with the same source visibility policy: imported journal
-        // and device records remain eligible when Insights says they are, while
-        // ignored/superseded records never become a misleading place result.
-        let locationVisits = allVisits.filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
-        let visits = allVisits.filter {
-            ActivityLocationPolicy.shouldShowInInsights($0, locationVisits: locationVisits)
+        let generation = await InsightsAggregationActor.shared.currentGeneration()
+        let reader = reader ?? VisitArchiveReader(modelContainer: context.container)
+        self.reader = reader
+        do {
+            let result = try await reader.placeSummaries(generation: generation)
+            // Do not publish a value assembled from an older store after an import,
+            // correction, or restore landed while this actor was reading it.
+            let currentGeneration = await InsightsAggregationActor.shared.currentGeneration()
+            guard !Task.isCancelled, generation == currentGeneration else { return }
+            summaries = result.summaries
+            loading = false
+            Diagnostics.budget(context, subsystem: "Place History", operation: "background summary",
+                               startedAt: startedAt, budget: 1.0, itemCount: result.itemCount)
+        } catch is CancellationError {
+            return
+        } catch {
+            loading = false
         }
-        var counts: [String: [String: Int]] = [:]
-        for visit in visits {
-            let name = visit.placeName.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !name.isEmpty, !Visit.isPlaceholderName(name), name != "Imported journal" else { continue }
-            counts[name, default: [:]][visit.activity, default: 0] += 1
-        }
-        summaries = counts.map { name, activities in
-            let total = activities.values.reduce(0, +)
-            let top = activities.max { $0.value < $1.value }
-            return PlaceHistorySummary(
-                name: name, count: total,
-                dominantActivity: top?.key.isEmpty == false ? top!.key : "no activity",
-                dominantShare: total > 0 ? Int((Double(top?.value ?? 0) / Double(total) * 100).rounded()) : 0
-            )
-        }.sorted { $0.count > $1.count }
-        loading = false
-        Diagnostics.performance(context, subsystem: "Place History", operation: "summary",
-                                startedAt: startedAt, itemCount: visits.count)
     }
 }
 
@@ -106,7 +87,7 @@ private struct PlaceVisitAnalytics {
     /// the same reasoning `ArchiveRetrospectives.minimumOccasionsForAGap` uses.
     static let minimumOccasionsForPeakHour = 3
 
-    static func make(from visits: [Visit]) -> PlaceVisitAnalytics {
+    static func make(from visits: [PlaceHistoryEntry]) -> PlaceVisitAnalytics {
         let calendar = Calendar.current
         var slotCounts: [WeekdayHour: Int] = [:]
         var representativeDate: [WeekdayHour: Date] = [:]
@@ -151,7 +132,8 @@ struct PlaceHistoryDetail: View {
     @State private var confirming = false
     @State private var message: String?
     @State private var breakdown: [(band: PlaceTimeBand, activities: [(String, Int)])] = []
-    @State private var matching: [Visit] = []
+    @State private var matching: [PlaceHistoryEntry] = []
+    @State private var reader: VisitArchiveReader?
 
     private var analytics: PlaceVisitAnalytics { PlaceVisitAnalytics.make(from: matching) }
 
@@ -159,7 +141,7 @@ struct PlaceHistoryDetail: View {
     private var protectedCount: Int {
         scoped.filter { $0.recognitionConfidence == "confirmed" }.count
     }
-    private var scoped: [Visit] {
+    private var scoped: [PlaceHistoryEntry] {
         matching.filter { band.contains($0.arrival) }
     }
     private var changeableCount: Int { scoped.count - protectedCount }
@@ -228,16 +210,17 @@ struct PlaceHistoryDetail: View {
     }
 
     private func reload() {
-        // SwiftData's string predicate cannot express NameKey's accent and
-        // whitespace normalization, so fetch the names and apply the shared
-        // fallback identity in memory. This keeps bulk corrections consistent
-        // with the other place-history consumers.
-        let allVisits = (try? context.fetch(FetchDescriptor<Visit>())) ?? []
-        let locationVisits = allVisits.filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
-        let visits = allVisits.filter {
-            ActivityLocationPolicy.shouldShowInInsights($0, locationVisits: locationVisits)
-        }
-        matching = visits.filter { NameKey.same($0.placeName, placeName) }
+        Task { await reloadInBackground() }
+    }
+
+    private func reloadInBackground() async {
+        let generation = await InsightsAggregationActor.shared.currentGeneration()
+        let reader = reader ?? VisitArchiveReader(modelContainer: context.container)
+        self.reader = reader
+        guard let entries = try? await reader.placeEntries(named: placeName) else { return }
+        let currentGeneration = await InsightsAggregationActor.shared.currentGeneration()
+        guard !Task.isCancelled, generation == currentGeneration else { return }
+        matching = entries
         breakdown = PlaceTimeBand.allCases.filter { $0 != .allDay }.map { slot in
             var counts: [String: Int] = [:]
             for visit in matching where slot.contains(visit.arrival) {
@@ -252,7 +235,20 @@ struct PlaceHistoryDetail: View {
         guard !activity.isEmpty else { return }
         let result = VisitMutationService.perform(context: context, kind: .bulkHistoricalCorrection) {
             var changed = 0
-            for visit in scoped where visit.recognitionConfidence != "confirmed" {
+            var placeDescriptor = FetchDescriptor<SavedPlace>(
+                predicate: #Predicate { $0.name == placeName }
+            )
+            placeDescriptor.fetchLimit = 1
+            let mapsIdentifier = try context.fetch(placeDescriptor).first?.mapsIdentifier
+            let entries: [Visit]
+            if let mapsIdentifier, !mapsIdentifier.isEmpty {
+                entries = try context.fetch(VisitHistoryQuery.place(mapsIdentifier: mapsIdentifier))
+            } else {
+                entries = try context.fetch(VisitHistoryQuery.legacyPlace(named: placeName))
+            }
+            for visit in entries where
+                (NameKey.same(visit.placeName, placeName) || visit.mapsIdentifier == mapsIdentifier) &&
+                visit.recognitionConfidence != "confirmed" {
                 visit.userActivity = activity
                 changed += 1
             }

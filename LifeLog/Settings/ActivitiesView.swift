@@ -10,6 +10,8 @@ struct ActivitiesView: View {
     /// visible before it rather than discovered afterwards in Insights.
     @State private var usage: [String: Int] = [:]
     @State private var pendingDeletion: IndexSet?
+    @State private var reader: VisitArchiveReader?
+    @State private var usageTask: Task<Void, Never>?
 
     /// Extracted whole rather than inlined in the `ForEach`, matching how the
     /// pushed destination itself does its own editing now — renaming, deleting,
@@ -130,14 +132,16 @@ struct ActivitiesView: View {
     }
 
     private func refreshUsage() {
-        let visits = (try? context.fetch(FetchDescriptor<Visit>())) ?? []
-        var counts: [String: Int] = [:]
-        for visit in visits {
-            let key = visit.activity.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            guard !key.isEmpty else { continue }
-            counts[key, default: 0] += 1
+        usageTask?.cancel()
+        usageTask = Task {
+            let generation = await InsightsAggregationActor.shared.currentGeneration()
+            let reader = reader ?? VisitArchiveReader(modelContainer: context.container)
+            self.reader = reader
+            guard let counts = try? await reader.activityUsage(generation: generation) else { return }
+            let currentGeneration = await InsightsAggregationActor.shared.currentGeneration()
+            guard !Task.isCancelled, generation == currentGeneration else { return }
+            usage = counts
         }
-        usage = counts
     }
 }
 

@@ -516,14 +516,13 @@ struct VisitEditor: View {
     }
 
     private func deletionNeighbours() -> (previous: Visit?, next: Visit?) {
-        guard let all = try? context.fetch(FetchDescriptor<Visit>(sortBy: [SortDescriptor(\.arrival)])) else {
-            return (nil, nil)
-        }
-        let previous = all.filter { $0.id != visit.id && ($0.departure ?? .now) <= visit.arrival }
-            .max { $0.arrival < $1.arrival }
         let end = visit.departure ?? visit.arrival
-        let next = all.filter { $0.id != visit.id && $0.arrival >= end }
-            .min { $0.arrival < $1.arrival }
+        let previous = try? context.fetch(
+            VisitHistoryQuery.previous(before: visit.arrival, excluding: visit.stableID)
+        ).first
+        let next = try? context.fetch(
+            VisitHistoryQuery.next(after: end, excluding: visit.stableID)
+        ).first
         return (previous, next)
     }
 

@@ -184,6 +184,14 @@ enum LocalBackupService {
         let places = try context.fetch(FetchDescriptor<SavedPlace>())
         let corrections = try context.fetch(FetchDescriptor<VisitCorrection>())
         let locationEvents = try context.fetch(FetchDescriptor<LocationEvent>())
+        return try encodeBackup(visits: visits, places: places, corrections: corrections,
+                                diagnostics: diagnostics, locationEvents: locationEvents)
+    }
+
+    /// Encoding is shared with `BackupExportActor`; the actor owns the archive
+    /// read, while this pure transformation preserves the tested backup format.
+    static func encodeBackup(visits: [Visit], places: [SavedPlace], corrections: [VisitCorrection],
+                             diagnostics: [DiagnosticEvent], locationEvents: [LocationEvent]) throws -> Data {
         let document = LifeLogBackup(version: LifeLogBackup.currentVersion, createdAt: .now,
             visits: visits.map { .init(arrival: $0.arrival, departure: $0.departure, latitude: $0.latitude, longitude: $0.longitude, placeName: $0.placeName, inferredActivity: $0.inferredActivity, userActivity: $0.userActivity, note: $0.note, source: $0.source, recognitionConfidence: $0.recognitionConfidence, candidateData: $0.candidateData, mapsIdentifier: $0.mapsIdentifier, placeFieldProvenance: $0.placeFieldProvenance, resolutionExplanation: $0.resolutionExplanation, stableID: $0.stableID, resolutionState: $0.resolutionStateRaw, healthKitSampleIDs: $0.healthKitSampleIDs, routeData: $0.routeData) },
             savedPlaces: places.map { .init(name: $0.name, latitude: $0.latitude, longitude: $0.longitude, radius: $0.radius, defaultActivity: $0.defaultActivity, mapsIdentifier: $0.mapsIdentifier, role: $0.role) },
@@ -272,11 +280,31 @@ enum LocalBackupService {
         }
     }
 
-    private static func preferences() -> [String: String] {
+    static func preferences() -> [String: String] {
         UserDefaults.standard.dictionaryRepresentation().compactMapValues { value in
             if let value = value as? String { return value }
             if let value = value as? NSNumber { return value.stringValue }
             return nil
         }.filter { isPortablePreferenceKey($0.key) }
+    }
+}
+
+/// Backup is intentionally archive-wide, but Settings must remain usable while it
+/// is read and encoded. The actor returns only the finished `Data` share payload.
+@ModelActor
+actor BackupExportActor {
+    func makeBackup() throws -> Data {
+        try Task.checkCancellation()
+        let visits = try modelContext.fetch(FetchDescriptor<Visit>())
+        try Task.checkCancellation()
+        let places = try modelContext.fetch(FetchDescriptor<SavedPlace>())
+        let corrections = try modelContext.fetch(FetchDescriptor<VisitCorrection>())
+        let diagnostics = try modelContext.fetch(FetchDescriptor<DiagnosticEvent>())
+        let locationEvents = try modelContext.fetch(FetchDescriptor<LocationEvent>())
+        try Task.checkCancellation()
+        return try LocalBackupService.encodeBackup(
+            visits: visits, places: places, corrections: corrections,
+            diagnostics: diagnostics, locationEvents: locationEvents
+        )
     }
 }

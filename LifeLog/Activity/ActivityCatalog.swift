@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-struct ActivityDefinition: Codable, Identifiable, Hashable {
+struct ActivityDefinition: Codable, Identifiable, Hashable, Sendable {
     let id: UUID
     var name: String
     var category: String
@@ -388,6 +388,17 @@ enum ActivityCatalog {
         }
         if changed > 0 { try context.save() }
         return changed
+    }
+
+    /// UI-triggered renames use the isolated store context. The synchronous form
+    /// above remains for one-time startup migrations before the interface exists.
+    static func renameActivity(from previous: String, to updated: String,
+                               container: ModelContainer) async throws -> Int {
+        let from = previous.trimmingCharacters(in: .whitespacesAndNewlines)
+        let to = TextSafety.clean(updated, maximumLength: 80)
+        guard !from.isEmpty, !to.isEmpty,
+              from.caseInsensitiveCompare(to) != .orderedSame else { return 0 }
+        return try await ActivityRenameActor(modelContainer: container).renameActivity(from: from, to: to)
     }
 
     static func seed() {

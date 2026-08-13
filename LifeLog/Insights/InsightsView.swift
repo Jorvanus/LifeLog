@@ -2158,21 +2158,12 @@ struct InsightsView: View {
             }
             visits = fetched.sorted { $0.arrival < $1.arrival }
         } catch {
-            // Keep Insights usable if a protected-store/runtime predicate cannot be
-            // translated on a particular iOS build. This slower fallback is only used
-            // after the narrow fetch fails and is itself filtered in memory.
-            do {
-                let fallback = try context.fetch(FetchDescriptor<Visit>(sortBy: [SortDescriptor(\.arrival)]))
-                visits = scope.filtering(fallback).filter {
-                    ($0.arrival >= fetchStart && $0.arrival < fetchEnd) || $0.departure == nil
-                }
-                Diagnostics.record(error, context: context, subsystem: "Insights",
-                                   operation: "date-scoped fetch", severity: "warning")
-            } catch {
-                visits = []
-                Diagnostics.record(error, context: context, subsystem: "Insights",
-                                   operation: "Insights fallback fetch")
-            }
+            // Do not turn a predicate-translation problem into a synchronous archive
+            // scan. The empty state is preferable to blocking an Insights interaction;
+            // the next invalidation retries the same bounded query.
+            visits = []
+            Diagnostics.record(error, context: context, subsystem: "Insights",
+                               operation: "date-scoped fetch", severity: "warning")
         }
         // `budget` records this same elapsed time unconditionally, and against the
         // window's own limit rather than a flat 250 ms — which a year view is expected

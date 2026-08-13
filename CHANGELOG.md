@@ -2,6 +2,12 @@
 
 ## 2026-08-13
 
+### Large histories stay responsive while you browse
+
+- Place History and activity usage now read and summarise the archive away from
+  the interface, reuse current summaries, and discard a result if your timeline
+  changes while it is being prepared.
+
 ### Timeline updates now publish as one consistent change
 
 - Location arrivals, manual visits, corrections, Saved Place changes, bulk history

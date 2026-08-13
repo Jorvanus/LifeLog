@@ -32,19 +32,67 @@ enum VisitHistoryQuery {
         return range(start..<end)
     }
 
-    static func place(named name: String, mapsIdentifier: String? = nil) -> FetchDescriptor<Visit> {
+    static func place(named name: String, mapsIdentifier: String? = nil, limit: Int = 5_000) -> FetchDescriptor<Visit> {
         let identifier = mapsIdentifier ?? ""
-        return FetchDescriptor(
+        var descriptor = FetchDescriptor(
             predicate: #Predicate { visit in
                 visit.placeName == name || (!identifier.isEmpty && visit.mapsIdentifier == identifier)
             },
             sortBy: [SortDescriptor(\Visit.arrival, order: .reverse)]
         )
+        descriptor.fetchLimit = limit
+        return descriptor
     }
 
-    static func activity(named name: String) -> FetchDescriptor<Visit> {
-        return FetchDescriptor(predicate: #Predicate { $0.userActivity == name || $0.inferredActivity == name },
-                               sortBy: [SortDescriptor(\Visit.arrival, order: .reverse)])
+    /// A Maps identifier is the durable identity for a place. Prefer it whenever a
+    /// Saved Place has one; a name-only lookup is retained solely for older rows.
+    static func place(mapsIdentifier: String, limit: Int = 5_000) -> FetchDescriptor<Visit> {
+        var descriptor = FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.mapsIdentifier == mapsIdentifier },
+            sortBy: [SortDescriptor(\Visit.arrival, order: .reverse)]
+        )
+        descriptor.fetchLimit = limit
+        return descriptor
+    }
+
+    /// Legacy names cannot use NameKey inside a SwiftData predicate. Keep their
+    /// candidate set bounded before applying that stricter comparison in memory.
+    static func legacyPlace(named name: String, limit: Int = 5_000) -> FetchDescriptor<Visit> {
+        var descriptor = FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.placeName == name },
+            sortBy: [SortDescriptor(\Visit.arrival, order: .reverse)]
+        )
+        descriptor.fetchLimit = limit
+        return descriptor
+    }
+
+    static func previous(before boundary: Date, excluding stableID: UUID) -> FetchDescriptor<Visit> {
+        var descriptor = FetchDescriptor<Visit>(
+            predicate: #Predicate { visit in
+                visit.stableID != stableID && visit.departure != nil && visit.departure! <= boundary
+            },
+            sortBy: [SortDescriptor(\Visit.departure, order: .reverse)]
+        )
+        descriptor.fetchLimit = 1
+        return descriptor
+    }
+
+    static func next(after boundary: Date, excluding stableID: UUID) -> FetchDescriptor<Visit> {
+        var descriptor = FetchDescriptor<Visit>(
+            predicate: #Predicate { visit in visit.stableID != stableID && visit.arrival >= boundary },
+            sortBy: [SortDescriptor(\Visit.arrival, order: .forward)]
+        )
+        descriptor.fetchLimit = 1
+        return descriptor
+    }
+
+    static func activity(named name: String, limit: Int = 5_000) -> FetchDescriptor<Visit> {
+        var descriptor = FetchDescriptor(
+            predicate: #Predicate { $0.userActivity == name || $0.inferredActivity == name },
+            sortBy: [SortDescriptor(\Visit.arrival, order: .reverse)]
+        )
+        descriptor.fetchLimit = limit
+        return descriptor
     }
 
     /// Text in notes is deliberately excluded from regular history queries. An

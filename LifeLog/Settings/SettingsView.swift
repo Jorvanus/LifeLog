@@ -16,6 +16,8 @@ struct SettingsView: View {
     @State private var importingJournal = false
     @State private var importingBackup = false
     @State private var backupURL: URL?
+    @State private var creatingBackup = false
+    @State private var backupTask: Task<Void, Never>?
     @State private var importMessage: String?
     @State private var addingManualSleep = false
     @AppStorage(LocationDiagnostics.detailKey) private var detailedLocationDiagnostics = false
@@ -161,15 +163,19 @@ struct SettingsView: View {
                 }
                 Section("Local backup") {
                     Button {
-                        ExportFileCleanup.removeExpired()
-                        do {
-                            let data = try LocalBackupService.makeBackup(context: context, diagnostics: diagnostics)
-                            let url = FileManager.default.temporaryDirectory.appendingPathComponent("LifeLog-Backup-\(Int(Date.now.timeIntervalSince1970)).json")
-                            try data.write(to: url, options: .atomic)
-                            backupURL = url
-                        } catch { importMessage = "LifeLog couldn’t create a backup." }
+                        createBackup()
                     } label: { Label("Create backup", systemImage: "externaldrive.badge.timemachine") }
                         .accessibilityIdentifier("create-backup")
+                        .disabled(creatingBackup)
+                    if creatingBackup {
+                        HStack {
+                            ProgressView()
+                            Text("Preparing backup…").foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Cancel") { backupTask?.cancel() }
+                        }
+                        .accessibilityIdentifier("backup-progress")
+                    }
                     if let backupURL {
                         ShareLink(item: backupURL) { Label("Share backup", systemImage: "square.and.arrow.up") }
                     }
@@ -210,6 +216,28 @@ struct SettingsView: View {
                     Text(importMessage ?? "")
                 }
                 .sheet(isPresented: $addingManualSleep) { ManualSleepEntryView() }
+        }
+    }
+
+    private func createBackup() {
+        backupTask?.cancel()
+        creatingBackup = true
+        backupTask = Task {
+            defer { creatingBackup = false }
+            ExportFileCleanup.removeExpired()
+            do {
+                let data = try await BackupExportActor(modelContainer: context.container).makeBackup()
+                try Task.checkCancellation()
+                let url = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("LifeLog-Backup-\(Int(Date.now.timeIntervalSince1970)).json")
+                try data.write(to: url, options: .atomic)
+                guard !Task.isCancelled else { return }
+                backupURL = url
+            } catch is CancellationError {
+                return
+            } catch {
+                importMessage = "LifeLog couldn’t create a backup."
+            }
         }
     }
 

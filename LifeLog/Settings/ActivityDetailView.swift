@@ -408,18 +408,29 @@ struct ActivityDetailView: View {
                 applyVisitRename(from: request.previousName, to: request.definition.name)
             }
         }
-        InsightsInvalidation.invalidate(reason: "Activity renamed", context: context)
+        // The background visit rewrite publishes its own invalidation only after it
+        // saves. A catalogue-only rename can invalidate immediately.
+        if !updatingVisits {
+            InsightsInvalidation.invalidate(reason: "Activity renamed", context: context)
+        }
         dismiss()
     }
 
     private func applyVisitRename(from previousName: String, to updatedName: String) {
-        do {
-            _ = try ActivityCatalog.renameActivity(from: previousName, to: updatedName, context: context)
-        } catch {
-            // The catalogue entry is renamed either way, so staying silent would
-            // leave every visit behind under the old label while the screen said
-            // they had come across — the exact stranding this option prevents.
-            renameFailed = true
+        Task {
+            do {
+                _ = try await ActivityCatalog.renameActivity(
+                    from: previousName, to: updatedName, container: context.container
+                )
+                InsightsInvalidation.invalidate(reason: "Activity visits renamed", context: context)
+            } catch is CancellationError {
+                return
+            } catch {
+                // The catalogue entry is renamed either way, so staying silent would
+                // leave every visit behind under the old label while the screen said
+                // they had come across — the exact stranding this option prevents.
+                renameFailed = true
+            }
         }
     }
 
