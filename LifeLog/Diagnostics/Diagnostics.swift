@@ -81,6 +81,12 @@ enum Diagnostics {
         static let insightsMonth: TimeInterval = 0.75
         static let insightsYear: TimeInterval = 1.5
         static let returnToTimeline: TimeInterval = 0.35
+        /// A normal Core Location/Maps mutation only considers the callback's local
+        /// repair window plus open stays. At a 32,000-row archive it should remain
+        /// comfortably below an interaction frame stall; full recovery is allowed a
+        /// larger budget because it is explicit and never runs per callback.
+        static let locationMutation: TimeInterval = 0.35
+        static let locationFullAudit: TimeInterval = 8
 
         static func insights(window: InsightWindow) -> TimeInterval {
             switch window {
@@ -98,6 +104,15 @@ enum Diagnostics {
         context.insert(DiagnosticEvent(subsystem: subsystem, severity: severity, message: message, category: category))
         trimToRetentionLimit(context, category: category)
         try? context.save()
+    }
+
+    /// Adds a diagnostic to the caller's current transaction without saving it.
+    /// VisitMutationService uses this so one mutation produces one durable commit,
+    /// rather than a diagnostic save followed by a second timeline save.
+    static func stage(_ context: ModelContext, subsystem: String, message: String,
+                      severity: String = "warning", category: String = Category.general) {
+        context.insert(DiagnosticEvent(subsystem: subsystem, severity: severity, message: message, category: category))
+        trimToRetentionLimit(context, category: category)
     }
 
     /// Records an event that must outlive the process that saw it, even when the

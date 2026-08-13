@@ -675,7 +675,6 @@ struct VisitEditor: View {
             if let pendingQuickLabelRole {
                 result?.place.homeWorkRole = pendingQuickLabelRole
                 self.pendingQuickLabelRole = nil
-                try context.save()
             }
             // A correction can also create a Saved Place. That useful side effect
             // must not erase the audit row that prevents later automation from
@@ -686,20 +685,36 @@ struct VisitEditor: View {
             } else if result == nil {
                 CorrectionHistory.record(visit: visit, from: correctionBaseline ?? currentSnapshot,
                                          context: context, reason: "Manual correction")
-                try context.save()
             }
-        } else {
-            try context.save()
         }
         if corrected || forceLearning {
             // The correction is now part of the evidence set. Re-score after it
             // has been recorded, but keep the confirmed choice untouched.
             _ = PlaceScoreLifecycle.rescore(visit, stage: .correction, context: context)
-            _ = try ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "manual correction")
-            try context.save()
         }
-        InsightsInvalidation.invalidate(reason: corrected ? "visit correction" : "visit edit", context: context)
+        let mutation = VisitMutationService.finalize(
+            context: context,
+            kind: .visitEdit,
+            change: .init(
+                affectedVisit: visit,
+                placeScoreAlreadyApplied: corrected || forceLearning
+            )
+        )
+        guard mutation.committed else {
+            throw VisitEditorMutationError.failed(mutation.failureDescription)
+        }
         correctionBaseline = currentSnapshot
+    }
+}
+
+private enum VisitEditorMutationError: LocalizedError {
+    case failed(String?)
+
+    var errorDescription: String? {
+        switch self {
+        case .failed(let description):
+            description ?? "LifeLog couldn't save this visit change."
+        }
     }
 }
 

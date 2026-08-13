@@ -421,8 +421,9 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             duplicate.locationResolutionExplanation = .coordinateTime
             if duplicate.needsCategorisation { identifyPlace(duplicate, accuracy: accuracy) }
             reconcileActivity(with: duplicate, context: context)
-            _ = try? ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "arrival merge")
-            save(context)
+            guard finalizeMutation(.coreLocationArrival,
+                                   change: .init(affectedVisit: duplicate, coordinate: coordinate,
+                                                 placeScoreAlreadyApplied: true), context: context) else { return }
             LocationJournal.record(callbackType, at: coordinate, callbackAt: arrival,
                                    arrival: safeArrival, accuracy: accuracy,
                                    transition: .merged, openVisit: duplicate, context: context)
@@ -439,8 +440,9 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 latest.arrival = min(latest.arrival, safeArrival)
                 latest.locationResolutionExplanation = .coordinateTime
                 reconcileActivity(with: latest, context: context)
-                _ = try? ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "arrival refresh")
-                save(context)
+                guard finalizeMutation(.coreLocationArrival,
+                                       change: .init(affectedVisit: latest, coordinate: coordinate,
+                                                     placeScoreAlreadyApplied: true), context: context) else { return }
                 LocationJournal.record(callbackType, at: coordinate, callbackAt: arrival,
                                        arrival: safeArrival, accuracy: accuracy,
                                        transition: .merged, openVisit: latest, context: context)
@@ -505,8 +507,9 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         sampleWiFiAnchor()
         reconcileActivity(with: item, context: context)
         try? SavedPlaceLearning.enrichImportedVisits(with: item, context: context)
-        _ = try? ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "arrival")
-        save(context)
+        guard finalizeMutation(.coreLocationArrival,
+                               change: .init(affectedVisit: item, coordinate: coordinate,
+                                             placeScoreAlreadyApplied: true), context: context) else { return }
         // Reported against the visit this callback produced, so the journal points at
         // the stay it is explaining rather than the one it replaced.
         LocationJournal.record(callbackType, at: coordinate, callbackAt: arrival,
@@ -574,8 +577,12 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             accuracy: accuracy
         )
         reconcileActivity(with: matched, context: context)
-        _ = try? ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "departure")
-        save(context)
+        guard finalizeMutation(.coreLocationDeparture,
+                               change: .init(
+                                affectedVisit: matched,
+                                callbackInterval: DateInterval(start: matched.arrival, end: matched.departure ?? matched.arrival),
+                                coordinate: coordinate, placeScoreAlreadyApplied: true
+                               ), context: context) else { return }
         LocationJournal.record(callbackType, at: coordinate, callbackAt: departure,
                                arrival: arrival, departure: matched.departure, accuracy: accuracy,
                                transition: .closed, openVisit: matched, context: context)
@@ -728,8 +735,12 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         )
         WiFiAnchor.save(nil)
         reconcileActivity(with: open, context: context)
-        _ = try? ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "geofence departure")
-        let didSave = save(context)
+        let didSave = finalizeMutation(.coreLocationDeparture,
+                                       change: .init(
+                                        affectedVisit: open,
+                                        callbackInterval: DateInterval(start: open.arrival, end: open.departure ?? open.arrival),
+                                        coordinate: coordinate, placeScoreAlreadyApplied: true
+                                       ), context: context)
         if let coordinate {
             LocationJournal.record("geofence-exit", at: coordinate, callbackAt: departure,
                                    departure: open.departure, transition: .closed,
@@ -836,8 +847,9 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                     reverseGeocode(visit)
                     return
                 }
-                _ = try? ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "Maps lookup")
-                save(context)
+                guard self.finalizeMutation(.coreLocationArrival,
+                                            change: .init(affectedVisit: visit, coordinate: visit.coordinate,
+                                                          placeScoreAlreadyApplied: true), context: context) else { return }
             } catch {
                 if Task.isCancelled { return }
                 Diagnostics.record(context, subsystem: "MapKit",
@@ -886,8 +898,8 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                     defaultActivity: learnedActivity(forPlaceName: visit.placeName, arrival: visit.arrival),
                     arrival: visit.arrival
                 )
-                _ = try? ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "reverse geocoding")
-                save(context)
+                guard self.finalizeMutation(.coreLocationArrival,
+                                            change: .init(affectedVisit: visit, coordinate: visit.coordinate), context: context) else { return }
             } catch {
                 Diagnostics.record(context, subsystem: "MapKit",
                                    message: "Reverse geocoding failed; the visit remains available for manual labeling.")
@@ -903,8 +915,8 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         visit.placeFieldProvenance = "name-fallback"
         visit.locationResolutionExplanation = .lowConfidence
         visit.inferredActivity = "Visiting"
-        _ = try? ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "unknown place")
-        save(context)
+        _ = finalizeMutation(.coreLocationArrival,
+                             change: .init(affectedVisit: visit, coordinate: visit.coordinate), context: context)
     }
 
     private func identifyRecentUnknown(near location: CLLocation, accuracy: CLLocationAccuracy = -1) {
@@ -942,31 +954,21 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         }
     }
 
-    /// The one save that happens with nobody watching.
-    ///
-    /// Core Location wakes LifeLog in the background, so this can fail at 3am with the
-    /// app never brought to the foreground. `lastError` lives in memory and shows only
-    /// in Settings, so an overnight failure left no trace at all — by morning there was
-    /// nothing to say an arrival had been dropped, or why.
-    @discardableResult
-    private func save(_ context: ModelContext) -> Bool {
-        do {
-            try context.save()
-            // The store has just proved it is writable, so this is the moment to move
-            // any earlier failure out of the queue and into the log.
-            Diagnostics.flushPending(context)
-            return true
-        } catch {
+    /// Keeps callback publication behind VisitMutationService's single commit. The
+    /// recorder still owns raw CLLocation interpretation; the service owns the
+    /// resolver, durable diagnostic, save, and Insights refresh that follow it.
+    private func finalizeMutation(_ kind: VisitMutationService.Kind,
+                                  change: VisitMutationService.Change,
+                                  context: ModelContext) -> Bool {
+        let result = VisitMutationService.finalize(context: context, kind: kind, change: change)
+        guard result.committed else {
             lastError = "LifeLog couldn't securely save this update. Your existing timeline is unchanged."
-            // Domain and code rather than the message: a Core Data error can name the
-            // entity and attribute it failed on, and diagnostics stay clear of anything
-            // describing where the owner has been.
-            let failure = error as NSError
             Diagnostics.recordDurable(context, subsystem: "Store",
-                                      message: "A background save failed (\(failure.domain) \(failure.code)). "
-                                             + "The update was not written.")
+                                      message: "A location mutation rolled back (\(result.failureDescription ?? "unknown failure")).")
             return false
         }
+        Diagnostics.flushPending(context)
+        return true
     }
 
     private func reconcileActivity(with locationVisit: Visit, context: ModelContext) {

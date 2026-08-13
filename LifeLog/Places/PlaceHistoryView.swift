@@ -250,23 +250,21 @@ struct PlaceHistoryDetail: View {
     private func apply() {
         let activity = TextSafety.clean(replacement, maximumLength: 80)
         guard !activity.isEmpty else { return }
-        var changed = 0
-        for visit in scoped where visit.recognitionConfidence != "confirmed" {
-            visit.userActivity = activity
-            changed += 1
-        }
-        do {
-            try context.save()
+        let result = VisitMutationService.perform(context: context, kind: .bulkHistoricalCorrection) {
+            var changed = 0
+            for visit in scoped where visit.recognitionConfidence != "confirmed" {
+                visit.userActivity = activity
+                changed += 1
+            }
             // A per-visit correction record for each row would add thousands of
-            // rows for a single action, so the audit is one diagnostic entry and
-            // the backup taken beforehand.
-            Diagnostics.record(context, subsystem: "Place History",
-                               message: "Bulk activity change applied to \(changed) entries.",
-                               severity: "info")
-            InsightsInvalidation.invalidate(reason: "Place history bulk edit", context: context)
+            // rows for a single action, so the full audit records one aggregate result.
+            return .init(changedCount: changed)
+        }
+        if result.committed {
             reload()
+            let changed = result.changedCount
             message = "Updated \(changed) \(changed == 1 ? "entry" : "entries")."
-        } catch {
+        } else {
             message = "LifeLog couldn’t apply that change. Your timeline is unchanged."
         }
     }

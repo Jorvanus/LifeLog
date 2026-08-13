@@ -2,6 +2,19 @@
 
 ## 2026-08-13
 
+### Timeline updates now publish as one consistent change
+
+- Location arrivals, manual visits, corrections, Saved Place changes, bulk history
+  edits, and recovery now share a single visit-mutation path, so Insights refreshes
+  only after the resolved timeline has been safely saved.
+
+### Location updates now repair only the nearby timeline
+
+- Everyday arrivals, departures, Maps matches, and corrections now resolve only
+  their nearby stays and journeys, keeping callback handling responsive even
+  with a large history. LifeLog still performs a complete, recorded timeline
+  audit after recovery, restore, migration, and an explicit manual repair.
+
 ### Local backup upgraded to a validated, complete format (V2)
 
 - Backups now include a visit's route, HealthKit sample identifiers, and

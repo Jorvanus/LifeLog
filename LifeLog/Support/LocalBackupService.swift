@@ -258,10 +258,18 @@ enum LocalBackupService {
             UserDefaults.standard.set(value, forKey: key)
         }
 
-        // One resolver pass settles the just-restored timeline into the same
-        // shape any other store mutation leaves it in, and its own invariant
-        // validator — run exactly once here — records whether it succeeded.
-        try ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "backup-restore")
+        // A restore is deliberately audited across the full archive before it is
+        // published to Insights; ordinary callbacks never take this path.
+        let mutation = VisitMutationService.finalize(
+            context: context,
+            kind: .backupRestore,
+            change: .init(changedCount: backup.visits.count)
+        )
+        guard mutation.committed else {
+            throw BackupValidationError.invalidCorrection(
+                reason: mutation.failureDescription ?? "Restored history could not be resolved."
+            )
+        }
     }
 
     private static func preferences() -> [String: String] {

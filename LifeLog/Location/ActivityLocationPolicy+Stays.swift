@@ -10,22 +10,109 @@ import CoreLocation
 /// sites — only the text moved.
 extension ActivityLocationPolicy {
 
-    /// Runs immediately after a location-affecting store mutation. Keeping this at
-    /// the data boundary means every consumer reads the same resolved timeline,
-    /// instead of Timeline, Insights, and exports each attempting a partial repair.
+    /// The small amount of evidence a normal callback is allowed to repair. The
+    /// stable ID is deliberately carried alongside the callback interval: row IDs
+    /// are store-local, while a delayed Maps/departure callback must keep referring
+    /// to the same visit after a save or a resolver pass.
+    struct IncrementalMutation: Sendable {
+        let affectedVisitID: UUID
+        let callbackInterval: DateInterval
+        let coordinate: CLLocationCoordinate2D?
+        let reason: String
+
+        init(affectedVisit: Visit, callbackInterval: DateInterval? = nil,
+             coordinate: CLLocationCoordinate2D? = nil, reason: String) {
+            self.affectedVisitID = affectedVisit.stableID
+            let end = affectedVisit.departure ?? affectedVisit.arrival
+            self.callbackInterval = callbackInterval ?? DateInterval(start: affectedVisit.arrival, end: end)
+            self.coordinate = coordinate
+            self.reason = reason
+        }
+    }
+
+    /// A delayed Core Location callback may be hours old, but it only changes its
+    /// own neighbouring stays. This window contains the earlier/later destination
+    /// needed to clamp an overlap plus a modest spatial halo for GPS drift. Open
+    /// stays are fetched separately, regardless of age, because any one of them
+    /// can be the stay a new arrival closes.
+    nonisolated static let incrementalRepairPadding: TimeInterval = 12 * 60 * 60
+    nonisolated static let incrementalSpatialRadius: CLLocationDistance = 1_500
+
+    /// Normal arrival, departure, correction, and Maps mutations use this bounded
+    /// path. It never hydrates the complete Visit or correction archive: it fetches
+    /// open stays and a temporal repair window around the callback, then repairs only
+    /// the local ordering and adjacent journeys.
+    @discardableResult
+    static func resolveAfterLocationMutation(context: ModelContext,
+                                             mutation: IncrementalMutation) throws -> Int {
+        let startedAt = Date.now
+        let candidates = try incrementalRepairVisits(context: context, mutation: mutation)
+        let repairs = resolveLocationCallbacks(in: candidates, context: context)
+        let stateChanges = reconcileResolutionStates(in: candidates)
+        try updateTravelDescriptions(context: context, around: mutation.callbackInterval,
+                                     candidates: candidates)
+        Diagnostics.budget(context, subsystem: "Location resolver", operation: "incremental mutation",
+                           startedAt: startedAt, budget: Diagnostics.PerformanceBudget.locationMutation,
+                           itemCount: candidates.count)
+        Diagnostics.locationMetric(context, operation: "incremental_resolution",
+                                   durationMs: Int((Date.now.timeIntervalSince(startedAt) * 1000).rounded()),
+                                   candidateCount: candidates.count, repairs: repairs + stateChanges)
+        return repairs + stateChanges
+    }
+
+    /// Full-store recovery is intentionally explicit. It is appropriate after a
+    /// migration, restore, relaunch recovery, Diagnostics validation, or a manual
+    /// repair — never as the ordinary callback path above.
+    @discardableResult
+    static func runFullStoreAudit(context: ModelContext, reason: String) throws -> Int {
+        let startedAt = Date.now
+        let repairs = try resolveLocationCallbacks(context: context)
+        try reconcileAll(context: context)
+        try updateTravelDescriptions(context: context)
+        let stateChanges = try reconcileResolutionStates(context: context)
+        let report = try validateLocationResolution(context: context)
+        report.record(context: context, reason: reason, repairs: repairs + stateChanges)
+        let count = try context.fetchCount(FetchDescriptor<Visit>())
+        Diagnostics.budget(context, subsystem: "Location resolver", operation: "full-store audit",
+                           startedAt: startedAt, budget: Diagnostics.PerformanceBudget.locationFullAudit,
+                           itemCount: count)
+        return repairs + stateChanges
+    }
+
+    /// Compatibility for older maintenance call sites. New normal mutations must
+    /// pass an `IncrementalMutation`; this overload remains an explicit audit so a
+    /// missed migration/recovery call cannot silently become a partial repair.
+    @available(*, deprecated, message: "Use IncrementalMutation for callbacks or runFullStoreAudit for maintenance.")
     @discardableResult
     static func resolveAfterLocationMutation(context: ModelContext, reason: String) throws -> Int {
-        let repairs = try resolveLocationCallbacks(context: context)
-        try updateTravelDescriptions(context: context)
-        // Persists what the resolver has just finished deciding — source strings,
-        // place names and confidence may all have just changed above — so every
-        // reader of `resolutionState` sees the same settled answer instead of each
-        // re-deriving it from raw fields. The single automation actor for the whole
-        // store; see `Visit.setResolutionState` for what it is not allowed to touch.
-        try reconcileResolutionStates(context: context)
-        let report = try validateLocationResolution(context: context)
-        report.record(context: context, reason: reason, repairs: repairs)
-        return repairs
+        try runFullStoreAudit(context: context, reason: reason)
+    }
+
+    private static func incrementalRepairVisits(context: ModelContext,
+                                                mutation: IncrementalMutation) throws -> [Visit] {
+        let start = mutation.callbackInterval.start.addingTimeInterval(-incrementalRepairPadding)
+        let end = mutation.callbackInterval.end.addingTimeInterval(incrementalRepairPadding)
+        let descriptor = FetchDescriptor<Visit>(
+            predicate: #Predicate {
+                $0.source != "imported-journal" &&
+                (($0.arrival >= start && $0.arrival <= end) || $0.departure == nil)
+            },
+            sortBy: [SortDescriptor(\.arrival)]
+        )
+        let temporal = try context.fetch(descriptor)
+        guard let coordinate = mutation.coordinate, CLLocationCoordinate2DIsValid(coordinate) else {
+            return temporal
+        }
+        let callbackLocation = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        // Keep every temporal neighbour (a trip can join different businesses), and
+        // retain nearby open records even if their timestamp is malformed/old. This is
+        // a repair halo, not a place-identity matcher; Maps identifiers still win in
+        // the resolver itself.
+        return temporal.filter { visit in
+            let location = CLLocation(latitude: visit.latitude, longitude: visit.longitude)
+            return visit.arrival >= start && visit.arrival <= end ||
+                location.distance(from: callbackLocation) <= incrementalSpatialRadius || visit.departure == nil
+        }
     }
 
     /// Applies `derivedAutomaticResolutionState` to every visit as the resolver's
@@ -36,11 +123,16 @@ extension ActivityLocationPolicy {
     @discardableResult
     static func reconcileResolutionStates(context: ModelContext) throws -> Int {
         let visits = try context.fetch(FetchDescriptor<Visit>())
-        var changed = 0
-        for visit in visits where visit.setResolutionState(derivedAutomaticResolutionState(for: visit), actor: .automation) {
-            changed += 1
+        return reconcileResolutionStates(in: visits)
+    }
+
+    @discardableResult
+    static func reconcileResolutionStates(in visits: [Visit]) -> Int {
+        visits.reduce(into: 0) { changed, visit in
+            if visit.setResolutionState(derivedAutomaticResolutionState(for: visit), actor: .automation) {
+                changed += 1
+            }
         }
-        return changed
     }
 
     /// Read-only validation for the resolved location timeline. Raw, superseded
@@ -70,25 +162,19 @@ extension ActivityLocationPolicy {
 
         let manualCorrections = try context.fetch(FetchDescriptor<VisitCorrection>())
             .filter { $0.reason.localizedCaseInsensitiveContains("manual") }
-        let automationReplacements = manualCorrections.filter { correction in
-            // A visit can have several manual edits. Validate only the latest edit
-            // for that arrival; comparing an older history row with the newer value
-            // would report a replacement even when the user simply edited it again.
-            let hasNewerCorrection = manualCorrections.contains { newer in
-                newer.changedAt > correction.changedAt &&
-                    abs(newer.visitArrival.timeIntervalSince(correction.visitArrival)) < 1 &&
-                    abs(newer.latitude - correction.latitude) < 0.00001 &&
-                    abs(newer.longitude - correction.longitude) < 0.00001
-            }
-            guard !hasNewerCorrection,
-                  let visit = locations
-                    .filter({ $0.resolutionState != .superseded })
-                    .filter({ visit in
-                abs(visit.arrival.timeIntervalSince(correction.visitArrival)) < 1 &&
-                abs(visit.latitude - correction.latitude) < 0.00001 &&
-                abs(visit.longitude - correction.longitude) < 0.00001
-                    })
-                    .last else { return false }
+        // Corrections predate stable visit IDs, so their composite is retained only
+        // here as a legacy index. This replaces the old every-correction-against-
+        // every-correction scan on each full diagnostics audit.
+        let latestCorrections = Dictionary(manualCorrections.map { (legacyCorrectionKey($0.visitArrival, $0.latitude, $0.longitude), $0) },
+                                           uniquingKeysWith: { latest, candidate in
+            latest.changedAt >= candidate.changedAt ? latest : candidate
+        })
+        let visibleLocations = Dictionary(locations.filter { $0.resolutionState != .superseded }
+            .map { (legacyCorrectionKey($0.arrival, $0.latitude, $0.longitude), $0) },
+            uniquingKeysWith: { existing, candidate in existing.arrival >= candidate.arrival ? existing : candidate })
+        let automationReplacements = latestCorrections.values.filter { correction in
+            guard let visit = visibleLocations[legacyCorrectionKey(correction.visitArrival,
+                                                                     correction.latitude, correction.longitude)] else { return false }
             // A user activity takes precedence over an inferred activity. If neither
             // the confirmed place nor their effective activity still agrees, some
             // later automation has replaced the correction.
@@ -118,6 +204,18 @@ extension ActivityLocationPolicy {
         return total
     }
 
+    @discardableResult
+    static func resolveLocationCallbacks(in visits: [Visit], context: ModelContext) -> Int {
+        let repaired = closeSupersededOpenLocations(in: visits, context: context)
+        let marked = deduplicateAutomaticLocations(in: visits, context: context)
+        let merged = mergeOverlappingStays(in: visits, context: context)
+        let total = repaired + marked + merged
+        if total > 0 {
+            Diagnostics.locationMetric(context, operation: "incremental_resolver_repairs", repairs: total)
+        }
+        return total
+    }
+
 
     /// Collapses stays that claim overlapping time at the same place.
     ///
@@ -137,35 +235,60 @@ extension ActivityLocationPolicy {
             predicate: #Predicate { $0.source == "automatic" },
             sortBy: [SortDescriptor(\.arrival)]
         ))
-        var retained: [Visit] = []
+        return mergeOverlappingStays(in: stays, context: context, now: now, recordsDiagnostics: true)
+    }
+
+    /// Incremental equivalent of the full archive merger. The dictionary keeps the
+    /// active overlap host by strong Maps identity (or the old normalised-name
+    /// fallback), avoiding the retained-array backwards search that made one callback
+    /// grow quadratically with a dense archive.
+    @discardableResult
+    static func mergeOverlappingStays(in visits: [Visit], context: ModelContext,
+                                      now: Date = .now) -> Int {
+        mergeOverlappingStays(in: visits, context: context, now: now, recordsDiagnostics: false)
+    }
+
+    private static func mergeOverlappingStays(in visits: [Visit], context: ModelContext,
+                                              now: Date, recordsDiagnostics: Bool) -> Int {
+        let stays = visits.filter { $0.source == "automatic" }
+            .sorted { $0.arrival < $1.arrival }
+        var hosts: [String: Visit] = [:]
         var merged = 0
         for stay in stays {
-            guard let host = retained.last(where: { describesSameStay($0, stay, now: now) }) else {
-                retained.append(stay)
+            let keys = sameStayKeys(stay)
+            guard !keys.isEmpty else { continue }
+            guard let host = keys.lazy.compactMap({ hosts[$0] })
+                .first(where: { describesSameStay($0, stay, now: now) }) else {
+                for key in keys { hosts[key] = stay }
                 continue
             }
+            guard host !== stay else { continue }
             host.arrival = min(host.arrival, stay.arrival)
             switch (host.departure, stay.departure) {
             case (nil, _), (_, nil): host.departure = nil
             case let (left?, right?): host.departure = max(left, right)
             }
-            if locationQuality(stay) > locationQuality(host) {
+            if locationQuality(stay) > locationQuality(host), host.recognitionConfidence != "confirmed" {
                 host.placeName = stay.placeName
                 host.inferredActivity = stay.inferredActivity
                 host.userActivity = stay.userActivity
                 host.recognitionConfidence = stay.recognitionConfidence
             }
-            // Kept for inspection, the way a merged duplicate callback is, but closed
-            // so its duration cannot grow and excluded from every screen.
             stay.departure = stay.arrival
             stay.source = supersededLocationSource
             stay.locationResolutionExplanation = .duplicate
             stay.setResolutionState(.superseded, actor: .automation)
             merged += 1
-            LocationDiagnostics.record(.merged, subject: "Overlapping stay",
-                                       reason: "two records claim the same minutes at one place",
-                                       evidence: "\(stay.placeName) folded into \(host.placeName)",
-                                       context: context)
+            // Both the Maps and legacy name keys point to the retained row, so a
+            // later delayed callback takes the strong identifier first but can still
+            // meet an older identifier-less record at the same stay.
+            for key in keys { hosts[key] = host }
+            if recordsDiagnostics {
+                LocationDiagnostics.record(.merged, subject: "Overlapping stay",
+                                           reason: "two records claim the same minutes at one place",
+                                           evidence: "\(stay.placeName) folded into \(host.placeName)",
+                                           context: context)
+            }
         }
         return merged
     }
@@ -191,6 +314,15 @@ extension ActivityLocationPolicy {
         guard sameIdentity else { return false }
         return CLLocation(latitude: host.latitude, longitude: host.longitude)
             .distance(from: CLLocation(latitude: candidate.latitude, longitude: candidate.longitude)) <= 250
+    }
+
+    private static func sameStayKeys(_ visit: Visit) -> [String] {
+        var keys: [String] = []
+        if let identifier = visit.mapsIdentifier, !identifier.isEmpty { keys.append("maps:\(identifier)") }
+        guard !Visit.isPlaceholderName(visit.placeName) else { return keys }
+        let name = NameKey.matching(visit.placeName)
+        if !name.isEmpty { keys.append("name:\(name)") }
+        return keys
     }
 
 
@@ -343,6 +475,79 @@ extension ActivityLocationPolicy {
         return removed + healed
     }
 
+    /// Local deduplication for the sorted repair window. A duplicate can only be
+    /// within 60 seconds of the callback, so the preceding retained automatic visit
+    /// is the only candidate that needs comparison; older rows are intentionally not
+    /// fetched or reconsidered.
+    @discardableResult
+    static func deduplicateAutomaticLocations(in visits: [Visit], context: ModelContext) -> Int {
+        let automatic = visits.filter {
+            $0.source == "automatic" || $0.source == supersededLocationSource
+        }.sorted { $0.arrival < $1.arrival }
+        var retained: Visit?
+        var repaired = 0
+        for candidate in automatic {
+            if isSupersededLocation(candidate) {
+                if candidate.departure == nil {
+                    candidate.departure = candidate.arrival
+                    repaired += 1
+                }
+                continue
+            }
+            guard let previous = retained else {
+                retained = candidate
+                continue
+            }
+            if isDuplicateArrival(previous, candidate) {
+                previous.arrival = min(previous.arrival, candidate.arrival)
+                switch (previous.departure, candidate.departure) {
+                case (nil, _), (_, nil): previous.departure = nil
+                case let (left?, right?): previous.departure = max(left, right)
+                }
+                if locationQuality(candidate) > locationQuality(previous), previous.recognitionConfidence != "confirmed" {
+                    previous.placeName = candidate.placeName
+                    previous.inferredActivity = candidate.inferredActivity
+                    previous.userActivity = candidate.userActivity
+                    previous.recognitionConfidence = candidate.recognitionConfidence
+                }
+                candidate.departure = candidate.arrival
+                candidate.source = supersededLocationSource
+                candidate.locationResolutionExplanation = .duplicate
+                candidate.setResolutionState(.superseded, actor: .automation)
+                repaired += 1
+            } else {
+                if previous.departure == nil, candidate.arrival > previous.arrival {
+                    previous.departure = candidate.arrival
+                    previous.locationResolutionExplanation = .coordinateTime
+                    repaired += 1
+                } else if let departure = previous.departure, departure > candidate.arrival {
+                    previous.departure = max(previous.arrival, candidate.arrival)
+                    previous.locationResolutionExplanation = .coordinateTime
+                    repaired += 1
+                }
+                retained = candidate
+            }
+        }
+        return repaired
+    }
+
+    private static func isDuplicateArrival(_ previous: Visit, _ candidate: Visit) -> Bool {
+        let sameIdentity: Bool
+        if let left = previous.mapsIdentifier, let right = candidate.mapsIdentifier {
+            sameIdentity = left == right
+        } else if previous.hasPlaceholderName || candidate.hasPlaceholderName {
+            sameIdentity = true
+        } else {
+            sameIdentity = NameKey.matching(previous.placeName) == NameKey.matching(candidate.placeName)
+        }
+        let distance = CLLocation(latitude: previous.latitude, longitude: previous.longitude)
+            .distance(from: CLLocation(latitude: candidate.latitude, longitude: candidate.longitude))
+        let tolerance: CLLocationDistance = (previous.hasPlaceholderName || candidate.hasPlaceholderName) ? 60
+            : (previous.mapsIdentifier != nil && previous.mapsIdentifier == candidate.mapsIdentifier ? 350 : 250)
+        return abs(previous.arrival.timeIntervalSince(candidate.arrival)) <= 60 &&
+            sameIdentity && distance <= tolerance
+    }
+
 
     /// Higher-quality recognition wins when Core Location supplies two views of
     /// the same arrival. This prevents a placeholder from outliving a learned
@@ -377,6 +582,26 @@ extension ActivityLocationPolicy {
                                        context: context)
         }
         return repaired
+    }
+
+    @discardableResult
+    static func closeSupersededOpenLocations(in visits: [Visit], context: ModelContext) -> Int {
+        let locations = visits.filter { isLocationVisit($0) }.sorted { $0.arrival < $1.arrival }
+        guard let latest = locations.last else { return 0 }
+        var repaired = 0
+        for visit in locations where visit.departure == nil && visit !== latest {
+            guard let next = locations.first(where: { $0.arrival > visit.arrival }) else { continue }
+            visit.departure = next.arrival
+            repaired += 1
+        }
+        return repaired
+    }
+
+    private static func legacyCorrectionKey(_ arrival: Date, _ latitude: Double, _ longitude: Double) -> String {
+        // Corrections historically record arrival/coordinates rather than a stable
+        // visit ID. Quantising exactly to the old matching tolerances makes the index
+        // equivalent to the former nested scan while keeping the audit linear.
+        "\(Int(arrival.timeIntervalSince1970.rounded())):\(Int((latitude * 100_000).rounded())):\(Int((longitude * 100_000).rounded()))"
     }
 }
 

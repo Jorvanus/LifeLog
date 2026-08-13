@@ -105,7 +105,6 @@ struct JournalCSVImporter {
 
     @MainActor
     static func importData(_ data: Data, into context: ModelContext) throws -> JournalImportResult {
-        let startedAt = Date.now
         let parsed = parse(data)
         let existing = try context.fetch(FetchDescriptor<Visit>(
             predicate: #Predicate { $0.source == "imported-journal" }
@@ -116,22 +115,23 @@ struct JournalCSVImporter {
         var importedKeys = Set(existing.compactMap(importKey(for:)))
         var inserted = 0
         var skipped = 0
-        for row in parsed.rows {
-            let activity = normalizedActivity(row.name)
-            let place = row.location.isEmpty ? "Imported journal" : row.location
-            let key = importKey(start: row.start, place: place, activity: activity)
-            if !importedKeys.insert(key).inserted { skipped += 1; continue }
-            context.insert(Visit(
-                arrival: row.start, departure: row.end, latitude: 0, longitude: 0,
-                placeName: place,
-                inferredActivity: activity, userActivity: activity, note: row.note,
-                source: "imported-journal", recognitionConfidence: "imported"
-            ))
-            inserted += 1
+        let mutation = VisitMutationService.perform(context: context, kind: .importBatch) {
+            for row in parsed.rows {
+                let activity = normalizedActivity(row.name)
+                let place = row.location.isEmpty ? "Imported journal" : row.location
+                let key = importKey(start: row.start, place: place, activity: activity)
+                if !importedKeys.insert(key).inserted { skipped += 1; continue }
+                context.insert(Visit(
+                    arrival: row.start, departure: row.end, latitude: 0, longitude: 0,
+                    placeName: place,
+                    inferredActivity: activity, userActivity: activity, note: row.note,
+                    source: "imported-journal", recognitionConfidence: "imported"
+                ))
+                inserted += 1
+            }
+            return .init(changedCount: inserted)
         }
-        try context.save()
-        Diagnostics.performance(context, subsystem: "Import", operation: "journal import",
-                                startedAt: startedAt, itemCount: parsed.rows.count)
+        guard mutation.committed else { throw JournalImportError.mutationFailed(mutation.failureDescription) }
         return JournalImportResult(rows: parsed.rows.count, inserted: inserted,
                                    skipped: skipped, malformed: parsed.malformed)
     }
@@ -163,4 +163,14 @@ struct JournalCSVImporter {
         return TextSafety.clean(raw.isEmpty ? "Visiting" : raw, maximumLength: 80)
     }
 
+}
+
+private enum JournalImportError: LocalizedError {
+    case mutationFailed(String?)
+
+    var errorDescription: String? {
+        switch self {
+        case .mutationFailed(let description): return description ?? "LifeLog couldn't save this journal import."
+        }
+    }
 }

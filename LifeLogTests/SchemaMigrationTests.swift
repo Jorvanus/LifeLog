@@ -407,7 +407,7 @@ struct SchemaMigrationTests {
             let visit = try #require(context.fetch(FetchDescriptor<Visit>()).first)
             firstStableID = visit.stableID
             firstState = visit.resolutionState
-            try ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "test relaunch 1")
+            try ActivityLocationPolicy.runFullStoreAudit(context: context, reason: "test relaunch 1")
             try context.save()
         }
 
@@ -461,7 +461,7 @@ struct SchemaMigrationTests {
         // before the resolver's own automation pass runs.
         let converted = try VisitResolutionMigration.convertLegacyIgnoredKeysIfNeeded(context: context, defaults: defaults)
         #expect(converted == 1)
-        try ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "test migration")
+        try ActivityLocationPolicy.runFullStoreAudit(context: context, reason: "test migration")
         try context.save()
 
         let visits = try context.fetch(FetchDescriptor<Visit>())

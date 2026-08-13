@@ -151,19 +151,21 @@ struct ManualVisitView: View {
         let safeDeparture = max(arrival, departure)
         let coordinate = resolution.coordinate
         let inferred = InferenceEngine.activity(placeName: safePlace, arrival: arrival)
-        context.insert(Visit(arrival: arrival, departure: safeDeparture,
+        let visit = Visit(arrival: arrival, departure: safeDeparture,
                              latitude: coordinate?.latitude ?? 0, longitude: coordinate?.longitude ?? 0,
                              placeName: safePlace,
                              inferredActivity: safeActivity.isEmpty ? inferred : safeActivity,
                              userActivity: safeActivity.isEmpty ? nil : safeActivity, source: "manual",
                              recognitionConfidence: resolution.confidence,
-                             placeFieldProvenance: "manual"))
-        do {
-            _ = try ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "manual visit")
-            try context.save()
-            InsightsInvalidation.invalidate(reason: "Manual visit added", context: context)
+                             placeFieldProvenance: "manual")
+        let result = VisitMutationService.perform(context: context, kind: .manualVisit) {
+            context.insert(visit)
+            return .init(affectedVisit: visit, callbackInterval: DateInterval(start: arrival, end: safeDeparture),
+                         coordinate: coordinate, changedCount: 1)
+        }
+        if result.committed {
             dismiss()
-        } catch {
+        } else {
             saveFailed = true
         }
     }

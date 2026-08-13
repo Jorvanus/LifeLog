@@ -1,5 +1,12 @@
+import Foundation
 import SwiftUI
 import SwiftData
+
+private enum LifeLogStartupError: LocalizedError {
+    case recoveryFailed
+
+    var errorDescription: String? { "LifeLog could not safely recover its timeline store." }
+}
 
 @main
 struct LifeLogApp: App {
@@ -80,8 +87,12 @@ struct LifeLogApp: App {
         // A background callback may have been persisted just before termination.
         // Resolve before any screen reads the store so relaunch cannot resurrect an
         // older open stay or an overlap that Timeline would need to hide.
-        _ = try ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "relaunch recovery")
-        try context.save()
+        let result = VisitMutationService.perform(context: context, kind: .relaunchRecovery) {
+            .init(changedCount: 0)
+        }
+        if !result.committed {
+            throw LifeLogStartupError.recoveryFailed
+        }
         return container
     }
 

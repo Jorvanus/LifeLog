@@ -2053,7 +2053,7 @@ struct ActivityLocationPolicyTests {
                           source: "automatic", recognitionConfidence: "learned")
         [home, shops].forEach(context.insert)
 
-        _ = try ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "fixture")
+        _ = try ActivityLocationPolicy.runFullStoreAudit(context: context, reason: "fixture")
         try context.save()
 
         let report = try ActivityLocationPolicy.validateLocationResolution(context: context)

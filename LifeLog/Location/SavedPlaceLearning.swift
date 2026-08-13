@@ -47,17 +47,20 @@ enum SavedPlaceLearning {
             }
         ))
         let location = CLLocation(latitude: place.latitude, longitude: place.longitude)
-        var changed = 0
-        for visit in visits where ActivityLocationPolicy.isLocationVisit(visit) && isLocated(visit) {
-            guard location.distance(from: CLLocation(latitude: visit.latitude, longitude: visit.longitude)) <= place.radius,
-                  visit.isIgnored != ignored else { continue }
-            visit.isIgnored = ignored
-            changed += 1
+        let result = VisitMutationService.perform(context: context, kind: .savedPlaceChange) {
+            var changed = 0
+            for visit in visits where ActivityLocationPolicy.isLocationVisit(visit) && isLocated(visit) {
+                guard location.distance(from: CLLocation(latitude: visit.latitude, longitude: visit.longitude)) <= place.radius,
+                      visit.isIgnored != ignored else { continue }
+                visit.isIgnored = ignored
+                changed += 1
+            }
+            return .init(changedCount: changed)
         }
-        try context.save()
-        _ = try ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "Saved Place ignored state")
-        try context.save()
-        return changed
+        guard result.committed else {
+            throw SavedPlaceLearningError.mutationFailed(result.failureDescription)
+        }
+        return result.changedCount
     }
     enum Change: Equatable {
         case created
@@ -259,7 +262,7 @@ enum SavedPlaceLearning {
             CorrectionHistory.record(visit: visit, from: previous, context: context,
                                      reason: "Saved Place learned")
         }
-        _ = try ActivityLocationPolicy.resolveAfterLocationMutation(context: context, reason: "Saved Place edit")
+        _ = try ActivityLocationPolicy.runFullStoreAudit(context: context, reason: "Saved Place edit")
     }
 
     /// Adds Core Location detail to imported journal rows without changing their
@@ -339,5 +342,15 @@ enum SavedPlaceLearning {
         let distance = CLLocation(latitude: place.latitude, longitude: place.longitude)
             .distance(from: CLLocation(latitude: anchor.latitude, longitude: anchor.longitude))
         return distance <= automaticClusterRadius && NameKey.matching(place.name).contains("shopping")
+    }
+}
+
+private enum SavedPlaceLearningError: LocalizedError {
+    case mutationFailed(String?)
+
+    var errorDescription: String? {
+        switch self {
+        case .mutationFailed(let description): return description ?? "LifeLog could not update this Saved Place."
+        }
     }
 }

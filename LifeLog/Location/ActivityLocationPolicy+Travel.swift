@@ -40,6 +40,71 @@ extension ActivityLocationPolicy {
         }
     }
 
+    /// Re-labels only journeys next to the callback window. The destination's
+    /// recurrence query is keyed by its normalised name, rather than hydrating the
+    /// whole archive just to decide whether one journey can say where it was going.
+    static func updateTravelDescriptions(context: ModelContext, around interval: DateInterval,
+                                         candidates: [Visit]) throws {
+        let locations = candidates.filter { isLocationVisit($0) && !$0.isIgnored }
+        let savedPlaces = try context.fetch(FetchDescriptor<SavedPlace>())
+        let relevantTravel = candidates.filter { activity in
+            guard isTravelActivity(activity), !activity.isIgnored else { return false }
+            let end = activity.departure ?? activity.arrival
+            return end >= interval.start && activity.arrival <= interval.end
+        }
+        for activity in relevantTravel {
+            let end = activity.departure ?? activity.arrival
+            guard let destination = locations.filter({ $0.arrival >= end }).min(by: { $0.arrival < $1.arrival }),
+                  let label = try incrementalDestinationLabel(for: destination, savedPlaces: savedPlaces,
+                                                              context: context) else { continue }
+            let description = "Travelling to \(label)"
+            let isGeneratedActivity = activity.userActivity == nil ||
+                activity.userActivity == activity.inferredActivity ||
+                activity.userActivity == "Travelling" || activity.userActivity == "In transit"
+            activity.inferredActivity = description
+            activity.recognitionConfidence = try incrementalDestinationConfidence(for: destination,
+                                                                                    savedPlaces: savedPlaces,
+                                                                                    context: context)
+            if isGeneratedActivity { activity.userActivity = description }
+        }
+    }
+
+    private static func incrementalDestinationLabel(for destination: Visit, savedPlaces: [SavedPlace],
+                                                    context: ModelContext) throws -> String? {
+        switch SavedPlaceRole.of(destination, in: savedPlaces) {
+        case .home: return "Home"
+        case .work: return "Work"
+        case nil: break
+        }
+        let matches = try recurrenceVisits(for: destination, context: context)
+        let days = Set(matches.map { Calendar.current.startOfDay(for: $0.arrival) })
+        guard matches.count >= 3, days.count >= 2 else { return nil }
+        return TextSafety.clean(destination.placeName, maximumLength: 80)
+    }
+
+    private static func incrementalDestinationConfidence(for destination: Visit,
+                                                         savedPlaces: [SavedPlace],
+                                                         context: ModelContext) throws -> String {
+        if SavedPlaceRole.of(destination, in: savedPlaces) != nil { return "learned" }
+        let matches = try recurrenceVisits(for: destination, context: context)
+        let days = Set(matches.map { Calendar.current.startOfDay(for: $0.arrival) })
+        return matches.count >= 3 && days.count >= 2 ? "learned" : "medium"
+    }
+
+    private static func recurrenceVisits(for destination: Visit, context: ModelContext) throws -> [Visit] {
+        let name = destination.placeName
+        guard !Visit.isPlaceholderName(name) else { return [] }
+        // SwiftData can filter by the raw stored label; NameKey remains the carefully
+        // constrained compatibility fallback after this bounded query for historical
+        // names that differ only in punctuation/case.
+        let descriptor = FetchDescriptor<Visit>(predicate: #Predicate {
+            $0.source != "imported-journal" && $0.placeName == name
+        })
+        return try context.fetch(descriptor).filter {
+            isLocationVisit($0) && !$0.isIgnored && NameKey.matching($0.placeName) == NameKey.matching(name)
+        }
+    }
+
     private static func destinationLabel(for destination: Visit, locations: [Visit],
                                          savedPlaces: [SavedPlace]) -> String? {
         switch SavedPlaceRole.of(destination, in: savedPlaces) {
