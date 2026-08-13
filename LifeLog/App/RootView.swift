@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UIKit
 
 struct RootView: View {
     private enum UITestDestination: String, Identifiable {
@@ -57,13 +58,29 @@ struct RootView: View {
             if tab == 0 { timelineReturnStartedAt = .now }
         }
         .onChange(of: scenePhase) { _, phase in
-            guard phase == .active else { return }
-            activityData.refreshAutomatically()
-            // Health access can be changed in the Health app while LifeLog is in the
-            // background, and the import throttle above can skip a launch entirely.
-            // Re-reading the status on every activation is what keeps Settings from
-            // showing a stale "Not connected".
-            Task { await activityData.refreshHealthStatus() }
+            switch phase {
+            case .active:
+                activityData.refreshAutomatically()
+                // Health access can be changed in the Health app while LifeLog is in the
+                // background, and the import throttle above can skip a launch entirely.
+                // Re-reading the status on every activation is what keeps Settings from
+                // showing a stale "Not connected".
+                Task { await activityData.refreshHealthStatus() }
+            case .background:
+                // Nothing else in Diagnostics can say what happens after this: if the
+                // process is killed from here, by the system or by the person, the next
+                // line in the log is whatever eventually relaunches it, with no record of
+                // the gap between. Background App Refresh and Low Power Mode are the two
+                // settings that silently stop Core Location from relaunching the app on
+                // its own, so this is the one moment to write them down.
+                Diagnostics.record(context, subsystem: "Launch",
+                                   message: "Entered background; Background App Refresh "
+                                          + "\(backgroundRefreshDescription), Low Power Mode "
+                                          + "\(ProcessInfo.processInfo.isLowPowerModeEnabled ? "on" : "off").",
+                                   severity: "info")
+            default:
+                break
+            }
         }
         .accessibilityIdentifier("root-tab-view")
         .task {
@@ -104,6 +121,15 @@ struct RootView: View {
                 case .journalStorage: JournalCompactionView()
                 }
             }
+        }
+    }
+
+    private var backgroundRefreshDescription: String {
+        switch UIApplication.shared.backgroundRefreshStatus {
+        case .available: "available"
+        case .denied: "denied"
+        case .restricted: "restricted"
+        @unknown default: "unknown"
         }
     }
 }
