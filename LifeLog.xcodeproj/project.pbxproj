@@ -11,6 +11,7 @@
 		046CA3B87DA5CA5E597169A0 /* WiFiAnchor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0C0DCB07A02A2ACCBB9675B /* WiFiAnchor.swift */; };
 		065FF612F5D30995E0C0211E /* ActivityLocationPolicy+Visibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1B5D3127D11F1A77CF5F1F1 /* ActivityLocationPolicy+Visibility.swift */; };
 		079B2D6540571B6E67B89DC5 /* ActivityLocationPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F6EFD93E6C35C60C97969D4 /* ActivityLocationPolicyTests.swift */; };
+		0936FA17094A94D13C804020 /* VisitPayloadEnvelopeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8261CE3F891F96A7DC1927FD /* VisitPayloadEnvelopeTests.swift */; };
 		0A23A570DD7BB8AB0E43B2C0 /* ActivityColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C5EC091BE4DFE764B9C13 /* ActivityColors.swift */; };
 		0C74FE4DF236C0DC6301E03C /* LifeLogApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65F71226A086D9FA96C67287 /* LifeLogApp.swift */; };
 		10A872EC8DC75B7EC661306B /* VisitArchiveReaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01B3EE88077497CF76D1D6F7 /* VisitArchiveReaderTests.swift */; };
@@ -105,6 +106,7 @@
 		9C9E104AF59B67B48D683DCF /* PlaceEvidence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AD396C8949E3606A3E5CF3F /* PlaceEvidence.swift */; };
 		9CAD705AEA88976605723DF3 /* ActivityCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE7770490742DEC3580ECE37 /* ActivityCatalog.swift */; };
 		A41533762193AD65ED097150 /* VisitResolutionStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BFCA03173A7651A3AEA0F78 /* VisitResolutionStateTests.swift */; };
+		A692CC19BB95D69B9118732E /* VisitPayloadEnvelope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20BBAD75DFD9D4B4666E5D4F /* VisitPayloadEnvelope.swift */; };
 		AA7676281C191DCAD00057BE /* YearInsightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E936AE644A7AEE373B64010C /* YearInsightsView.swift */; };
 		AB60DE2B6722C2894EFE6304 /* SmartActivityClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = A515882452919E11B257F68E /* SmartActivityClassifier.swift */; };
 		AC75BA5FDF16AB6D1AE59EDA /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DE02BEA1AC41A66498E80CC /* Models.swift */; };
@@ -193,6 +195,7 @@
 		1DE02BEA1AC41A66498E80CC /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		1E02A9CCD0CB966927A0A63E /* LifeLogTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = LifeLogTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1F988CF286B464E43CCCF80A /* TimelineFixtureCoverageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineFixtureCoverageTests.swift; sourceTree = "<group>"; };
+		20BBAD75DFD9D4B4666E5D4F /* VisitPayloadEnvelope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitPayloadEnvelope.swift; sourceTree = "<group>"; };
 		20F66D93CEC288FCC9E45F8C /* LifeLogUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeLogUITests.swift; sourceTree = "<group>"; };
 		22B9D2C0B75965475D1B8E1F /* LocationRecordingComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationRecordingComponents.swift; sourceTree = "<group>"; };
 		2363204AE78AA292C1DCF5B1 /* SavedPlaceLearning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedPlaceLearning.swift; sourceTree = "<group>"; };
@@ -251,6 +254,7 @@
 		7C0C5EC091BE4DFE764B9C13 /* ActivityColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityColors.swift; sourceTree = "<group>"; };
 		7CBEC83460C1DC986F43F32E /* InsightSliceEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightSliceEditor.swift; sourceTree = "<group>"; };
 		7E6D117C5049043C7F7F1819 /* TravelInsightsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TravelInsightsView.swift; sourceTree = "<group>"; };
+		8261CE3F891F96A7DC1927FD /* VisitPayloadEnvelopeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitPayloadEnvelopeTests.swift; sourceTree = "<group>"; };
 		865B4510743A0C7EEFCF612F /* InferenceEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InferenceEngine.swift; sourceTree = "<group>"; };
 		86930351BA999975C9D617AD /* InsightsTrendAggregator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsTrendAggregator.swift; sourceTree = "<group>"; };
 		906BA44701C01FD6C8470CE4 /* DayHighlight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayHighlight.swift; sourceTree = "<group>"; };
@@ -365,6 +369,7 @@
 				A6B0C2ED75D4E27FAF58AD11 /* TravelInsightsTests.swift */,
 				01B3EE88077497CF76D1D6F7 /* VisitArchiveReaderTests.swift */,
 				3760FE7BF2AAF979F40D72F7 /* VisitMutationServiceTests.swift */,
+				8261CE3F891F96A7DC1927FD /* VisitPayloadEnvelopeTests.swift */,
 				1BFCA03173A7651A3AEA0F78 /* VisitResolutionStateTests.swift */,
 			);
 			path = LifeLogTests;
@@ -544,6 +549,7 @@
 				FB833AF7C4BDBEA633EB2EE3 /* LifeLogSchema.swift */,
 				5E3F5031981FCA708C76D985 /* LocationEvent.swift */,
 				1DE02BEA1AC41A66498E80CC /* Models.swift */,
+				20BBAD75DFD9D4B4666E5D4F /* VisitPayloadEnvelope.swift */,
 			);
 			path = Model;
 			sourceTree = "<group>";
@@ -824,6 +830,7 @@
 				E8FE6C6D767B0E4172D13F8E /* VisitHistoryQuery.swift in Sources */,
 				3B13CFC55D6441F7A10F082D /* VisitLocationChooser.swift in Sources */,
 				C77965B7DD7E42C18719548B /* VisitMutationService.swift in Sources */,
+				A692CC19BB95D69B9118732E /* VisitPayloadEnvelope.swift in Sources */,
 				9C7FEBA34792F96B27369529 /* VisitResolutionMigration.swift in Sources */,
 				DE8B3A2A3D7C9F06362C6F80 /* VisitSuggestion.swift in Sources */,
 				EEF970A9460A2D450D3B7E1A /* WeeklyStrip.swift in Sources */,
@@ -870,6 +877,7 @@
 				78CE14BE08C0B63C6382D2D1 /* TravelInsightsTests.swift in Sources */,
 				10A872EC8DC75B7EC661306B /* VisitArchiveReaderTests.swift in Sources */,
 				B1986C5D4F8FAE580DB46C24 /* VisitMutationServiceTests.swift in Sources */,
+				0936FA17094A94D13C804020 /* VisitPayloadEnvelopeTests.swift in Sources */,
 				A41533762193AD65ED097150 /* VisitResolutionStateTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1009,7 +1017,7 @@
 				CODE_SIGN_ENTITLEMENTS = LifeLog/LifeLog.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 146;
+				CURRENT_PROJECT_VERSION = 147;
 				DEVELOPMENT_TEAM = 337KNRL5L8;
 				INFOPLIST_FILE = LifeLog/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
@@ -1017,7 +1025,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.65.0;
+				MARKETING_VERSION = 1.66.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aaronbaxter.LifeLog;
 				SDKROOT = iphoneos;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -1129,7 +1137,7 @@
 				CODE_SIGN_ENTITLEMENTS = LifeLog/LifeLog.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 146;
+				CURRENT_PROJECT_VERSION = 147;
 				DEVELOPMENT_TEAM = 337KNRL5L8;
 				INFOPLIST_FILE = LifeLog/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
@@ -1137,7 +1145,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.65.0;
+				MARKETING_VERSION = 1.66.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aaronbaxter.LifeLog;
 				SDKROOT = iphoneos;
 				SWIFT_EMIT_LOC_STRINGS = YES;

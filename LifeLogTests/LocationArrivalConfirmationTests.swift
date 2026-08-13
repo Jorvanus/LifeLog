@@ -77,10 +77,10 @@ struct LocationArrivalConfirmationTests {
     func delayedArrivalIsAdaptedDeterministically() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let adapter = CoreLocationEventAdapter(now: { now })
-        let visit = CLVisit(coordinate: .init(latitude: -27.47, longitude: 153.03),
-                            horizontalAccuracy: 12,
-                            arrivalDate: now.addingTimeInterval(-7 * 24 * 60 * 60),
-                            departureDate: .distantFuture)
+        let visit = MockCLVisit(coordinate: .init(latitude: -27.47, longitude: 153.03),
+                                horizontalAccuracy: 12,
+                                arrivalDate: now.addingTimeInterval(-7 * 24 * 60 * 60),
+                                departureDate: .distantFuture)
         guard case let .visitArrival(_, _, _, delay)? = adapter.event(for: visit) else {
             Issue.record("Expected an arrival event")
             return
@@ -112,4 +112,32 @@ struct LocationArrivalConfirmationTests {
             enabled: false, authorization: .authorizedAlways
         ) == false)
     }
+}
+
+/// `CLVisit` has no public initializer -- CoreLocation only ever hands one to the
+/// delegate itself -- so a test that needs one overrides its read-only properties
+/// on a subclass instead.
+private final class MockCLVisit: CLVisit {
+    private let mockCoordinate: CLLocationCoordinate2D
+    private let mockHorizontalAccuracy: CLLocationAccuracy
+    private let mockArrivalDate: Date
+    private let mockDepartureDate: Date
+
+    init(coordinate: CLLocationCoordinate2D, horizontalAccuracy: CLLocationAccuracy,
+         arrivalDate: Date, departureDate: Date) {
+        self.mockCoordinate = coordinate
+        self.mockHorizontalAccuracy = horizontalAccuracy
+        self.mockArrivalDate = arrivalDate
+        self.mockDepartureDate = departureDate
+        super.init()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("MockCLVisit does not support NSCoding")
+    }
+
+    override var coordinate: CLLocationCoordinate2D { mockCoordinate }
+    override var horizontalAccuracy: CLLocationAccuracy { mockHorizontalAccuracy }
+    override var arrivalDate: Date { mockArrivalDate }
+    override var departureDate: Date { mockDepartureDate }
 }

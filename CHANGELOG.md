@@ -1,5 +1,13 @@
 # Change log
 
+## 2026-08-14
+
+### Location evidence stays recoverable
+
+- LifeLog now recognises versioned route and place-candidate evidence, keeps
+  older or future payloads recoverable during backup and repair, and reports
+  unreadable evidence instead of silently treating it as an empty route or list.
+
 ## 2026-08-13
 
 ### History remains readable as LifeLog evolves

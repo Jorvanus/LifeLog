@@ -511,14 +511,26 @@ final class Visit {
         }
     }
 
-    var route: [RoutePoint] {
-        get {
-            guard let routeData else { return [] }
-            return (try? JSONDecoder().decode([RoutePoint].self, from: routeData)) ?? []
-        }
-        set { routeData = newValue.isEmpty ? nil : try? JSONEncoder().encode(newValue) }
+    /// The raw blob is never rewritten merely because this build cannot read it.
+    /// A caller can distinguish a genuinely empty route from legacy, corrupt, or
+    /// future data through `routeDecoding`, while ordinary Timeline presentation
+    /// still receives the safe empty fallback it expects.
+    var routeDecoding: VisitPayloadDecodingResult<[RoutePoint]> {
+        VisitPayloadDecoder.cachedRoute(from: routeData)
     }
-    var hasRoute: Bool { routeData != nil }
+
+    var route: [RoutePoint] {
+        get { routeDecoding.value ?? [] }
+        set {
+            guard !newValue.isEmpty else { routeData = nil; return }
+            do {
+                routeData = try VisitPayloadDecoder.encodeRoute(newValue)
+            } catch {
+                recordPayloadWriteFailure("route", error: error)
+            }
+        }
+    }
+    var hasRoute: Bool { !(routeDecoding.value ?? []).isEmpty }
 
     /// Ground covered along the path, which is what a person means by how far they
     /// walked — not the distance between where they started and where they stopped.
@@ -540,13 +552,17 @@ final class Visit {
         return points.map { $0.location.distance(from: origin) }.max()
     }
 
+    var candidateDecoding: VisitPayloadDecodingResult<VisitCandidatePayload> {
+        VisitPayloadDecoder.cachedCandidates(from: candidateData)
+    }
+
     var placeSuggestions: [PlaceSuggestion] {
-        get { candidatePayload?.suggestions ?? legacyPlaceSuggestions }
+        get { candidateDecoding.value?.suggestions ?? [] }
         set { writeCandidatePayload(suggestions: newValue) }
     }
 
     var placeScoreBreakdown: PlaceScoreBreakdown? {
-        get { candidatePayload?.score }
+        get { candidateDecoding.value?.score }
         set { writeCandidatePayload(score: newValue) }
     }
 
@@ -554,30 +570,59 @@ final class Visit {
     /// learning intentionally clears the latter, but Diagnostics must still be able
     /// to explain what Maps offered and why one result won.
     var locationResolutionCandidates: LocationResolutionCandidates? {
-        get { candidatePayload?.resolution }
+        get { candidateDecoding.value?.resolution }
         set { writeCandidatePayload(resolution: newValue) }
-    }
-
-    private var candidatePayload: VisitCandidatePayload? {
-        guard let candidateData else { return nil }
-        return try? JSONDecoder().decode(VisitCandidatePayload.self, from: candidateData)
-    }
-
-    private var legacyPlaceSuggestions: [PlaceSuggestion] {
-        guard let candidateData else { return [] }
-        return (try? JSONDecoder().decode([PlaceSuggestion].self, from: candidateData)) ?? []
     }
 
     private func writeCandidatePayload(suggestions: [PlaceSuggestion]? = nil,
                                        score: PlaceScoreBreakdown?? = nil,
                                        resolution: LocationResolutionCandidates?? = nil) {
-        let payload = candidatePayload
+        let decoded = candidateDecoding
+        guard decoded.status != .unsupported && decoded.status != .corrupt else {
+            // Resolver follow-up must not make a future or damaged payload vanish.
+            // A repair tool can explicitly replace it after exporting the raw bytes.
+            queuePayloadDiagnostic("Preserved unreadable candidate payload for \(stableID); automatic update was skipped.")
+            return
+        }
+        let payload = decoded.value
         let updated = VisitCandidatePayload(
-            suggestions: suggestions ?? payload?.suggestions ?? legacyPlaceSuggestions,
+            suggestions: suggestions ?? payload?.suggestions ?? [],
             score: score ?? payload?.score,
             resolution: resolution ?? payload?.resolution
         )
-        candidateData = try? JSONEncoder().encode(updated)
+        do {
+            candidateData = try VisitPayloadDecoder.encodeCandidates(updated)
+        } catch {
+            recordPayloadWriteFailure("candidate", error: error)
+        }
+    }
+
+    /// A failed encoder must not replace a readable prior blob with `nil` or an
+    /// empty payload. The durable diagnostic makes that otherwise invisible data
+    /// loss risk inspectable without turning a property setter into a second save.
+    private func recordPayloadWriteFailure(_ kind: String, error: Error) {
+        queuePayloadDiagnostic("Could not encode \(kind) payload for \(stableID): \(error.localizedDescription)")
+    }
+
+    /// `Visit` accessors are not main-actor isolated. Queue the evidence here;
+    /// the next successful main-actor store operation flushes it into Diagnostics.
+    private func queuePayloadDiagnostic(_ message: String) {
+        PendingDiagnostics.queue(.init(createdAt: .now, subsystem: "Visit payload",
+                                       severity: DiagnosticSeverity.warningRaw, message: message))
+    }
+
+    /// Called by repair and restore flows, where there is a transaction available
+    /// to record an actionable warning once. Read-only UI access intentionally
+    /// does not save diagnostics or mutate a malformed historical visit.
+    @MainActor
+    func stageUnreadablePayloadDiagnostics(in context: ModelContext) {
+        for (kind, status, reason) in [
+            ("candidate", candidateDecoding.status, candidateDecoding.reason),
+            ("route", routeDecoding.status, routeDecoding.reason)
+        ] where status == .unsupported || status == .corrupt {
+            Diagnostics.stage(context, subsystem: "Visit payload",
+                              message: "Preserved \(kind) payload for \(stableID) is \(status.rawValue): \(reason ?? "no detail")")
+        }
     }
 
     var confidenceLabel: String {
@@ -612,19 +657,10 @@ final class Visit {
     }
 }
 
-/// Candidate payloads were originally stored as a bare suggestion array. The
-/// envelope keeps those old visits readable while allowing the scorer to persist
-/// its explainable result alongside the candidates that produced it.
-private struct VisitCandidatePayload: Codable {
-    let suggestions: [PlaceSuggestion]
-    let score: PlaceScoreBreakdown?
-    let resolution: LocationResolutionCandidates?
-}
-
 /// The named options examined for an automatic stay. It deliberately records only
 /// Maps/Saved Place labels and distances; raw callback coordinates remain confined
 /// to the opt-in Location Journal.
-struct LocationResolutionCandidates: Codable, Equatable {
+struct LocationResolutionCandidates: Codable, Equatable, Sendable {
     let chosen: PlaceSuggestion?
     let rejected: [PlaceSuggestion]
 }

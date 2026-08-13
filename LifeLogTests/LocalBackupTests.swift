@@ -304,8 +304,8 @@ struct LocalBackupTests {
         let shared = UUID()
         let backup = LifeLogBackup(version: LifeLogBackup.currentVersion, createdAt: .now,
             visits: [
-                .init(arrival: base, departure: nil, latitude: 0, longitude: 0, placeName: "A", inferredActivity: "Visiting", userActivity: nil, note: "", source: "automatic", recognitionConfidence: nil, candidateData: nil, mapsIdentifier: nil, placeFieldProvenance: nil, resolutionExplanation: nil, stableID: shared, resolutionState: nil, healthKitSampleIDs: nil, routeData: nil),
-                .init(arrival: base.addingTimeInterval(3600), departure: nil, latitude: 0, longitude: 0, placeName: "B", inferredActivity: "Visiting", userActivity: nil, note: "", source: "automatic", recognitionConfidence: nil, candidateData: nil, mapsIdentifier: nil, placeFieldProvenance: nil, resolutionExplanation: nil, stableID: shared, resolutionState: nil, healthKitSampleIDs: nil, routeData: nil)
+                .init(arrival: base, departure: nil, latitude: 0, longitude: 0, placeName: "A", inferredActivity: "Visiting", userActivity: nil, note: "", source: "automatic", activityDefinitionID: nil, recognitionConfidence: nil, candidateData: nil, mapsIdentifier: nil, placeFieldProvenance: nil, resolutionExplanation: nil, stableID: shared, resolutionState: nil, healthKitSampleIDs: nil, routeData: nil),
+                .init(arrival: base.addingTimeInterval(3600), departure: nil, latitude: 0, longitude: 0, placeName: "B", inferredActivity: "Visiting", userActivity: nil, note: "", source: "automatic", activityDefinitionID: nil, recognitionConfidence: nil, candidateData: nil, mapsIdentifier: nil, placeFieldProvenance: nil, resolutionExplanation: nil, stableID: shared, resolutionState: nil, healthKitSampleIDs: nil, routeData: nil)
             ],
             savedPlaces: [], corrections: [], diagnostics: [], locationEvents: [],
             ignoredVisitKeys: [], activityDefinitions: [], preferences: [:])
@@ -323,8 +323,8 @@ struct LocalBackupTests {
         let sharedSample = UUID()
         let backup = LifeLogBackup(version: LifeLogBackup.currentVersion, createdAt: .now,
             visits: [
-                .init(arrival: base, departure: nil, latitude: 0, longitude: 0, placeName: "A", inferredActivity: "Sleeping", userActivity: nil, note: "", source: "health-sleep", recognitionConfidence: nil, candidateData: nil, mapsIdentifier: nil, placeFieldProvenance: nil, resolutionExplanation: nil, stableID: nil, resolutionState: nil, healthKitSampleIDs: [sharedSample], routeData: nil),
-                .init(arrival: base.addingTimeInterval(3600), departure: nil, latitude: 0, longitude: 0, placeName: "B", inferredActivity: "Sleeping", userActivity: nil, note: "", source: "health-sleep", recognitionConfidence: nil, candidateData: nil, mapsIdentifier: nil, placeFieldProvenance: nil, resolutionExplanation: nil, stableID: nil, resolutionState: nil, healthKitSampleIDs: [sharedSample], routeData: nil)
+                .init(arrival: base, departure: nil, latitude: 0, longitude: 0, placeName: "A", inferredActivity: "Sleeping", userActivity: nil, note: "", source: "health-sleep", activityDefinitionID: nil, recognitionConfidence: nil, candidateData: nil, mapsIdentifier: nil, placeFieldProvenance: nil, resolutionExplanation: nil, stableID: nil, resolutionState: nil, healthKitSampleIDs: [sharedSample], routeData: nil),
+                .init(arrival: base.addingTimeInterval(3600), departure: nil, latitude: 0, longitude: 0, placeName: "B", inferredActivity: "Sleeping", userActivity: nil, note: "", source: "health-sleep", activityDefinitionID: nil, recognitionConfidence: nil, candidateData: nil, mapsIdentifier: nil, placeFieldProvenance: nil, resolutionExplanation: nil, stableID: nil, resolutionState: nil, healthKitSampleIDs: [sharedSample], routeData: nil)
             ],
             savedPlaces: [], corrections: [], diagnostics: [], locationEvents: [],
             ignoredVisitKeys: [], activityDefinitions: [], preferences: [:])
@@ -344,11 +344,11 @@ struct LocalBackupTests {
         let backup = LifeLogBackup(version: LifeLogBackup.currentVersion, createdAt: .now,
             visits: [
                 // Valid on its own -- would restore fine if it were alone.
-                .init(arrival: base, departure: base.addingTimeInterval(1800), latitude: 0, longitude: 0, placeName: "Valid", inferredActivity: "Visiting", userActivity: nil, note: "", source: "automatic", recognitionConfidence: nil, candidateData: nil, mapsIdentifier: nil, placeFieldProvenance: nil, resolutionExplanation: nil, stableID: UUID(), resolutionState: nil, healthKitSampleIDs: nil, routeData: nil),
+                .init(arrival: base, departure: base.addingTimeInterval(1800), latitude: 0, longitude: 0, placeName: "Valid", inferredActivity: "Visiting", userActivity: nil, note: "", source: "automatic", activityDefinitionID: nil, recognitionConfidence: nil, candidateData: nil, mapsIdentifier: nil, placeFieldProvenance: nil, resolutionExplanation: nil, stableID: UUID(), resolutionState: nil, healthKitSampleIDs: nil, routeData: nil),
                 // Negative duration: departure precedes arrival.
-                .init(arrival: base.addingTimeInterval(7200), departure: base.addingTimeInterval(3600), latitude: 0, longitude: 0, placeName: "Invalid", inferredActivity: "Visiting", userActivity: nil, note: "", source: "automatic", recognitionConfidence: nil, candidateData: nil, mapsIdentifier: nil, placeFieldProvenance: nil, resolutionExplanation: nil, stableID: UUID(), resolutionState: nil, healthKitSampleIDs: nil, routeData: nil)
+                .init(arrival: base.addingTimeInterval(7200), departure: base.addingTimeInterval(3600), latitude: 0, longitude: 0, placeName: "Invalid", inferredActivity: "Visiting", userActivity: nil, note: "", source: "automatic", activityDefinitionID: nil, recognitionConfidence: nil, candidateData: nil, mapsIdentifier: nil, placeFieldProvenance: nil, resolutionExplanation: nil, stableID: UUID(), resolutionState: nil, healthKitSampleIDs: nil, routeData: nil)
             ],
-            savedPlaces: [.init(name: "Existing preference guard", latitude: 0, longitude: 0, radius: 100, defaultActivity: "", mapsIdentifier: nil, role: nil)],
+            savedPlaces: [.init(name: "Existing preference guard", latitude: 0, longitude: 0, radius: 100, defaultActivity: "", mapsIdentifier: nil, activityDefinitionID: nil, role: nil)],
             corrections: [], diagnostics: [], locationEvents: [],
             ignoredVisitKeys: [], activityDefinitions: [], preferences: ["LifeLog.Test.marker": "should-not-be-written"])
         let data = try JSONEncoder.lifeLogBackup.encode(backup)

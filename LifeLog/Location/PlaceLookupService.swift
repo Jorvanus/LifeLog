@@ -2,7 +2,7 @@ import Foundation
 import CoreLocation
 import MapKit
 
-struct PlaceSuggestion: Codable, Identifiable, Hashable {
+struct PlaceSuggestion: Codable, Identifiable, Hashable, Sendable {
     var id: String { "\(name)-\(latitude)-\(longitude)" }
     let name: String
     let latitude: Double

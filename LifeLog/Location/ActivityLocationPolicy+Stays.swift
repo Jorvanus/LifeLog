@@ -72,7 +72,11 @@ extension ActivityLocationPolicy {
         let stateChanges = try reconcileResolutionStates(context: context)
         let report = try validateLocationResolution(context: context)
         report.record(context: context, reason: reason, repairs: repairs + stateChanges)
-        let count = try context.fetchCount(FetchDescriptor<Visit>())
+        let visits = try context.fetch(FetchDescriptor<Visit>())
+        for visit in visits {
+            visit.stageUnreadablePayloadDiagnostics(in: context)
+        }
+        let count = visits.count
         Diagnostics.budget(context, subsystem: "Location resolver", operation: "full-store audit",
                            startedAt: startedAt, budget: Diagnostics.PerformanceBudget.locationFullAudit,
                            itemCount: count)

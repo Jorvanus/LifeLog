@@ -86,6 +86,7 @@ enum BackupValidationError: LocalizedError {
     case negativeDuration(arrival: Date)
     case invalidCoordinate(latitude: Double, longitude: Double)
     case malformedRoute(arrival: Date)
+    case oversizedPayload(arrival: Date)
     case invalidResolutionState(String)
     case invalidSavedPlaceRole(String)
     case duplicateSavedPlaceIdentifier(String)
@@ -99,6 +100,7 @@ enum BackupValidationError: LocalizedError {
         case .negativeDuration(let arrival): "The visit arriving \(arrival) has a departure before its arrival."
         case .invalidCoordinate(let latitude, let longitude): "A record has an invalid coordinate (\(latitude), \(longitude))."
         case .malformedRoute(let arrival): "The route recorded for the visit arriving \(arrival) could not be decoded."
+        case .oversizedPayload(let arrival): "The payload recorded for the visit arriving \(arrival) exceeds LifeLog's safe storage limit."
         case .invalidResolutionState(let raw): "Unknown visit resolution state \"\(raw)\"."
         case .invalidSavedPlaceRole(let raw): "Unknown Saved Place role \"\(raw)\"."
         case .duplicateSavedPlaceIdentifier(let identifier): "Two Saved Places share Maps identifier \(identifier)."
@@ -131,9 +133,13 @@ extension LifeLogBackup {
             if let raw = visit.resolutionState, VisitResolutionState(rawValue: raw) == nil {
                 throw BackupValidationError.invalidResolutionState(raw)
             }
-            if let routeData = visit.routeData,
-               (try? JSONDecoder().decode([RoutePoint].self, from: routeData)) == nil {
-                throw BackupValidationError.malformedRoute(arrival: visit.arrival)
+            // A malformed or future payload remains part of a backup. It is raw
+            // evidence a newer build or repair tool may understand; rejecting it
+            // here would force a person to choose between restoring the archive
+            // and preserving that evidence. Size is the one safety boundary.
+            if VisitPayloadDecoder.exceedsSafeStorageLimit(candidateData: visit.candidateData,
+                                                            routeData: visit.routeData) {
+                throw BackupValidationError.oversizedPayload(arrival: visit.arrival)
             }
             for sampleID in visit.healthKitSampleIDs ?? [] where !healthKitSampleIDs.insert(sampleID).inserted {
                 throw BackupValidationError.duplicateHealthKitSample(sampleID)
@@ -234,10 +240,12 @@ enum LocalBackupService {
 
         do {
             for record in backup.visits {
-                context.insert(Visit(arrival: record.arrival, departure: record.departure, latitude: record.latitude, longitude: record.longitude, placeName: record.placeName, inferredActivity: record.inferredActivity, userActivity: record.userActivity, activityDefinitionID: record.activityDefinitionID, note: record.note, source: record.source, recognitionConfidence: record.recognitionConfidence, candidateData: record.candidateData, mapsIdentifier: record.mapsIdentifier, placeFieldProvenance: record.placeFieldProvenance, resolutionExplanation: record.resolutionExplanation,
+                let visit = Visit(arrival: record.arrival, departure: record.departure, latitude: record.latitude, longitude: record.longitude, placeName: record.placeName, inferredActivity: record.inferredActivity, userActivity: record.userActivity, activityDefinitionID: record.activityDefinitionID, note: record.note, source: record.source, recognitionConfidence: record.recognitionConfidence, candidateData: record.candidateData, mapsIdentifier: record.mapsIdentifier, placeFieldProvenance: record.placeFieldProvenance, resolutionExplanation: record.resolutionExplanation,
                     healthKitSampleIDs: record.healthKitSampleIDs, routeData: record.routeData,
                     stableID: record.stableID ?? UUID(),
-                    resolutionState: record.resolutionState.flatMap(VisitResolutionState.init(rawValue:))))
+                    resolutionState: record.resolutionState.flatMap(VisitResolutionState.init(rawValue:)))
+                context.insert(visit)
+                visit.stageUnreadablePayloadDiagnostics(in: context)
             }
             for record in backup.savedPlaces {
                 let place = SavedPlace(name: record.name, latitude: record.latitude, longitude: record.longitude, radius: record.radius, defaultActivity: record.defaultActivity, mapsIdentifier: record.mapsIdentifier, activityDefinitionID: record.activityDefinitionID)
