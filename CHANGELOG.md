@@ -2,6 +2,21 @@
 
 ## 2026-08-13
 
+### Local backup upgraded to a validated, complete format (V2)
+
+- Backups now include a visit's route, HealthKit sample identifiers, and
+  Saved Place Home/Work roles, and a diagnostic's retention category — all
+  previously dropped on restore. Ignored state travels on each visit's own
+  stable identifier instead of a fragile legacy key. Restoring now decodes
+  and validates the whole archive — checking for duplicate identities,
+  invalid dates, negative durations, malformed routes, and inconsistent
+  references — before touching the store, so a bad backup is rejected
+  without leaving a half-restored store or partially changed preferences.
+  Device-specific state (the Wi-Fi anchor, HealthKit import cursors,
+  hardware checks) no longer travels with a backup. A V1 backup still
+  restores unchanged, and a restore now runs the location resolver once
+  to settle the timeline it just wrote in.
+
 ### Ignored visits now survive backup and restore
 
 - Every visit gained a stable identifier and a persisted resolution state
