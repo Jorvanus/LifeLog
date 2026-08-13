@@ -7,6 +7,8 @@ struct InsightActivityDetailView: View {
     let periodTitle: String
     let interval: DateInterval
     let rows: [SliceRow]
+    var isUnlogged: Bool = false
+    @State private var addingVisit = false
 
     var body: some View {
         List {
@@ -17,14 +19,25 @@ struct InsightActivityDetailView: View {
             .accessibilityIdentifier("insight-activity-period")
             Section("Visits in this period") {
                 if rows.isEmpty {
-                    ContentUnavailableView("No recorded visits", systemImage: "clock.badge.questionmark",
-                                           description: Text("This activity has no usable records in the selected period."))
+                    if isUnlogged {
+                        ContentUnavailableView {
+                            Label("Unlogged time", systemImage: "clock.badge.questionmark")
+                        } description: {
+                            Text("There isn’t a visit to edit for this time yet. Add one to fill the gap in your insights.")
+                        } actions: {
+                            Button("Add Visit") { addingVisit = true }
+                                .buttonStyle(.borderedProminent)
+                        }
+                    } else {
+                        ContentUnavailableView("No recorded visits", systemImage: "clock.badge.questionmark",
+                                               description: Text("This activity has no usable records in the selected period."))
+                    }
                 } else {
                     ForEach(rows) { row in
                         if let visit = row.visit {
                             NavigationLink { VisitEditor(visit: visit) } label: {
                                 InsightRowLabel(title: visit.displayPlaceName,
-                                                detail: "(visit.arrival.formatted(date: .abbreviated, time: .shortened)) · (formatHours(row.hours))")
+                                                detail: "\(visit.arrival.formatted(date: .abbreviated, time: .shortened)) · \(formatHours(row.hours))")
                             }
                         } else {
                             InsightRowLabel(title: row.activity, detail: formatHours(row.hours))
@@ -36,6 +49,7 @@ struct InsightActivityDetailView: View {
         .navigationTitle(activity)
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .top) { PeriodBanner(title: periodTitle, interval: interval) }
+        .sheet(isPresented: $addingVisit) { ManualVisitView(range: interval) }
         .accessibilityIdentifier("insight-activity-detail")
     }
 }
@@ -105,7 +119,7 @@ struct InsightPlaceHistoryView: View {
                         if let visit = row.visit {
                             NavigationLink { VisitEditor(visit: visit) } label: {
                                 InsightRowLabel(title: visit.suspectedActivity.isEmpty ? "Visit" : visit.suspectedActivity,
-                                                detail: "(visit.arrival.formatted(date: .abbreviated, time: .shortened)) · (formatHours(row.hours))")
+                                                detail: "\(visit.arrival.formatted(date: .abbreviated, time: .shortened)) · \(formatHours(row.hours))")
                             }
                         } else {
                             InsightRowLabel(title: row.activity, detail: formatHours(row.hours))

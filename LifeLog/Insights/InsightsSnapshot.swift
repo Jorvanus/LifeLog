@@ -294,7 +294,7 @@ struct InsightsSnapshot {
         let unlogged = segments.filter(\.isUnlogged).reduce(0) { $0 + $1.hours }
         if unlogged > 0.01 {
             values.append(TimeSlice(name: "Unlogged", hours: unlogged, color: .gray.opacity(0.35),
-                                    symbol: "moon.zzz.fill", isUnlogged: true))
+                                    symbol: "clock.badge.questionmark", isUnlogged: true))
         }
         return values
     }
@@ -487,7 +487,7 @@ struct InsightSegment: Identifiable {
             id: .unlogged(index), visit: nil, category: "Unlogged",
             activity: "Unlogged", placeName: nil, start: start, end: end,
             hours: end.timeIntervalSince(start) / 3600,
-            color: .gray.opacity(0.35), symbol: "moon.zzz.fill",
+            color: .gray.opacity(0.35), symbol: "clock.badge.questionmark",
             isUnlogged: true, isLive: false
         )
     }

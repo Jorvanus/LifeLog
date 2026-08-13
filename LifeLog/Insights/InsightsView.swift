@@ -134,7 +134,8 @@ struct InsightsView: View {
                                                segments: snapshot.segments, activityData: activityData)
                     } else {
                         InsightActivityDetailView(activity: slice.name, periodTitle: periodTitle,
-                                                  interval: snapshot.analysisInterval, rows: rows)
+                                                  interval: snapshot.analysisInterval, rows: rows,
+                                                  isUnlogged: slice.isUnlogged)
                     }
                 }.presentationDetents([.medium, .large])
             }
