@@ -2,6 +2,11 @@
 
 ## 2026-08-13
 
+### Insights stays responsive while it updates
+
+- Insights now keeps the daily review and date controls in focused SwiftUI views,
+  so live activity, Health, and selection updates do less unnecessary screen work.
+
 ### Large histories stay responsive while you browse
 
 - Place History and activity usage now read and summarise the archive away from

@@ -700,38 +700,22 @@ struct InsightsView: View {
     /// reachable (its tap-to-inspect interaction is unchanged) but is no longer
     /// the lead visual; the day bar is.
     @ViewBuilder private var dayLayout: some View {
-        currentActivitySection
-        dayTimelineBarSection
-        daySummarySection
-        needsAttentionSection
-        dayHighlightSection
-        dayTravelSection
+        DayInsightsView(
+            currentActivity: dayCurrentActivity,
+            timelineSegments: daySegments,
+            interval: interval,
+            now: now,
+            metrics: dayMetricPresentations,
+            attentionItems: dayAttentionPresentations,
+            highlight: highlights.first,
+            travel: TravelInsights.make(from: daySegments),
+            onOpenCurrentActivity: { editingVisit = currentVisit },
+            onOpenTimelineSegment: openDayTimelineSegment,
+            onMetric: openDayMetric,
+            onAttention: openDayAttention
+        )
         donutSection
         healthSetupSection
-    }
-
-    /// Day keeps one grounded observation in the main review. The full pager
-    /// remains available to longer-period layouts, where several comparisons
-    /// describe a pattern; showing all of them here made the daily review feel
-    /// like another dashboard.
-    @ViewBuilder private var dayHighlightSection: some View {
-        if let highlight = highlights.first {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("One thing from today").font(.headline)
-                highlightRow(highlight)
-            }
-            .padding(20)
-            .lifeCard()
-            .accessibilityIdentifier("day-highlights")
-            .accessibilityElement(children: .contain)
-        }
-    }
-
-    @ViewBuilder private var dayTravelSection: some View {
-        let summary = TravelInsights.make(from: daySegments)
-        if summary.hasTravel {
-            TravelInsightsCard(title: "Travel", summary: summary, period: interval)
-        }
     }
 
     /// "How did this week compare with usual" — a different question from
@@ -997,62 +981,23 @@ struct InsightsView: View {
     }
 
     private var controls: some View {
-        VStack(spacing: 16) {
-            HStack {
-                // A bare glyph only takes the tap area of the symbol itself, which
-                // left these primary controls well under the 44pt minimum target.
-                Button { move(-1) } label: {
-                    Image(systemName: "chevron.left").font(.title3.bold())
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .accessibilityLabel("Previous \(window.title.lowercased())")
-                Spacer()
-                Button {
-                    draftAnchorDate = anchorDate
-                    choosingDate = true
-                } label: {
-                    VStack(spacing: 2) {
-                        Text(periodTitle).font(.title3.bold()).foregroundStyle(.primary)
-                        Text(periodSubtitle).font(.caption).foregroundStyle(.secondary)
-                        Text(scopeSubtitle).font(.caption2).foregroundStyle(.secondary)
-                            .accessibilityIdentifier("insights-scope-summary")
-                    }
-                    .frame(minHeight: 44)
-                    .contentShape(Rectangle())
-                }
-                // Without this the button tints its own label, and `.primary` and
-                // `.secondary` are read as shades of the accent colour rather than of
-                // the foreground. In dark mode that rendered the date as dark blue on
-                // black — the least readable thing on the screen, and the one telling
-                // you which day you are looking at.
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(periodTitle), \(periodSubtitle), \(scopeSubtitle)")
-                .accessibilityHint("Choose a different date")
-                .accessibilityIdentifier("insights-period-picker")
-                Spacer()
-                Button { move(1) } label: {
-                    Image(systemName: "chevron.right").font(.title3.bold())
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .disabled(isCurrentWindow)
-                .accessibilityLabel("Next \(window.title.lowercased())")
+        InsightsPeriodControls(
+            window: window,
+            periodTitle: periodTitle,
+            periodSubtitle: periodSubtitle,
+            scopeSubtitle: scopeSubtitle,
+            recordedHours: snapshot.loggedHours,
+            emptyState: snapshot.generatedAt != .distantPast && snapshot.loggedHours <= 0.01
+                ? insightsScope.emptyState : nil,
+            isCurrentWindow: isCurrentWindow,
+            scopeRawValue: $scopeRawValue,
+            selectedWindow: $window,
+            onMove: move,
+            onChooseDate: {
+                draftAnchorDate = anchorDate
+                choosingDate = true
             }
-            InsightsScopeMenu(rawValue: $scopeRawValue, recordedHours: snapshot.loggedHours)
-            if snapshot.generatedAt != .distantPast && snapshot.loggedHours <= 0.01 {
-                Text(insightsScope.emptyState)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityIdentifier("insights-scope-empty-state")
-            }
-            Picker("Time window", selection: $window) {
-                ForEach(InsightWindow.allCases) { Text($0.title).tag($0) }
-            }
-            .pickerStyle(.segmented)
-        }
-        .padding(.top, 8)
+        )
     }
 
     private var donutSection: some View {
@@ -1169,132 +1114,92 @@ struct InsightsView: View {
         return visits.first { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored && $0.departure == nil }
     }
 
-    /// A compact summary, not Timeline's full card: place, activity, elapsed
-    /// time, and — only when the same flags Timeline already checks say so — a
-    /// "Needs checking" flag. Absent entirely rather than showing a placeholder
-    /// when there is nothing currently open, the same way Timeline shows nothing
-    /// extra beyond its own "waiting" state rather than a duplicate live card.
-    @ViewBuilder private var currentActivitySection: some View {
-        if let visit = currentVisit {
-            Button { editingVisit = visit } label: {
-                HStack(spacing: 14) {
-                    Circle().fill(.green).frame(width: 10, height: 10)
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 8) {
-                            Text(visit.displayPlaceName).font(.headline).lineLimit(1)
-                            if visit.needsCategorisation || visit.needsConfirmation {
-                                Label("Needs checking", systemImage: "questionmark.circle.fill")
-                                    .font(.caption2.bold()).foregroundStyle(.orange)
-                                    .labelStyle(.iconOnly)
-                                    .accessibilityHidden(true)
-                            }
-                        }
-                        Text(visit.suspectedActivity).font(.subheadline).foregroundStyle(.secondary)
-                        Text("Since \(visit.arrival.formatted(date: .omitted, time: .shortened)) · \(formattedDuration(now.timeIntervalSince(visit.arrival)))")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(.tertiary)
-                }
-                .padding(20)
-                .lifeCard()
+    private var dayCurrentActivity: DayCurrentActivityPresentation? {
+        guard let visit = currentVisit else { return nil }
+        return DayCurrentActivityPresentation(
+            placeName: visit.displayPlaceName,
+            activity: visit.suspectedActivity,
+            startedAt: visit.arrival,
+            elapsed: formattedDuration(now.timeIntervalSince(visit.arrival)),
+            needsChecking: visit.needsCategorisation || visit.needsConfirmation
+        )
+    }
+
+    private var dayMetricPresentations: [DayInsightMetricPresentation] {
+        var metrics: [DayInsightMetricPresentation] = []
+        let atHome = max(0, snapshot.loggedHours - snapshot.awayFromHomeHours)
+        if atHome > 0.01 {
+            metrics.append(.init(id: "day-metric-home", icon: "house.fill", title: "At Home", value: formatHours(atHome)))
+        }
+        if snapshot.awayFromHomeHours > 0.01 {
+            metrics.append(.init(id: "day-metric-away", icon: "figure.walk.departure", title: "Away from Home", value: formatHours(snapshot.awayFromHomeHours)))
+        }
+        if let steps = healthSummary?.steps ?? todaySteps, steps > 0 {
+            metrics.append(.init(id: "day-metric-steps", icon: "shoeprints.fill", title: "Steps", value: Int(steps).formatted()))
+        }
+        if let lastNightSleep, lastNightSleep.totalSleep > 0 {
+            metrics.append(.init(id: "day-metric-sleep", icon: "bed.double.fill", title: "Last night’s sleep", value: formatHours(lastNightSleep.totalSleep / 3600)))
+        }
+        if let exercise = healthSummary?.exerciseMinutes, exercise > 0 {
+            metrics.append(.init(id: "day-metric-exercise", icon: "figure.run", title: "Exercise", value: "\(Int(exercise.rounded())) min"))
+        } else if let workoutCount = healthSummary?.workoutCount, workoutCount > 0 {
+            metrics.append(.init(id: "day-metric-exercise", icon: "figure.run.circle.fill", title: "Workouts", value: "\(workoutCount) · \(Int(healthSummary?.workoutMinutes.rounded() ?? 0)) min"))
+        } else {
+            let workout = InsightsSnapshot.fitnessHours(in: daySegments)
+            if workout > 0.01 {
+                metrics.append(.init(id: "day-metric-exercise", icon: "figure.run", title: "Exercise", value: formatHours(workout)))
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("insights-current-activity-card")
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(
-                "Current activity: \(visit.displayPlaceName), \(visit.suspectedActivity), "
-                + "since \(visit.arrival.formatted(date: .omitted, time: .shortened)), "
-                + formattedDuration(now.timeIntervalSince(visit.arrival))
-                + (visit.needsCategorisation || visit.needsConfirmation ? ", needs checking" : "")
-            )
-            .accessibilityHint("Opens the editor for this visit")
+        }
+        let travel = TravelInsights.make(from: daySegments)
+        if travel.hasTravel {
+            metrics.append(.init(id: "day-metric-travel", icon: "car.fill", title: "Travel", value: formatHours(travel.totalHours)))
+        }
+        return metrics
+    }
+
+    private var dayAttentionPresentations: [DayAttentionPresentation] {
+        needsAttentionItems.map { item in
+            switch item {
+            case .review(let entry):
+                return DayAttentionPresentation(
+                    id: "review-\(entry.id)", title: entry.visit.displayPlaceName,
+                    detail: entry.reason.prompt, icon: "questionmark.circle.fill",
+                    accessibilityLabel: "\(entry.visit.displayPlaceName), \(entry.reason.prompt)",
+                    accessibilityHint: "Opens the editor for this visit", target: .visit(entry.visit.stableID)
+                )
+            case .gap(let segment):
+                let detail = "\(segment.start.formatted(date: .omitted, time: .shortened))–\(segment.end.formatted(date: .omitted, time: .shortened)) · \(formatHours(segment.hours))"
+                return DayAttentionPresentation(
+                    id: "gap-\(segment.start.timeIntervalSinceReferenceDate)", title: "Nothing logged",
+                    detail: detail, icon: "clock.badge.questionmark",
+                    accessibilityLabel: "Nothing logged, \(formatHours(segment.hours)), from \(segment.start.formatted(date: .omitted, time: .shortened)) to \(segment.end.formatted(date: .omitted, time: .shortened))",
+                    accessibilityHint: "Add a visit for this time", target: .gap(DateInterval(start: segment.start, end: segment.end))
+                )
+            }
         }
     }
 
-    /// The day's primary visual: every post-resolution segment at its true
-    /// position on a fixed 24-hour scale. `daySegments` (built in
-    /// `reloadInsights`) is the uncapped counterpart of `snapshot.segments`, so
-    /// this bar shows the whole day, not just what has elapsed so far.
-    private var dayTimelineBarSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Your day").font(.title2.bold())
-            DayTimelineBar(segments: daySegments, interval: interval, now: now) { segment in
-                // A commute segment has no backing Visit and nothing recorded to
-                // add — the same "nothing to open" `InsightSliceEditor` already
-                // treats it as for a category slice.
-                guard segment.visit != nil || segment.isUnlogged else { return }
-                selectedDaySegment = segment
-            }
-            let pastUnloggedHours = daySegments
-                .filter { $0.isUnlogged && $0.end <= now }
-                .reduce(0) { $0 + $1.hours }
-            if pastUnloggedHours > 0.25 {
-                // The honest caveat on every number on this screen, kept where the day
-                // is rather than filed under the app's own plumbing. Only what has
-                // already passed counts here -- the rest of today is not "unlogged",
-                // it just hasn't happened.
-                Text("\(formatHours(pastUnloggedHours)) of today so far is not logged.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-        }
-        .padding(20).lifeCard()
-        .accessibilityIdentifier("insights-day-bar")
+    private func openDayTimelineSegment(_ segment: InsightSegment) {
+        guard segment.visit != nil || segment.isUnlogged else { return }
+        selectedDaySegment = segment
     }
 
-    /// A short, factual roll-up — not a second copy of `awayFromHomeSection`'s
-    /// big-number treatment, which Week/Month/Year still get. Steps and sleep
-    /// are read from the `todaySteps`/`lastNightSleep`/`healthSummary` values
-    /// already fetched by `reloadHighlights` and `reloadHealthSummary`; travel
-    /// and exercise are summed straight from `daySegments`, with no new HealthKit
-    /// call for layout. A value simply has no tile when there's nothing to show it.
-    private var daySummarySection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Today at a glance").font(.headline)
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
-                let atHome = max(0, snapshot.loggedHours - snapshot.awayFromHomeHours)
-                if atHome > 0.01 {
-                    DayInsightMetricTile(icon: "house.fill", title: "At Home", value: formatHours(atHome),
-                                         identifier: "day-metric-home") { openCategory("Home") }
-                }
-                if snapshot.awayFromHomeHours > 0.01 {
-                    DayInsightMetricTile(icon: "figure.walk.departure", title: "Away from Home",
-                                         value: formatHours(snapshot.awayFromHomeHours),
-                                         identifier: "day-metric-away")
-                }
-                if let steps = healthSummary?.steps ?? todaySteps, steps > 0 {
-                    DayInsightMetricTile(icon: "shoeprints.fill", title: "Steps", value: Int(steps).formatted(),
-                                         identifier: "day-metric-steps")
-                }
-                if let lastNightSleep, lastNightSleep.totalSleep > 0 {
-                    DayInsightMetricTile(icon: "bed.double.fill", title: "Last night’s sleep",
-                                         value: formatHours(lastNightSleep.totalSleep / 3600),
-                                         identifier: "day-metric-sleep") { openSleep() }
-                }
-                if let exercise = healthSummary?.exerciseMinutes, exercise > 0 {
-                    DayInsightMetricTile(icon: "figure.run", title: "Exercise",
-                                         value: "\(Int(exercise.rounded())) min",
-                                         identifier: "day-metric-exercise")
-                } else if let workoutCount = healthSummary?.workoutCount, workoutCount > 0 {
-                    DayInsightMetricTile(icon: "figure.run.circle.fill", title: "Workouts",
-                                         value: "\(workoutCount) · \(Int(healthSummary?.workoutMinutes.rounded() ?? 0)) min",
-                                         identifier: "day-metric-exercise")
-                } else {
-                    let workout = InsightsSnapshot.fitnessHours(in: daySegments)
-                    if workout > 0.01 {
-                        DayInsightMetricTile(icon: "figure.run", title: "Exercise", value: formatHours(workout),
-                                             identifier: "day-metric-exercise") { openCategory("Fitness") }
-                    }
-                }
-                let travel = TravelInsights.make(from: daySegments)
-                if travel.hasTravel {
-                    DayInsightMetricTile(icon: "car.fill", title: "Travel", value: formatHours(travel.totalHours),
-                                         identifier: "day-metric-travel")
-                }
-            }
+    private func openDayMetric(_ identifier: String) {
+        switch identifier {
+        case "day-metric-home": openCategory("Home")
+        case "day-metric-sleep": openSleep()
+        case "day-metric-exercise": openCategory("Fitness")
+        default: break
         }
-        .padding(20).lifeCard()
-        .accessibilityIdentifier("insights-day-summary")
+    }
+
+    private func openDayAttention(_ target: DayAttentionTarget) {
+        switch target {
+        case .visit(let stableID): editingVisit = visits.first { $0.stableID == stableID }
+        case .gap(let interval):
+            addVisitRange = interval
+            isAddingVisit = true
+        }
     }
 
     private func daySummaryRow(icon: String, label: String, value: String) -> some View {
@@ -1333,62 +1238,6 @@ struct InsightsView: View {
         let review = ReviewQueue.entries(in: visits, now: now).prefix(3).map { NeedsAttentionItem.review($0) }
         let gaps = InsightsSnapshot.meaningfulGaps(in: daySegments, before: now).prefix(2).map { NeedsAttentionItem.gap($0) }
         return Array((review + gaps).prefix(4))
-    }
-
-    @ViewBuilder private var needsAttentionSection: some View {
-        let items = needsAttentionItems
-        if !items.isEmpty {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Needs your attention").font(.headline)
-                VStack(spacing: 10) {
-                    ForEach(items) { needsAttentionRow($0) }
-                }
-            }
-            .padding(20).lifeCard()
-            .accessibilityIdentifier("insights-needs-attention")
-        }
-    }
-
-    @ViewBuilder
-    private func needsAttentionRow(_ item: NeedsAttentionItem) -> some View {
-        switch item {
-        case .review(let entry):
-            Button { editingVisit = entry.visit } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: "questionmark.circle.fill").foregroundStyle(.orange)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(entry.visit.displayPlaceName).font(.subheadline.weight(.medium)).lineLimit(1)
-                        Text(entry.reason.prompt).font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
-                }
-            }
-            .buttonStyle(.plain)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(entry.visit.displayPlaceName), \(entry.reason.prompt)")
-            .accessibilityHint("Opens the editor for this visit")
-        case .gap(let segment):
-            Button {
-                addVisitRange = DateInterval(start: segment.start, end: segment.end)
-                isAddingVisit = true
-            } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: "clock.badge.questionmark").foregroundStyle(.orange)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Nothing logged").font(.subheadline.weight(.medium))
-                        Text("\(segment.start.formatted(date: .omitted, time: .shortened))–\(segment.end.formatted(date: .omitted, time: .shortened)) · \(formatHours(segment.hours))")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
-                }
-            }
-            .buttonStyle(.plain)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Nothing logged, \(formatHours(segment.hours)), from \(segment.start.formatted(date: .omitted, time: .shortened)) to \(segment.end.formatted(date: .omitted, time: .shortened))")
-            .accessibilityHint("Add a visit for this time")
-        }
     }
 
     /// The seven-day glance: tapping a column reuses the window picker
@@ -2287,7 +2136,7 @@ struct InsightsView: View {
 /// A compact Day Summary tile. Health-backed values are omitted by the parent
 /// when unavailable, while the tile itself keeps one stable label/value layout
 /// for Dynamic Type and VoiceOver.
-private struct DayInsightMetricTile: View {
+struct DayInsightMetricTile: View {
     let icon: String
     let title: String
     let value: String
