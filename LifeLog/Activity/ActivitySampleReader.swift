@@ -332,11 +332,24 @@ actor ActivitySampleReader {
         }
     }
 
-    private func encodeAnchor(_ anchor: HKQueryAnchor) -> Data {
+    /// Best effort: `HKQueryAnchor` is a HealthKit-opaque cursor with no
+    /// meaningful partial-failure mode to report, and an encode failure has no
+    /// worse fallback than "the next query starts over" (see `decodeAnchor`).
+    func encodeAnchor(_ anchor: HKQueryAnchor) -> Data {
         (try? NSKeyedArchiver.archivedData(withRootObject: anchor, requiringSecureCoding: true)) ?? Data()
     }
 
-    private func decodeAnchor(_ data: Data?) -> HKQueryAnchor? {
+    /// Decoding fallback: missing and corrupt anchor data are deliberately
+    /// treated identically, both as "no anchor." `nil` is itself a valid
+    /// `HKAnchoredObjectQueryDescriptor` anchor meaning "start from the
+    /// beginning of the queried interval" — not all-time — and
+    /// `ActivityDataService.startImport` bounds that interval to the
+    /// configured `healthDays` window and writes samples through a
+    /// duplicate-checked path, so a corrupted anchor costs a bounded re-read,
+    /// not a silent gap or a crash. Internal rather than private so the
+    /// distinction itself (corrupt bytes decode the same as `nil`, without
+    /// crashing) can be exercised directly in tests.
+    func decodeAnchor(_ data: Data?) -> HKQueryAnchor? {
         guard let data, !data.isEmpty else { return nil }
         return try? NSKeyedUnarchiver.unarchivedObject(ofClass: HKQueryAnchor.self, from: data)
     }

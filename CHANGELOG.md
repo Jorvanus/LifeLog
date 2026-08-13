@@ -2,6 +2,24 @@
 
 ## 2026-08-14
 
+### Silent failures in save/mutation paths are now visible or rejected
+
+- Audited `try?` across every persistence and mutation path (location
+  recording, Saved Place merge/delete, diagnostics, the activity catalogue,
+  Visit editing, Maps lookups, backup/restore, HealthKit anchors) and
+  classified each as required, recoverable background work, best effort, or
+  a decoding fallback — fixing the ones that let a failure look identical to
+  a legitimate empty result. Saved Place merge and delete now show an alert
+  instead of silently leaving the sheet open when the underlying save fails;
+  a merge whose visit lookup fails aborts instead of deleting the source
+  place and renaming nothing. Several location-resolver fetches (duplicate
+  detection, the current open visit, geofence ranking) now log a diagnostic
+  on failure instead of conflating "the store just failed" with "nothing
+  matched," the two readings that risk a silently duplicated visit.
+  `ActivityCatalog.load()` now distinguishes a genuinely corrupted catalogue
+  from a fresh install. `Diagnostics.record`/`stage` gained a reentrancy
+  guard so a future change can't make a failed diagnostic save recurse.
+
 ### Diagnostics carry typed timing and counts, not just prose
 
 - Diagnostic events now record a stable event code, duration, budget, item

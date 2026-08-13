@@ -515,14 +515,32 @@ struct VisitEditor: View {
         }
     }
 
+    /// Recoverable in the sense that the deletion this feeds still succeeds
+    /// either way -- a missing neighbour is already a legitimate outcome (the
+    /// first or last visit has none) -- but a fetch failure here silently
+    /// takes the same branch, skipping the merge/split the person was shown a
+    /// confirmation for. Logged so that gap is diagnosable after the fact
+    /// rather than looking like ordinary "no neighbour" behaviour.
     private func deletionNeighbours() -> (previous: Visit?, next: Visit?) {
         let end = visit.departure ?? visit.arrival
-        let previous = try? context.fetch(
-            VisitHistoryQuery.previous(before: visit.arrival, excluding: visit.stableID)
-        ).first
-        let next = try? context.fetch(
-            VisitHistoryQuery.next(after: end, excluding: visit.stableID)
-        ).first
+        let previous: Visit?
+        do {
+            previous = try context.fetch(
+                VisitHistoryQuery.previous(before: visit.arrival, excluding: visit.stableID)
+            ).first
+        } catch {
+            Diagnostics.record(error, context: context, subsystem: "Timeline", operation: "deletion neighbour lookup")
+            previous = nil
+        }
+        let next: Visit?
+        do {
+            next = try context.fetch(
+                VisitHistoryQuery.next(after: end, excluding: visit.stableID)
+            ).first
+        } catch {
+            Diagnostics.record(error, context: context, subsystem: "Timeline", operation: "deletion neighbour lookup")
+            next = nil
+        }
         return (previous, next)
     }
 

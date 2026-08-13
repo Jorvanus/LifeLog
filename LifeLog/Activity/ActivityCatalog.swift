@@ -245,10 +245,35 @@ enum ActivityCatalog {
         activities.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
+    /// Set by `load()` when it most recently found data that existed but could
+    /// not be decoded — distinct from finding no data at all (an ordinary first
+    /// launch) or decoding an intentionally empty list. This enum is a plain
+    /// UserDefaults wrapper with no `ModelContext` of its own to log through, so
+    /// a caller that does have one (`ActivityCatalog.seed()`'s launch-time call
+    /// site, say) can check this and record the distinction itself.
+    nonisolated(unsafe) private(set) static var lastLoadWasCorrupt = false
+
+    /// Decoding fallback, missing/corrupt/legacy-empty kept distinct: a fresh
+    /// install (no stored data) and an intentionally-cleared catalogue (decodes
+    /// fine, empty) both silently take the same built-in-defaults fallback as a
+    /// genuinely corrupted value — that part is unchanged, since an unreadable
+    /// custom catalogue is not a reason to leave the person with none — but only
+    /// the corrupt case sets `lastLoadWasCorrupt`.
     static func load() -> [ActivityDefinition] {
-        guard let data = storage.data(forKey: storageKey),
-              let decoded = try? JSONDecoder().decode([ActivityDefinition].self, from: data),
-              !decoded.isEmpty else {
+        guard let data = storage.data(forKey: storageKey) else {
+            lastLoadWasCorrupt = false
+            return sorted(defaults.map {
+                ActivityDefinition(name: $0.name, category: $0.category, symbol: $0.symbol)
+            })
+        }
+        guard let decoded = try? JSONDecoder().decode([ActivityDefinition].self, from: data) else {
+            lastLoadWasCorrupt = true
+            return sorted(defaults.map {
+                ActivityDefinition(name: $0.name, category: $0.category, symbol: $0.symbol)
+            })
+        }
+        lastLoadWasCorrupt = false
+        guard !decoded.isEmpty else {
             return sorted(defaults.map {
                 ActivityDefinition(name: $0.name, category: $0.category, symbol: $0.symbol)
             })
@@ -256,6 +281,11 @@ enum ActivityCatalog {
         return sorted(decoded)
     }
 
+    /// Best effort: `ActivityDefinition` is a plain `Codable` struct, so an
+    /// encode failure here is not a realistic outcome, only a defensive
+    /// `guard`. Silently no-op'd rather than logged for the same reason as
+    /// `PendingDiagnostics.queue`: there is no `ModelContext` in this enum to
+    /// log through.
     static func save(_ activities: [ActivityDefinition]) {
         // Sorted on the way in as well, so what is stored matches what is shown and
         // a list edited by an older build is tidied the first time it is saved.

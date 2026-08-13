@@ -533,7 +533,16 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         WiFiAnchor.save(nil)
         sampleWiFiAnchor()
         reconcileActivity(with: item, context: context)
-        try? SavedPlaceLearning.enrichImportedVisits(with: item, context: context)
+        // Recoverable background work: enrichment is a bonus pass over already-
+        // imported rows, not part of this arrival's own commit, so a failure here
+        // must not block or roll back the visit finalized just below — it only
+        // needs to be visible instead of vanishing silently.
+        do {
+            try SavedPlaceLearning.enrichImportedVisits(with: item, context: context)
+        } catch {
+            Diagnostics.record(error, context: context, subsystem: "Core Location",
+                               operation: "imported visit enrichment")
+        }
         guard finalizeMutation(.coreLocationArrival,
                                change: .init(affectedVisit: item, coordinate: coordinate,
                                              placeScoreAlreadyApplied: true), context: context) else { return }
@@ -563,7 +572,13 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             sortBy: [SortDescriptor(\.arrival, order: .reverse)]
         )
         descriptor.fetchLimit = 30
-        guard let recent = try? context.fetch(descriptor) else { return nil }
+        // Required in spirit, not merely best effort: this fetch's nil result
+        // means "create a brand new Visit", so a swallowed fetch error and a
+        // real absence of duplicates look identical and both create one. There
+        // is nothing to retry a location callback from, so the fetch still
+        // proceeds as "no duplicate found" -- but logged, not silent, so a
+        // resulting duplicate visit is diagnosable instead of a mystery.
+        let recent = fetchLogging(descriptor, context: context, operation: "recent duplicate location lookup")
         let incoming = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
         return recent.first { visit in
             let recorded = CLLocation(latitude: visit.latitude, longitude: visit.longitude)
@@ -583,8 +598,8 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             sortBy: [SortDescriptor(\.arrival, order: .reverse)]
         )
         descriptor.fetchLimit = 50
-        guard let candidates = try? context.fetch(descriptor),
-              let matched = ActivityLocationPolicy.matchDeparture(
+        let candidates = fetchLogging(descriptor, context: context, operation: "departure candidate lookup")
+        guard let matched = ActivityLocationPolicy.matchDeparture(
                 coordinate: coordinate, arrival: min(arrival, .now),
                 departure: min(departure, .now), visits: candidates
               ) else {
@@ -643,7 +658,29 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             sortBy: [SortDescriptor(\.arrival, order: .reverse)]
         )
         descriptor.fetchLimit = 1
-        return try? context.fetch(descriptor).first
+        // Same reasoning as `recentDuplicateLocation`: `seedConfirmedCurrentVisit`
+        // treats a nil result as "nothing open, start a new visit", so a
+        // swallowed fetch error here is a second, independent way to silently
+        // duplicate the current stay. Logged rather than thrown, for the same
+        // reason -- there is no queue to retry a live location callback from.
+        return fetchLogging(descriptor, context: context, operation: "latest location visit lookup").first
+    }
+
+    /// Central point for every `Visit`/`VisitCorrection` fetch in this file whose
+    /// nil-on-failure result feeds a decision (create vs. merge, identify vs.
+    /// skip) rather than merely populating a UI list. A location callback has no
+    /// user waiting on an alert and nothing to retry from, so the failure cannot
+    /// be surfaced any more strongly than a diagnostic -- but it must be at least
+    /// that, since every caller here already treats an empty result as a
+    /// legitimate answer, and only the diagnostic tells the two apart afterward.
+    private func fetchLogging<T>(_ descriptor: FetchDescriptor<T>, context: ModelContext,
+                                 operation: String) -> [T] {
+        do {
+            return try context.fetch(descriptor)
+        } catch {
+            Diagnostics.record(error, context: context, subsystem: "Core Location", operation: operation)
+            return []
+        }
     }
 
     private func loadSavedPlaceCache() {
@@ -700,9 +737,14 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     /// ranked rather than truncated arbitrarily; see `MonitoredPlaces`.
     private func refreshMonitoredRegions() async {
         guard let placeMonitor, let context else { return }
-        let visits = (try? context.fetch(FetchDescriptor<Visit>(
+        // Best effort, but logged: an empty result here only affects geofence
+        // *ranking* for this refresh cycle, not any stored data -- the next
+        // successful refresh re-derives it from scratch, so there is nothing to
+        // roll back. Still logged, since a persistently failing fetch would
+        // otherwise silently starve every geofence of its visit history.
+        let visits = fetchLogging(FetchDescriptor<Visit>(
             predicate: #Predicate { $0.source == "automatic" || $0.source == "manual" }
-        ))) ?? []
+        ), context: context, operation: "monitored region visit lookup")
         let ranked = MonitoredPlaces.prioritised(savedPlaceCache, visits: visits, limit: .max)
         let wanted = GeofenceMonitor.desired(savedPlaceCache, visits: visits)
         let wantedByID = Dictionary(uniqueKeysWithValues: wanted.map { ($0.identifier, $0) })
@@ -797,12 +839,15 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     /// and would cost a full-table scan on every arrival to get it.
     private func learnedActivity(forPlaceName name: String, arrival: Date) -> String? {
         guard let context else { return nil }
-        let visits = (try? context.fetch(FetchDescriptor<Visit>(
+        // Best effort, logged: a failure here degrades this one guess to a
+        // worse (or absent) inference, never a stored write, so there is
+        // nothing to roll back -- only a diagnostic worth keeping.
+        let visits = fetchLogging(FetchDescriptor<Visit>(
             predicate: #Predicate { $0.placeName == name }
-        ))) ?? []
-        let corrections = (try? context.fetch(FetchDescriptor<VisitCorrection>(
+        ), context: context, operation: "learned activity visit lookup")
+        let corrections = fetchLogging(FetchDescriptor<VisitCorrection>(
             predicate: #Predicate { $0.newPlaceName == name }
-        ))) ?? []
+        ), context: context, operation: "learned activity correction lookup")
         return ActivityByPlaceAndTime.infer(arrival: arrival, history: visits, corrections: corrections)
     }
 
@@ -961,7 +1006,11 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             sortBy: [SortDescriptor(\.arrival, order: .reverse)]
         )
         descriptor.fetchLimit = 5
-        guard let recent = try? context.fetch(descriptor) else { return }
+        // Best effort, logged: a failure here just misses one chance to name an
+        // already-unknown visit from a later, closer callback -- the visit
+        // itself is unchanged either way, only logged so a persistent failure
+        // is visible rather than read as "nothing nearby was ever unknown."
+        let recent = fetchLogging(descriptor, context: context, operation: "recent unknown visit lookup")
         for visit in recent {
             let visitLocation = CLLocation(latitude: visit.latitude, longitude: visit.longitude)
             if visitLocation.distance(from: location) <= 250 {

@@ -282,14 +282,24 @@ enum LocalBackupService {
             throw error
         }
 
-        // Everything from here on is UserDefaults, not the SwiftData store the
-        // block above already committed — none of it can throw, so a restore
-        // that reached this point always finishes in full.
+        // The core restore -- visits, places, corrections, diagnostics, location
+        // events -- is already committed above and stays committed regardless of
+        // anything below. `IgnoredLocations`/`ActivityCatalog` writes are plain
+        // UserDefaults sets, which cannot throw.
         IgnoredLocations.importKeys(backup.ignoredVisitKeys)
         ActivityCatalog.save(backup.activityDefinitions)
-        // Restore keeps the backup's label snapshots, then adopts their original
-        // UUIDs before later bounded pages fill any IDs the older archive lacked.
-        _ = try? ActivityIdentityMigration.adoptLegacyDefinitions(context: context)
+        // Recoverable background work, not required: this adopts the backup's
+        // activity UUIDs immediately as a convenience, but it does its own
+        // separate `context.save()` (see `adoptLegacyDefinitions`) and is not
+        // part of the restore's own commit -- a failure here does not undo the
+        // restore. It is also self-healing: `ActivityCatalog.backfillNextBatch`
+        // adopts the same rows in bounded pages on a later launch regardless, so
+        // this is only ever an optimization to do it sooner.
+        do {
+            _ = try ActivityIdentityMigration.adoptLegacyDefinitions(context: context)
+        } catch {
+            Diagnostics.record(error, context: context, subsystem: "Store", operation: "backup activity identity adoption")
+        }
         for (key, value) in backup.preferences where isPortablePreferenceKey(key) {
             UserDefaults.standard.set(value, forKey: key)
         }

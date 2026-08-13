@@ -405,6 +405,7 @@ struct ChooseOnMapView: View {
     @State private var position: MapCameraPosition
     @State private var suggestions: [VisitLocationChooser.NearbyPlace] = []
     @State private var isSearching = false
+    @State private var searchFailed = false
     @State private var searchTask: Task<Void, Never>?
 
     init(name: String, coordinate: CLLocationCoordinate2D,
@@ -461,7 +462,10 @@ struct ChooseOnMapView: View {
                 if isSearching {
                     HStack(spacing: 10) { ProgressView(); Text("Looking near the pin…") }
                 } else if suggestions.isEmpty {
-                    Text("Nothing found at this spot.").font(.subheadline).foregroundStyle(.secondary)
+                    Text(searchFailed
+                         ? "Apple Maps could not be reached."
+                         : "Nothing found at this spot.")
+                        .font(.subheadline).foregroundStyle(.secondary)
                 } else {
                     ForEach(suggestions) { place in
                         Button {
@@ -501,6 +505,7 @@ struct ChooseOnMapView: View {
     private func refreshSuggestions() {
         searchTask?.cancel()
         isSearching = true
+        searchFailed = false
         let target = coordinate
         searchTask = Task {
             var results: [VisitLocationChooser.NearbyPlace] = []
@@ -513,7 +518,12 @@ struct ChooseOnMapView: View {
                 results.append(.init(name: place.name, coordinate: place.coordinate, metres: distance, isKnown: true))
             }
             let request = MKLocalPointsOfInterestRequest(center: target, radius: 200)
-            if let response = try? await MKLocalSearch(request: request).start() {
+            // Required, classified the same as the other two MapKit lookups in
+            // this file: a swallowed failure here previously looked identical to
+            // "nothing nearby", with no way to tell the person Maps just didn't
+            // answer. `searchFailed` distinguishes the two in the empty-state text.
+            do {
+                let response = try await MKLocalSearch(request: request).start()
                 for item in response.mapItems {
                     guard let itemName = item.name, !known.contains(itemName.lowercased()) else { continue }
                     let itemCoordinate = item.location.coordinate
@@ -526,6 +536,8 @@ struct ChooseOnMapView: View {
                         isKnown: false
                     ))
                 }
+            } catch {
+                searchFailed = results.isEmpty
             }
             guard !Task.isCancelled else { return }
             suggestions = results.sorted { $0.metres < $1.metres }
@@ -544,6 +556,7 @@ struct LocationDetailView: View {
     @State private var coordinate: CLLocationCoordinate2D
     @State private var position: MapCameraPosition
     @State private var confirmingDelete = false
+    @State private var actionFailed = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Query(sort: \SavedPlace.name) private var savedPlaces: [SavedPlace]
@@ -646,13 +659,22 @@ struct LocationDetailView: View {
                         kind: .savedPlaceChange,
                         change: .init(changedCount: 1)
                     )
-                    guard mutation.committed else { return }
+                    // Required: a rolled-back mutation must not read as a
+                    // completed deletion. `VisitMutationService` has already
+                    // rolled `context` back by this point; this view must not
+                    // dismiss as though the place is gone.
+                    guard mutation.committed else { actionFailed = true; return }
                 }
                 dismiss()
             }
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("Your timeline keeps all \(history.count) of its visits.")
+        }
+        .alert("Couldn’t save changes", isPresented: $actionFailed) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("LifeLog couldn’t save that change. Nothing was lost — try again.")
         }
         .navigationTitle(name.isEmpty ? "Location" : name)
         .navigationBarTitleDisplayMode(.inline)
@@ -702,7 +724,19 @@ private extension LocationDetailView {
     /// entries for the same doorway happened to record it.
     func merge(_ source: SavedPlace, into target: SavedPlace) {
         let sourceName = source.name
-        let matching = (try? PlaceVisitLookup.visits(named: sourceName, excluding: nil, context: context)) ?? []
+        // Required, not best effort: this fetch finds every visit the merge is
+        // supposed to carry over. Defaulting a failure to `[]` would still
+        // delete `source` and report success while silently renaming nothing —
+        // exactly the "mutation appears successful but wasn't" this audit
+        // exists to catch. Abort instead, with `source` left untouched.
+        let matching: [Visit]
+        do {
+            matching = try PlaceVisitLookup.visits(named: sourceName, excluding: nil, context: context)
+        } catch {
+            Diagnostics.record(error, context: context, subsystem: "LocationDetailView", operation: "merge visit lookup")
+            actionFailed = true
+            return
+        }
         for visit in matching {
             visit.placeName = target.name
         }
@@ -712,7 +746,7 @@ private extension LocationDetailView {
             kind: .savedPlaceChange,
             change: .init(changedCount: matching.count + 1)
         )
-        guard mutation.committed else { return }
+        guard mutation.committed else { actionFailed = true; return }
         name = target.name
         dismiss()
     }

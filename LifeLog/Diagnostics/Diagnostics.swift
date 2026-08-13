@@ -235,6 +235,12 @@ enum PendingDiagnostics {
     /// the newest are dropped once the queue is full rather than the other way round.
     static let queueLimit = 50
 
+    /// Best effort: `Entry` is a plain `Codable` struct, so `JSONEncoder` failing
+    /// here is not a realistic outcome, only a defensive `guard`. There is
+    /// deliberately nowhere to report this failure to — this queue exists
+    /// specifically so evidence of a store failure survives even when nothing
+    /// can be written to the store, so logging its own failure through the
+    /// same durable path would be circular.
     static func queue(_ entry: Entry, defaults: UserDefaults = .standard) {
         var entries = queued(defaults: defaults)
         guard entries.count < queueLimit else { return }
@@ -243,6 +249,11 @@ enum PendingDiagnostics {
         defaults.set(data, forKey: storageKey)
     }
 
+    /// Decoding fallback, missing and corrupt collapsed deliberately: an empty
+    /// key and an unreadable one both mean the same thing to every caller —
+    /// there is nothing here to flush — and there is no way to tell a person
+    /// apart what a corrupted `UserDefaults` value even was. Content this
+    /// queue holds is not otherwise recoverable once it fails to decode.
     static func queued(defaults: UserDefaults = .standard) -> [Entry] {
         guard let data = defaults.data(forKey: storageKey) else { return [] }
         return (try? JSONDecoder().decode([Entry].self, from: data)) ?? []
@@ -291,11 +302,28 @@ enum Diagnostics {
         }
     }
 
+    /// Reentrancy guard: nothing today calls `record`/`stage` from their own
+    /// failure path, but both write to the same store they are describing, and
+    /// a future change that logged its own `context.save()` failure through
+    /// this same entry point would recurse without bound. `record`/`stage`
+    /// simply no-op while already inside one another rather than relying on
+    /// every future caller to remember not to do that.
+    private static var isRecording = false
+
+    /// Best effort by design: a diagnostic that failed to save is a diagnostic
+    /// about a healthy path that never gets read, not a mutation a person is
+    /// waiting on — `try?` here deliberately does not retry or surface,
+    /// because the only two things that could do that (logging again, or
+    /// alerting through a UI this call site cannot see) are worse than losing
+    /// one event. `recordDurable` exists for the cases that do need to survive
+    /// a failed save.
     static func record(_ context: ModelContext?, subsystem: String, message: String,
                        severity: String = DiagnosticSeverity.warningRaw, category: String = Category.general,
                        eventCode: DiagnosticEventCode = .generic, durationMs: Int? = nil,
                        budgetMs: Int? = nil, itemCount: Int? = nil, repairCount: Int? = nil) {
-        guard let context else { return }
+        guard let context, !isRecording else { return }
+        isRecording = true
+        defer { isRecording = false }
         context.insert(DiagnosticEvent(subsystem: subsystem, severity: severity, message: message, category: category,
                                        eventCode: eventCode.rawValue, durationMs: durationMs, budgetMs: budgetMs,
                                        itemCount: itemCount, repairCount: repairCount))
@@ -305,11 +333,15 @@ enum Diagnostics {
 
     /// Adds a diagnostic to the caller's current transaction without saving it.
     /// VisitMutationService uses this so one mutation produces one durable commit,
-    /// rather than a diagnostic save followed by a second timeline save.
+    /// rather than a diagnostic save followed by a second timeline save. Same
+    /// reentrancy guard as `record`, for the same reason.
     static func stage(_ context: ModelContext, subsystem: String, message: String,
                       severity: String = DiagnosticSeverity.warningRaw, category: String = Category.general,
                       eventCode: DiagnosticEventCode = .generic, durationMs: Int? = nil,
                       budgetMs: Int? = nil, itemCount: Int? = nil, repairCount: Int? = nil) {
+        guard !isRecording else { return }
+        isRecording = true
+        defer { isRecording = false }
         context.insert(DiagnosticEvent(subsystem: subsystem, severity: severity, message: message, category: category,
                                        eventCode: eventCode.rawValue, durationMs: durationMs, budgetMs: budgetMs,
                                        itemCount: itemCount, repairCount: repairCount))
@@ -365,6 +397,11 @@ enum Diagnostics {
     /// specific overflow rows that need deleting, instead of fetching the full table
     /// each time just to check its size. Trimming is scoped to the event's own
     /// category so a burst of location logging can't evict performance samples.
+    ///
+    /// Best effort: a failed count or fetch here just skips trimming for this
+    /// one call rather than failing the write that triggered it — the event
+    /// being recorded is more valuable than staying exactly at the retention
+    /// limit, and the next successful call trims whatever built up meanwhile.
     private static func trimToRetentionLimit(_ context: ModelContext, category: String) {
         // Typed rather than a raw string compare: `.performance` gets its own
         // headroom, and every other category -- `.general`, `.location`, and any
@@ -427,6 +464,11 @@ enum Diagnostics {
         }
     }
 
+    /// Best effort: `PerformanceReport` is a plain `Codable` struct built entirely
+    /// from primitives, so an encode failure here is not a realistic outcome. An
+    /// empty `Data()` fallback writes as a zero-byte file the person can share —
+    /// indistinguishable from a report with no samples, which is judged an
+    /// acceptable ambiguity for a path this unlikely to ever run.
     static func makePerformanceReport(events: [DiagnosticEvent]) -> Data {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
         let device = deviceIdentifier()
