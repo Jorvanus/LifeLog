@@ -30,14 +30,21 @@ enum DiagnosticSeverity: Codable, Sendable, Equatable, Hashable {
 
 enum DiagnosticCategory: Codable, Sendable, Equatable, Hashable {
     case performance, general
+    /// `LocationDiagnostics`' bucket: resolver decisions and Maps lookups. Kept
+    /// distinct from `.general` in name even though it currently shares its
+    /// retention limit, so retention can be tuned per-category later without
+    /// another string threaded through every call site.
+    case location
     case unknown(String)
 
     static let performanceRaw = "performance"
     static let generalRaw = "general"
+    static let locationRaw = "location"
     init(rawValue: String) {
         switch rawValue {
         case Self.performanceRaw: self = .performance
         case Self.generalRaw: self = .general
+        case Self.locationRaw: self = .location
         default: self = .unknown(rawValue)
         }
     }
@@ -45,6 +52,68 @@ enum DiagnosticCategory: Codable, Sendable, Equatable, Hashable {
         switch self {
         case .performance: Self.performanceRaw
         case .general: Self.generalRaw
+        case .location: Self.locationRaw
+        case .unknown(let raw): raw
+        }
+    }
+    init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    func encode(to encoder: Encoder) throws { var container = encoder.singleValueContainer(); try container.encode(rawValue) }
+}
+
+/// The central catalogue of what kind of event a `DiagnosticEvent` records. This is
+/// what a performance report reads to decide which typed numeric fields apply,
+/// replacing the previous approach of parsing `message` with a regular expression
+/// to recover a duration or item count that was only ever informally embedded in
+/// human-readable text.
+///
+/// Open-ended for the same reason `DiagnosticSubsystem` is: a build that predates a
+/// new code must still show that event's message rather than fail to decode it.
+enum DiagnosticEventCode: Codable, Sendable, Equatable, Hashable {
+    /// A row written before this catalogue existed, or by a caller that has not
+    /// been given a specific code. Its typed numeric fields are unset by
+    /// definition; a reader falls back to the message text alone.
+    case legacyMessage
+    case generic
+    case performanceSample
+    case budgetSample
+    case locationMetric
+    case errorReport
+    case storeFailure
+    case hardwareValidation
+    case unknown(String)
+
+    static let legacyMessageRaw = "legacy-message"
+    static let genericRaw = "generic"
+    static let performanceSampleRaw = "performance-sample"
+    static let budgetSampleRaw = "budget-sample"
+    static let locationMetricRaw = "location-metric"
+    static let errorReportRaw = "error-report"
+    static let storeFailureRaw = "store-failure"
+    static let hardwareValidationRaw = "hardware-validation"
+
+    init(rawValue: String) {
+        switch rawValue {
+        case Self.legacyMessageRaw: self = .legacyMessage
+        case Self.genericRaw: self = .generic
+        case Self.performanceSampleRaw: self = .performanceSample
+        case Self.budgetSampleRaw: self = .budgetSample
+        case Self.locationMetricRaw: self = .locationMetric
+        case Self.errorReportRaw: self = .errorReport
+        case Self.storeFailureRaw: self = .storeFailure
+        case Self.hardwareValidationRaw: self = .hardwareValidation
+        default: self = .unknown(rawValue)
+        }
+    }
+    var rawValue: String {
+        switch self {
+        case .legacyMessage: Self.legacyMessageRaw
+        case .generic: Self.genericRaw
+        case .performanceSample: Self.performanceSampleRaw
+        case .budgetSample: Self.budgetSampleRaw
+        case .locationMetric: Self.locationMetricRaw
+        case .errorReport: Self.errorReportRaw
+        case .storeFailure: Self.storeFailureRaw
+        case .hardwareValidation: Self.hardwareValidationRaw
         case .unknown(let raw): raw
         }
     }
@@ -99,19 +168,39 @@ final class DiagnosticEvent {
     /// Which retention bucket this event competes in. Existing rows created before
     /// this field was added default to "general" via lightweight migration.
     var category: String = Diagnostics.Category.general
+    /// What kind of event this is, from `DiagnosticEventCode`'s catalogue. This and
+    /// the four fields below are additive, optional-or-defaulted properties, which
+    /// SwiftData migrates losslessly with no custom stage: an existing row simply
+    /// gets `eventCode = "legacy-message"` and every numeric field `nil`, reading
+    /// exactly as before through `message` alone. A row written going forward
+    /// always sets a real code and whichever numeric fields apply to it, so a
+    /// performance report can read them directly instead of pattern-matching text
+    /// that was only ever informally structured.
+    var eventCode: String = DiagnosticEventCode.legacyMessage.rawValue
+    var durationMs: Int?
+    var budgetMs: Int?
+    var itemCount: Int?
+    var repairCount: Int?
 
     init(createdAt: Date = .now, subsystem: String, severity: String = DiagnosticSeverity.warningRaw, message: String,
-         category: String = Diagnostics.Category.general) {
+         category: String = Diagnostics.Category.general, eventCode: String = DiagnosticEventCode.generic.rawValue,
+         durationMs: Int? = nil, budgetMs: Int? = nil, itemCount: Int? = nil, repairCount: Int? = nil) {
         self.createdAt = createdAt
         self.subsystem = TextSafety.clean(subsystem, maximumLength: 30)
         self.severity = TextSafety.clean(severity, maximumLength: 12)
         self.message = TextSafety.clean(message, maximumLength: 200)
         self.category = category
+        self.eventCode = eventCode
+        self.durationMs = durationMs
+        self.budgetMs = budgetMs
+        self.itemCount = itemCount
+        self.repairCount = repairCount
     }
 
     var diagnosticSubsystem: DiagnosticSubsystem { DiagnosticSubsystem(rawValue: subsystem) }
     var diagnosticSeverity: DiagnosticSeverity { DiagnosticSeverity(rawValue: severity) }
     var diagnosticCategory: DiagnosticCategory { DiagnosticCategory(rawValue: category) }
+    var diagnosticEventCode: DiagnosticEventCode { DiagnosticEventCode(rawValue: eventCode) }
 }
 
 /// Diagnostics waiting for a store that will accept them.
@@ -125,6 +214,19 @@ enum PendingDiagnostics {
         let subsystem: String
         let severity: String
         let message: String
+        /// Optional so a queue entry written before event codes existed still
+        /// decodes from `UserDefaults` on the next launch: a missing JSON key
+        /// simply decodes to `nil`, and `flushPending` falls back to `.storeFailure`
+        /// for it, which is what every pre-existing caller of `recordDurable` meant.
+        let eventCode: String?
+
+        init(createdAt: Date, subsystem: String, severity: String, message: String, eventCode: String? = nil) {
+            self.createdAt = createdAt
+            self.subsystem = subsystem
+            self.severity = severity
+            self.message = message
+            self.eventCode = eventCode
+        }
     }
 
     static let storageKey = "LifeLog.Diagnostics.pending.v1"
@@ -190,9 +292,13 @@ enum Diagnostics {
     }
 
     static func record(_ context: ModelContext?, subsystem: String, message: String,
-                       severity: String = DiagnosticSeverity.warningRaw, category: String = Category.general) {
+                       severity: String = DiagnosticSeverity.warningRaw, category: String = Category.general,
+                       eventCode: DiagnosticEventCode = .generic, durationMs: Int? = nil,
+                       budgetMs: Int? = nil, itemCount: Int? = nil, repairCount: Int? = nil) {
         guard let context else { return }
-        context.insert(DiagnosticEvent(subsystem: subsystem, severity: severity, message: message, category: category))
+        context.insert(DiagnosticEvent(subsystem: subsystem, severity: severity, message: message, category: category,
+                                       eventCode: eventCode.rawValue, durationMs: durationMs, budgetMs: budgetMs,
+                                       itemCount: itemCount, repairCount: repairCount))
         trimToRetentionLimit(context, category: category)
         try? context.save()
     }
@@ -201,8 +307,12 @@ enum Diagnostics {
     /// VisitMutationService uses this so one mutation produces one durable commit,
     /// rather than a diagnostic save followed by a second timeline save.
     static func stage(_ context: ModelContext, subsystem: String, message: String,
-                      severity: String = DiagnosticSeverity.warningRaw, category: String = Category.general) {
-        context.insert(DiagnosticEvent(subsystem: subsystem, severity: severity, message: message, category: category))
+                      severity: String = DiagnosticSeverity.warningRaw, category: String = Category.general,
+                      eventCode: DiagnosticEventCode = .generic, durationMs: Int? = nil,
+                      budgetMs: Int? = nil, itemCount: Int? = nil, repairCount: Int? = nil) {
+        context.insert(DiagnosticEvent(subsystem: subsystem, severity: severity, message: message, category: category,
+                                       eventCode: eventCode.rawValue, durationMs: durationMs, budgetMs: budgetMs,
+                                       itemCount: itemCount, repairCount: repairCount))
         trimToRetentionLimit(context, category: category)
     }
 
@@ -216,9 +326,11 @@ enum Diagnostics {
     /// app is running — and only then offered to the store. If the store takes it, the
     /// queue is emptied; if not, it waits for the next launch.
     static func recordDurable(_ context: ModelContext?, subsystem: String, message: String,
-                              severity: String = DiagnosticSeverity.warningRaw, defaults: UserDefaults = .standard) {
+                              severity: String = DiagnosticSeverity.warningRaw,
+                              eventCode: DiagnosticEventCode = .storeFailure, defaults: UserDefaults = .standard) {
         PendingDiagnostics.queue(.init(createdAt: .now, subsystem: subsystem,
-                                       severity: severity, message: message), defaults: defaults)
+                                       severity: severity, message: message, eventCode: eventCode.rawValue),
+                                 defaults: defaults)
         guard let context else { return }
         flushPending(context, defaults: defaults)
     }
@@ -231,8 +343,12 @@ enum Diagnostics {
         let pending = PendingDiagnostics.queued(defaults: defaults)
         guard !pending.isEmpty else { return 0 }
         for entry in pending {
+            // A queue entry written before event codes existed has no `eventCode` of
+            // its own; every pre-existing caller of `recordDurable` meant a store
+            // failure, so that is the fallback rather than a bare `.generic`.
             context.insert(DiagnosticEvent(createdAt: entry.createdAt, subsystem: entry.subsystem,
-                                           severity: entry.severity, message: entry.message))
+                                           severity: entry.severity, message: entry.message,
+                                           eventCode: entry.eventCode ?? DiagnosticEventCode.storeFailure.rawValue))
         }
         trimToRetentionLimit(context, category: Category.general)
         // A failure here is the case this whole path exists for. The queue is left
@@ -250,7 +366,14 @@ enum Diagnostics {
     /// each time just to check its size. Trimming is scoped to the event's own
     /// category so a burst of location logging can't evict performance samples.
     private static func trimToRetentionLimit(_ context: ModelContext, category: String) {
-        let limit = category == Category.performance ? performanceRetentionLimit : generalRetentionLimit
+        // Typed rather than a raw string compare: `.performance` gets its own
+        // headroom, and every other category -- `.general`, `.location`, and any
+        // future or unrecognised one -- shares the general bucket.
+        let limit: Int
+        switch DiagnosticCategory(rawValue: category) {
+        case .performance: limit = performanceRetentionLimit
+        case .general, .location, .unknown: limit = generalRetentionLimit
+        }
         let predicate = #Predicate<DiagnosticEvent> { $0.category == category }
         guard let count = try? context.fetchCount(FetchDescriptor<DiagnosticEvent>(predicate: predicate)),
               count > limit else { return }
@@ -269,7 +392,24 @@ enum Diagnostics {
         let deviceClass: String
         let osClass: String
         let samples: [Sample]
-        struct Sample: Codable { let createdAt: Date; let subsystem: String; let durationMs: Int?; let itemCount: Int?; let severity: String }
+        struct Sample: Codable {
+            let createdAt: Date; let subsystem: String; let eventCode: String
+            let durationMs: Int?; let budgetMs: Int?; let itemCount: Int?; let repairCount: Int?
+            let severity: String
+        }
+    }
+
+    /// A row written before typed fields existed carries its duration and item
+    /// count only inside `message`, in the free-text shape `performance`/`budget`
+    /// happened to produce at the time. Reached only when `event.durationMs`/
+    /// `itemCount` are `nil` -- a typed row never falls back to this.
+    private static func legacyDuration(from message: String) -> Int? {
+        message.range(of: #"(\d+) ms"#, options: .regularExpression)
+            .flatMap { Int(message[$0].split(separator: " ").first ?? "") }
+    }
+    private static func legacyItemCount(from message: String) -> Int? {
+        message.range(of: #"(\d+) items"#, options: .regularExpression)
+            .flatMap { Int(message[$0].split(separator: " ").first ?? "") }
     }
 
     /// The real hardware identifier (e.g. "iPhone16,2"), not a friendly marketing
@@ -295,9 +435,12 @@ enum Diagnostics {
         let samples = events
             .filter { $0.category == Category.performance }
             .map { event -> PerformanceReport.Sample in
-                let duration = event.message.range(of: #"(\d+) ms"#, options: .regularExpression).flatMap { Int(event.message[$0].split(separator: " ").first ?? "") }
-                let count = event.message.range(of: #"(\d+) items"#, options: .regularExpression).flatMap { Int(event.message[$0].split(separator: " ").first ?? "") }
-                return .init(createdAt: event.createdAt, subsystem: event.subsystem, durationMs: duration, itemCount: count, severity: event.severity)
+                .init(createdAt: event.createdAt, subsystem: event.subsystem, eventCode: event.eventCode,
+                      durationMs: event.durationMs ?? legacyDuration(from: event.message),
+                      budgetMs: event.budgetMs,
+                      itemCount: event.itemCount ?? legacyItemCount(from: event.message),
+                      repairCount: event.repairCount,
+                      severity: event.severity)
             }
         return (try? JSONEncoder().encode(PerformanceReport(generatedAt: .now, appVersion: version, deviceClass: device, osClass: osClass, samples: samples))) ?? Data()
     }
@@ -309,10 +452,12 @@ enum Diagnostics {
                             threshold: TimeInterval = 0.25) {
         let elapsed = Date.now.timeIntervalSince(startedAt)
         guard elapsed >= threshold else { return }
+        let durationMs = Int((elapsed * 1000).rounded())
         let countText = itemCount.map { " (\($0) items)" } ?? ""
         record(context, subsystem: subsystem,
-               message: "Slow \(operation): \(Int((elapsed * 1000).rounded())) ms\(countText)",
-               severity: "info", category: Category.performance)
+               message: "Slow \(operation): \(durationMs) ms\(countText)",
+               severity: "info", category: Category.performance,
+               eventCode: .performanceSample, durationMs: durationMs, itemCount: itemCount)
     }
 
     /// Retains one privacy-safe timing sample for a budgeted operation, whether it
@@ -329,10 +474,13 @@ enum Diagnostics {
                        startedAt: Date, budget: TimeInterval, itemCount: Int? = nil) {
         let elapsed = Date.now.timeIntervalSince(startedAt)
         let status = elapsed <= budget ? "pass" : "over budget"
+        let durationMs = Int((elapsed * 1000).rounded())
+        let budgetMs = Int((budget * 1000).rounded())
         let countText = itemCount.map { ", \($0) items" } ?? ""
         record(context, subsystem: subsystem,
-               message: "Budget \(status): \(operation), \(Int((elapsed * 1000).rounded())) ms / \(Int((budget * 1000).rounded())) ms\(countText)",
-               severity: elapsed <= budget ? "info" : "warning", category: Category.performance)
+               message: "Budget \(status): \(operation), \(durationMs) ms / \(budgetMs) ms\(countText)",
+               severity: elapsed <= budget ? "info" : "warning", category: Category.performance,
+               eventCode: .budgetSample, durationMs: durationMs, budgetMs: budgetMs, itemCount: itemCount)
     }
 
     /// Stores structured-but-human-readable location metrics in the existing
@@ -354,7 +502,9 @@ enum Diagnostics {
         if let correctedSuggestion { fields.append("suggestion_corrected=\(correctedSuggestion)") }
         if let payloadBytes { fields.append("payload_bytes=\(max(0, payloadBytes))") }
         record(context, subsystem: "Location Diagnostics",
-               message: fields.joined(separator: " "), severity: severity)
+               message: fields.joined(separator: " "), severity: severity,
+               eventCode: .locationMetric, durationMs: durationMs.map { max(0, $0) },
+               itemCount: candidateCount.map { max(0, $0) }, repairCount: repairs.map { max(0, $0) })
     }
 
     /// Error diagnostics retain only an NSError domain/code pair. This distinguishes
@@ -369,6 +519,6 @@ enum Diagnostics {
         // actually failed from the Diagnostics screen.
         record(context, subsystem: subsystem,
                message: "\(operation) failed (\(nsError.domain) code \(nsError.code)).",
-               severity: severity)
+               severity: severity, eventCode: .errorReport)
     }
 }

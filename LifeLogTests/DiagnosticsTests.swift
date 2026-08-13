@@ -49,6 +49,167 @@ struct DiagnosticsTests {
         #expect(events.first?.category == Diagnostics.Category.performance)
     }
 
+    // MARK: - Typed diagnostic events
+
+    // The point of the typed fields: a performance report must read them directly
+    // rather than recover them by pattern-matching `message`, which was only ever
+    // informally structured. These use a message with no "N ms"/"N items" text at
+    // all, so a report that still gets the right numbers proves it isn't regexing.
+
+    @Test("A budget sample's report values come from typed fields, not the message text")
+    func typedReportReadsFieldsDirectly() throws {
+        let context = try makeContext()
+        Diagnostics.budget(context, subsystem: "Location resolver", operation: "full-store audit",
+                           startedAt: .now.addingTimeInterval(-0.05), budget: 8, itemCount: 32_000)
+
+        let events = try context.fetch(FetchDescriptor<DiagnosticEvent>())
+        let event = try #require(events.first)
+        #expect(event.diagnosticEventCode == .budgetSample)
+        #expect(event.durationMs != nil)
+        #expect(event.budgetMs == 8000)
+        #expect(event.itemCount == 32_000)
+
+        let report = try #require(try? JSONDecoder().decode(
+            Diagnostics.PerformanceReport.self, from: Diagnostics.makePerformanceReport(events: events)))
+        let sample = try #require(report.samples.first)
+        #expect(sample.durationMs == event.durationMs)
+        #expect(sample.budgetMs == 8000)
+        #expect(sample.itemCount == 32_000)
+        #expect(sample.eventCode == DiagnosticEventCode.budgetSampleRaw)
+    }
+
+    @Test("A pre-typed event is still readable through its message, with an explicit legacy code")
+    func legacyMessageOnlyEventStillReports() throws {
+        let context = try makeContext()
+        // `.legacyMessage` set explicitly, standing in for what SwiftData's
+        // lightweight migration backfills onto an existing row's new column --
+        // the model's own declared default, which only that migration path
+        // actually reaches; a fresh `init(...)` here would otherwise take the
+        // initializer's own default of `.generic` instead.
+        let legacy = DiagnosticEvent(createdAt: base, subsystem: "Insights",
+                                     message: "Slow trend history: 42 ms (7 items)",
+                                     category: Diagnostics.Category.performance,
+                                     eventCode: DiagnosticEventCode.legacyMessage.rawValue)
+        context.insert(legacy)
+        try context.save()
+
+        #expect(legacy.diagnosticEventCode == .legacyMessage)
+        #expect(legacy.durationMs == nil)
+        #expect(legacy.itemCount == nil)
+
+        let report = try #require(try? JSONDecoder().decode(
+            Diagnostics.PerformanceReport.self,
+            from: Diagnostics.makePerformanceReport(events: try context.fetch(FetchDescriptor<DiagnosticEvent>()))))
+        let sample = try #require(report.samples.first)
+        // No typed field to read, so the report still recovers these from the text
+        // -- the fallback this refactor keeps rather than a data loss.
+        #expect(sample.durationMs == 42)
+        #expect(sample.itemCount == 7)
+    }
+
+    @Test("An unrecognised event code round-trips without crashing report generation")
+    func unknownEventCodeIsPreserved() throws {
+        let context = try makeContext()
+        context.insert(DiagnosticEvent(createdAt: base, subsystem: "Future subsystem",
+                                       message: "A future build's event.",
+                                       category: Diagnostics.Category.performance,
+                                       eventCode: "future-typed-metric-v2", durationMs: 5))
+        try context.save()
+
+        let events = try context.fetch(FetchDescriptor<DiagnosticEvent>())
+        #expect(events.first?.diagnosticEventCode == .unknown("future-typed-metric-v2"))
+        let report = try #require(try? JSONDecoder().decode(
+            Diagnostics.PerformanceReport.self, from: Diagnostics.makePerformanceReport(events: events)))
+        #expect(report.samples.first?.eventCode == "future-typed-metric-v2")
+        #expect(report.samples.first?.durationMs == 5)
+    }
+
+    // MARK: - Retention by typed category
+
+    @Test("Performance retention is unaffected by trimming the general or location bucket")
+    func retentionIsScopedByTypedCategory() throws {
+        let context = try makeContext()
+        for index in 0..<(Diagnostics.performanceRetentionLimit - 1) {
+            context.insert(DiagnosticEvent(createdAt: base.addingTimeInterval(Double(index)),
+                                           subsystem: "Test", message: "perf \(index)",
+                                           category: Diagnostics.Category.performance))
+        }
+        try context.save()
+
+        // Push the general/location bucket well past its own, larger limit. If
+        // trimming were not scoped by category, this alone would evict the
+        // performance rows inserted above even though none of them are full yet.
+        for index in 0..<(Diagnostics.generalRetentionLimit + 5) {
+            Diagnostics.record(context, subsystem: "Core Location",
+                               message: "location event \(index)",
+                               category: DiagnosticCategory.locationRaw)
+        }
+
+        let performanceCategory = Diagnostics.Category.performance
+        let locationCategory = DiagnosticCategory.locationRaw
+        let performanceCount = try context.fetchCount(FetchDescriptor<DiagnosticEvent>(
+            predicate: #Predicate { $0.category == performanceCategory }))
+        let locationCount = try context.fetchCount(FetchDescriptor<DiagnosticEvent>(
+            predicate: #Predicate { $0.category == locationCategory }))
+        #expect(performanceCount == Diagnostics.performanceRetentionLimit - 1,
+                "the location bucket filling up must not evict performance rows")
+        #expect(locationCount == Diagnostics.generalRetentionLimit,
+                "location shares the general limit, not its own unbounded one")
+    }
+
+    // MARK: - Malformed payloads
+
+    @Test("A corrupted pending-diagnostics queue is read as empty rather than crashing")
+    func corruptedPendingQueueDoesNotCrash() throws {
+        let defaults = try makeDefaults()
+        defaults.set(Data("not valid JSON at all {{{".utf8), forKey: PendingDiagnostics.storageKey)
+
+        #expect(PendingDiagnostics.queued(defaults: defaults).isEmpty)
+        // Queuing a fresh entry afterward must still work -- a corrupted queue is
+        // not a poisoned one.
+        PendingDiagnostics.queue(.init(createdAt: base, subsystem: "Store", severity: "warning",
+                                       message: "recovered"), defaults: defaults)
+        #expect(PendingDiagnostics.queued(defaults: defaults).count == 1)
+    }
+
+    @Test("A pending entry queued before event codes existed decodes with no code, not a crash")
+    func pendingEntryMissingEventCodeDecodesAsNil() throws {
+        let defaults = try makeDefaults()
+        let legacyJSON = """
+        [{"createdAt":\(base.timeIntervalSinceReferenceDate),"subsystem":"Store","severity":"warning","message":"A background save failed."}]
+        """
+        defaults.set(Data(legacyJSON.utf8), forKey: PendingDiagnostics.storageKey)
+
+        let queued = PendingDiagnostics.queued(defaults: defaults)
+        #expect(queued.count == 1)
+        #expect(queued.first?.eventCode == nil)
+    }
+
+    // MARK: - Pending diagnostics when the store cannot open
+
+    @Test("A failure recorded while the store cannot open keeps its event code once the store recovers")
+    func pendingDiagnosticEventCodeSurvivesUntilTheStoreOpens() throws {
+        let defaults = try makeDefaults()
+
+        // Simulates the store-can't-open case: no context yet, so the entry can
+        // only be queued to UserDefaults, exactly as `StoreProtection`'s recovery
+        // path relies on.
+        Diagnostics.recordDurable(nil, subsystem: "Hardware validation",
+                                  message: "Core Motion returned a segment.",
+                                  eventCode: .hardwareValidation, defaults: defaults)
+        #expect(PendingDiagnostics.queued(defaults: defaults).count == 1)
+        #expect(PendingDiagnostics.queued(defaults: defaults).first?.eventCode == DiagnosticEventCode.hardwareValidationRaw)
+
+        // The store recovers on a later launch and the queue is flushed into it.
+        let context = try makeContext()
+        let flushed = Diagnostics.flushPending(context, defaults: defaults)
+
+        #expect(flushed == 1)
+        let events = try context.fetch(FetchDescriptor<DiagnosticEvent>())
+        #expect(events.first?.diagnosticEventCode == .hardwareValidation)
+        #expect(PendingDiagnostics.queued(defaults: defaults).isEmpty)
+    }
+
     // MARK: - Location journal
 
     // This is the one thing in the store that holds precise coordinates, so the switch

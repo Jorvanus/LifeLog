@@ -32,7 +32,7 @@ enum HardwareValidation {
         // an unbounded stream of copies.
         defaults.set(Date.now.ISO8601Format(), forKey: key)
         Diagnostics.recordDurable(context, subsystem: "Hardware validation",
-                                  message: message, severity: "info")
+                                  message: message, severity: "info", eventCode: .hardwareValidation)
     }
 
     /// Monitoring membership changes when a place is added, renamed, or its history
@@ -44,6 +44,6 @@ enum HardwareValidation {
         guard defaults.string(forKey: key) != signature else { return }
         defaults.set(signature, forKey: key)
         Diagnostics.recordDurable(context, subsystem: "Hardware validation",
-                                  message: message, severity: "info")
+                                  message: message, severity: "info", eventCode: .hardwareValidation)
     }
 }

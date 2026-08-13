@@ -2,6 +2,20 @@
 
 ## 2026-08-14
 
+### Diagnostics carry typed timing and counts, not just prose
+
+- Diagnostic events now record a stable event code, duration, budget, item
+  count, and repair count as typed fields, so a performance report reads them
+  directly instead of pattern-matching a human-readable message. Retention
+  operates by typed category. Older events, and a queue entry recorded while
+  the store couldn't open, still read correctly through their message alone.
+- Fixed a schema-versioning bug this surfaced: a migration stage had kept
+  fetching the live `Visit` type after its own target version was frozen,
+  which crashed a store reopened through the full migration history once a
+  later version's model changed shape. The stage now fetches its own frozen
+  model, and the versioned schema plan gained an explicit V11 rather than
+  mutating the version that already shipped.
+
 ### Location evidence stays recoverable
 
 - LifeLog now recognises versioned route and place-candidate evidence, keeps

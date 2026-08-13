@@ -698,8 +698,99 @@ enum LifeLogSchemaV9: VersionedSchema {
 /// store. Visit and Saved Place names remain snapshots and the optional IDs are
 /// populated after opening in bounded batches, so this structural migration never
 /// turns launch into an archive rewrite.
+///
+/// Frozen now that V11 needs a real snapshot to migrate from, the same reason V1
+/// through V9 are frozen above. This one matters more than most: it used to point
+/// directly at the live model types, on the theory that whatever they currently
+/// looked like simply *was* V10. That reasoning breaks the moment a live type
+/// gains a field for an unrelated reason — the typed diagnostic event fields added
+/// here did exactly that, and a build changing `LifeLog.DiagnosticEvent` therefore
+/// silently changed what "V10" meant retroactively. A store already migrated to
+/// the old V10 could no longer be placed in the (now different) migration graph,
+/// which SwiftData reports as "Cannot use staged migration with an unknown model
+/// version" — a real store on a real device, not a test artifact. Freezing V10 to
+/// a fixed snapshot and adding V11 as its own stage is what every version before
+/// it already does, and is the only form that can't be perturbed by later changes.
 enum LifeLogSchemaV10: VersionedSchema {
     static let versionIdentifier = Schema.Version(10, 0, 0)
+    static var models: [any PersistentModel.Type] {
+        [Visit.self, SavedPlace.self, ActivityDefinitionRecord.self,
+         VisitCorrection.self, DiagnosticEvent.self, LocationEvent.self]
+    }
+    @Model final class Visit {
+        var arrival: Date; var departure: Date?; var latitude: Double; var longitude: Double
+        var placeName: String; var inferredActivity: String; var userActivity: String?
+        var activityDefinitionID: UUID?
+        var note: String; var source: String; var recognitionConfidence: String?
+        var mapsIdentifier: String?; var placeFieldProvenance: String?; var resolutionExplanation: String?
+        var candidateData: Data?; var healthKitSampleIDs: [UUID]?; var routeData: Data?
+        var stableID: UUID = UUID(); var resolutionStateRaw: String = VisitResolutionState.provisional.rawValue
+        init(arrival: Date, latitude: Double, longitude: Double, placeName: String,
+             inferredActivity: String, note: String, source: String) {
+            self.arrival = arrival; self.latitude = latitude; self.longitude = longitude
+            self.placeName = placeName; self.inferredActivity = inferredActivity
+            self.note = note; self.source = source
+        }
+    }
+    @Model final class SavedPlace {
+        var name: String; var latitude: Double; var longitude: Double; var radius: Double
+        var defaultActivity: String; var activityDefinitionID: UUID?
+        var mapsIdentifier: String?; var role: String?
+        init(name: String, latitude: Double, longitude: Double, radius: Double, defaultActivity: String) {
+            self.name = name; self.latitude = latitude; self.longitude = longitude
+            self.radius = radius; self.defaultActivity = defaultActivity
+        }
+    }
+    @Model final class ActivityDefinitionRecord {
+        @Attribute(.unique) var stableID: UUID
+        var name: String; var category: String; var symbol: String; var colorHex: String?
+        var lifeArea: String; var isActive: Bool; var createdAt: Date; var modifiedAt: Date
+        init(stableID: UUID, name: String, category: String, symbol: String, lifeArea: String,
+             isActive: Bool, createdAt: Date, modifiedAt: Date) {
+            self.stableID = stableID; self.name = name; self.category = category
+            self.symbol = symbol; self.lifeArea = lifeArea; self.isActive = isActive
+            self.createdAt = createdAt; self.modifiedAt = modifiedAt
+        }
+    }
+    @Model final class VisitCorrection {
+        var changedAt: Date; var visitArrival: Date; var latitude: Double; var longitude: Double
+        var previousPlaceName: String; var newPlaceName: String; var previousActivity: String; var newActivity: String
+        var previousConfidence: String; var newConfidence: String; var reason: String
+        init(changedAt: Date, visitArrival: Date, latitude: Double, longitude: Double, previousPlaceName: String,
+             newPlaceName: String, previousActivity: String, newActivity: String, previousConfidence: String,
+             newConfidence: String, reason: String) {
+            self.changedAt = changedAt; self.visitArrival = visitArrival; self.latitude = latitude; self.longitude = longitude
+            self.previousPlaceName = previousPlaceName; self.newPlaceName = newPlaceName; self.previousActivity = previousActivity
+            self.newActivity = newActivity; self.previousConfidence = previousConfidence; self.newConfidence = newConfidence; self.reason = reason
+        }
+    }
+    @Model final class DiagnosticEvent {
+        var createdAt: Date; var subsystem: String; var severity: String; var message: String; var category: String = "general"
+        init(createdAt: Date, subsystem: String, severity: String, message: String, category: String) {
+            self.createdAt = createdAt; self.subsystem = subsystem; self.severity = severity; self.message = message; self.category = category
+        }
+    }
+    @Model final class LocationEvent {
+        var recordedAt: Date; var callbackType: String; var callbackAt: Date; var arrival: Date?; var departure: Date?
+        var latitude: Double; var longitude: Double; var accuracy: Double; var distanceFromCurrentVisit: Double?
+        var transition: String; var visitArrival: Date?
+        init(recordedAt: Date, callbackType: String, callbackAt: Date, latitude: Double, longitude: Double, accuracy: Double, transition: String) {
+            self.recordedAt = recordedAt; self.callbackType = callbackType; self.callbackAt = callbackAt
+            self.latitude = latitude; self.longitude = longitude; self.accuracy = accuracy; self.transition = transition
+        }
+    }
+}
+
+/// V11 adds the typed diagnostic event fields (`eventCode`, `durationMs`,
+/// `budgetMs`, `itemCount`, `repairCount`) to `DiagnosticEvent`, replacing a
+/// performance report's reliance on regex-parsing `message` for a duration or
+/// item count. This is the version that now points directly at the live model
+/// types — see V10's comment for why that reasoning is fine going forward
+/// (nothing later mutates these types without also freezing V11 in turn and
+/// adding a V12) but was not fine retroactively applied to an already-shipped
+/// version.
+enum LifeLogSchemaV11: VersionedSchema {
+    static let versionIdentifier = Schema.Version(11, 0, 0)
     static var models: [any PersistentModel.Type] {
         [LifeLog.Visit.self, LifeLog.SavedPlace.self, LifeLog.ActivityDefinitionRecord.self,
          LifeLog.VisitCorrection.self, LifeLog.DiagnosticEvent.self, LifeLog.LocationEvent.self]
@@ -711,7 +802,7 @@ enum LifeLogMigrationPlan: SchemaMigrationPlan {
         [LifeLogSchemaV1.self, LifeLogSchemaV2.self, LifeLogSchemaV3.self,
          LifeLogSchemaV4.self, LifeLogSchemaV5.self, LifeLogSchemaV6.self,
          LifeLogSchemaV7.self, LifeLogSchemaV8.self, LifeLogSchemaV9.self,
-         LifeLogSchemaV10.self]
+         LifeLogSchemaV10.self, LifeLogSchemaV11.self]
     }
 
     /// Dropping a property, adding an optional one and adding a whole model are all
@@ -761,20 +852,35 @@ enum LifeLogMigrationPlan: SchemaMigrationPlan {
             // visit's own fields actually derive. Ignored state is deliberately not
             // touched here — see `VisitResolutionMigration` for why that is a
             // separate, post-open step rather than part of this stage.
+            //
+            // Fetches `LifeLogSchemaV9.Visit`, not `LifeLog.Visit` — this stage's own
+            // target model, not the live type. It briefly fetched the live type
+            // instead, back when V9 pointed directly at live models itself and the
+            // two were identical; now that V9 is frozen (to make room for what V10,
+            // and now V11, each needed), fetching the live type creates two
+            // classes named "Visit" in the same staged-migration process and crashes
+            // deep inside SwiftData with "Failed to cast model LifeLog.Visit ... to
+            // Visit" — confirmed on-device 2026-08-14. The primitive-only overload of
+            // `derivedAutomaticResolutionState` avoids needing a live `Visit` here at
+            // all.
             .custom(
                 fromVersion: LifeLogSchemaV8.self,
                 toVersion: LifeLogSchemaV9.self,
                 willMigrate: nil,
                 didMigrate: { context in
-                    let visits = try context.fetch(FetchDescriptor<LifeLog.Visit>())
+                    let visits = try context.fetch(FetchDescriptor<LifeLogSchemaV9.Visit>())
                     for visit in visits {
                         visit.stableID = UUID()
-                        visit.resolutionStateRaw = ActivityLocationPolicy.derivedAutomaticResolutionState(for: visit).rawValue
+                        visit.resolutionStateRaw = ActivityLocationPolicy.derivedAutomaticResolutionState(
+                            source: visit.source, placeName: visit.placeName,
+                            recognitionConfidence: visit.recognitionConfidence
+                        ).rawValue
                     }
                     try context.save()
                 }
             ),
-            .lightweight(fromVersion: LifeLogSchemaV9.self, toVersion: LifeLogSchemaV10.self)
+            .lightweight(fromVersion: LifeLogSchemaV9.self, toVersion: LifeLogSchemaV10.self),
+            .lightweight(fromVersion: LifeLogSchemaV10.self, toVersion: LifeLogSchemaV11.self)
         ]
     }
 }

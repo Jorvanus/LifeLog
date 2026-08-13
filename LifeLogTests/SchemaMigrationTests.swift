@@ -606,7 +606,7 @@ struct SchemaMigrationTests {
     /// way to what the app actually ships. Left at V5 while the app moved to V6, these
     /// tests would keep passing without once exercising the new stage.
     private func openVersionedStore(at url: URL) throws -> ModelContainer {
-        let schema = Schema(versionedSchema: LifeLogSchemaV10.self)
+        let schema = Schema(versionedSchema: LifeLogSchemaV11.self)
         let configuration = ModelConfiguration(
             "LifeLogMigrationFixture", schema: schema, url: url,
             allowsSave: true, cloudKitDatabase: .none

@@ -68,6 +68,14 @@ struct LifeLogBackup: Codable {
         /// V2. Optional so a V1 backup still decodes; restored as `.general` to
         /// match what a pre-category row already defaults to on this model.
         let category: String?
+        /// Optional so a backup made before typed diagnostic events existed still
+        /// decodes; a restored event simply has no typed fields, exactly as it had
+        /// none when that backup was made, and reads through `message` alone.
+        let eventCode: String?
+        let durationMs: Int?
+        let budgetMs: Int?
+        let itemCount: Int?
+        let repairCount: Int?
     }
     struct LocationEventRecord: Codable {
         let recordedAt: Date; let callbackType: String; let callbackAt: Date
@@ -205,7 +213,7 @@ enum LocalBackupService {
             visits: visits.map { .init(arrival: $0.arrival, departure: $0.departure, latitude: $0.latitude, longitude: $0.longitude, placeName: $0.placeName, inferredActivity: $0.inferredActivity, userActivity: $0.userActivity, note: $0.note, source: $0.source, activityDefinitionID: $0.activityDefinitionID, recognitionConfidence: $0.recognitionConfidence, candidateData: $0.candidateData, mapsIdentifier: $0.mapsIdentifier, placeFieldProvenance: $0.placeFieldProvenance, resolutionExplanation: $0.resolutionExplanation, stableID: $0.stableID, resolutionState: $0.resolutionStateRaw, healthKitSampleIDs: $0.healthKitSampleIDs, routeData: $0.routeData) },
             savedPlaces: places.map { .init(name: $0.name, latitude: $0.latitude, longitude: $0.longitude, radius: $0.radius, defaultActivity: $0.defaultActivity, mapsIdentifier: $0.mapsIdentifier, activityDefinitionID: $0.activityDefinitionID, role: $0.role) },
             corrections: corrections.map { .init(changedAt: $0.changedAt, visitArrival: $0.visitArrival, latitude: $0.latitude, longitude: $0.longitude, previousPlaceName: $0.previousPlaceName, newPlaceName: $0.newPlaceName, previousActivity: $0.previousActivity, newActivity: $0.newActivity, previousConfidence: $0.previousConfidence, newConfidence: $0.newConfidence, reason: $0.reason) },
-            diagnostics: diagnostics.map { .init(createdAt: $0.createdAt, subsystem: $0.subsystem, severity: $0.severity, message: $0.message, category: $0.category) },
+            diagnostics: diagnostics.map { .init(createdAt: $0.createdAt, subsystem: $0.subsystem, severity: $0.severity, message: $0.message, category: $0.category, eventCode: $0.eventCode, durationMs: $0.durationMs, budgetMs: $0.budgetMs, itemCount: $0.itemCount, repairCount: $0.repairCount) },
             locationEvents: locationEvents.map { .init(recordedAt: $0.recordedAt, callbackType: $0.callbackType,
                 callbackAt: $0.callbackAt, arrival: $0.arrival, departure: $0.departure,
                 latitude: $0.latitude, longitude: $0.longitude, accuracy: $0.accuracy,
@@ -253,7 +261,13 @@ enum LocalBackupService {
                 context.insert(place)
             }
             for record in backup.corrections { context.insert(VisitCorrection(changedAt: record.changedAt, visitArrival: record.visitArrival, latitude: record.latitude, longitude: record.longitude, previousPlaceName: record.previousPlaceName, newPlaceName: record.newPlaceName, previousActivity: record.previousActivity, newActivity: record.newActivity, previousConfidence: record.previousConfidence, newConfidence: record.newConfidence, reason: record.reason)) }
-            for record in backup.diagnostics { context.insert(DiagnosticEvent(createdAt: record.createdAt, subsystem: record.subsystem, severity: record.severity, message: record.message, category: record.category ?? Diagnostics.Category.general)) }
+            for record in backup.diagnostics {
+                context.insert(DiagnosticEvent(createdAt: record.createdAt, subsystem: record.subsystem, severity: record.severity,
+                                               message: record.message, category: record.category ?? Diagnostics.Category.general,
+                                               eventCode: record.eventCode ?? DiagnosticEventCode.legacyMessage.rawValue,
+                                               durationMs: record.durationMs, budgetMs: record.budgetMs,
+                                               itemCount: record.itemCount, repairCount: record.repairCount))
+            }
             for record in backup.locationEvents ?? [] {
                 context.insert(LocationEvent(recordedAt: record.recordedAt, callbackType: record.callbackType,
                                              callbackAt: record.callbackAt, arrival: record.arrival,
