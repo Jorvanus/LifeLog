@@ -72,4 +72,44 @@ struct LocationArrivalConfirmationTests {
         }
         #expect(confirmation.confirmedLocation == nil)
     }
+
+    @Test("Typed callback adapter preserves delayed arrivals without touching Core Location state")
+    func delayedArrivalIsAdaptedDeterministically() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let adapter = CoreLocationEventAdapter(now: { now })
+        let visit = CLVisit(coordinate: .init(latitude: -27.47, longitude: 153.03),
+                            horizontalAccuracy: 12,
+                            arrivalDate: now.addingTimeInterval(-7 * 24 * 60 * 60),
+                            departureDate: .distantFuture)
+        guard case let .visitArrival(_, _, _, delay)? = adapter.event(for: visit) else {
+            Issue.record("Expected an arrival event")
+            return
+        }
+        #expect(delay == 7 * 24 * 60 * 60)
+    }
+
+    @Test("A newer place-resolution token rejects a stale Maps response")
+    @MainActor
+    func staleMapsLookupIsRejected() {
+        let coordinator = PlaceResolutionCoordinator()
+        let visit = Visit(arrival: .now, latitude: -27.47, longitude: 153.03,
+                          placeName: Visit.identifyingPlaceName, inferredActivity: "Visiting")
+        let old = coordinator.begin(for: visit)
+        let new = coordinator.begin(for: visit)
+        #expect(coordinator.isCurrent(old, for: visit) == false)
+        #expect(coordinator.isCurrent(new, for: visit))
+    }
+
+    @Test("Relaunch recovery only starts the background workflow when it can be useful")
+    func recoveryStartPolicyIsExplicit() {
+        #expect(LocationRecoveryCoordinator.shouldStartBackgroundWorkflow(
+            enabled: true, authorization: .authorizedAlways
+        ))
+        #expect(LocationRecoveryCoordinator.shouldStartBackgroundWorkflow(
+            enabled: true, authorization: .notDetermined
+        ) == false)
+        #expect(LocationRecoveryCoordinator.shouldStartBackgroundWorkflow(
+            enabled: false, authorization: .authorizedAlways
+        ) == false)
+    }
 }

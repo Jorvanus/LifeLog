@@ -6,7 +6,9 @@ import Observation
 /// A deliberately short-lived decision window. `stationary` comes from Core
 /// Location's motion fusion; deriving the same answer from one location's speed
 /// caused launch-time GPS noise to become a durable visit.
-struct LocationArrivalConfirmation {
+/// Owns the confirmation state machine independently of CLLocationManager. The
+/// recorder only supplies live samples and performs the resulting mutation.
+struct ArrivalConfirmationEngine {
     struct Sample: Equatable {
         let location: CLLocation
         let stationary: Bool
@@ -64,6 +66,8 @@ struct LocationArrivalConfirmation {
     }
 }
 
+typealias LocationArrivalConfirmation = ArrivalConfirmationEngine
+
 @MainActor @Observable
 final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegate {
     private enum PreferenceKey {
@@ -71,6 +75,10 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     }
 
     private let manager = CLLocationManager()
+    private var eventAdapter = CoreLocationEventAdapter()
+    private var mutationCoordinator = LocationMutationCoordinator()
+    private var diagnosticsRecorder = LocationDiagnosticsRecorder()
+    private let placeResolutionCoordinator = PlaceResolutionCoordinator()
     private var context: ModelContext?
     private var serviceSession: CLServiceSession?
     private var serviceSessionRequirement: CLServiceSession.AuthorizationRequirement?
@@ -94,7 +102,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
 
     private var liveLocationBurstTask: Task<Void, Never>?
     private var liveLocationBurstTimeoutTask: Task<Void, Never>?
-    private var locationConfirmation: LocationArrivalConfirmation?
+    private var locationConfirmation: ArrivalConfirmationEngine?
     private var pendingArrival: PendingArrival?
     var authorization: CLAuthorizationStatus = .notDetermined
     /// Whether iOS is fuzzing this app's location fixes to city-block scale (the
@@ -108,7 +116,12 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     /// precise coordinate or duplicating a provisional visit in the data model.
     private(set) var latestLocationTimestamp: Date?
 
-    override init() {
+    init(eventAdapter: CoreLocationEventAdapter = .init(),
+         mutationCoordinator: LocationMutationCoordinator = .init(),
+         diagnosticsRecorder: LocationDiagnosticsRecorder = .init()) {
+        self.eventAdapter = eventAdapter
+        self.mutationCoordinator = mutationCoordinator
+        self.diagnosticsRecorder = diagnosticsRecorder
         super.init()
         manager.delegate = self
         manager.activityType = .other
@@ -123,7 +136,9 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     func connect(_ context: ModelContext) {
         self.context = context
         loadSavedPlaceCache()
-        if isBackgroundLoggingEnabled, authorization != .notDetermined {
+        if LocationRecoveryCoordinator.shouldStartBackgroundWorkflow(
+            enabled: isBackgroundLoggingEnabled, authorization: authorization
+        ) {
             startBackgroundWorkflow()
         }
         if authorization == .authorizedAlways || authorization == .authorizedWhenInUse {
@@ -214,49 +229,68 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        authorization = manager.authorizationStatus
-        let previousAccuracyAuthorization = accuracyAuthorization
-        accuracyAuthorization = manager.accuracyAuthorization
-        if accuracyAuthorization == .reducedAccuracy, previousAccuracyAuthorization != .reducedAccuracy {
-            Diagnostics.record(context, subsystem: "Core Location",
-                               message: "Precise Location turned off; arrivals will resolve less accurately until it's back on.")
-        }
-        if authorization == .authorizedAlways, isBackgroundLoggingEnabled {
-            startBackgroundWorkflow()
-        }
-        if authorization == .authorizedAlways || authorization == .authorizedWhenInUse {
-            refreshCurrentLocation()
-        }
+        handle(.authorizationChanged(status: manager.authorizationStatus,
+                                     accuracy: manager.accuracyAuthorization))
     }
 
     func locationManager(_ manager: CLLocationManager, didVisit visit: CLVisit) {
-        guard visit.coordinate.latitude.isFinite, visit.coordinate.longitude.isFinite else { return }
-        let callbackDelay = Date.now.timeIntervalSince(visit.arrivalDate)
-        if callbackDelay > 15 * 60 {
-            Diagnostics.record(context, subsystem: "Core Location",
-                               message: "A visit arrived later than expected (\(Int(callbackDelay / 60)) minutes).")
-        }
-        if visit.departureDate == .distantFuture {
-            // A late CLVisit is useful evidence, but not proof that the phone is
-            // still there. Confirm it against the same motion-fused burst used at
-            // launch before writing a new durable arrival.
-            beginLocationConfirmation(
-                pendingArrival: .init(coordinate: visit.coordinate, arrival: visit.arrivalDate,
-                                      callbackType: "visit-arrival", accuracy: visit.horizontalAccuracy)
-            )
-        } else {
-            closeVisit(at: visit.coordinate, arrival: visit.arrivalDate, departure: visit.departureDate,
-                       callbackType: "visit-departure", accuracy: visit.horizontalAccuracy)
-        }
+        guard let event = eventAdapter.event(for: visit) else { return }
+        handle(event)
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         sampleWiFiAnchor()
-        guard let location = locations.last,
-              location.horizontalAccuracy >= 0,
-              location.horizontalAccuracy <= 1_000,
-              abs(location.timestamp.timeIntervalSinceNow) <= 5 * 60 else { return }
-        recordLocationEvidence(location, callbackType: "location-update")
+        guard let event = eventAdapter.event(for: locations) else { return }
+        handle(event)
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        _ = error
+        handle(.failure)
+    }
+
+    /// Delegate callbacks are deliberately limited to adaptation and dispatch. All
+    /// persistence and asynchronous work stays below this boundary.
+    private func handle(_ event: CoreLocationEvent) {
+        switch event {
+        case let .authorizationChanged(status, accuracy):
+            authorization = status
+        let previousAccuracyAuthorization = accuracyAuthorization
+            accuracyAuthorization = accuracy
+        if accuracyAuthorization == .reducedAccuracy, previousAccuracyAuthorization != .reducedAccuracy {
+            Diagnostics.record(context, subsystem: "Core Location",
+                               message: "Precise Location turned off; arrivals will resolve less accurately until it's back on.")
+        }
+            if authorization == .authorizedAlways, isBackgroundLoggingEnabled {
+            startBackgroundWorkflow()
+            }
+            if authorization == .authorizedAlways || authorization == .authorizedWhenInUse {
+            refreshCurrentLocation()
+            }
+        case let .visitArrival(coordinate, arrival, accuracy, callbackDelay):
+            if callbackDelay > 15 * 60 {
+                diagnosticsRecorder.record(context, "A visit arrived later than expected (\(Int(callbackDelay / 60)) minutes).", "warning")
+            }
+            // A late CLVisit is useful evidence, but not proof that the phone is
+            // still there. Confirm it against the same motion-fused burst used at
+            // launch before writing a new durable arrival.
+            beginLocationConfirmation(
+                pendingArrival: .init(coordinate: coordinate, arrival: arrival,
+                                      callbackType: "visit-arrival", accuracy: accuracy)
+            )
+        case let .visitDeparture(coordinate, arrival, departure, accuracy):
+            closeVisit(at: coordinate, arrival: arrival, departure: departure,
+                       callbackType: "visit-departure", accuracy: accuracy)
+        case let .locationSample(sample):
+            let location = CLLocation(coordinate: sample.coordinate, altitude: 0,
+                                      horizontalAccuracy: sample.accuracy, verticalAccuracy: -1,
+                                      timestamp: sample.timestamp)
+            recordLocationEvidence(location, callbackType: "location-update")
+        case .failure:
+            cancelLocationConfirmation()
+            lastError = "Location updates are temporarily unavailable."
+            diagnosticsRecorder.record(context, "A location update failed.", "warning")
+        }
     }
 
     private func recordLocationEvidence(_ location: CLLocation, callbackType: String,
@@ -397,13 +431,6 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         liveLocationBurstTimeoutTask = nil
         locationConfirmation = nil
         pendingArrival = nil
-    }
-
-    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        cancelLocationConfirmation()
-        _ = error
-        lastError = "Location updates are temporarily unavailable."
-        Diagnostics.record(context, subsystem: "Core Location", message: "A location update failed.")
     }
 
     private func createVisit(at coordinate: CLLocationCoordinate2D, arrival: Date,
@@ -677,7 +704,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             predicate: #Predicate { $0.source == "automatic" || $0.source == "manual" }
         ))) ?? []
         let ranked = MonitoredPlaces.prioritised(savedPlaceCache, visits: visits, limit: .max)
-        let wanted = Array(ranked.prefix(MonitoredPlaces.limit))
+        let wanted = GeofenceMonitor.desired(savedPlaceCache, visits: visits)
         let wantedByID = Dictionary(uniqueKeysWithValues: wanted.map { ($0.identifier, $0) })
 
         for identifier in await placeMonitor.identifiers where wantedByID[identifier] == nil {
@@ -789,6 +816,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         else { return }
         identifyingVisits.insert(identity)
         placeLookupAttempts[identity, default: []].append(now)
+        let lookupToken = placeResolutionCoordinator.begin(for: visit)
         let coordinate = CLLocationCoordinate2D(latitude: visit.latitude, longitude: visit.longitude)
         // Lookups used to carry a per-visit identifier so a correction could cancel
         // one, but nothing ever cancelled by identifier and the token was threaded
@@ -807,7 +835,8 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                                            payloadBytes: result.candidatePayloadBytes)
                 // The user may label Home or Work while Maps is still searching. Never let
                 // a late public-place result overwrite that explicit correction.
-                guard visit.needsCategorisation else { return }
+                guard self.placeResolutionCoordinator.isCurrent(lookupToken, for: visit),
+                      visit.needsCategorisation else { return }
                 visit.placeSuggestions = result.suggestions
                 guard let evaluation = PlaceScoreLifecycle.rescore(
                     visit, stage: .mapsLookup, context: context, savedPlaces: self.savedPlaceCache,
@@ -960,7 +989,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     private func finalizeMutation(_ kind: VisitMutationService.Kind,
                                   change: VisitMutationService.Change,
                                   context: ModelContext) -> Bool {
-        let result = VisitMutationService.finalize(context: context, kind: kind, change: change)
+        let result = mutationCoordinator.finalize(context, kind, change)
         guard result.committed else {
             lastError = "LifeLog couldn't securely save this update. Your existing timeline is unchanged."
             Diagnostics.recordDurable(context, subsystem: "Store",

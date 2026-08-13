@@ -2,6 +2,18 @@
 
 ## 2026-08-13
 
+### Location recording is easier to recover and diagnose
+
+- Location callbacks now pass through focused arrival, mutation, geofence, Maps,
+  recovery, and diagnostics coordination seams, keeping delayed callbacks and
+  place choices more reliable without changing background recording behaviour.
+
+### Live time updates no longer reload Insights
+
+- Current-visit durations and the live day marker now update independently, so
+  browsing past Insights or returning to Timeline does not repeatedly rebuild
+  historical summaries while the clock advances.
+
 ### Insights stays responsive while it updates
 
 - Insights now keeps the daily review and date controls in focused SwiftUI views,

@@ -13,7 +13,6 @@ struct DayCurrentActivityPresentation: Equatable, Sendable {
     let placeName: String
     let activity: String
     let startedAt: Date
-    let elapsed: String
     let needsChecking: Bool
 }
 
@@ -79,8 +78,11 @@ private struct CurrentActivitySection: View {
                             }
                         }
                         Text(activity.activity).font(.subheadline).foregroundStyle(.secondary)
-                        Text("Since \(activity.startedAt.formatted(date: .omitted, time: .shortened)) · \(activity.elapsed)")
-                            .font(.caption).foregroundStyle(.secondary)
+                        HStack(spacing: 0) {
+                            Text("Since \(activity.startedAt.formatted(date: .omitted, time: .shortened)) · ")
+                            InsightLiveElapsedDuration(start: activity.startedAt)
+                        }
+                        .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
                     Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(.tertiary)
@@ -91,7 +93,7 @@ private struct CurrentActivitySection: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier("insights-current-activity-card")
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("Current activity: \(activity.placeName), \(activity.activity), since \(activity.startedAt.formatted(date: .omitted, time: .shortened)), \(activity.elapsed)\(activity.needsChecking ? ", needs checking" : "")")
+            .accessibilityLabel("Current activity: \(activity.placeName), \(activity.activity), since \(activity.startedAt.formatted(date: .omitted, time: .shortened))\(activity.needsChecking ? ", needs checking" : "")")
             .accessibilityHint("Opens the editor for this visit")
         }
     }
@@ -106,7 +108,15 @@ private struct DayTimelineSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Your day").font(.title2.bold())
-            DayTimelineBar(segments: segments, interval: interval, now: now, onSelect: onOpen)
+            if interval.contains(Date.now) {
+                // Only the current-day marker and open segment need a clock. Keeping
+                // it here means the surrounding Insight snapshot remains untouched.
+                SwiftUI.TimelineView(.periodic(from: .now, by: 60)) { context in
+                    DayTimelineBar(segments: segments, interval: interval, now: context.date, onSelect: onOpen)
+                }
+            } else {
+                DayTimelineBar(segments: segments, interval: interval, now: now, onSelect: onOpen)
+            }
             let pastUnloggedHours = segments.filter { $0.isUnlogged && $0.end <= now }
                 .reduce(0) { $0 + $1.hours }
             if pastUnloggedHours > 0.25 {
@@ -116,6 +126,17 @@ private struct DayTimelineSection: View {
         }
         .padding(20).lifeCard()
         .accessibilityIdentifier("insights-day-bar")
+    }
+}
+
+private struct InsightLiveElapsedDuration: View {
+    let start: Date
+
+    var body: some View {
+        SwiftUI.TimelineView(.periodic(from: .now, by: 60)) { context in
+            Text(formattedDuration(max(0, context.date.timeIntervalSince(start))))
+                .monospacedDigit()
+        }
     }
 }
 

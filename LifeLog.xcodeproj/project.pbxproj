@@ -27,6 +27,7 @@
 		27D43A1C35EFA7B52DE438D7 /* InsightsAggregationCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68B312E02829D6B2AA4ADE95 /* InsightsAggregationCacheTests.swift */; };
 		2A18F634C8951E70703917CE /* InsightsPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4996AA8F6730915A611EF2F2 /* InsightsPresentation.swift */; };
 		2C348586744A548BCF42EAD4 /* PlacesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BC76E017EBEB17D1C7C439D /* PlacesView.swift */; };
+		2C63960F575E50EDD3858CD4 /* LocationRecordingComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22B9D2C0B75965475D1B8E1F /* LocationRecordingComponents.swift */; };
 		2C99003FD4CB1D4F78CA8238 /* HardwareValidation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 611054937CE96472B8D9DFED /* HardwareValidation.swift */; };
 		2CAD6AE85290CEAC91BF9199 /* DaySummaryHelpersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2994F583E9B43BD2CBE0514 /* DaySummaryHelpersTests.swift */; };
 		2D56F4D28D9354CCD3A11E8C /* ActivityStatistics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 474896A10B9E8662F6E586AA /* ActivityStatistics.swift */; };
@@ -192,6 +193,7 @@
 		1E02A9CCD0CB966927A0A63E /* LifeLogTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = LifeLogTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1F988CF286B464E43CCCF80A /* TimelineFixtureCoverageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineFixtureCoverageTests.swift; sourceTree = "<group>"; };
 		20F66D93CEC288FCC9E45F8C /* LifeLogUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeLogUITests.swift; sourceTree = "<group>"; };
+		22B9D2C0B75965475D1B8E1F /* LocationRecordingComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationRecordingComponents.swift; sourceTree = "<group>"; };
 		2363204AE78AA292C1DCF5B1 /* SavedPlaceLearning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedPlaceLearning.swift; sourceTree = "<group>"; };
 		23EB15E3E6D84ADEF8672133 /* ManualSleepEntryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManualSleepEntryView.swift; sourceTree = "<group>"; };
 		260166D6E24F2BD9FF9A0A2A /* NameKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NameKey.swift; sourceTree = "<group>"; };
@@ -493,6 +495,7 @@
 				BB3FC4237F6D67970EFA34E2 /* IgnoredLocations.swift */,
 				D34EB14ADC9759756AF5EC1E /* LocationQuality.swift */,
 				D06CC438E6A758AF70DD2C3D /* LocationRecorder.swift */,
+				22B9D2C0B75965475D1B8E1F /* LocationRecordingComponents.swift */,
 				50F3F665B6B4EEE8DB6120CC /* MonitoredPlaces.swift */,
 				1AD396C8949E3606A3E5CF3F /* PlaceEvidence.swift */,
 				28447F3E15F66AD65EA475AD /* PlaceLookupService.swift */,
@@ -777,6 +780,7 @@
 				BAE9D34C5E695D013C90F634 /* LocationJournal.swift in Sources */,
 				C3B117D996892C8911B22A4E /* LocationQuality.swift in Sources */,
 				1378053C0DB103E87DA76736 /* LocationRecorder.swift in Sources */,
+				2C63960F575E50EDD3858CD4 /* LocationRecordingComponents.swift in Sources */,
 				C8C8E5D03FC9F9D885973F65 /* ManualSleepEntryView.swift in Sources */,
 				B0C5A9C1019FE79ED5CC669A /* ManualVisitView.swift in Sources */,
 				AC75BA5FDF16AB6D1AE59EDA /* Models.swift in Sources */,

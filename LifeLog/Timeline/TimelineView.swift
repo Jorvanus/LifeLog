@@ -27,7 +27,10 @@ struct TimelineView: View {
     // deciding whether a movement record belongs on the day's journey.
     @Query private var visits: [Visit]
     @State private var adding = false
-    @State private var clock = Date.now
+    /// A foreground reference point, not a ticking clock. It keeps the date picker
+    /// and "Today" affordance correct after suspension without invalidating the
+    /// journey every minute just to update one elapsed-duration label.
+    @State private var foregroundNow = Date.now
     /// The day being read. Today until the person moves off it, at which point the
     /// screen stops being a live view and becomes the journal it always held.
     @State private var selectedDay = Calendar.current.startOfDay(for: .now)
@@ -90,7 +93,7 @@ struct TimelineView: View {
     }
 
     private var today: [Visit] {
-        TimelineView.rows(from: visits, day: TimelineView.interval(of: clock), now: clock)
+        TimelineView.rows(from: visits, day: TimelineView.interval(of: selectedDay), now: Date.now)
     }
 
     /// The day a date falls in, as an interval.
@@ -100,10 +103,10 @@ struct TimelineView: View {
         return DateInterval(start: start, end: max(start, end))
     }
 
-    /// The 60-second minute clock is suspended while backgrounded, so returning to
+    /// A foreground reference point can be stale while backgrounded, so returning to
     /// the foreground can leave `selectedDay` pinned to a day that has already
     /// ended. Re-pin it forward only when the person was already reading today (as
-    /// of the stale clock, captured by the caller *before* refreshing it) --
+    /// of the stale reference, captured by the caller *before* refreshing it) --
     /// someone deliberately reading a past day must not get yanked back to today
     /// just because the app resumed.
     static func selectedDayAfterForeground(current selectedDay: Date, wasShowingToday: Bool,
@@ -173,7 +176,7 @@ struct TimelineView: View {
 
     private var reviewQueue: [ReviewQueue.Entry] {
         // The live unknown location has its own prominent card; the queue is for past stays.
-        ReviewQueue.entries(in: visits, now: clock).filter { $0.visit.departure != nil }
+        ReviewQueue.entries(in: visits, now: foregroundNow).filter { $0.visit.departure != nil }
     }
     private var current: Visit? {
         visits.first { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored && $0.departure == nil }
@@ -216,16 +219,14 @@ struct TimelineView: View {
                     self.returnStartedAt = nil
                 }
             }
-            // The minute clock (below) is a sleeping Task and iOS suspends it in the
-            // background, so it can be up to 60s stale on return -- long enough to
-            // cross midnight unnoticed. Refresh it immediately on activation instead
-            // of waiting for its own loop to resume.
+            // Refresh the small foreground reference on activation. Live elapsed
+            // labels own their own schedule, so this does not rebuild the journey.
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
                 let wasShowingToday = isShowingToday
-                clock = .now
+                foregroundNow = .now
                 selectedDay = TimelineView.selectedDayAfterForeground(
-                    current: selectedDay, wasShowingToday: wasShowingToday, refreshedClock: clock)
+                    current: selectedDay, wasShowingToday: wasShowingToday, refreshedClock: foregroundNow)
             }
             .task {
                 loadEarliestDay()
@@ -443,13 +444,6 @@ struct TimelineView: View {
                     // Retried on the next import or appearance.
                 }
             }
-            .task {
-                // Refresh elapsed labels without polling Core Location or the store.
-                while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(60))
-                    clock = .now
-                }
-            }
         }
     }
 
@@ -602,11 +596,14 @@ struct TimelineView: View {
                         } else {
                             Text(visit.activity).foregroundStyle(.secondary)
                         }
-                        Text("Since \(dayQualifiedTime(visit.arrival)) · \(elapsedVisitDuration(visit))")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
+                        HStack(spacing: 0) {
+                            Text("Since \(dayQualifiedTime(visit.arrival)) · ")
+                            LiveElapsedVisitDuration(arrival: visit.arrival)
+                        }
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                     }
                     Spacer()
                     ActivityScene(activity: visit.suspectedActivity, context: visit.displayPlaceName)
@@ -669,7 +666,7 @@ struct TimelineView: View {
     }
 
     private var isShowingToday: Bool {
-        Calendar.current.isDate(selectedDay, inSameDayAs: clock)
+        Calendar.current.isDate(selectedDay, inSameDayAs: foregroundNow)
     }
 
 
@@ -703,7 +700,7 @@ struct TimelineView: View {
             Spacer(minLength: 4)
 
             if !isShowingToday {
-                Button("Today") { selectedDay = Calendar.current.startOfDay(for: clock) }
+                Button("Today") { selectedDay = Calendar.current.startOfDay(for: foregroundNow) }
                     .font(.subheadline.weight(.semibold))
                     .accessibilityIdentifier("today-button")
             }
@@ -723,7 +720,7 @@ struct TimelineView: View {
                         get: { draftSelectedDay },
                         set: { draftSelectedDay = Calendar.current.startOfDay(for: $0) }
                        ),
-                       in: (earliestDay ?? .distantPast)...Calendar.current.startOfDay(for: clock),
+                       in: (earliestDay ?? .distantPast)...Calendar.current.startOfDay(for: foregroundNow),
                        displayedComponents: .date)
             .datePickerStyle(.graphical)
             .padding()
@@ -807,8 +804,12 @@ struct TimelineView: View {
                 Text("Waiting for visit confirmation")
                     .font(.subheadline).foregroundStyle(.secondary)
                 if let timestamp = recorder.latestLocationTimestamp {
-                    Text("Location received \(elapsedDescription(since: timestamp)) ago")
-                        .font(.caption).foregroundStyle(.secondary)
+                    HStack(spacing: 0) {
+                        Text("Location received ")
+                        LiveElapsedSinceLabel(date: timestamp)
+                        Text(" ago")
+                    }
+                    .font(.caption).foregroundStyle(.secondary)
                 }
             }
             Spacer()
@@ -818,23 +819,6 @@ struct TimelineView: View {
         .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color.green.opacity(0.3)))
         .accessibilityIdentifier("waiting-for-visit-confirmation")
         .accessibilityLabel("Current location, waiting for visit confirmation")
-    }
-
-    private func elapsedDescription(since date: Date) -> String {
-        let seconds = max(0, Int(clock.timeIntervalSince(date)))
-        let minutes = seconds / 60
-        if minutes < 1 { return "just now" }
-        if minutes == 1 { return "1 minute" }
-        return "\(minutes) minutes"
-    }
-
-    private func elapsedVisitDuration(_ visit: Visit) -> String {
-        let totalMinutes = max(0, Int(clock.timeIntervalSince(visit.arrival) / 60))
-        let hours = totalMinutes / 60
-        let minutes = totalMinutes % 60
-        if hours == 0 { return "\(minutes)m" }
-        if minutes == 0 { return "\(hours)h" }
-        return "\(hours)h \(minutes)m"
     }
 
     private var greeting: String {
@@ -848,6 +832,44 @@ struct TimelineView: View {
     private var headerDate: String {
         let date = Date.now
         return "\(date.formatted(.dateTime.weekday(.wide))) \(date.formatted(.dateTime.day())) \(date.formatted(.dateTime.month(.wide)))"
+    }
+}
+
+/// A tiny periodic view isolates changing elapsed text from Timeline's historical
+/// query, review queue, and journey cards. SwiftUI stops this schedule with the view.
+private struct LiveElapsedVisitDuration: View {
+    let arrival: Date
+
+    var body: some View {
+        SwiftUI.TimelineView(.periodic(from: .now, by: 60)) { context in
+            Text(Self.description(from: arrival, to: context.date)).monospacedDigit()
+        }
+    }
+
+    static func description(from arrival: Date, to now: Date) -> String {
+        let totalMinutes = max(0, Int(now.timeIntervalSince(arrival) / 60))
+        let hours = totalMinutes / 60
+        let minutes = totalMinutes % 60
+        if hours == 0 { return "\(minutes)m" }
+        if minutes == 0 { return "\(hours)h" }
+        return "\(hours)h \(minutes)m"
+    }
+}
+
+private struct LiveElapsedSinceLabel: View {
+    let date: Date
+
+    var body: some View {
+        SwiftUI.TimelineView(.periodic(from: .now, by: 60)) { context in
+            Text(Self.description(since: date, now: context.date)).monospacedDigit()
+        }
+    }
+
+    static func description(since date: Date, now: Date) -> String {
+        let minutes = max(0, Int(now.timeIntervalSince(date))) / 60
+        if minutes < 1 { return "just now" }
+        if minutes == 1 { return "1 minute" }
+        return "\(minutes) minutes"
     }
 }
 
