@@ -136,7 +136,7 @@ private struct YearPlaceStoryCard: View {
 
 struct YearInsightsView: View {
     let insights: AnnualInsights
-    let openArea: (AnnualInsights.LifeArea) -> Void
+    let openArea: (AnnualLifeAreaChartData) -> Void
     let openPlace: (AnnualInsights.Place) -> Void
     let period: DateInterval
     var placesLoading: Bool = false

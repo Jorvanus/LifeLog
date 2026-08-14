@@ -3,6 +3,11 @@ import Charts
 
 struct AnnualLifeAreaChartData: Identifiable {
     let area: AnnualInsights.LifeArea
+    /// The real life areas folded into this displayed row. For a named row this
+    /// is just `[area]`; for the synthetic "Other" row it is every area that
+    /// didn't make the top-5 cut, which is why opening it must filter by all of
+    /// these rather than by the literal `.other` case alone.
+    let foldedAreas: [AnnualInsights.LifeArea]
     let monthlyHours: [Double]
     let totalHours: Double
 
@@ -24,18 +29,19 @@ enum AnnualLifeAreaChartDataBuilder {
             .sorted { totals[$0.name, default: 0] > totals[$1.name, default: 0] }
         let displayed = Array(namedAreas.prefix(5))
         let displayedNames = Set(displayed.map(\.name))
+        let foldedIntoOther = AnnualInsights.areas.filter { !displayedNames.contains($0.name) }
         let otherMonthlyHours = months.map { month in
             month.hours.reduce(0) { partial, entry in
                 displayedNames.contains(entry.key) ? partial : partial + entry.value
             }
         }
         let rows = displayed.map { area in
-            AnnualLifeAreaChartData(area: area,
+            AnnualLifeAreaChartData(area: area, foldedAreas: [area],
                                     monthlyHours: months.map { $0.hours[area.name] ?? 0 },
                                     totalHours: totals[area.name, default: 0])
         }
         let otherTotal = otherMonthlyHours.reduce(0, +)
-        return rows + [AnnualLifeAreaChartData(area: other,
+        return rows + [AnnualLifeAreaChartData(area: other, foldedAreas: foldedIntoOther,
                                                monthlyHours: otherMonthlyHours,
                                                totalHours: otherTotal)]
     }
@@ -44,7 +50,7 @@ enum AnnualLifeAreaChartDataBuilder {
 struct AnnualLifeAreasChart: View {
     let months: [AnnualInsights.Month]
     @Binding var selectedArea: AnnualInsights.LifeArea?
-    let openArea: (AnnualInsights.LifeArea) -> Void
+    let openArea: (AnnualLifeAreaChartData) -> Void
 
     private var data: [AnnualLifeAreaChartData] {
         AnnualLifeAreaChartDataBuilder.make(months: months)
@@ -123,7 +129,7 @@ struct AnnualLifeAreasChart: View {
             }
 
             if let selectedData {
-                Button { openArea(selectedData.area) } label: {
+                Button { openArea(selectedData) } label: {
                     HStack {
                         Label(selectedData.area.name, systemImage: insightSymbol(for: selectedData.area.category))
                         Spacer()

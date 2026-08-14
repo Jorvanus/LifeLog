@@ -169,7 +169,7 @@ struct WeeklyYourWeekCard: View {
                                     GridItem(.flexible(), alignment: .leading)], spacing: 8) {
                     ForEach(areas) { area in
                         NavigationLink {
-                            InsightLifeAreaDetailView(area: area, periodTitle: periodTitle,
+                            InsightLifeAreaDetailView(title: area.rawValue, areas: [area], periodTitle: periodTitle,
                                                       interval: interval, segments: segments)
                         } label: {
                             HStack(spacing: 6) {

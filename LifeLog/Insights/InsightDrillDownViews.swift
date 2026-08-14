@@ -60,15 +60,30 @@ struct InsightActivityDetailView: View {
     }
 }
 
+/// Sheet-presentation payload for `InsightLifeAreaDetailView`: which real life
+/// areas to show (see that view's `areas` doc) and the title to display them
+/// under, since a folded "Other" selection still reads as "Other" to the person
+/// even though it spans several underlying `LifeArea` cases.
+struct LifeAreaSelection: Identifiable {
+    let title: String
+    let areas: [LifeArea]
+    var id: String { title }
+}
+
 struct InsightLifeAreaDetailView: View {
-    let area: LifeArea
+    let title: String
+    /// Every real life area this drill-down represents. Usually one area, but
+    /// the Year chart's synthetic "Other" bucket folds several low-ranking
+    /// areas together for legibility (see `AnnualLifeAreaChartDataBuilder`), so
+    /// opening it has to match all of them, not the literal `.other` case alone.
+    let areas: [LifeArea]
     let periodTitle: String
     let interval: DateInterval
     let segments: [InsightSegment]
 
     private var activities: [(name: String, hours: Double, rows: [SliceRow])] {
         let matching = segments.filter {
-            !$0.isUnlogged && ActivityCatalog.lifeArea(for: $0.activity, category: $0.category) == area
+            !$0.isUnlogged && areas.contains(ActivityCatalog.lifeArea(for: $0.activity, category: $0.category))
         }
         let grouped = Dictionary(grouping: matching, by: \.activity)
         return grouped.map { name, segments in
@@ -96,7 +111,7 @@ struct InsightLifeAreaDetailView: View {
                 }
             }
         }
-        .navigationTitle(area.rawValue)
+        .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .top) { PeriodBanner(title: periodTitle, interval: interval) }
         .accessibilityIdentifier("insight-life-area-detail")

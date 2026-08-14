@@ -41,7 +41,7 @@ struct InsightsView: View {
     @State private var choosingDate = false
     @State private var draftAnchorDate = Date.now
     @State private var selectedSlice: TimeSlice?
-    @State private var selectedLifeArea: LifeArea?
+    @State private var selectedLifeArea: LifeAreaSelection?
     @State private var selectedPlace: PlaceTotal?
     @State private var selectedComparison: TrendComparison?
     @State private var now = Date.now
@@ -152,9 +152,9 @@ struct InsightsView: View {
                     }
                 }.presentationDetents([.medium, .large])
             }
-            .sheet(item: $selectedLifeArea) { area in
+            .sheet(item: $selectedLifeArea) { selection in
                 NavigationStack {
-                    InsightLifeAreaDetailView(area: area, periodTitle: periodTitle,
+                    InsightLifeAreaDetailView(title: selection.title, areas: selection.areas, periodTitle: periodTitle,
                                               interval: snapshot.analysisInterval,
                                               segments: snapshot.segments)
                 }
@@ -670,10 +670,11 @@ struct InsightsView: View {
     }
 
     @ViewBuilder private var yearLayout: some View {
-        YearInsightsView(insights: annualInsights, openArea: { area in
-            let hours = annualInsights.months.reduce(0) { $0 + ($1.hours[area.name] ?? 0) }
-            guard hours > 0 else { return }
-            selectedLifeArea = LifeArea(rawValue: area.name)
+        YearInsightsView(insights: annualInsights, openArea: { row in
+            guard row.totalHours > 0 else { return }
+            let areas = row.foldedAreas.compactMap { LifeArea(rawValue: $0.name) }
+            guard !areas.isEmpty else { return }
+            selectedLifeArea = LifeAreaSelection(title: row.area.name, areas: areas)
         }, openPlace: { place in
             selectedPlace = PlaceTotal(name: place.name, category: place.category, activity: place.category,
                                        latitude: 0, longitude: 0, hours: place.hours)
