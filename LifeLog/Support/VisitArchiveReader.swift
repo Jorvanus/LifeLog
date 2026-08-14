@@ -12,6 +12,16 @@ struct PlaceHistorySummary: Identifiable, Sendable, Hashable {
     var id: String { name }
 }
 
+struct ArchiveSearchEntry: Identifiable, Sendable, Hashable {
+    let stableID: UUID
+    let arrival: Date
+    let departure: Date?
+    let placeName: String
+    let activity: String
+
+    var id: UUID { stableID }
+}
+
 struct PlaceHistoryEntry: Identifiable, Sendable, Hashable {
     let stableID: UUID
     let arrival: Date
@@ -75,6 +85,31 @@ actor VisitArchiveReader {
         }.sorted { $0.count > $1.count }
         placeSummaryCache = (generation, summaries, eligible)
         return (summaries, eligible)
+    }
+
+    /// Backs the explicit archive search screen. Deliberately uncached: a search
+    /// term changes on nearly every keystroke and a request also carries its own
+    /// page offset, so a generation-keyed cache like `placeSummaryCache` above
+    /// would need to key on (generation, text, includeNotes, offset) and would
+    /// almost never hit. `VisitHistoryQuery.search` is already a bounded fetch,
+    /// so there is nothing here worth caching.
+    ///
+    /// Fetches one row past `limit` to learn whether another page exists without
+    /// a second round trip; the extra row is trimmed before returning.
+    func search(_ text: String, includeNotes: Bool, limit: Int, offset: Int) throws
+    -> (entries: [ArchiveSearchEntry], hasMore: Bool) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return ([], false) }
+        try Task.checkCancellation()
+        let descriptor = VisitHistoryQuery.search(trimmed, includeNotes: includeNotes, limit: limit + 1, offset: offset)
+        let rows = try modelContext.fetch(descriptor)
+        try Task.checkCancellation()
+        let hasMore = rows.count > limit
+        let entries = rows.prefix(limit).map { visit in
+            ArchiveSearchEntry(stableID: visit.stableID, arrival: visit.arrival, departure: visit.departure,
+                               placeName: visit.placeName, activity: visit.activity)
+        }
+        return (entries, hasMore)
     }
 
     func placeEntries(named name: String) throws -> [PlaceHistoryEntry] {

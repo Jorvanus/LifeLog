@@ -95,11 +95,45 @@ enum VisitHistoryQuery {
         return descriptor
     }
 
-    /// Text in notes is deliberately excluded from regular history queries. An
-    /// explicit search UI may opt into it later; loading Timeline must not do so.
-    static func searchPlaces(_ text: String) -> FetchDescriptor<Visit> {
-        return FetchDescriptor(predicate: #Predicate { $0.placeName.contains(text) },
-                               sortBy: [SortDescriptor(\Visit.arrival, order: .reverse)])
+    /// The explicit archive search screen's only query. Place and activity are
+    /// always searched; notes are opt-in because they are free text with no
+    /// prefix structure a query can narrow on, so matching them scans every row's
+    /// note text rather than a short label. Ordinary history queries (`day`,
+    /// `place`, `activity`, …) never touch `note` at all — this is the one path
+    /// that does, and only when the person has explicitly asked for it.
+    ///
+    /// `localizedStandardContains` is case/diacritic-insensitive, same as every
+    /// other free-text match in this codebase (see `PlaceVisitLookup`). It compiles
+    /// to a SQLite `LIKE '%text%'`, which cannot use a btree index on any column
+    /// regardless of whether one exists — a leading wildcard defeats index range
+    /// scans. `fetchLimit`/`fetchOffset` bound the work and give the caller paging;
+    /// see `VisitArchiveReaderTests` for the measurement against a 32,000-row
+    /// archive that this bound, not a persisted index, is what keeps it fast.
+    static func search(_ text: String, includeNotes: Bool, limit: Int, offset: Int = 0) -> FetchDescriptor<Visit> {
+        var descriptor: FetchDescriptor<Visit>
+        if includeNotes {
+            descriptor = FetchDescriptor(
+                predicate: #Predicate { visit in
+                    visit.placeName.localizedStandardContains(text) ||
+                        (visit.userActivity?.localizedStandardContains(text) ?? false) ||
+                        visit.inferredActivity.localizedStandardContains(text) ||
+                        visit.note.localizedStandardContains(text)
+                },
+                sortBy: [SortDescriptor(\Visit.arrival, order: .reverse)]
+            )
+        } else {
+            descriptor = FetchDescriptor(
+                predicate: #Predicate { visit in
+                    visit.placeName.localizedStandardContains(text) ||
+                        (visit.userActivity?.localizedStandardContains(text) ?? false) ||
+                        visit.inferredActivity.localizedStandardContains(text)
+                },
+                sortBy: [SortDescriptor(\Visit.arrival, order: .reverse)]
+            )
+        }
+        descriptor.fetchLimit = limit
+        descriptor.fetchOffset = offset
+        return descriptor
     }
 
     private static func range(_ range: Range<Date>) -> FetchDescriptor<Visit> {

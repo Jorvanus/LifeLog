@@ -2,6 +2,23 @@
 
 ## 2026-08-14
 
+### Explicit archive search, reachable from Timeline
+
+- Added one explicit search screen (`ArchiveSearchView`), reachable from a new
+  magnifying-glass button on Timeline, that finds a visit by place or activity
+  and opens it in the ordinary editor. Note text is a separate, opt-in "Search
+  notes too (slower)" toggle rather than always scanned — Timeline's own
+  queries still never touch `note`. Results page in bounded chunks
+  (`VisitHistoryQuery.search`, `VisitArchiveReader.search`) rather than
+  loading the whole archive, and the query runs on `VisitArchiveReader`'s
+  background actor so a broad search cannot stall the UI.
+- Measured against a 32,000-row synthetic archive: a page of place/activity
+  search and a note-inclusive search both stay well under the new
+  `archiveSearch` performance budget. `localizedStandardContains` compiles to
+  a leading-wildcard `LIKE`, which cannot use a btree index regardless of what
+  is indexed, so no schema migration or persisted index was added for this —
+  the existing `fetchLimit` bound is what keeps it fast.
+
 ### Silent failures in save/mutation paths are now visible or rejected
 
 - Audited `try?` across every persistence and mutation path (location

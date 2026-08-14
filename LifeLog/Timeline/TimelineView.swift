@@ -27,6 +27,7 @@ struct TimelineView: View {
     // deciding whether a movement record belongs on the day's journey.
     @Query private var visits: [Visit]
     @State private var adding = false
+    @State private var searching = false
     /// A foreground reference point, not a ticking clock. It keeps the date picker
     /// and "Today" affordance correct after suspension without invalidating the
     /// journey every minute just to update one elapsed-duration label.
@@ -211,6 +212,7 @@ struct TimelineView: View {
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $adding) { ManualVisitView(range: TimelineView.interval(of: selectedDay)) }
             .sheet(isPresented: $jumpingToDate) { jumpToDateSheet }
+            .sheet(isPresented: $searching) { NavigationStack { ArchiveSearchView() } }
             .onAppear {
                 if let returnStartedAt {
                     Diagnostics.budget(context, subsystem: "Timeline", operation: "return to Timeline",
@@ -488,6 +490,18 @@ struct TimelineView: View {
                     }
                 }
                 Spacer()
+                Button { searching = true } label: {
+                    Image(systemName: "magnifyingglass")
+                        .font(.title2)
+                        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+                        .frame(width: min(addButtonDiameter, 64),
+                               height: min(addButtonDiameter, 64))
+                        .background(.regularMaterial, in: Circle())
+                        .shadow(color: .black.opacity(0.04), radius: 12, y: 5)
+                }
+                .accessibilityLabel("Search archive")
+                .accessibilityIdentifier("timeline-search-button")
+                .padding(.trailing, 10)
                 Button { adding = true } label: {
                     Image(systemName: "plus")
                         .font(.title2)

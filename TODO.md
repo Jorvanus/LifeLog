@@ -3,24 +3,16 @@
 Audited against `main` at `e4ce878` on 2026-08-14. This is an open-work list,
 not a history of shipped features. Completed callback replay, resolver invariants,
 conservative Saved Place learning, resolution diagnostics, sleep-evidence plumbing,
-the first archive-query pass, and the distinct Day/Week/Month/Year Insights layouts
-have been removed.
+the first archive-query pass, the distinct Day/Week/Month/Year Insights layouts,
+and the explicit archive search screen have been removed.
 
 LifeLog is a private app for one iPhone 17 Pro Max. A responsive 32,000-row archive,
 clear code boundaries, and reliable local data outrank App Store preparation and
 speculative features.
 
-## Next three deliverables
+## Next two deliverables
 
-1. [ ] **Add archive search without putting notes on Timeline’s normal path.** Build
-   one explicit search screen for place and activity, with note search as a slower
-   opt-in mode. Reuse `VisitHistoryQuery`, add result limits/paging, and measure it on
-   the 32,000-row archive. Decide from measurements whether normalized place, Maps ID,
-   activity, and arrival-day fields need persisted indexes; do not attempt another
-   schema migration merely because an index sounds useful. Completion means ordinary
-   Timeline never fetches note text for search and a broad query cannot freeze the UI.
-
-2. [ ] **Split `InsightsView` into a small screen coordinator and explicit section views.**
+1. [ ] **Split `InsightsView` into a small screen coordinator and explicit section views.**
    It is now 2,700+ lines with 47 `some View`/`@ViewBuilder` fragments, so a change to one
    piece of state still re-evaluates the parent composition. Preserve one owner for the
    selected period, snapshot refresh, and presentation routes, but extract the Month and
@@ -28,7 +20,7 @@ speculative features.
    Keep aggregation and SwiftData queries out of view initializers; leave focused tests
    beside the extracted data/presentation types.
 
-3. [ ] **Finish the Insights data-access boundary.** Replace the remaining unbounded
+2. [ ] **Finish the Insights data-access boundary.** Replace the remaining unbounded
    history reads in `placeHistory(matching:)`, `annualHistoricalPlaces()`, and
    `yearOverYearHighlight()` with narrow queries, paging, or prepared aggregates. Keep
    all-history work off the interaction path and surface a loading/failure state where a

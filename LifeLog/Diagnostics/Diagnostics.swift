@@ -291,6 +291,11 @@ enum Diagnostics {
         /// larger budget because it is explicit and never runs per callback.
         static let locationMutation: TimeInterval = 0.35
         static let locationFullAudit: TimeInterval = 8
+        /// One page of the explicit archive search screen, bounded by `fetchLimit`
+        /// rather than a persisted index (see `VisitHistoryQuery.search`). Between
+        /// the Insights month and year windows: a broader scan than a date-scoped
+        /// fetch, but still capped at one page's worth of rows.
+        static let archiveSearch: TimeInterval = 1.0
 
         static func insights(window: InsightWindow) -> TimeInterval {
             switch window {

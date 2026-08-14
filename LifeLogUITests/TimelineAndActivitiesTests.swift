@@ -252,4 +252,35 @@ final class TimelineAndActivitiesTests: LifeLogUITestCase {
         XCTAssertTrue(app.textFields["e.g. Aaron's Gardens"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Places nearby"].exists)
     }
+
+    /// The explicit archive search screen, reached from Timeline: finding a
+    /// seeded place by name, opening it into the ordinary editor, and the notes
+    /// toggle being present but off by default (notes are opt-in, not scanned
+    /// by the same query that already finds this result by place name).
+    func testArchiveSearchFindsAPlaceAndOpensItsEditor() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+
+        let searchButton = element("timeline-search-button")
+        XCTAssertTrue(searchButton.waitForExistence(timeout: 10))
+        searchButton.tap()
+
+        XCTAssertTrue(element("archive-search-screen").waitForExistence(timeout: 5))
+        let field = app.searchFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("Gracemere")
+
+        // `.firstMatch`, not a bare lookup: the search sheet leaves Timeline mounted
+        // underneath it, and the seeded place already appears there too.
+        let result = app.staticTexts["Gracemere Shopping World"].firstMatch
+        XCTAssertTrue(result.waitForExistence(timeout: 5))
+        // Notes are opt-in and off by default: the toggle exists once there is a
+        // query, but a plain place-name search must not require it.
+        XCTAssertTrue(element("archive-search-include-notes").waitForExistence(timeout: 5))
+
+        result.tap()
+        XCTAssertTrue(element("choose-location-link").waitForExistence(timeout: 5))
+    }
 }
