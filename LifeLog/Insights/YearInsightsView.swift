@@ -161,6 +161,10 @@ struct YearInsightsView: View {
             if insights.comparisonSupported {
                 Text("Compared with last year.")
                     .font(.subheadline).foregroundStyle(.secondary)
+                if let delta = annualChangeDetail {
+                    Text(delta)
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
             } else {
                 Text("This year is still building. Comparisons appear after both years have enough recorded history.")
                     .font(.subheadline).foregroundStyle(.secondary)
@@ -170,6 +174,18 @@ struct YearInsightsView: View {
         }
         .padding(20).lifeCard()
         .accessibilityIdentifier("insights-year-story")
+    }
+
+    private var annualChangeDetail: String? {
+        let previous = insights.priorLoggedHours
+        guard previous > 0 else { return nil }
+        let delta = insights.currentLoggedHours - previous
+        guard abs(delta) >= MonthlyInsights.minimumAbsoluteChange,
+              abs(delta) / previous >= MonthlyInsights.minimumPercentageChange else {
+            return nil
+        }
+        let direction = delta >= 0 ? "more" : "less"
+        return "\(formatHours(abs(delta))) \(direction) than last year"
     }
 
     private var lifeAreas: some View {
