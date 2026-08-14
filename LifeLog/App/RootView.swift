@@ -105,6 +105,16 @@ struct RootView: View {
                                    message: "Activity identity migration will retry: \(error.localizedDescription)",
                                    severity: "warning")
             }
+            // The one place this runs unconditionally at launch. Without it, nothing
+            // ever persists the seeded catalogue to UserDefaults until the person
+            // happens to visit Settings → Activities, the place-activity picker, or
+            // Settings' own `.task` — and until one of those runs, `ActivityCatalog
+            // .load()`'s empty-storage fallback rebuilds `defaults` fresh on every
+            // call, each with new random `ActivityDefinition.id`s. Any code that
+            // captures an ID from one `load()` and looks it up in a later `load()`
+            // (editing, merging) silently fails to find it in that window — this is
+            // what made a same-session Activities-tab edit look like it "reverted."
+            ActivityCatalog.seed()
             // Needs a context, so it cannot live in `seed()` alongside the other
             // catalogue setup — the visits holding the old wording move with it.
             if let moved = try? ActivityCatalog.mergeWorkingIntoWork(context: context), moved > 0 {

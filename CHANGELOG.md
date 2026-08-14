@@ -2,6 +2,34 @@
 
 ## 2026-08-14
 
+### Merge two activities into one
+
+- Added a real "Merge into another activity" action to an activity's detail
+  screen (`ActivityDetailView`), reached from the Activities tab: pick another
+  catalogue activity, confirm, and every visit and Saved Place carrying the
+  source's name (or any of its legacy aliases) moves onto the target, which
+  also inherits them as aliases so an old export or backup still resolves. The
+  source is then removed from the catalogue and its durable record deactivated.
+  `ActivityCatalog.mergeActivity` and `ActivityRenameActor.mergeActivity` do
+  the work; see `ActivityMergeTests`.
+- This replaces renaming one activity to an existing name, which used to
+  silently merge by spelling before the activity-identity migration made that
+  unsafe — that path had since been reduced to a refusal with a misleading
+  "visits could not be written" message, because the confirmation dialog that
+  used to offer the merge had become unreachable dead code. Renaming into an
+  occupied name is now refused with a message that points at the real feature
+  instead.
+- Fixed the bug that made the very first attempt at this fail silently:
+  nothing called `ActivityCatalog.seed()` unconditionally at launch, so until
+  the person happened to visit Settings → Activities or the place-activity
+  picker, `ActivityCatalog.load()`'s empty-storage fallback rebuilt the
+  default catalogue fresh on every call — each with new random
+  `ActivityDefinition` IDs. Anything that captured an ID from one `load()` and
+  looked it up in a later one (exactly what merging, and to a lesser extent
+  renaming, do) silently found nothing. `RootView`'s launch `.task` now calls
+  `seed()` once, and the three screens that used to call it defensively just
+  read the now-guaranteed-seeded catalogue instead.
+
 ### Explicit archive search, reachable from Timeline
 
 - Added one explicit search screen (`ArchiveSearchView`), reachable from a new

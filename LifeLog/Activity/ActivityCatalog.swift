@@ -549,15 +549,42 @@ enum ActivityCatalog {
         return changed
     }
 
-    /// UI-triggered renames use the isolated store context. The synchronous form
-    /// above remains for one-time startup migrations before the interface exists.
-    static func renameActivity(from previous: String, to updated: String,
-                               container: ModelContainer) async throws -> Int {
-        let from = previous.trimmingCharacters(in: .whitespacesAndNewlines)
-        let to = TextSafety.clean(updated, maximumLength: 80)
-        guard !from.isEmpty, !to.isEmpty,
-              from.caseInsensitiveCompare(to) != .orderedSame else { return 0 }
-        return try await ActivityRenameActor(modelContainer: container).renameActivity(from: from, to: to)
+    /// Folds `source` into `target`: every visit and Saved Place carrying source's
+    /// name or any of its legacy aliases is rewritten to target's name, target
+    /// gains those as its own legacy aliases (so an old export or backup naming
+    /// source still resolves), and source is removed from the catalogue and
+    /// deactivated in the durable record.
+    ///
+    /// This is what rename-into-an-existing-name used to do before the identity
+    /// migration made that unsafe — two definitions can no longer share a display
+    /// name, since visits are gradually moving from text matching to
+    /// `activityDefinitionID`, and silently leaving a second live definition under
+    /// the winning name would corrupt that migration rather than complete it.
+    @MainActor
+    @discardableResult
+    static func mergeActivity(_ source: ActivityDefinition, into target: ActivityDefinition,
+                              context: ModelContext) async throws -> Int {
+        guard source.id != target.id else { return 0 }
+        let sourceNames = [source.name] + source.legacyNames
+        let changed = try await ActivityRenameActor(modelContainer: context.container).mergeActivity(
+            sourceID: source.id, sourceNames: sourceNames, targetID: target.id, targetName: target.name
+        )
+        var activities = load()
+        activities.removeAll { $0.id == source.id }
+        if let index = activities.firstIndex(where: { $0.id == target.id }) {
+            var updated = activities[index]
+            var aliases = updated.legacyNames
+            for candidate in sourceNames where
+                candidate.caseInsensitiveCompare(updated.name) != .orderedSame &&
+                !aliases.contains(where: { $0.caseInsensitiveCompare(candidate) == .orderedSame }) {
+                aliases.append(candidate)
+            }
+            updated.legacyNames = aliases
+            activities[index] = updated
+        }
+        save(activities)
+        try? ActivityIdentityMigration.deactivate(id: source.id, context: context)
+        return changed
     }
 
     static func seed() {

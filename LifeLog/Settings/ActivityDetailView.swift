@@ -35,18 +35,20 @@ struct ActivityDetailView: View {
     @State private var loadedEditableState = false
 
     @State private var confirmingDelete = false
-    @State private var renameRequest: RenameRequest?
-    @State private var renameFailed = false
+    /// The name of the existing activity a Save attempt collided with. Renaming
+    /// into an occupied name is refused outright rather than silently merging by
+    /// spelling — see `mergeTarget` below for the real, explicit replacement.
+    @State private var nameCollision: String?
 
-    struct RenameRequest: Identifiable {
-        let definition: ActivityDefinition
-        let previousName: String
-        let count: Int
-        /// Set when the new name already belongs to another activity. Renaming into
-        /// an existing name is a merge, not a rename.
-        let mergesInto: ActivityDefinition?
-        var id: String { previousName }
-    }
+    // Merging into another catalogue activity: pick a target, confirm, then run
+    // in the background. `pickingMergeTarget` drives the picker sheet;
+    // `mergeTarget` becoming non-nil (once picked) drives the confirmation
+    // dialog below — two separate states because they are two steps the person
+    // can back out of independently.
+    @State private var pickingMergeTarget = false
+    @State private var mergeTarget: ActivityDefinition?
+    @State private var mergeInFlight = false
+    @State private var mergeFailed = false
 
     enum Window: String, CaseIterable, Identifiable {
         case week = "7 days"
@@ -100,6 +102,7 @@ struct ActivityDetailView: View {
                 usage
             }
             if isAdopted {
+                mergeSection
                 deletion
             }
         }
@@ -122,10 +125,17 @@ struct ActivityDetailView: View {
                 loadedEditableState = true
             }
         }
-        .alert("The visits kept the old name", isPresented: $renameFailed) {
+        .alert("“\(nameCollision ?? "")” already exists", isPresented: Binding(
+            get: { nameCollision != nil }, set: { if !$0 { nameCollision = nil } })
+        ) {
             Button("OK", role: .cancel) { }
         } message: {
-            Text("The activity was renamed, but its visits could not be written just now. Rename it again to bring them across.")
+            Text("Two activities can’t share a name. To combine them, use “Merge into another activity” below instead of renaming.")
+        }
+        .alert("Merge didn’t finish", isPresented: $mergeFailed) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("“\(activityName)” could not be merged just now. Nothing changed; try again.")
         }
         .confirmationDialog("Delete activity?", isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button("Delete anyway", role: .destructive) { delete() }
@@ -133,31 +143,22 @@ struct ActivityDetailView: View {
         } message: {
             Text(deletionWarning)
         }
-        .confirmationDialog(renameTitle, isPresented: Binding(
-            get: { renameRequest != nil },
-            set: { if !$0 { renameRequest = nil } })
+        .confirmationDialog("Merge into “\(mergeTarget?.name ?? "")”?", isPresented: Binding(
+            get: { mergeTarget != nil }, set: { if !$0 { mergeTarget = nil } }),
+            titleVisibility: .visible
         ) {
-            if let request = renameRequest {
-                if request.mergesInto != nil {
-                    Button("Merge into “\(request.definition.name)”") {
-                        commitRename(request, updatingVisits: true)
-                    }
-                } else {
-                    Button("Rename \(request.count) \(request.count == 1 ? "visit" : "visits")") {
-                        commitRename(request, updatingVisits: true)
-                    }
-                    Button("Leave visits as they are") {
-                        commitRename(request, updatingVisits: false)
-                    }
-                }
-                Button("Cancel", role: .cancel) { renameRequest = nil }
+            if let mergeTarget {
+                Button("Merge into “\(mergeTarget.name)”", role: .destructive) { performMerge(into: mergeTarget) }
             }
+            Button("Cancel", role: .cancel) { mergeTarget = nil }
         } message: {
-            if let request = renameRequest {
-                if request.mergesInto != nil {
-                    Text("“\(request.definition.name)” already exists. Merging moves \(request.count) \(request.count == 1 ? "visit" : "visits") onto it and removes the duplicate, so the list keeps one entry per activity.")
-                } else {
-                    Text("\(request.count) \(request.count == 1 ? "visit is" : "visits are") labelled “\(request.previousName)”. Left alone they keep the old label and Insights counts them as Other.")
+            Text("Moves \(statistics.occasions) \(statistics.occasions == 1 ? "visit" : "visits") from “\(activityName)” onto “\(mergeTarget?.name ?? "")” and removes “\(activityName)” from your activities. This can’t be undone from here — export a backup first if you’re unsure.")
+        }
+        .sheet(isPresented: $pickingMergeTarget) {
+            NavigationStack {
+                MergeTargetPicker(excluding: existingID) { target in
+                    pickingMergeTarget = false
+                    mergeTarget = target
                 }
             }
         }
@@ -307,6 +308,24 @@ struct ActivityDetailView: View {
         .foregroundStyle(.secondary)
     }
 
+    private var mergeSection: some View {
+        Section {
+            Button {
+                pickingMergeTarget = true
+            } label: {
+                if mergeInFlight {
+                    HStack { ProgressView(); Text("Merging…") }
+                } else {
+                    Label("Merge into another activity", systemImage: "arrow.triangle.merge")
+                }
+            }
+            .disabled(mergeInFlight)
+            .accessibilityIdentifier("merge-activity-button")
+        } footer: {
+            Text("Combine duplicate activities — like “Doctor” and “Seeing Doctor” — into one. Choose the activity to keep; everything here moves onto it and this entry is removed.")
+        }
+    }
+
     private var deletion: some View {
         Section {
             Button("Delete Activity", role: .destructive) { confirmingDelete = true }
@@ -361,10 +380,12 @@ struct ActivityDetailView: View {
         let collision = ActivityCatalog.load().first {
             $0.id != definition.id && $0.name.caseInsensitiveCompare(cleanName) == .orderedSame
         }
-        // A new name must remain unique. We no longer offer a merge here: merging two
-        // IDs by spelling would undo the identity separation this migration adds.
-        if collision != nil {
-            renameFailed = true
+        // A new name must remain unique. Renaming into an existing name is refused
+        // rather than treated as a merge — two IDs sharing a display name would
+        // undo the identity separation this migration adds. Use "Merge into
+        // another activity" below for that instead.
+        if let collision {
+            nameCollision = collision.name
             return
         }
         if renamed, let oldIndex = ActivityCatalog.load().firstIndex(where: { $0.id == definition.id }) {
@@ -391,54 +412,26 @@ struct ActivityDetailView: View {
         dismiss()
     }
 
-    private func commitRename(_ request: RenameRequest, updatingVisits: Bool) {
-        renameRequest = nil
-        if let target = request.mergesInto {
-            // Keep the entry that was already there, with its group and colour, and
-            // drop the one being renamed onto it.
-            var activities = ActivityCatalog.load()
-            activities.removeAll { $0.id == request.definition.id }
-            ActivityCatalog.save(activities)
-            try? ActivityIdentityMigration.deactivate(id: request.definition.id, context: context)
-            if updatingVisits {
-                applyVisitRename(from: request.previousName, to: target.name)
-            }
-        } else {
-            saveActivityColor(categoryColorValue, forActivity: request.definition.name)
-            var activities = ActivityCatalog.load()
-            if let index = activities.firstIndex(where: { $0.id == request.definition.id }) {
-                activities[index] = request.definition
-            } else {
-                activities.append(request.definition)
-            }
-            ActivityCatalog.save(activities)
-            try? ActivityIdentityMigration.upsert(request.definition, context: context)
-            if updatingVisits {
-                applyVisitRename(from: request.previousName, to: request.definition.name)
-            }
-        }
-        // The background visit rewrite publishes its own invalidation only after it
-        // saves. A catalogue-only rename can invalidate immediately.
-        if !updatingVisits {
-            InsightsInvalidation.invalidate(reason: "Activity renamed", context: context)
-        }
-        dismiss()
-    }
-
-    private func applyVisitRename(from previousName: String, to updatedName: String) {
+    /// Runs in the background so a large archive cannot stall the confirmation
+    /// dialog's dismissal. The catalogue entry is only removed once the visit/place
+    /// rewrite has actually finished — see `ActivityCatalog.mergeActivity` — so a
+    /// failure here leaves both activities intact rather than stranding history
+    /// under a definition that no longer exists.
+    private func performMerge(into target: ActivityDefinition) {
+        mergeTarget = nil
+        guard let source = ActivityCatalog.load().first(where: { $0.id == existingID }) else { return }
+        mergeInFlight = true
         Task {
             do {
-                _ = try await ActivityCatalog.renameActivity(
-                    from: previousName, to: updatedName, container: context.container
-                )
-                InsightsInvalidation.invalidate(reason: "Activity visits renamed", context: context)
+                _ = try await ActivityCatalog.mergeActivity(source, into: target, context: context)
+                InsightsInvalidation.invalidate(reason: "Activities merged", context: context)
+                mergeInFlight = false
+                dismiss()
             } catch is CancellationError {
-                return
+                mergeInFlight = false
             } catch {
-                // The catalogue entry is renamed either way, so staying silent would
-                // leave every visit behind under the old label while the screen said
-                // they had come across — the exact stranding this option prevents.
-                renameFailed = true
+                mergeInFlight = false
+                mergeFailed = true
             }
         }
     }
@@ -452,12 +445,51 @@ struct ActivityDetailView: View {
         dismiss()
     }
 
-    private var renameTitle: String {
-        renameRequest?.mergesInto == nil ? "Rename its visits too?" : "Merge these activities?"
-    }
-
     private var deletionWarning: String {
         "“\(activityName)” is used by \(statistics.occasions) \(statistics.occasions == 1 ? "visit" : "visits"). Deleting does not change those visits, but Insights will count them as Other until the activity exists again. Changing its group instead keeps the history counted."
+    }
+}
+
+/// Picks another catalogue activity to merge the current one into. Excludes the
+/// activity being merged from, and sorts alphabetically the same way the
+/// Activities tab does, so the two lists read the same way.
+private struct MergeTargetPicker: View {
+    let excluding: UUID?
+    let onPick: (ActivityDefinition) -> Void
+    @State private var search = ""
+
+    private var candidates: [ActivityDefinition] {
+        let all = ActivityCatalog.load().filter { $0.id != excluding }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return all }
+        return all.filter { $0.name.localizedCaseInsensitiveContains(query) }
+    }
+
+    var body: some View {
+        List {
+            if candidates.isEmpty {
+                ContentUnavailableView("No other activities", systemImage: "arrow.triangle.merge",
+                                       description: Text("There’s nothing else in your activity list to merge into."))
+            } else {
+                Section {
+                    ForEach(candidates) { definition in
+                        Button {
+                            onPick(definition)
+                        } label: {
+                            HStack(spacing: 12) {
+                                ActivityIcon(activity: definition.name, color: activityColor(definition.name), size: 36)
+                                Text(definition.name).foregroundStyle(.primary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Merge into…")
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $search, prompt: "Find an activity")
+        .accessibilityIdentifier("merge-target-picker")
     }
 }
 

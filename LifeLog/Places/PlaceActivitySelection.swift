@@ -29,7 +29,9 @@ struct PlaceActivitySelection: View {
             }
         }
         .navigationTitle("Choose Activity")
-        .task { ActivityCatalog.seed(); activities = ActivityCatalog.load() }
+        // Seeding itself now happens once, unconditionally, at app launch
+        // (`RootView`'s `.task`) — this only needs its own local copy.
+        .task { activities = ActivityCatalog.load() }
         .sheet(isPresented: $adding) {
             ActivityEditor { newActivity in
                 activities.append(newActivity)

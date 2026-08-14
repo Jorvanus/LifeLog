@@ -133,6 +133,55 @@ final class TimelineAndActivitiesTests: LifeLogUITestCase {
         XCTAssertTrue(app.staticTexts["Top locations"].exists)
     }
 
+    /// Merging two catalogue activities end to end: picking a target, confirming,
+    /// and landing back on the Activities tab with the source gone. This is the
+    /// replacement for the old (dead) rename-into-an-existing-name trick — the
+    /// concrete flow reported broken when someone tried that old path and hit a
+    /// misleading "visits could not be written" error instead of a real merge.
+    func testMergingTwoActivitiesFromTheirDetailScreen() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+
+        app.tabBars.buttons["Activities"].tap()
+        XCTAssertTrue(element("activities-tab-screen").waitForExistence(timeout: 10))
+
+        // Both "At home" and "Shopping" are seeded, adopted catalogue activities.
+        let row = app.staticTexts["At home"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.tap()
+        XCTAssertTrue(element("activity-detail-screen").waitForExistence(timeout: 5))
+
+        let mergeButton = element("merge-activity-button")
+        var attempts = 0
+        while !mergeButton.exists && attempts < 8 {
+            app.swipeUp()
+            attempts += 1
+        }
+        XCTAssertTrue(mergeButton.waitForExistence(timeout: 5))
+        mergeButton.tap()
+
+        XCTAssertTrue(element("merge-target-picker").waitForExistence(timeout: 5))
+        // The full catalogue can be longer than one screen; search narrows it to
+        // the one candidate rather than relying on a lazy List having rendered
+        // "Shopping" yet.
+        let searchField = app.searchFields.firstMatch
+        XCTAssertTrue(searchField.waitForExistence(timeout: 5))
+        searchField.tap()
+        searchField.typeText("Shopping")
+        let target = app.staticTexts["Shopping"]
+        XCTAssertTrue(target.waitForExistence(timeout: 5))
+        target.tap()
+
+        let confirm = app.buttons["Merge into “Shopping”"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        confirm.tap()
+
+        // The merge dismisses the detail screen once it finishes.
+        XCTAssertTrue(element("activities-tab-screen").waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["At home"].exists, "the merged-away activity must not still be listed")
+    }
+
     /// The Activities tab lists labels the catalogue has never heard of, because most
     /// of an imported archive is exactly that and a screen reporting where time went
     /// must not hide them. They are marked as such and can be adopted where they are

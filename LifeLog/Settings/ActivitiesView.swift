@@ -81,7 +81,8 @@ struct ActivitiesView: View {
             }
         }
         .task {
-            ActivityCatalog.seed()
+            // Seeding itself now happens once, unconditionally, at app launch
+            // (`RootView`'s `.task`) — this only needs its own local copy.
             activities = ActivityCatalog.load()
             refreshUsage()
         }

@@ -196,7 +196,6 @@ struct SettingsView: View {
                     adaptiveValue("Version", value: appVersion)
                 }
             }.navigationTitle("Settings").accessibilityIdentifier("settings-screen")
-                .task { ActivityCatalog.seed() }
                 .fileImporter(isPresented: $importingJournal,
                               allowedContentTypes: [.commaSeparatedText, .text],
                               allowsMultipleSelection: false) { result in
