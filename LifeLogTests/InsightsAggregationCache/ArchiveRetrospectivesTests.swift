@@ -7,11 +7,9 @@ struct ArchiveRetrospectivesTests {
     private let place = PlaceTotal(name: "Cinema", category: "Entertainment", activity: "Watching a movie",
                                    latitude: -23.37, longitude: 150.51, hours: 2)
 
-    private func visit(daysAgo: Double, durationHours: Double = 1) -> Visit {
+    private func visit(daysAgo: Double, durationHours: Double = 1) -> PlaceVisitOccurrence {
         let arrival = start.addingTimeInterval(-daysAgo * 86_400)
-        return Visit(arrival: arrival, departure: arrival.addingTimeInterval(durationHours * 3600),
-                    latitude: -23.37, longitude: 150.51, placeName: "Cinema",
-                    inferredActivity: "Watching a movie", source: "automatic")
+        return PlaceVisitOccurrence(arrival: arrival, departure: arrival.addingTimeInterval(durationHours * 3600))
     }
 
     @Test("A place with an earlier visit outside the window is not a first visit")

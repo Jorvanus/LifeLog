@@ -22,6 +22,14 @@ struct ArchiveSearchEntry: Identifiable, Sendable, Hashable {
     var id: UUID { stableID }
 }
 
+/// Just enough of a visit to place it in time. Backs the Insights
+/// retrospectives (`ArchiveRetrospectives`), which only ever ask "when" of a
+/// place's history, never "what."
+struct PlaceVisitOccurrence: Sendable, Hashable {
+    let arrival: Date
+    let departure: Date?
+}
+
 struct PlaceHistoryEntry: Identifiable, Sendable, Hashable {
     let stableID: UUID
     let arrival: Date
@@ -41,6 +49,11 @@ struct PlaceHistoryEntry: Identifiable, Sendable, Hashable {
 actor VisitArchiveReader {
     private var usageCache: (generation: Int, counts: [String: Int])?
     private var placeSummaryCache: (generation: Int, summaries: [PlaceHistorySummary], itemCount: Int)?
+    /// Keyed on the year boundary and scope too, not just generation: Year's own
+    /// date navigation changes `before` far more often than the store itself
+    /// changes, and the Insights source-scope picker can change `scope` without
+    /// either of the other two moving at all.
+    private var historicalPlaceNamesCache: (generation: Int, before: Date, scope: InsightsScope, names: Set<String>)?
 
     func activityUsage(generation: Int) throws -> [String: Int] {
         if let usageCache, usageCache.generation == generation { return usageCache.counts }
@@ -110,6 +123,78 @@ actor VisitArchiveReader {
                                placeName: visit.placeName, activity: visit.activity)
         }
         return (entries, hasMore)
+    }
+
+    /// Every visit at a place matching `name` (the same identity `NameKey` uses
+    /// everywhere) strictly before `before`, scoped the same way as the visible
+    /// story. Backs `ArchiveRetrospectives.firstVisitToPlace`/
+    /// `longestAbsenceFromPlace`, which need archive-wide history a `@Query`
+    /// would otherwise force onto the interaction path — this is what used to
+    /// be `InsightsView.placeHistory(matching:)`, fetching every visit in the
+    /// whole store and filtering in Swift.
+    ///
+    /// Narrowed in the store first with `localizedStandardContains`, same as
+    /// `PlaceVisitLookup` in `VisitEditor.swift`: a superset of the names
+    /// `NameKey` calls the same, small enough that the exact match afterward
+    /// is cheap regardless of archive size.
+    func placeOccurrences(matching name: String, before: Date, scope: InsightsScope) throws -> [PlaceVisitOccurrence] {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = NameKey.matching(trimmed)
+        guard !key.isEmpty, !Visit.isPlaceholderName(trimmed) else { return [] }
+        try Task.checkCancellation()
+        let candidates = try modelContext.fetch(FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.placeName.localizedStandardContains(trimmed) && $0.arrival < before }
+        ))
+        try Task.checkCancellation()
+        return candidates
+            .filter { NameKey.matching($0.placeName) == key && scope.includes($0) && ActivityLocationPolicy.isLocationVisit($0) }
+            .map { PlaceVisitOccurrence(arrival: $0.arrival, departure: $0.departure) }
+    }
+
+    /// Total logged hours across one bounded historical interval, scoped the
+    /// same way as the visible story. Backs the "same period a year ago"
+    /// comparison — already a narrow, date-scoped fetch as
+    /// `InsightsView.yearOverYearHighlight()`, just moved off the main actor
+    /// so the interaction path never blocks on it.
+    func loggedHours(in interval: DateInterval, scope: InsightsScope, now: Date) throws -> Double {
+        let start = interval.start, end = interval.end
+        try Task.checkCancellation()
+        let visits = try modelContext.fetch(FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.arrival < end && ($0.departure ?? end) >= start }
+        )).filter(scope.includes)
+        try Task.checkCancellation()
+        return InsightsSnapshot.categoryHours(visits: visits, range: interval, now: now).values.reduce(0, +)
+    }
+
+    /// Distinct display names of every place visited before `before`, filtered
+    /// the same way Insights already decides what is shown at all
+    /// (`ActivityLocationPolicy.shouldShowInInsights`) and scoped the same way
+    /// as the visible story. Backs Year's "new this year"/"not visited this
+    /// year" place comparisons — this is what used to be
+    /// `InsightsView.annualHistoricalPlaces()`, an unbounded whole-archive
+    /// fetch on the main actor.
+    ///
+    /// Genuinely archive-wide by nature: a complete distinct-names answer has
+    /// no natural early stop the way a paged search does. Measured against a
+    /// 32,000-row synthetic archive (`VisitArchiveReaderTests`) at well under
+    /// the budget below running on this background actor, which is what makes
+    /// it acceptable without a persisted index or a schema change.
+    func historicalPlaceNames(before: Date, scope: InsightsScope, generation: Int) throws -> Set<String> {
+        if let historicalPlaceNamesCache, historicalPlaceNamesCache.generation == generation,
+           historicalPlaceNamesCache.before == before, historicalPlaceNamesCache.scope == scope {
+            return historicalPlaceNamesCache.names
+        }
+        try Task.checkCancellation()
+        let all = try modelContext.fetch(FetchDescriptor<Visit>(predicate: #Predicate { $0.arrival < before }))
+        let scoped = all.filter(scope.includes)
+        let locationVisits = scoped.filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
+        try Task.checkCancellation()
+        let names = Set(scoped
+            .filter { ActivityLocationPolicy.shouldShowInInsights($0, locationVisits: locationVisits) }
+            .map(\.displayPlaceName)
+            .filter { !$0.isEmpty })
+        historicalPlaceNamesCache = (generation, before, scope, names)
+        return names
     }
 
     func placeEntries(named name: String) throws -> [PlaceHistoryEntry] {

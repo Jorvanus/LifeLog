@@ -4,21 +4,12 @@ Audited against `main` at `e4ce878` on 2026-08-14. This is an open-work list,
 not a history of shipped features. Completed callback replay, resolver invariants,
 conservative Saved Place learning, resolution diagnostics, sleep-evidence plumbing,
 the first archive-query pass, the distinct Day/Week/Month/Year Insights layouts,
-the explicit archive search screen, and the Month/Week `InsightsView` split have
-been removed.
+the explicit archive search screen, the Month/Week `InsightsView` split, and the
+Insights data-access boundary have been removed.
 
 LifeLog is a private app for one iPhone 17 Pro Max. A responsive 32,000-row archive,
 clear code boundaries, and reliable local data outrank App Store preparation and
 speculative features.
-
-## Next deliverable
-
-1. [ ] **Finish the Insights data-access boundary.** Replace the remaining unbounded
-   history reads in `placeHistory(matching:)`, `annualHistoricalPlaces()`, and
-   `yearOverYearHighlight()` with narrow queries, paging, or prepared aggregates. Keep
-   all-history work off the interaction path and surface a loading/failure state where a
-   retrospective cannot be prepared immediately. Use the 32,000-row archive to decide
-   whether an index or schema change is justified.
 
 ## Correctness and recovery
 

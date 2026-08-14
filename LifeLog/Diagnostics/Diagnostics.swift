@@ -296,6 +296,13 @@ enum Diagnostics {
         /// the Insights month and year windows: a broader scan than a date-scoped
         /// fetch, but still capped at one page's worth of rows.
         static let archiveSearch: TimeInterval = 1.0
+        /// Year's archive-wide "new this year"/"not visited this year" place
+        /// comparison (`VisitArchiveReader.historicalPlaceNames`), measured
+        /// against a 32,000-row archive. Runs on the background archive-reader
+        /// actor after the current year's shell has already rendered, so it is
+        /// allowed more than an interaction-path budget — but still needs a
+        /// real number, since Year's place story reads as loading until it lands.
+        static let annualHistoricalPlaces: TimeInterval = 2.0
 
         static func insights(window: InsightWindow) -> TimeInterval {
             switch window {

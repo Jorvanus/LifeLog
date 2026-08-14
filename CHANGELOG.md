@@ -2,6 +2,37 @@
 
 ## 2026-08-14
 
+### Finish the Insights data-access boundary
+
+- `InsightsView.placeHistory(matching:)` and `.annualHistoricalPlaces()` used to
+  run synchronously on the main actor, the first with no lower date bound at
+  all (`arrival < interval.end` — effectively the whole archive) and the
+  second explicitly `arrival < interval.start` (everything before the current
+  year). Both, plus the already-narrow `yearOverYearHighlight()`, now go
+  through three new `VisitArchiveReader` methods (`placeOccurrences`,
+  `loggedHours`, `historicalPlaceNames`) on the background archive-reader
+  actor, returning small `Sendable` value types (`PlaceVisitOccurrence`,
+  `Set<String>`) rather than `Visit` model objects.
+- `ArchiveRetrospectives.firstVisitToPlace`/`.longestAbsenceFromPlace` and
+  `AnnualInsights.make` were updated to take these prepared values directly
+  instead of `[Visit]`, dropping a redundant in-caller name re-filter now that
+  the actor already narrows by exact place identity.
+- Year's "new this year"/"not visited this year" place comparison now shows
+  an explicit loading state (`YearPlaceStoryCard.placesLoading`, surfaced
+  while `historicalPlaceNames` is still reading the archive) instead of
+  reading as "everything is new and nothing was missed" until the background
+  fetch lands. All three reads record a `Diagnostics` warning on failure
+  rather than silently returning empty forever.
+- Measured `historicalPlaceNames` — the one genuinely archive-wide read, with
+  no natural early stop the way a paged query has — against a 32,000-row
+  synthetic archive (`InsightsArchiveReaderTests`) at comfortably under a new
+  `annualHistoricalPlaces` budget running on the background actor. That, not
+  a persisted index or a schema change, is what keeps it off the interaction
+  path. Also fixed a cache-key bug found by the new tests: `historicalPlaceNames`
+  was cached by generation and cutoff but not by source scope, so switching
+  the Insights scope picker without the year or store also changing could
+  serve a stale set from a different scope.
+
 ### Split Month and Week out of `InsightsView`
 
 - Extracted the Month and Week layouts into `MonthInsightsView.swift` and

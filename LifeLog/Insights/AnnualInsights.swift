@@ -77,7 +77,7 @@ struct AnnualInsights {
 
     static func make(current: [InsightSegment], previous: [InsightSegment],
                      yearInterval: DateInterval, now: Date,
-                     historicalPlaceVisits: [Visit] = [],
+                     historicalPlaceNames: Set<String> = [],
                      health: HealthMetrics = .empty) -> AnnualInsights {
         let calendar = Calendar.current
         let currentLogged = current.filter { !$0.isUnlogged }
@@ -86,7 +86,7 @@ struct AnnualInsights {
             previousLogged.reduce(0) { $0 + $1.hours } >= 24
         let months = monthlyTotals(currentLogged, interval: yearInterval, now: now, calendar: calendar)
         let placeRows = placeRows(currentLogged, previous: previousLogged,
-                                  historicalPlaceVisits: historicalPlaceVisits)
+                                  historicalPlaceNames: historicalPlaceNames)
         let travel = TravelInsights.make(from: currentLogged)
         let milestones = milestones(current: currentLogged, previous: previousLogged,
                                     newPlaces: placeRows.new)
@@ -131,7 +131,7 @@ struct AnnualInsights {
     }
 
     private static func placeRows(_ current: [InsightSegment], previous: [InsightSegment],
-                                  historicalPlaceVisits: [Visit]) -> (all: [Place], new: [Place], notVisited: [Place]) {
+                                  historicalPlaceNames: Set<String>) -> (all: [Place], new: [Place], notVisited: [Place]) {
         func rows(_ segments: [InsightSegment]) -> [String: Place] {
             var totals: [String: (category: String, hours: Double, ids: Set<InsightSegmentID>)] = [:]
             for segment in segments {
@@ -146,7 +146,7 @@ struct AnnualInsights {
         }
         let currentRows = rows(current)
         let previousRows = rows(previous)
-        let historicalNames = Set(historicalPlaceVisits.compactMap { $0.displayPlaceName }.filter { !$0.isEmpty })
+        let historicalNames = historicalPlaceNames
         let new = currentRows.values.filter { !historicalNames.contains($0.name) }
             .map { Place(name: $0.name, category: $0.category, hours: $0.hours, visits: $0.visits, isNew: true) }
         let notVisited = previousRows.values.filter { $0.hours >= 8 && $0.visits >= 3 && currentRows[$0.name] == nil }

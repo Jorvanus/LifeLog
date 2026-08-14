@@ -54,6 +54,33 @@ struct AnnualInsightsTests {
         #expect(result.milestones.leadingIncrease == nil)
     }
 
+    @Test("New places exclude anything in the historical name set; not-visited needs a real prior pattern")
+    func placesUseHistoricalNameSet() {
+        let start = calendar.date(from: DateComponents(year: 2026, month: 1, day: 1))!
+        let year = calendar.dateInterval(of: .year, for: start)!
+        // "Old Gym" appeared often enough last year (3 visits, >= 8h) to count
+        // as a real pattern -- `placesNotVisited` requires both.
+        let priorGym = (0..<3).map { offset in
+            segment("Exercising", start: start.addingTimeInterval(Double(-300 + offset) * 86_400), hours: 3, place: "Old Gym")
+        }
+        // "Café" is in this year's segments and also in the historical name set —
+        // not new. "New Café" is in this year's segments but not in the
+        // historical set — genuinely new. Both years need >= 24h logged for
+        // `placesNotVisited` to be computed at all, hence "Work" padding both.
+        let currentWork = segment("Work", start: start.addingTimeInterval(3 * 86_400), hours: 30, place: "Office")
+        let currentCafe = segment("Coffee", start: start.addingTimeInterval(86_400), hours: 2, place: "Café")
+        let currentNewCafe = segment("Coffee", start: start.addingTimeInterval(2 * 86_400), hours: 2, place: "New Café")
+        let priorWork = segment("Work", start: start.addingTimeInterval(-310 * 86_400), hours: 30, place: "Office")
+
+        let result = AnnualInsights.make(current: [currentWork, currentCafe, currentNewCafe], previous: priorGym + [priorWork],
+                                         yearInterval: year, now: year.end,
+                                         historicalPlaceNames: ["Café", "Old Gym", "Office"])
+
+        #expect(result.newPlaces.map(\.name) == ["New Café"], "Café is in the historical set, so it is not new")
+        #expect(result.placesNotVisited.map(\.name) == ["Old Gym"],
+                "a real prior pattern absent from this year's segments is reported")
+    }
+
     @Test("Annual chart keeps the five strongest areas and folds the rest into Other")
     func annualChartDataUsesFiveAreasAndOther() {
         let start = calendar.date(from: DateComponents(year: 2026, month: 1, day: 1))!

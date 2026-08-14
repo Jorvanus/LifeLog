@@ -22,8 +22,17 @@ private enum AnnualHealthSection: String, CaseIterable, Identifiable {
 private struct YearPlaceStoryCard: View {
     let insights: AnnualInsights
     @Binding var selection: YearPlaceSection
+    /// "New places" and "Not visited" need the whole archive's prior history,
+    /// fetched off the main actor (`VisitArchiveReader.historicalPlaceNames`)
+    /// after the rest of the year's story is already on screen. Until that
+    /// finishes, `insights.newPlaces`/`.placesNotVisited` both read as if no
+    /// history existed at all -- which reads as "everything is new" and
+    /// "nothing was missed," the opposite of an honest "still loading."
+    let placesLoading: Bool
     let openPlace: (AnnualInsights.Place) -> Void
     @State private var selectedPlaceID: String?
+
+    private var needsHistory: Bool { selection == .newPlaces || selection == .notVisited }
 
     private var places: [AnnualInsights.Place] {
         switch selection {
@@ -54,7 +63,15 @@ private struct YearPlaceStoryCard: View {
             .pickerStyle(.segmented)
             .accessibilityIdentifier("year-place-picker")
 
-            if places.isEmpty {
+            if places.isEmpty && needsHistory && placesLoading {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("Reading your archive for this comparison…")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("year-places-loading")
+            } else if places.isEmpty {
                 Text(emptyMessage)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -122,6 +139,7 @@ struct YearInsightsView: View {
     let openArea: (AnnualInsights.LifeArea) -> Void
     let openPlace: (AnnualInsights.Place) -> Void
     let period: DateInterval
+    var placesLoading: Bool = false
     @State private var selectedArea: AnnualInsights.LifeArea?
     @State private var selectedPlaceSection: YearPlaceSection = .mostTime
     @State private var selectedHealthSection: AnnualHealthSection = .movement
@@ -166,7 +184,8 @@ struct YearInsightsView: View {
     }
 
     private var placeSummary: some View {
-        YearPlaceStoryCard(insights: insights, selection: $selectedPlaceSection, openPlace: openPlace)
+        YearPlaceStoryCard(insights: insights, selection: $selectedPlaceSection,
+                          placesLoading: placesLoading, openPlace: openPlace)
         .padding(20).lifeCard()
         .accessibilityIdentifier("insights-year-places")
     }

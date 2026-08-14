@@ -46,6 +46,153 @@ struct VisitArchiveReaderTests {
     }
 }
 
+/// Insights' three retrospectives that used to read the whole archive
+/// synchronously on the main actor (`placeHistory(matching:)`,
+/// `annualHistoricalPlaces()`, `yearOverYearHighlight()`): correctness of the
+/// narrowed queries this actor now runs instead, and — for the one that is
+/// genuinely archive-wide by nature — whether it needs a persisted index.
+@MainActor
+struct InsightsArchiveReaderTests {
+    private let base = Date(timeIntervalSince1970: 1_800_000_000)
+
+    @Test("placeOccurrences matches by name identity, scoped and bounded to before the cutoff")
+    func placeOccurrencesMatchesScopedAndBounded() async throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+        // Exact match, before the cutoff.
+        context.insert(Visit(arrival: base, departure: base.addingTimeInterval(600), latitude: 0, longitude: 0,
+                             placeName: "Café", inferredActivity: "Coffee"))
+        // Same identity once diacritics/case fold, still before the cutoff.
+        context.insert(Visit(arrival: base.addingTimeInterval(3_600), departure: base.addingTimeInterval(4_200),
+                             latitude: 0, longitude: 0, placeName: "cafe", inferredActivity: "Coffee"))
+        // On/after the cutoff -- excluded regardless of name.
+        let cutoff = base.addingTimeInterval(10_000)
+        context.insert(Visit(arrival: cutoff, departure: cutoff.addingTimeInterval(600),
+                             latitude: 0, longitude: 0, placeName: "Café", inferredActivity: "Coffee"))
+        // Imported-journal source, excluded by a device-and-manual scope.
+        context.insert(Visit(arrival: base.addingTimeInterval(7_200), departure: base.addingTimeInterval(7_800),
+                             latitude: 0, longitude: 0, placeName: "Café", inferredActivity: "Coffee",
+                             source: "imported-journal"))
+        // A different place entirely.
+        context.insert(Visit(arrival: base.addingTimeInterval(1_800), departure: base.addingTimeInterval(2_400),
+                             latitude: 0, longitude: 0, placeName: "Gym", inferredActivity: "Exercising"))
+        try context.save()
+
+        let reader = VisitArchiveReader(modelContainer: container)
+        let occurrences = try await reader.placeOccurrences(matching: "Café", before: cutoff, scope: .deviceAndManual)
+        #expect(occurrences.count == 2, "the matching-name/before-cutoff/device-scope visits only")
+        #expect(Set(occurrences.map(\.arrival)) == [base, base.addingTimeInterval(3_600)])
+    }
+
+    @Test("loggedHours sums only visits touching the given interval, scoped")
+    func loggedHoursIsScopedAndBounded() async throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+        let interval = DateInterval(start: base, end: base.addingTimeInterval(7 * 24 * 3_600))
+        // Inside the interval, one hour.
+        context.insert(Visit(arrival: base.addingTimeInterval(3_600), departure: base.addingTimeInterval(7_200),
+                             latitude: 0, longitude: 0, placeName: "Office", inferredActivity: "Working"))
+        // Entirely before the interval -- excluded.
+        context.insert(Visit(arrival: base.addingTimeInterval(-7_200), departure: base.addingTimeInterval(-3_600),
+                             latitude: 0, longitude: 0, placeName: "Office", inferredActivity: "Working"))
+        // Imported-journal source -- excluded by a device-and-manual scope.
+        context.insert(Visit(arrival: base.addingTimeInterval(10_800), departure: base.addingTimeInterval(14_400),
+                             latitude: 0, longitude: 0, placeName: "Office", inferredActivity: "Working",
+                             source: "imported-journal"))
+        try context.save()
+
+        let reader = VisitArchiveReader(modelContainer: container)
+        let hours = try await reader.loggedHours(in: interval, scope: .deviceAndManual, now: interval.end)
+        #expect(hours == 1)
+    }
+
+    @Test("historicalPlaceNames returns distinct shown names before the cutoff, scoped")
+    func historicalPlaceNamesIsScopedDistinctAndBounded() async throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+        let cutoff = base.addingTimeInterval(30 * 24 * 3_600)
+        // Two prior visits to the same place -- one distinct name.
+        context.insert(Visit(arrival: base, departure: base.addingTimeInterval(3_600),
+                             latitude: 0, longitude: 0, placeName: "Gym", inferredActivity: "Exercising", source: "automatic"))
+        context.insert(Visit(arrival: base.addingTimeInterval(86_400), departure: base.addingTimeInterval(90_000),
+                             latitude: 0, longitude: 0, placeName: "Gym", inferredActivity: "Exercising", source: "automatic"))
+        // On/after the cutoff -- excluded.
+        context.insert(Visit(arrival: cutoff, departure: cutoff.addingTimeInterval(3_600),
+                             latitude: 0, longitude: 0, placeName: "New Café", inferredActivity: "Coffee", source: "automatic"))
+        // Imported-journal source -- excluded by a device-and-manual scope.
+        context.insert(Visit(arrival: base.addingTimeInterval(172_800), departure: base.addingTimeInterval(176_400),
+                             latitude: 0, longitude: 0, placeName: "Old Office", inferredActivity: "Working",
+                             source: "imported-journal"))
+        try context.save()
+
+        let reader = VisitArchiveReader(modelContainer: container)
+        let names = try await reader.historicalPlaceNames(before: cutoff, scope: .deviceAndManual, generation: 1)
+        #expect(names == ["Gym"])
+
+        let allHistoryNames = try await reader.historicalPlaceNames(before: cutoff, scope: .allHistory, generation: 1)
+        #expect(allHistoryNames == ["Gym", "Old Office"])
+    }
+
+    @Test("historicalPlaceNames is cached by generation and cutoff together")
+    func historicalPlaceNamesCacheRespectsGenerationAndCutoff() async throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+        let cutoff = base.addingTimeInterval(30 * 24 * 3_600)
+        context.insert(Visit(arrival: base, departure: base.addingTimeInterval(3_600),
+                             latitude: 0, longitude: 0, placeName: "Gym", inferredActivity: "Exercising"))
+        try context.save()
+
+        let reader = VisitArchiveReader(modelContainer: container)
+        #expect(try await reader.historicalPlaceNames(before: cutoff, scope: .allHistory, generation: 1) == ["Gym"])
+
+        context.insert(Visit(arrival: base.addingTimeInterval(7_200), departure: base.addingTimeInterval(10_800),
+                             latitude: 0, longitude: 0, placeName: "Park", inferredActivity: "Visiting"))
+        try context.save()
+        // Same generation, same cutoff: the cache still answers with the stale set.
+        #expect(try await reader.historicalPlaceNames(before: cutoff, scope: .allHistory, generation: 1) == ["Gym"])
+        // A new generation forces a fresh read.
+        #expect(try await reader.historicalPlaceNames(before: cutoff, scope: .allHistory, generation: 2) == ["Gym", "Park"])
+        // A different cutoff at the same generation also forces a fresh read.
+        let laterCutoff = cutoff.addingTimeInterval(3_600)
+        #expect(try await reader.historicalPlaceNames(before: laterCutoff, scope: .allHistory, generation: 2) == ["Gym", "Park"])
+    }
+
+    /// `historicalPlaceNames` is genuinely archive-wide by nature -- a complete
+    /// distinct-names answer has no natural early stop the way a paged search
+    /// does, so this measures the whole-scan cost directly rather than the
+    /// effect of a `fetchLimit`. Comfortably under budget here, running on the
+    /// background archive-reader actor, is what justifies not adding a
+    /// persisted index or a schema change for it.
+    @Test("historicalPlaceNames stays within budget against a 32,000-row archive")
+    func historicalPlaceNamesBudgetOnLargeArchive() async throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+        let cutoff = base.addingTimeInterval(Double(32_000) * 1_800)
+        for index in 0..<32_000 {
+            let arrival = base.addingTimeInterval(Double(index) * 1_800)
+            context.insert(Visit(arrival: arrival, departure: arrival.addingTimeInterval(1_200),
+                                 latitude: -27.47, longitude: 153.03,
+                                 placeName: "Place \(index % 500)",
+                                 inferredActivity: index.isMultiple(of: 2) ? "At home" : "Visiting",
+                                 source: "automatic"))
+        }
+        try context.save()
+
+        let reader = VisitArchiveReader(modelContainer: container)
+        let startedAt = Date.now
+        let names = try await reader.historicalPlaceNames(before: cutoff, scope: .allHistory, generation: 1)
+        let elapsed = Date.now.timeIntervalSince(startedAt)
+        #expect(elapsed < Diagnostics.PerformanceBudget.annualHistoricalPlaces,
+                "historicalPlaceNames took \(elapsed)s for the 32,000-row fixture")
+        #expect(names.count == 500)
+    }
+
+    private func makeContainer() throws -> ModelContainer {
+        try ModelContainer(for: Visit.self, SavedPlace.self, VisitCorrection.self, DiagnosticEvent.self,
+                           configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+    }
+}
+
 /// The explicit archive search screen: place/activity matching, the notes
 /// opt-in, paging, and — separately — whether a 32,000-row archive needs a
 /// persisted index to stay fast. It does not: `localizedStandardContains`

@@ -49,6 +49,13 @@ struct InsightsView: View {
     @State private var exportFile: TrendExportFile?
     @State private var aggregationGeneration = 0
     @State private var snapshotCache = InsightsSnapshotCache()
+    /// The one archive-wide reader every retrospective (place history, year-over-
+    /// year, Year's historical places) goes through, so that work runs off the
+    /// main actor instead of blocking the interaction path.
+    @State private var archiveReader: VisitArchiveReader?
+    /// True while Year's "new this year"/"not visited this year" comparison is
+    /// still reading the archive — see `YearPlaceStoryCard.placesLoading`.
+    @State private var annualPlacesLoading = false
     @State private var showAllActivities = false
     @State private var showingWeekdayChart = false
     @State private var highlights: [DayHighlight] = []
@@ -376,7 +383,8 @@ struct InsightsView: View {
             if let highlight = DayHighlights.leadingPlace(place, window: window) {
                 found.append(highlight)
             }
-            let history = placeHistory(matching: place.name)
+            let history = await placeHistory(matching: place.name)
+            guard !Task.isCancelled, requestKey == highlightKey else { return }
             if let highlight = ArchiveRetrospectives.firstVisitToPlace(
                 place, history: history, windowStart: interval.start, window: window
             ) {
@@ -388,7 +396,7 @@ struct InsightsView: View {
                 found.append(highlight)
             }
         }
-        if let highlight = yearOverYearHighlight() {
+        if let highlight = await yearOverYearHighlight() {
             found.append(highlight)
         }
         guard !Task.isCancelled, requestKey == highlightKey else { return }
@@ -400,36 +408,47 @@ struct InsightsView: View {
         highlightPage = min(highlightPage, max(0, highlights.count - 1))
     }
 
-    /// Every visit to places matching this name, unscoped by date — the archive
+    private func archive() -> VisitArchiveReader {
+        let reader = archiveReader ?? VisitArchiveReader(modelContainer: context.container)
+        archiveReader = reader
+        return reader
+    }
+
+    /// Every visit at places matching this name, unscoped by date — the archive
     /// retrospectives need to know what happened before the window being looked
-    /// at, not just within it. Keep it bounded to history before the selected
-    /// period and apply the same source scope as the visible place story.
-    private func placeHistory(matching name: String) -> [Visit] {
-        let descriptor = FetchDescriptor<Visit>(
-            predicate: #Predicate { $0.arrival < interval.end }
-        )
-        let all = (try? context.fetch(descriptor)) ?? []
-        return all.filter {
-            insightsScope.includes($0) && ActivityLocationPolicy.isLocationVisit($0) &&
-            NameKey.matching($0.placeName) == NameKey.matching(name)
+    /// at, not just within it. Bounded to history before the selected period,
+    /// scoped the same way as the visible place story, and run on the shared
+    /// archive-reader actor so this stays off the interaction path regardless
+    /// of how far back a match goes.
+    private func placeHistory(matching name: String) async -> [PlaceVisitOccurrence] {
+        do {
+            return try await archive().placeOccurrences(matching: name, before: interval.end, scope: insightsScope)
+        } catch is CancellationError {
+            return []
+        } catch {
+            Diagnostics.record(error, context: context, subsystem: "Insights",
+                               operation: "place retrospective fetch", severity: "warning")
+            return []
         }
     }
 
-    /// This period's total against the same period a year ago. A fetch of its own,
-    /// scoped tightly to that one historical window rather than the whole archive.
-    private func yearOverYearHighlight() -> DayHighlight? {
+    /// This period's total against the same period a year ago. Already a narrow,
+    /// date-scoped fetch rather than a whole-archive one; run on the archive
+    /// actor so it never blocks the interaction path even so.
+    private func yearOverYearHighlight() async -> DayHighlight? {
         guard let yearAgoAnchor = Calendar.current.date(byAdding: .year, value: -1, to: anchorDate) else { return nil }
         let yearAgoInterval = window.interval(containing: yearAgoAnchor)
-        let start = yearAgoInterval.start
-        let end = yearAgoInterval.end
-        let descriptor = FetchDescriptor<Visit>(
-            predicate: #Predicate { $0.arrival < end && ($0.departure ?? end) >= start }
-        )
-        guard let visits = try? context.fetch(descriptor).filter(insightsScope.includes) else { return nil }
-        let yearAgoHours = InsightsSnapshot.categoryHours(visits: visits, range: yearAgoInterval, now: now)
-            .values.reduce(0, +)
-        return ArchiveRetrospectives.yearOverYear(loggedHours: snapshot.loggedHours,
-                                                   yearAgoHours: yearAgoHours, window: window)
+        do {
+            let yearAgoHours = try await archive().loggedHours(in: yearAgoInterval, scope: insightsScope, now: now)
+            return ArchiveRetrospectives.yearOverYear(loggedHours: snapshot.loggedHours,
+                                                       yearAgoHours: yearAgoHours, window: window)
+        } catch is CancellationError {
+            return nil
+        } catch {
+            Diagnostics.record(error, context: context, subsystem: "Insights",
+                               operation: "year-over-year fetch", severity: "warning")
+            return nil
+        }
     }
 
     /// Keep the strongest comparison first, but rotate supporting cards by the
@@ -780,7 +799,7 @@ struct InsightsView: View {
         }, openPlace: { place in
             selectedPlace = PlaceTotal(name: place.name, category: place.category, activity: place.category,
                                        latitude: 0, longitude: 0, hours: place.hours)
-        }, period: snapshot.analysisInterval)
+        }, period: snapshot.analysisInterval, placesLoading: annualPlacesLoading)
         healthSetupSection
     }
 
@@ -1577,15 +1596,16 @@ struct InsightsView: View {
         // Let the Year shell render before its archive-scale place-history work.
         await Task.yield()
         guard !Task.isCancelled, requestKey == annualKey else { return }
-        let historical = annualHistoricalPlaces()
+        let historical = await annualHistoricalPlaces()
         guard !Task.isCancelled, requestKey == annualKey else { return }
+        annualPlacesLoading = false
         guard insightsScope.includesHealthData else {
             guard requestKey == annualKey else { return }
             annualHealth = .empty
-            annualInsights = makeAnnualInsights(health: annualHealth, historicalOverride: historical)
+            annualInsights = makeAnnualInsights(health: annualHealth, historicalPlaceNames: historical)
             return
         }
-        annualInsights = makeAnnualInsights(health: annualHealth, historicalOverride: historical)
+        annualInsights = makeAnnualInsights(health: annualHealth, historicalPlaceNames: historical)
         let year = interval
         let calendar = Calendar.current
         var sleep: [Double?] = []
@@ -1628,30 +1648,38 @@ struct InsightsView: View {
                                                     monthlyWorkoutMinutes: workouts,
                                                     monthlyStandHours: stand,
                                                     healthDataAvailable: hasHealthData)
-        annualInsights = makeAnnualInsights(health: annualHealth, historicalOverride: historical)
+        annualInsights = makeAnnualInsights(health: annualHealth, historicalPlaceNames: historical)
     }
 
-    private func annualHistoricalPlaces() -> [Visit] {
+    /// Distinct display names of places visited before this year, scoped the
+    /// same way as the visible story. Runs on the shared archive-reader actor
+    /// — this used to be a synchronous whole-archive fetch on the main actor,
+    /// exactly the "unbounded history read on the interaction path" this
+    /// screen otherwise avoids. See `VisitArchiveReader.historicalPlaceNames`
+    /// for why it stays a full scan rather than a paged query: a complete
+    /// distinct-names answer has no natural early stop, and the 32,000-row
+    /// measurement in `VisitArchiveReaderTests` is what justifies running it
+    /// as a background full scan instead of adding a persisted index.
+    private func annualHistoricalPlaces() async -> Set<String> {
         guard window == .year else { return [] }
-        let all = (try? context.fetch(FetchDescriptor<Visit>(
-            predicate: #Predicate { $0.arrival < interval.start },
-            sortBy: [SortDescriptor(\.arrival)]
-        ))) ?? []
-        let scoped = all.filter(insightsScope.includes)
-        let locationVisits = scoped.filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
-        return scoped.filter {
-            $0.arrival < interval.start &&
-            ActivityLocationPolicy.shouldShowInInsights($0, locationVisits: locationVisits, now: now)
+        do {
+            return try await archive().historicalPlaceNames(before: interval.start, scope: insightsScope,
+                                                             generation: aggregationGeneration)
+        } catch is CancellationError {
+            return []
+        } catch {
+            Diagnostics.record(error, context: context, subsystem: "Insights",
+                               operation: "annual historical places fetch", severity: "warning")
+            return []
         }
     }
 
     private func makeAnnualInsights(health: AnnualInsights.HealthMetrics,
-                                   historicalOverride: [Visit]? = nil) -> AnnualInsights {
-        let historical = historicalOverride ?? annualHistoricalPlaces()
-        return AnnualInsights.make(current: snapshot.segments,
-                                   previous: snapshot.previousSegments,
-                                   yearInterval: interval, now: now,
-                                   historicalPlaceVisits: historical, health: health)
+                                   historicalPlaceNames: Set<String>) -> AnnualInsights {
+        AnnualInsights.make(current: snapshot.segments,
+                           previous: snapshot.previousSegments,
+                           yearInterval: interval, now: now,
+                           historicalPlaceNames: historicalPlaceNames, health: health)
     }
 
     private func reloadInsights(reason: InsightsSnapshotRefreshReason = .storeGenerationChanged) {
@@ -1735,7 +1763,8 @@ struct InsightsView: View {
         if window == .year {
             // Render the current year's story immediately; archive-derived place
             // history is filled by the deferred annual task after the first frame.
-            annualInsights = makeAnnualInsights(health: annualHealth, historicalOverride: [])
+            annualPlacesLoading = true
+            annualInsights = makeAnnualInsights(health: annualHealth, historicalPlaceNames: [])
         }
         Diagnostics.budget(context, subsystem: "Insights", operation: "\(window.rawValue) snapshot rebuild",
                            startedAt: startedAt,

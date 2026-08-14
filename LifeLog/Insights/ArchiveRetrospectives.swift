@@ -21,12 +21,13 @@ enum ArchiveRetrospectives {
     static let minimumNotableGapDays = 30
 
     /// A place with no earlier record at all, first met inside the period being
-    /// looked at. `history` is every visit to matching places, unscoped by date —
-    /// the question is whether anything in it predates the window.
-    static func firstVisitToPlace(_ place: PlaceTotal, history: [Visit],
+    /// looked at. `history` is every visit at this place, unscoped by date —
+    /// the question is whether anything in it predates the window. Already
+    /// filtered to this exact place by the caller
+    /// (`VisitArchiveReader.placeOccurrences`), not re-matched here.
+    static func firstVisitToPlace(_ place: PlaceTotal, history: [PlaceVisitOccurrence],
                                   windowStart: Date, window: InsightWindow) -> DayHighlight? {
-        let matching = history.filter { NameKey.matching($0.placeName) == NameKey.matching(place.name) }
-        guard let earliest = matching.map(\.arrival).min(), earliest >= windowStart else { return nil }
+        guard let earliest = history.map(\.arrival).min(), earliest >= windowStart else { return nil }
         return DayHighlight(
             id: "first-visit-\(place.name)", symbol: "sparkles",
             headline: "First time at \(place.name)",
@@ -41,11 +42,9 @@ enum ArchiveRetrospectives {
     /// change in a routine, which is what this is for. Mutually exclusive with
     /// `firstVisitToPlace` by construction — a place needing `minimumOccasionsForAGap`
     /// prior visits cannot also have none.
-    static func longestAbsenceFromPlace(_ place: PlaceTotal, history: [Visit],
+    static func longestAbsenceFromPlace(_ place: PlaceTotal, history: [PlaceVisitOccurrence],
                                         windowStart: Date) -> DayHighlight? {
-        let matching = history
-            .filter { NameKey.matching($0.placeName) == NameKey.matching(place.name) }
-            .sorted { $0.arrival < $1.arrival }
+        let matching = history.sorted { $0.arrival < $1.arrival }
         guard matching.count >= minimumOccasionsForAGap else { return nil }
         let gaps = zip(matching, matching.dropFirst()).map { previous, current in
             (days: current.arrival.timeIntervalSince(previous.departure ?? previous.arrival) / 86_400,
