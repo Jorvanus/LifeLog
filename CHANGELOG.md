@@ -2,6 +2,28 @@
 
 ## 2026-08-14
 
+### Remove InsightsView's orphaned standardLayout dead code
+
+- `standardLayout` and everything only it reached (`highlightsSection`'s
+  multi-card carousel, `awayFromHomeSection`, `activityChangesSection`,
+  `trendsSection`, `weekdayPatternsSection`/`weekdayChart`/`weekdayChartSheet`,
+  `habitsSection`, `trendLinesSection`, `topActivitiesSection`/`topPlacesSection`
+  and their `InsightsActivitySelectionList`/`InsightsPlaceSelectionList`, plus
+  `lifeAreaBalanceSection`) were confirmed unreachable from `body` — only
+  Day/Week/Month/Year render — and deleted, along with the state and fetch
+  work (`highlightPage`/`highlightHeight`, `trendSeries`/`habits`/
+  `weeklyRhythm`) that only fed them. `InsightsView.swift` drops from
+  ~1,470 to ~1,340 lines.
+- Removed `testInsightsActivitySelectionCanChangeDeselectRestoreAndDrillDown`
+  (`InsightsDayTests`), which asserted on the "Top Activities" selectable list
+  this deleted — that UI had already been replaced by `DaySummarySection`'s
+  metric tiles in an earlier redesign, so the test had been failing on every
+  run, not intermittently, since well before today. No other live test
+  referenced anything removed.
+- Day's single highlight (`highlights.first`, feeding `DayInsightsView`) is
+  unaffected and still computed for every period window as before; only the
+  multi-card carousel UI that had no live call site is gone.
+
 ### Finish the Insights data-access boundary
 
 - `InsightsView.placeHistory(matching:)` and `.annualHistoricalPlaces()` used to

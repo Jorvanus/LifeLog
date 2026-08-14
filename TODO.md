@@ -4,26 +4,15 @@ Audited against `main` at `e4ce878` on 2026-08-14. This is an open-work list,
 not a history of shipped features. Completed callback replay, resolver invariants,
 conservative Saved Place learning, resolution diagnostics, sleep-evidence plumbing,
 the first archive-query pass, the distinct Day/Week/Month/Year Insights layouts,
-the explicit archive search screen, the Month/Week `InsightsView` split, and the
-Insights data-access boundary have been removed.
+the explicit archive search screen, the Month/Week `InsightsView` split, the
+Insights data-access boundary, and `InsightsView`'s orphaned `standardLayout`
+dead code have been removed.
 
 LifeLog is a private app for one iPhone 17 Pro Max. A responsive 32,000-row archive,
 clear code boundaries, and reliable local data outrank App Store preparation and
 speculative features.
 
 ## Correctness and recovery
-
-- [ ] **Remove `InsightsView`'s orphaned `standardLayout` and its dead sections.**
-  The 2026-08-14 Month/Week split found `standardLayout` (and everything it alone
-  reaches — `highlightsSection`, `awayFromHomeSection`, `activityChangesSection`,
-  `trendsSection`, `weekdayPatternsSection`/`weekdayChart`/`weekdayChartSheet`,
-  `habitsSection`, `trendLinesSection`, `topActivitiesSection`/`topPlacesSection`
-  and their `InsightsActivitySelectionList`/`InsightsPlaceSelectionList` — plus
-  `lifeAreaBalanceSection`) is never called from `body`; only Day/Week/Month/Year
-  layouts render. Confirm each is genuinely unreachable (not a future layout
-  mid-flight) before deleting, and check whether the weekday-chart feature was
-  meant to still be reachable from somewhere — its `.sheet` binding is still wired
-  at the top level with nothing left to trigger it.
 
 - [ ] **Audit cross-visit `DateInterval` construction.** `CommuteDetection` previously
   trapped when overlapping manual visits produced an end before a start. Inspect every

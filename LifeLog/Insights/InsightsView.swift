@@ -56,14 +56,7 @@ struct InsightsView: View {
     /// True while Year's "new this year"/"not visited this year" comparison is
     /// still reading the archive — see `YearPlaceStoryCard.placesLoading`.
     @State private var annualPlacesLoading = false
-    @State private var showAllActivities = false
-    @State private var showingWeekdayChart = false
     @State private var highlights: [DayHighlight] = []
-    @State private var highlightPage = 0
-    @State private var highlightHeight: CGFloat = 52
-    @State private var trendSeries: [InsightsTrendSeries] = []
-    @State private var habits: [InsightsHabit] = []
-    @State private var weeklyRhythm = WeekdayPattern.empty
     /// The day's segments over the full, uncapped 24-hour interval -- unlike
     /// `snapshot.segments`, which stops at `now` for today. Only populated for
     /// `window == .day`; the day bar is the only thing that reads it.
@@ -146,7 +139,6 @@ struct InsightsView: View {
                         }
                 }.presentationDetents([.medium])
             }
-            .sheet(isPresented: $showingWeekdayChart) { weekdayChartSheet }
             .sheet(item: $selectedSlice, onDismiss: { reloadInsights() }) { slice in
                 let rows = sliceRows(for: slice)
                 NavigationStack {
@@ -248,12 +240,7 @@ struct InsightsView: View {
             }
             .task(id: highlightKey) { await reloadHighlights() }
             .task(id: trendKey) {
-                guard window != .day else {
-                    trendSeries = []
-                    habits = []
-                    weeklyRhythm = WeekdayPattern.empty
-                    return
-                }
+                guard window != .day else { return }
                 await reloadTrends()
             }
             .task(id: annualKey) {
@@ -400,12 +387,14 @@ struct InsightsView: View {
             found.append(highlight)
         }
         guard !Task.isCancelled, requestKey == highlightKey else { return }
-        // Day's carousel is capped at three, deliberately -- a daily review
-        // screen names what stood out, it does not repeat every comparison
-        // available. Week/Month/Year are unchanged.
+        // Only `dayLayout` ever reads this (`highlights.first`), and only for
+        // `window == .day` -- capped at three deliberately, a daily review
+        // screen names what stood out rather than repeating every comparison
+        // available. Still computed for every window, unread the rest of the
+        // time; the underlying fetches already run off the main actor and are
+        // bounded, so this is left alone rather than gating it on `window`.
         let ordered = variedHighlights(found)
         highlights = window == .day ? Array(ordered.prefix(3)) : ordered
-        highlightPage = min(highlightPage, max(0, highlights.count - 1))
     }
 
     private func archive() -> VisitArchiveReader {
@@ -584,8 +573,7 @@ struct InsightsView: View {
         selectedComparison = comparison
     }
 
-    /// Loads the season of trend-line history, and the year of it `habits` needs to
-    /// make an honest "first this year" claim.
+    /// Loads the season of trend history Week's rolling baseline needs.
     ///
     /// A fetch of its own, deliberately separate from `reloadInsights`. That one is
     /// scoped tightly to the selected period and re-runs on every tap of the date
@@ -608,20 +596,12 @@ struct InsightsView: View {
                 )
             }.value
             guard !Task.isCancelled, requestKey == trendKey else { return }
-            let allWeeks = data.weeklyTotals
-            let displayWeeks = Array(allWeeks.suffix(InsightsTrends.weeks))
-            trendSeries = [
-                InsightsTrends.series(for: "Home", title: "Home", symbol: "house.fill", weeks: displayWeeks),
-                InsightsTrends.series(for: "Sleep", title: "Sleep", symbol: "bed.double.fill", weeks: displayWeeks)
-            ].filter { !$0.isEmpty }
-            habits = InsightsTrends.habits(from: allWeeks)
-            weeklyRhythm = data.weekdayPatterns
             // Already the completed-weeks-only fetch Week's rolling baseline needs
             // -- `InsightsTrends.range` ends before the in-progress week, so this
             // can never include a partial week. Kept as the full fetched span
             // (not sliced to a fixed count here) so the Week section can choose
             // its own baseline width without a second fetch.
-            weeklyBaselineTotals = allWeeks
+            weeklyBaselineTotals = data.weeklyTotals
             Diagnostics.performance(context, subsystem: "Insights", operation: "trend history",
                                     startedAt: startedAt, itemCount: data.itemCount)
         } catch {
@@ -629,110 +609,8 @@ struct InsightsView: View {
             // simply not drawn rather than taken as a failure of the screen.
             Diagnostics.record(error, context: context, subsystem: "Insights",
                                operation: "trend history fetch", severity: "warning")
-            trendSeries = []
-            habits = []
-            weeklyRhythm = WeekdayPattern.empty
             weeklyBaselineTotals = []
         }
-    }
-
-    /// The card the day opens with: what stood out, against the days like it.
-    /// Hidden entirely when nothing can be said — an empty card that admits it has
-    /// no comparison yet is worse than the screen simply starting at the ring.
-    @ViewBuilder private var highlightsSection: some View {
-        if !highlights.isEmpty {
-            VStack(spacing: 10) {
-                TabView(selection: $highlightPage) {
-                    ForEach(Array(highlights.enumerated()), id: \.element.id) { index, highlight in
-                        highlightRow(highlight)
-                            .padding(.horizontal, 16)
-                            .tag(index)
-                            .accessibilityElement(children: .combine)
-                            .accessibilityLabel("\(highlight.headline). \(highlight.detail)")
-                    }
-                }
-                // The built-in page dots are an overlay drawn over the content at the
-                // bottom of the pager's frame, not a row beneath it — no amount of extra
-                // height moves them out of the way, they just sit further down the same
-                // text. Own dots, in their own row, are the only way they stop landing
-                // on the sentence they are meant to be indexing.
-                .tabViewStyle(.page(indexDisplayMode: .never))
-                // A paged TabView has no intrinsic height at all — left alone it takes the
-                // whole screen. So the rows are laid out once, unseen, at this card's width
-                // and the tallest is measured; the pager is then told exactly what it needs.
-                // A fixed number here would either clip the two-line message on a small
-                // phone or leave a band of empty card on a large one.
-                .frame(height: highlightHeight)
-                .background(
-                    ZStack {
-                        ForEach(highlights) { highlight in
-                            highlightRow(highlight).padding(.horizontal, 16)
-                        }
-                    }
-                    .fixedSize(horizontal: false, vertical: true)
-                    .background(GeometryReader { proxy in
-                        Color.clear.preference(key: HighlightHeightKey.self, value: proxy.size.height)
-                    })
-                    .hidden()
-                )
-                .onPreferenceChange(HighlightHeightKey.self) { measured in
-                    if measured > 0 { highlightHeight = measured }
-                }
-
-                if highlights.count > 1 {
-                    HStack(spacing: 6) {
-                        ForEach(highlights.indices, id: \.self) { index in
-                            Circle()
-                                .fill(index == highlightPage ? Color.primary : Color.secondary.opacity(0.3))
-                                .frame(width: 6, height: 6)
-                        }
-                    }
-                    // The pager already announces its position; a second reading of the
-                    // same thing as seven unlabelled dots is noise.
-                    .accessibilityHidden(true)
-                }
-            }
-            .padding(.vertical, 12)
-            .lifeCard()
-            .accessibilityIdentifier("day-highlights")
-        }
-    }
-
-    private func highlightRow(_ highlight: DayHighlight) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: highlight.symbol)
-                .font(.headline)
-                .foregroundStyle(highlight.isCelebration ? .orange : .blue)
-                .frame(width: 40, height: 40)
-                .background((highlight.isCelebration ? Color.orange : Color.blue)
-                    .opacity(0.12), in: Circle())
-            VStack(alignment: .leading, spacing: 2) {
-                Text(highlight.headline).font(.subheadline.bold())
-                Text(highlight.detail)
-                    .font(.footnote).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-        }
-    }
-
-    /// Week/Month/Year's existing section list, unchanged. Day gets a different
-    /// shape entirely -- see `dayLayout` -- because a single day answers a
-    /// different question ("how did today go, what needs a look") than a period
-    /// answers ("what changed, what's the pattern").
-    @ViewBuilder private var standardLayout: some View {
-        highlightsSection
-        healthSetupSection
-        donutSection
-        awayFromHomeSection
-        activityChangesSection
-        trendsSection
-        weekdayPatternsSection
-        habitsSection
-        trendLinesSection
-        topActivitiesSection
-        placesSection
-        topPlacesSection
     }
 
     /// A practical daily-review screen, not a smaller period view: what's
@@ -861,32 +739,6 @@ struct InsightsView: View {
     }
 
 
-    private var lifeAreaBalanceSection: some View {
-        let totals = LifeArea.totals(in: snapshot.segments)
-        return VStack(alignment: .leading, spacing: 14) {
-            Text("Life areas").font(.headline)
-            Text("Activities grouped for Insights; tap an area to see its activities.")
-                .font(.subheadline).foregroundStyle(.secondary)
-            ForEach(LifeArea.allCases.filter { totals[$0, default: 0] > 0.01 }) { area in
-                NavigationLink {
-                    InsightLifeAreaDetailView(area: area, periodTitle: periodTitle,
-                                              interval: snapshot.analysisInterval, segments: snapshot.segments)
-                } label: {
-                    HStack(spacing: 11) {
-                        Image(systemName: area.symbol).foregroundStyle(insightColor(for: area.rawValue)).frame(width: 26)
-                        Text(area.rawValue).font(.subheadline)
-                        Spacer()
-                        Text(formatHours(totals[area, default: 0])).font(.subheadline.bold().monospacedDigit())
-                    }
-                    .contentShape(Rectangle())
-                }
-                .accessibilityLabel("\(area.rawValue), \(formatHours(totals[area, default: 0]))")
-            }
-        }
-        .padding(20).lifeCard()
-        .accessibilityIdentifier("insights-week-life-areas")
-    }
-
     private var controls: some View {
         InsightsPeriodControls(
             window: window,
@@ -961,38 +813,6 @@ struct InsightsView: View {
             // It is not free: a wedge too thin for a label is now an unidentified colour
             // until it is tapped, where before there was always a key underneath. The
             // threshold for showing an icon is set low to keep that rare.
-        }
-        .padding(20)
-        .lifeCard()
-    }
-
-    private var trendsSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Trends").font(.headline)
-            if snapshot.comparisons.isEmpty {
-                InsightEmptyRow(icon: "chart.line.uptrend.xyaxis", title: "Not enough history yet",
-                                detail: "Trends appear after LifeLog has visits in two comparable periods.")
-            } else {
-                ForEach(snapshot.comparisons.prefix(4)) { comparison in
-                    Button { selectedComparison = comparison } label: {
-                    HStack(spacing: 14) {
-                        Image(systemName: comparison.delta >= 0 ? "arrow.up.right" : "arrow.down.right")
-                            .font(.headline).foregroundStyle(.secondary)
-                            .frame(width: 42, height: 42)
-                            .background(Color.secondary.opacity(0.1), in: Circle())
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(comparison.message(window: window)).font(.headline)
-                            Text("Compared with the previous \(window.title.lowercased())")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                    }
-                    .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("Opens the comparison details")
-                }
-            }
         }
         .padding(20)
         .lifeCard()
@@ -1212,382 +1032,6 @@ struct InsightsView: View {
         let nonzero = baselineWeeks.map { $0.hours[CommuteDetection.categoryName] ?? 0 }.filter { $0 > 0 }
         let baselineHours = nonzero.isEmpty ? nil : nonzero.reduce(0, +) / Double(nonzero.count)
         return InsightsSnapshot.weekCommuteSummary(commutes: commutes, weekInterval: interval, baselineHours: baselineHours)
-    }
-
-    private var awayFromHomeSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Time away from Home").font(.headline)
-            Text(formatHours(snapshot.awayFromHomeHours))
-                .font(.system(.largeTitle, design: .rounded, weight: .bold))
-            ProgressView(value: snapshot.awayFromHomeHours, total: max(snapshot.loggedHours, 0.01)).tint(.blue)
-            Text("\(Int((snapshot.awayFromHomeHours / max(snapshot.loggedHours, 0.01) * 100).rounded()))% of logged time")
-                .font(.subheadline).foregroundStyle(.secondary)
-        }.padding(20).lifeCard()
-    }
-
-    /// The colour this activity wears everywhere else on the screen.
-    ///
-    /// Taken from the slice rather than recomputed, so the bar here cannot end up a
-    /// different shade from the same activity in the donut above it. A name that only
-    /// existed in the previous period has no slice, and falls back to its group.
-    private func changeColor(for name: String) -> Color {
-        snapshot.slices.first { $0.name == name }?.color
-            ?? categoryColor(forCategory: ActivityCatalog.category(for: name))
-    }
-
-    private var activityChangesSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Activity changes").font(.headline)
-            if snapshot.comparisons.isEmpty {
-                InsightEmptyRow(icon: "chart.bar.xaxis", title: "Not enough history", detail: "Changes appear after two comparable periods.")
-            } else {
-                let maximum = max(snapshot.comparisons.map { abs($0.delta) }.max() ?? 0, 0.01)
-                ForEach(snapshot.comparisons.prefix(6)) { item in
-                    Button { selectedSlice = TimeSlice(name: item.name, hours: item.hours,
-                                                       color: changeColor(for: item.name),
-                                                       symbol: insightSymbol(for: item.name), isUnlogged: false) } label: {
-                    VStack(alignment: .leading, spacing: 5) {
-                        HStack {
-                            Text(item.name).font(.subheadline.bold())
-                            Spacer()
-                            // The sign carries the direction. These used to be orange
-                            // for up and blue for down, which put a second colour
-                            // language on a screen where colour already means activity
-                            // — Home read as orange here and green in the bar above it.
-                            Text("\(item.delta >= 0 ? "+" : "−")\(formatHours(abs(item.delta)))")
-                                .font(.subheadline.monospacedDigit())
-                                .foregroundStyle(.primary)
-                        }
-                        GeometryReader { proxy in
-                            Capsule().fill(changeColor(for: item.name).opacity(0.85))
-                                .frame(width: max(4, proxy.size.width * abs(item.delta) / maximum))
-                        }.frame(height: 8)
-                    }
-                    .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("\(item.name), \(item.delta >= 0 ? "up" : "down") \(formatHours(abs(item.delta)))")
-                }
-            }
-        }.padding(20).lifeCard()
-    }
-
-    // The "Timeline quality" card lived here. It reported the app's own plumbing —
-    // callbacks reviewed, duplicates resolved — on a screen that answers where the
-    // time went, and it rendered narrower than every other card because it was the
-    // only one with nothing full-width inside it to stretch it. Those counts are in
-    // Settings → Diagnostics now. The one line that was about the day rather than the
-    // app, unlogged time, is a footnote under the day bar.
-
-    private var placesSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Places").font(.headline)
-            Text(placeSummary).font(.headline)
-            if snapshot.mappablePlaces.isEmpty {
-                InsightEmptyRow(icon: "map", title: "No mapped visits", detail: "Places recorded with a location will appear here.")
-            } else {
-                InsightsPlacesMap(places: snapshot.mappablePlaces, region: snapshot.mapRegion) { place in
-                    selectedPlace = place
-                }
-                    .id(snapshot.mapID)
-                .frame(height: 230)
-                .clipShape(RoundedRectangle(cornerRadius: 18))
-            }
-        }
-        .padding(20)
-        .lifeCard()
-    }
-
-    private var weekdayPatterns: [WeekdayPattern] { weeklyRhythm.inWeekOrder }
-
-    private var weekdayPatternsSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Your weekly rhythm").font(.headline)
-            Text("Waking hours on each day, by activity. Sleep is counted separately.")
-                .font(.subheadline).foregroundStyle(.secondary)
-            if weeklyRhythm.allSatisfy({ $0.hours == 0 }) {
-                InsightEmptyRow(icon: "calendar", title: "Not enough activity history", detail: "Your usual weekday activities will appear here as visits accumulate.")
-            } else {
-                weekdayChart(height: 190)
-                Button { showingWeekdayChart = true } label: {
-                    Text("View full chart").font(.subheadline.bold())
-                }
-                .accessibilityHint("Opens a larger chart with each day's activities listed")
-            }
-        }
-        .padding(20)
-        .lifeCard()
-    }
-
-    /// The bars themselves, shared by the card and the full-screen sheet so the two
-    /// cannot drift apart. Stacked by category in the donut's colours, so a band means
-    /// the same thing everywhere on the screen.
-    private func weekdayChart(height: CGFloat) -> some View {
-        Chart {
-            ForEach(weekdayPatterns) { pattern in
-                ForEach(pattern.activities) { entry in
-                    BarMark(
-                        x: .value("Day", pattern.shortName),
-                        y: .value("Hours", entry.hours)
-                    )
-                    .foregroundStyle(entry.color)
-                }
-            }
-        }
-        // Without an explicit domain the scale is inferred from the marks, so a week
-        // with nothing recorded on Monday simply has no Monday — the bars slide across
-        // and a quiet day reads as a missing one. The rhythm is only legible against
-        // the whole week, including the days that were empty.
-        .chartXScale(domain: weekdayPatterns.map(\.shortName))
-        .chartXAxis {
-            AxisMarks(values: weekdayPatterns.map(\.shortName)) { value in
-                AxisValueLabel {
-                    if let name = value.as(String.self) { Text(name).font(.caption2) }
-                }
-            }
-        }
-        .chartYAxis {
-            AxisMarks { value in
-                AxisGridLine()
-                AxisValueLabel {
-                    if let hours = value.as(Double.self) {
-                        Text("\(Int(hours))h").font(.caption2)
-                    }
-                }
-            }
-        }
-        .chartLegend(.hidden)
-        .frame(height: height)
-        // Fixed-height chart furniture: the axis labels cannot grow without pushing
-        // the plot area away entirely, the same reason the donut's centre is capped.
-        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
-        .accessibilityIdentifier("weekly-rhythm-chart")
-        .accessibilityLabel("Waking hours by weekday")
-        .accessibilityValue(weekdayPatterns
-            .map { "\($0.fullName), \(formatHours($0.hours))" }
-            .joined(separator: ". "))
-    }
-
-    private var weekdayChartSheet: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    weekdayChart(height: 260)
-                    ForEach(weekdayPatterns) { pattern in
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text(pattern.fullName).font(.headline)
-                                Spacer()
-                                Text(formatHours(pattern.hours))
-                                    .font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
-                            }
-                            if pattern.activities.isEmpty {
-                                Text("No activity yet").font(.caption).foregroundStyle(.tertiary)
-                            } else {
-                                ForEach(pattern.activities) { entry in
-                                    HStack(spacing: 9) {
-                                        Circle().fill(entry.color).frame(width: 10, height: 10)
-                                        Text(entry.category).font(.subheadline)
-                                        Spacer()
-                                        Text(formatHours(entry.hours))
-                                            .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                        }
-                        .padding(14)
-                        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 13))
-                    }
-                }
-                .padding(18)
-            }
-            .background(Color.lifeBackground)
-            .navigationTitle("Your weekly rhythm")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { showingWeekdayChart = false }
-                }
-            }
-        }
-    }
-
-    /// What the recent weeks noticed: something taken up again, a new high, a run.
-    ///
-    /// Shown only when there is something to say. A standing card reading "no habits
-    /// yet" would be on screen for the whole first season of use, which teaches the
-    /// person to scroll past the place these appear.
-    @ViewBuilder private var habitsSection: some View {
-        if !habits.isEmpty {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Recurring habits").font(.headline)
-                ForEach(habits) { habit in
-                    HStack(spacing: 13) {
-                        // The habit names a category, not an activity, so it carries its
-                        // own symbol. ActivityIcon looks activities up by name and falls
-                        // back to a map pin for anything it cannot find — which is every
-                        // category, so each habit arrived wearing the same generic marker.
-                        Image(systemName: habit.symbol)
-                            .font(.headline)
-                            .foregroundStyle(insightColor(for: habit.category))
-                            .frame(width: 42, height: 42)
-                            .background(insightColor(for: habit.category).opacity(0.12), in: Circle())
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(habit.headline).font(.headline)
-                                .fixedSize(horizontal: false, vertical: true)
-                            Text(habit.detail)
-                                .font(.caption).foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("\(habit.headline). \(habit.detail)")
-                }
-            }
-            .padding(20)
-            .lifeCard()
-            .accessibilityIdentifier("insights-habits")
-        }
-    }
-
-    /// The long view: where home and sleep have been heading over recent weeks.
-    ///
-    /// Independent of the selected period on purpose. Every other card answers
-    /// "what about this day/week?"; this one answers "what about lately", and
-    /// re-cutting it to the chosen window would leave one week with one point.
-    @ViewBuilder private var trendLinesSection: some View {
-        if !trendSeries.isEmpty {
-            VStack(alignment: .leading, spacing: 20) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Recent months").font(.headline)
-                    Text("The last \(InsightsTrends.weeks) weeks, a point per week")
-                        .font(.subheadline).foregroundStyle(.secondary)
-                }
-                ForEach(trendSeries) { series in
-                    VStack(alignment: .leading, spacing: 10) {
-                        Label(series.title, systemImage: series.symbol)
-                            .font(.headline)
-                            .foregroundStyle(insightColor(for: series.title))
-                        trendChart(series)
-                        Text(series.message)
-                            .font(.footnote).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-            .padding(20)
-            .lifeCard()
-            .accessibilityIdentifier("insights-trend-lines")
-        }
-    }
-
-    private func trendChart(_ series: InsightsTrendSeries) -> some View {
-        let color = insightColor(for: series.title)
-        return Chart {
-            // The usual week, drawn behind the line so a point can be read against it
-            // at a glance. This is the number the sentence underneath quotes.
-            if series.baseline > 0 {
-                RuleMark(y: .value("Usual", series.baseline))
-                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
-                    .foregroundStyle(.secondary.opacity(0.6))
-            }
-            ForEach(series.points) { point in
-                LineMark(
-                    x: .value("Week", point.weekStart),
-                    y: .value("Hours", point.hours)
-                )
-                .interpolationMethod(.monotone)
-                .foregroundStyle(color)
-                AreaMark(
-                    x: .value("Week", point.weekStart),
-                    y: .value("Hours", point.hours)
-                )
-                .interpolationMethod(.monotone)
-                .foregroundStyle(color.opacity(0.12))
-            }
-        }
-        .chartXAxis {
-            // Labelled by month rather than by week: twelve week-beginning dates is a
-            // row of unreadable numbers, and the question these lines answer is which
-            // month things changed in.
-            AxisMarks(values: .stride(by: .month)) { value in
-                AxisGridLine()
-                AxisValueLabel {
-                    if let date = value.as(Date.self) {
-                        Text(date.formatted(.dateTime.month(.abbreviated))).font(.caption2)
-                    }
-                }
-            }
-        }
-        .chartYAxis {
-            AxisMarks { value in
-                AxisGridLine()
-                AxisValueLabel {
-                    if let hours = value.as(Double.self) {
-                        Text("\(Int(hours))h").font(.caption2)
-                    }
-                }
-            }
-        }
-        .frame(height: 150)
-        // Fixed-height chart furniture, capped for the same reason the ring is.
-        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
-        .accessibilityLabel("\(series.title) hours per week over the last \(InsightsTrends.weeks) weeks")
-        .accessibilityValue(series.message)
-    }
-
-    private var activitySlices: [TimeSlice] {
-        snapshot.slices.filter { $0.hours > 0 && !$0.isUnlogged }
-    }
-
-    private var topActivitiesSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Top Activities").font(.headline)
-            if activitySlices.isEmpty {
-                InsightEmptyRow(icon: "list.bullet", title: "No activity yet", detail: "Logged time will appear here as visits accumulate.")
-            } else {
-                let shown = showAllActivities ? activitySlices : Array(activitySlices.prefix(3))
-                InsightsActivitySelectionList(slices: shown, totalHours: snapshot.loggedHours) { slice in
-                    selectedSlice = slice
-                }
-                if activitySlices.count > 3 {
-                    Button { showAllActivities.toggle() } label: {
-                        Text(showAllActivities ? "Show less" : "View all activities")
-                            .font(.subheadline.bold())
-                    }
-                    .padding(.top, 4)
-                }
-            }
-        }
-        .padding(20)
-        .lifeCard()
-    }
-
-    private func activityPercentage(_ slice: TimeSlice) -> Int {
-        Int((slice.hours / max(snapshot.loggedHours, 0.01) * 100).rounded())
-    }
-
-    private var topPlacesSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Top places by time").font(.headline)
-            if snapshot.placeTotals.isEmpty {
-                InsightEmptyRow(icon: "mappin.slash", title: "No places in this period", detail: "Choose another date or time window.")
-            } else {
-                InsightsPlaceSelectionList(places: Array(snapshot.placeTotals.prefix(8))) { place in
-                    selectedPlace = place
-                }
-            }
-        }
-        .padding(20)
-        .lifeCard()
-    }
-
-    private var placeSummary: String {
-        let count = snapshot.placeTotals.count
-        if count == 0 { return "No places recorded for this \(window.title.lowercased())." }
-        return "This \(window.title.lowercased()), you visited \(count) \(count == 1 ? "place" : "places") and logged \(formatHours(snapshot.loggedHours))."
     }
 
     private func reloadAnnualHealth() async {
@@ -1895,109 +1339,3 @@ struct DayInsightMetricTile: View {
     }
 }
 
-/// Selection belongs to the small list, not the page-level snapshot. This keeps
-/// a highlight tap from rebuilding Health, travel, or comparison aggregation.
-private struct InsightsActivitySelectionList: View {
-    let slices: [TimeSlice]
-    let totalHours: Double
-    let open: (TimeSlice) -> Void
-    @State private var selectedID: String?
-
-    var body: some View {
-        VStack(spacing: 0) {
-            ForEach(Array(slices.enumerated()), id: \.element.id) { index, slice in
-                Button { selectedID = selectedID == slice.id ? nil : slice.id } label: {
-                    HStack(spacing: 13) {
-                        ActivityIcon(activity: slice.name, color: slice.color, size: 42)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(slice.name).font(.headline).lineLimit(1)
-                            Text(formatHours(slice.hours)).font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Text("\(Int((slice.hours / max(totalHours, 0.01) * 100).rounded()))%")
-                            .font(.subheadline.bold().monospacedDigit())
-                    }
-                    .contentShape(Rectangle())
-                    .opacity(selectedID == nil || selectedID == slice.id ? 1 : 0.42)
-                }
-                .buttonStyle(.plain)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("\(slice.name), \(formatHours(slice.hours)), \(Int((slice.hours / max(totalHours, 0.01) * 100).rounded())) percent of logged time")
-                .accessibilityValue(selectedID == slice.id ? "Selected. Double tap to clear selection." : "Double tap to select")
-                if index < slices.count - 1 { Divider().padding(.leading, 55) }
-            }
-
-            if let selectedID, let slice = slices.first(where: { $0.id == selectedID }) {
-                Button { open(slice) } label: {
-                    HStack {
-                        Label(slice.name, systemImage: slice.symbol)
-                        Spacer()
-                        Text("\(formatHours(slice.hours)) · \(Int((slice.hours / max(totalHours, 0.01) * 100).rounded()))%")
-                            .font(.subheadline.bold().monospacedDigit())
-                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
-                    }
-                }
-                .buttonStyle(.plain)
-                .padding(.top, 12)
-                .accessibilityLabel("Open \(slice.name) details, \(formatHours(slice.hours))")
-                .accessibilityIdentifier("insights-selected-activity")
-            }
-        }
-    }
-}
-
-private struct InsightsPlaceSelectionList: View {
-    let places: [PlaceTotal]
-    let open: (PlaceTotal) -> Void
-    @State private var selectedID: String?
-
-    var body: some View {
-        VStack(spacing: 0) {
-            ForEach(Array(places.enumerated()), id: \.element.id) { index, place in
-                Button { selectedID = selectedID == place.id ? nil : place.id } label: {
-                    HStack(spacing: 13) {
-                        Text("\(index + 1)").font(.headline.monospacedDigit()).foregroundStyle(.secondary).frame(width: 22)
-                        ActivityIcon(activity: place.activity, context: place.name,
-                                     color: activityColor(place.activity), size: 42)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(place.name).font(.headline).lineLimit(1)
-                            Text(place.category).font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Text(formatHours(place.hours)).font(.subheadline.bold().monospacedDigit())
-                    }
-                    .contentShape(Rectangle())
-                    .opacity(selectedID == nil || selectedID == place.id ? 1 : 0.42)
-                }
-                .buttonStyle(.plain)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("\(place.name), \(place.category), \(formatHours(place.hours))")
-                .accessibilityValue(selectedID == place.id ? "Selected. Double tap to clear selection." : "Double tap to select")
-                if index < places.count - 1 { Divider().padding(.leading, 76) }
-            }
-
-            if let selectedID, let place = places.first(where: { $0.id == selectedID }) {
-                Button { open(place) } label: {
-                    HStack {
-                        Label(place.name, systemImage: "mappin.and.ellipse")
-                        Spacer()
-                        Text(formatHours(place.hours)).font(.subheadline.bold().monospacedDigit())
-                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
-                    }
-                }
-                .buttonStyle(.plain)
-                .padding(.top, 12)
-                .accessibilityLabel("Open \(place.name) history, \(formatHours(place.hours))")
-                .accessibilityIdentifier("insights-selected-place")
-            }
-        }
-    }
-}
-
-/// Carries the tallest highlight row's height up from the hidden measuring pass.
-private struct HighlightHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}

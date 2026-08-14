@@ -117,35 +117,6 @@ final class InsightsDayTests: LifeLogUITestCase {
         XCTAssertTrue(element("insights-donut-chart").waitForExistence(timeout: 5))
     }
 
-    func testInsightsActivitySelectionCanChangeDeselectRestoreAndDrillDown() {
-        app.terminate()
-        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
-        app.launch()
-        app.tabBars.buttons["Insights"].tap()
-
-        var attempts = 0
-        while !app.staticTexts["Top Activities"].exists && attempts < 8 {
-            app.swipeUp()
-            attempts += 1
-        }
-        XCTAssertTrue(app.staticTexts["Top Activities"].waitForExistence(timeout: 5))
-        let activities = app.buttons.matching(NSPredicate(format: "label CONTAINS 'percent of logged time'"))
-        XCTAssertGreaterThanOrEqual(activities.count, 2)
-        activities.element(boundBy: 0).tap()
-        XCTAssertTrue(element("insights-selected-activity").waitForExistence(timeout: 5))
-        activities.element(boundBy: 1).tap()
-        XCTAssertTrue(element("insights-selected-activity").exists)
-        activities.element(boundBy: 1).tap()
-        XCTAssertFalse(element("insights-selected-activity").exists)
-
-        app.swipeDown()
-        app.swipeUp()
-        activities.element(boundBy: 0).tap()
-        XCTAssertTrue(element("insights-selected-activity").waitForExistence(timeout: 5))
-        element("insights-selected-activity").tap()
-        XCTAssertTrue(element("insight-activity-detail").waitForExistence(timeout: 5))
-    }
-
     func testDaySummaryOmitsUnavailableMetricsWithoutZeroPlaceholders() {
         app.terminate()
         app.launchArguments = ["-uiTesting", "-ui-test-seed"]
