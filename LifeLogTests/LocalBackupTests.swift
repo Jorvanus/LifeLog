@@ -3,6 +3,18 @@ import SwiftData
 import Testing
 @testable import LifeLog
 
+/// Backup/restore coverage is deliberately independent of `SchemaMigrationTests`:
+/// every test below builds its source and destination contexts against the live
+/// model types directly (`makeContext()`), never against a frozen
+/// `LifeLogSchemaVN` snapshot or `LifeLogMigrationPlan`. `LocalBackupService`
+/// operates on whatever `ModelContext` it is handed and has no idea how that
+/// context's container was constructed, so this suite proves restore correctness
+/// on its own terms -- JSON shape, validation, identity preservation -- without
+/// needing a single frozen-version fixture to do it. The one exception is
+/// `restoresIntoAContainerOpenedThroughTheRealMigrationPlan`, which exists
+/// specifically to confirm that independence doesn't hide an accidental
+/// dependency: restore must also work against a container built the way the app
+/// actually builds one.
 @MainActor
 struct LocalBackupTests {
     private let base = Date(timeIntervalSince1970: 1_800_000_000)
@@ -468,11 +480,55 @@ struct LocalBackupTests {
         #expect(linked == ActivityIdentityMigration.batchSize)
     }
 
+    // MARK: - Restoring into a real, migration-plan-backed container
+
+    /// Every other test in this file restores into a plain live-model container,
+    /// which is deliberate -- see the type's doc comment. This one instead opens a
+    /// container the same way `LifeLogApp` does, through `LifeLogMigrationPlan`
+    /// against an on-disk store, to confirm restore has no hidden dependency on
+    /// bypassing that path. The store is freshly created at V11 (nothing to
+    /// migrate from), so this is not a migration test and duplicates none of
+    /// `SchemaMigrationTests`' frozen-version fixtures; it only proves the two
+    /// subsystems compose.
+    @Test("Restore succeeds into a container opened through the real versioned migration plan, not just a fresh in-memory one")
+    func restoresIntoAContainerOpenedThroughTheRealMigrationPlan() throws {
+        let sourceContext = try makeContext()
+        sourceContext.insert(Visit(arrival: base, departure: base.addingTimeInterval(1800),
+                                   latitude: -27.47, longitude: 153.03, placeName: "Museum",
+                                   inferredActivity: "Visiting", source: "automatic",
+                                   recognitionConfidence: "learned"))
+        try sourceContext.save()
+        let data = try LocalBackupService.makeBackup(context: sourceContext, diagnostics: [])
+
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LifeLog-backup-into-versioned-\(UUID().uuidString).store")
+        defer { try? FileManager.default.removeItem(at: storeURL) }
+        let restoredContext = try makeVersionedContext(at: storeURL)
+        try LocalBackupService.restore(data, into: restoredContext)
+
+        let restored = try restoredContext.fetch(FetchDescriptor<Visit>())
+        #expect(restored.count == 1)
+        #expect(restored.first?.placeName == "Museum")
+        #expect(restored.first?.stableID != nil)
+    }
+
     private func makeContext() throws -> ModelContext {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(
             for: Visit.self, SavedPlace.self, ActivityDefinitionRecord.self, VisitCorrection.self, DiagnosticEvent.self, LocationEvent.self,
             configurations: configuration
+        )
+        return ModelContext(container)
+    }
+
+    private func makeVersionedContext(at url: URL) throws -> ModelContext {
+        let schema = Schema(versionedSchema: LifeLogSchemaV11.self)
+        let configuration = ModelConfiguration(
+            "LifeLogBackupFixture", schema: schema, url: url,
+            allowsSave: true, cloudKitDatabase: .none
+        )
+        let container = try ModelContainer(
+            for: schema, migrationPlan: LifeLogMigrationPlan.self, configurations: [configuration]
         )
         return ModelContext(container)
     }

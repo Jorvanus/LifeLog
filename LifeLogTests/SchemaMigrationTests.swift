@@ -153,6 +153,76 @@ struct SchemaMigrationTests {
         #expect(try context.fetch(FetchDescriptor<ActivityDefinitionRecord>()).isEmpty)
     }
 
+    @Test("A V10 store -- the immediately previous on-device schema -- migrates to current with typed diagnostic defaults")
+    func migratesV10StoreAddingTypedDiagnosticFields() throws {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LifeLog-v10-\(UUID().uuidString).store")
+        defer { try? FileManager.default.removeItem(at: storeURL) }
+        let arrival = Date(timeIntervalSince1970: 1_800_000_000)
+        let v10Schema = Schema(versionedSchema: LifeLogSchemaV10.self)
+        let configuration = ModelConfiguration("LifeLogMigrationFixture", schema: v10Schema,
+                                               url: storeURL, allowsSave: true, cloudKitDatabase: .none)
+        let activityID = UUID()
+        do {
+            let container = try ModelContainer(for: v10Schema, configurations: [configuration])
+            let seed = ModelContext(container)
+            let visit = LifeLogSchemaV10.Visit(arrival: arrival, latitude: -23.37, longitude: 150.51,
+                                               placeName: "Home", inferredActivity: "At home",
+                                               note: "V10 fixture", source: "automatic")
+            visit.activityDefinitionID = activityID
+            seed.insert(visit)
+            let place = LifeLogSchemaV10.SavedPlace(name: "Home", latitude: -23.37, longitude: 150.51,
+                                                     radius: 100, defaultActivity: "At home")
+            place.activityDefinitionID = activityID
+            seed.insert(place)
+            seed.insert(LifeLogSchemaV10.ActivityDefinitionRecord(
+                stableID: activityID, name: "At home", category: "Home", symbol: "house.fill",
+                lifeArea: "Home", isActive: true, createdAt: arrival, modifiedAt: arrival
+            ))
+            // Written exactly as a pre-V11 build wrote it: no typed fields, everything
+            // informally packed into `message`.
+            seed.insert(LifeLogSchemaV10.DiagnosticEvent(
+                createdAt: arrival, subsystem: "Migration test", severity: "info",
+                message: "Slow fetch: 42 ms (7 items)", category: "performance"
+            ))
+            try seed.save()
+        }
+
+        let context = ModelContext(try openVersionedStore(at: storeURL))
+        let visits = try context.fetch(FetchDescriptor<Visit>())
+        let places = try context.fetch(FetchDescriptor<SavedPlace>())
+        let definitions = try context.fetch(FetchDescriptor<ActivityDefinitionRecord>())
+        let diagnostics = try context.fetch(FetchDescriptor<DiagnosticEvent>())
+
+        #expect(visits.count == 1)
+        #expect(visits[0].note == "V10 fixture")
+        #expect(visits[0].activityDefinitionID == activityID)
+        #expect(places.count == 1)
+        #expect(places[0].activityDefinitionID == activityID)
+        #expect(definitions.count == 1)
+        #expect(definitions[0].name == "At home")
+
+        #expect(diagnostics.count == 1)
+        #expect(diagnostics[0].message == "Slow fetch: 42 ms (7 items)")
+        // A row written before typed fields existed reads exactly as before, via
+        // `message` alone -- see the comment on `DiagnosticEvent.eventCode`.
+        #expect(diagnostics[0].eventCode == DiagnosticEventCode.legacyMessage.rawValue)
+        #expect(diagnostics[0].durationMs == nil)
+        #expect(diagnostics[0].budgetMs == nil)
+        #expect(diagnostics[0].itemCount == nil)
+        #expect(diagnostics[0].repairCount == nil)
+
+        // And the new fields round-trip once something writes them.
+        diagnostics[0].eventCode = DiagnosticEventCode.performanceSample.rawValue
+        diagnostics[0].durationMs = 42
+        diagnostics[0].itemCount = 7
+        try context.save()
+        let resaved = try context.fetch(FetchDescriptor<DiagnosticEvent>())
+        #expect(resaved[0].eventCode == DiagnosticEventCode.performanceSample.rawValue)
+        #expect(resaved[0].durationMs == 42)
+        #expect(resaved[0].itemCount == 7)
+    }
+
     @Test("A V3 store gains Maps identity without losing its places")
     func migratesV3StoreAddingMapsIdentifier() throws {
         let storeURL = FileManager.default.temporaryDirectory

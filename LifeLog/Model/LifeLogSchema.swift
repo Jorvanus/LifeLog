@@ -1,6 +1,39 @@
 import Foundation
 import SwiftData
 
+// MARK: - Frozen schema declarations: read before editing anything below
+
+// `LifeLogSchemaV1` through `LifeLogSchemaV10` are frozen snapshots. Each one
+// defines its own copies of `Visit`, `SavedPlace`, `VisitCorrection`,
+// `DiagnosticEvent`, and (from V5 on) `LocationEvent` / `ActivityDefinitionRecord`
+// exactly as they shipped. Only `LifeLogSchemaV11` -- the newest version -- may
+// point at the live model types in `LifeLog/Model/Models.swift` and
+// `LifeLog/Diagnostics/Diagnostics.swift`; see V11's own doc comment for why that
+// is safe going forward but was not safe applied retroactively to V10.
+//
+// Do not rewrite, reformat, rename, or split a frozen version's declarations.
+// SwiftData fingerprints each version from its exact property list (name, type,
+// optionality, uniqueness) to line up an on-device store with a stage in
+// `LifeLogMigrationPlan`; a change that looks purely cosmetic -- reordering
+// properties, adding a comment inside the type, splitting one `@Model final class`
+// declaration across lines differently -- does not change that fingerprint and is
+// safe, but a change to the properties themselves does, and can strand an
+// already-migrated device store outside the plan's graph with "Cannot use staged
+// migration with an unknown model version." `SchemaFingerprintTests` pins each
+// frozen version's structural fingerprint precisely to catch that class of
+// accident; a failure there means a frozen version's shape changed, not that the
+// test fixture is stale.
+//
+// To add a new persisted property or model: freeze the *current* live version
+// (V11 today) with a copy of exactly what it shipped, add a new
+// `LifeLogSchemaVN` pointing at the live types, and extend the migration plan --
+// see `SCHEMA_MIGRATIONS.md` for the full checklist. Never edit a version already
+// frozen, and never add a migration by editing V1 through V10 in place, even if
+// the edit seems tests will still pass -- see `SchemaMigrationTests` and
+// `SchemaFingerprintTests` for why "tests still pass" is not sufficient proof: a
+// frozen version can drift from what a real installed store contains without
+// breaking any fixture built after the drift.
+
 /// The shape shipped before LifeLog stopped modelling a place type. These
 /// definitions are a frozen snapshot and are never used by app code — they exist
 /// so the migration plan has a distinct V1 to migrate *from*. Pointing V1 at the
