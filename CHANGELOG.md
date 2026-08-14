@@ -53,6 +53,24 @@
   shape as injectable parameters instead of hidden defaults. No test cases,
   assertions, or production behaviour changed.
 
+### Repeatable verification tiers
+
+- Added `scripts/verify.sh`, a repeatable verification script built on
+  `xcodebuild` and `simctl` only. Five tiers — `fast` (compile plus focused
+  core unit tests), `data` (schema migrations, backup, resolver, import, and
+  performance tests), `ui-smoke` (deterministic seeded Timeline, Insights,
+  Activities, and Settings checks), `full` (every unit and UI test), and
+  `device-checklist` (commands plus a manual checklist for the iPhone 17 Pro
+  Max, without treating a simulator pass as proof of sensor behaviour).
+  Regenerates the Xcode project with the repository's vendored XcodeGen and
+  reports drift against `project.yml`, resolves the simulator destination to
+  an explicit UDID, uses separate fresh DerivedData paths for focused and UI
+  runs, fails unless `xcodebuild` both exits successfully and reports test
+  success, and detects an incomplete `.xcresult` or zero executed tests
+  rather than reporting a false pass. Reports version alignment between
+  `project.yml`, the built app bundle, and the Settings screen. Documented in
+  `scripts/VERIFY.md`.
+
 ## 2026-08-13
 
 ### History remains readable as LifeLog evolves
