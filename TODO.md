@@ -4,23 +4,16 @@ Audited against `main` at `e4ce878` on 2026-08-14. This is an open-work list,
 not a history of shipped features. Completed callback replay, resolver invariants,
 conservative Saved Place learning, resolution diagnostics, sleep-evidence plumbing,
 the first archive-query pass, the distinct Day/Week/Month/Year Insights layouts,
-and the explicit archive search screen have been removed.
+the explicit archive search screen, and the Month/Week `InsightsView` split have
+been removed.
 
 LifeLog is a private app for one iPhone 17 Pro Max. A responsive 32,000-row archive,
 clear code boundaries, and reliable local data outrank App Store preparation and
 speculative features.
 
-## Next two deliverables
+## Next deliverable
 
-1. [ ] **Split `InsightsView` into a small screen coordinator and explicit section views.**
-   It is now 2,700+ lines with 47 `some View`/`@ViewBuilder` fragments, so a change to one
-   piece of state still re-evaluates the parent composition. Preserve one owner for the
-   selected period, snapshot refresh, and presentation routes, but extract the Month and
-   Week sections first into `View` types with narrow, prepared inputs and explicit actions.
-   Keep aggregation and SwiftData queries out of view initializers; leave focused tests
-   beside the extracted data/presentation types.
-
-2. [ ] **Finish the Insights data-access boundary.** Replace the remaining unbounded
+1. [ ] **Finish the Insights data-access boundary.** Replace the remaining unbounded
    history reads in `placeHistory(matching:)`, `annualHistoricalPlaces()`, and
    `yearOverYearHighlight()` with narrow queries, paging, or prepared aggregates. Keep
    all-history work off the interaction path and surface a loading/failure state where a
@@ -28,6 +21,18 @@ speculative features.
    whether an index or schema change is justified.
 
 ## Correctness and recovery
+
+- [ ] **Remove `InsightsView`'s orphaned `standardLayout` and its dead sections.**
+  The 2026-08-14 Month/Week split found `standardLayout` (and everything it alone
+  reaches — `highlightsSection`, `awayFromHomeSection`, `activityChangesSection`,
+  `trendsSection`, `weekdayPatternsSection`/`weekdayChart`/`weekdayChartSheet`,
+  `habitsSection`, `trendLinesSection`, `topActivitiesSection`/`topPlacesSection`
+  and their `InsightsActivitySelectionList`/`InsightsPlaceSelectionList` — plus
+  `lifeAreaBalanceSection`) is never called from `body`; only Day/Week/Month/Year
+  layouts render. Confirm each is genuinely unreachable (not a future layout
+  mid-flight) before deleting, and check whether the weekday-chart feature was
+  meant to still be reachable from somewhere — its `.sheet` binding is still wired
+  at the top level with nothing left to trigger it.
 
 - [ ] **Audit cross-visit `DateInterval` construction.** `CommuteDetection` previously
   trapped when overlapping manual visits produced an end before a start. Inspect every

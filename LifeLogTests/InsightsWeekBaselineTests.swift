@@ -100,6 +100,49 @@ struct InsightsWeekBaselineTests {
         #expect(totals["Work"] == 2)
     }
 
+    @Test("WeekRoutineChange excludes Sleep/Unlogged/Uncategorised and returns the top 3 by magnitude")
+    func weekRoutineChangeExcludesAndLimits() {
+        // Work swings 50%, Groceries swings 40%, Exercising swings 25% -- all
+        // past the noticeable threshold. Sleep swings 60% but is excluded (it
+        // already has its own scorecard row), and Reading barely moves.
+        let baselineHours: [String: Double] = [
+            "Work": 10, "Groceries": 5, "Exercising": 4, "Sleep": 50, "Reading": 3
+        ]
+        let baseline: [WeeklyTotals] = (0..<3).map { index in
+            WeeklyTotals(weekStart: calendar.date(byAdding: .weekOfYear, value: index, to: start)!, hours: baselineHours)
+        }
+        let currentWeekStart = calendar.date(byAdding: .weekOfYear, value: 3, to: start)!
+        let currentSegments: [InsightSegment] = [
+            makeSegment(category: "Work", hours: 15),
+            makeSegment(category: "Groceries", hours: 7),
+            makeSegment(category: "Exercising", hours: 5),
+            makeSegment(category: "Sleep", hours: 20),
+            makeSegment(category: "Reading", hours: 3.1)
+        ]
+
+        let changes = WeekRoutineChange.changes(currentWeekStart: currentWeekStart, currentSegments: currentSegments,
+                                                baselineTotals: baseline)
+
+        #expect(!changes.contains { $0.category == "Sleep" }, "Sleep already has its own scorecard row")
+        #expect(!changes.contains { $0.category == "Reading" }, "a change under the noticeable threshold is excluded")
+        #expect(changes.count == 3, "capped at the 3 largest changes")
+        #expect(changes.map(\.category) == ["Work", "Groceries", "Exercising"],
+                "sorted by the largest absolute change first")
+    }
+
+    @Test("WeekRoutineChange returns nothing with no baseline history, or only one combined week")
+    func weekRoutineChangeNeedsRealHistory() {
+        let currentSegments: [InsightSegment] = [makeSegment(category: "Work", hours: 20)]
+        #expect(WeekRoutineChange.changes(currentWeekStart: start, currentSegments: currentSegments, baselineTotals: []).isEmpty,
+                "no baseline at all means nothing to compare against")
+    }
+
+    private func makeSegment(category: String, hours: Double) -> InsightSegment {
+        InsightSegment(id: .unlogged(Int.random(in: 0..<Int.max)), visit: nil, category: category,
+                       activity: category, placeName: "Test", start: start, end: start.addingTimeInterval(hours * 3_600),
+                       hours: hours, color: .blue, symbol: "circle.fill", isUnlogged: false, isLive: false)
+    }
+
     @Test("Resolved segment identity survives an inserted segment")
     func segmentIdentitySurvivesSequenceChange() {
         let firstVisit = Visit(arrival: start, departure: start.addingTimeInterval(3_600),

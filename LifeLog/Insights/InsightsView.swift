@@ -4,15 +4,6 @@ import Charts
 import MapKit
 import UIKit
 
-private enum MonthlyPlaceSection: String, CaseIterable, Identifiable {
-    case mostTime = "Most time"
-    case mostVisits = "Most visits"
-    case new = "New"
-    case changed = "Changed"
-
-    var id: String { rawValue }
-}
-
 /// The full Insights snapshot is driven by data and the selected period, never by
 /// a presentation-only clock tick. Live elapsed labels use their own small view.
 enum InsightsSnapshotRefreshReason: Sendable {
@@ -52,7 +43,6 @@ struct InsightsView: View {
     @State private var selectedSlice: TimeSlice?
     @State private var selectedLifeArea: LifeArea?
     @State private var selectedPlace: PlaceTotal?
-    @State private var monthlyPlaceSection: MonthlyPlaceSection = .mostTime
     @State private var selectedComparison: TrendComparison?
     @State private var now = Date.now
     @State private var snapshot = InsightsSnapshot.empty
@@ -757,10 +747,13 @@ struct InsightsView: View {
     /// commute summary when there's a real one to show. The donut stays
     /// reachable but demoted, same as Day.
     @ViewBuilder private var weekLayout: some View {
-        weeklyStripSection
-        weeklyYourWeekSection
-        weeklyGettingAroundSection
-        weeklyRoutineChangesSection
+        WeekInsightsView(
+            weekDays: weekDays, now: now, selectedDate: anchorDate,
+            yourWeekMetrics: weeklyYourWeekMetrics, areaTotals: LifeArea.totals(in: snapshot.segments),
+            periodTitle: periodTitle, analysisInterval: snapshot.analysisInterval, segments: snapshot.segments,
+            travel: snapshot.travel, commuteSummary: weeklyCommuteSummary, routineChanges: weekRoutineChanges,
+            onSelectDay: { date in anchorDate = date; window = .day }
+        )
         donutSection
         healthSetupSection
     }
@@ -769,11 +762,13 @@ struct InsightsView: View {
     /// the same long-term sections as Year. These cards all read the same resolved
     /// current/previous segments as the donut.
     @ViewBuilder private var monthLayout: some View {
-        monthlyHeroSection
-        monthlyChangesSection
-        monthlyBalanceSection
-        monthlyPlacesSection
-        monthlyCalendarSection
+        MonthInsightsView(
+            insights: monthlyInsights, comparisonSubtitle: monthlyComparisonSubtitle,
+            heroMetrics: monthlyHeroMetrics, monthDays: monthDays,
+            periodTitle: periodTitle, analysisInterval: snapshot.analysisInterval, segments: snapshot.segments,
+            now: snapshot.generatedAt, onOpenCategory: openCategory, onOpenComparison: openComparison,
+            onSelectDay: { date in anchorDate = date; window = .day }
+        )
         healthSetupSection
     }
 
@@ -846,145 +841,6 @@ struct InsightsView: View {
         return Array((meaningful + metrics.filter { $0.detail == "This month" }).prefix(4))
     }
 
-    @ViewBuilder private var monthlyHeroSection: some View {
-        let metrics = monthlyHeroMetrics
-        if let headline = monthlyInsights.headline, !metrics.isEmpty {
-            MonthlyHeroCard(headline: headline, subtitle: monthlyComparisonSubtitle, metrics: metrics)
-        } else if !metrics.isEmpty {
-            MonthlyHeroCard(headline: "A month in review", subtitle: monthlyComparisonSubtitle, metrics: metrics)
-        }
-    }
-
-    /// The Month counterpart to Week's scorecard: a short set of useful totals
-    /// that stays grounded in the same resolved segments as the rest of Month
-    /// Insights. Health rows remain absent when Health data is unavailable.
-    private var monthlyScorecardSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Month scorecard").font(.headline)
-            VStack(spacing: 10) {
-                Button { openCategory("Home") } label: {
-                    daySummaryRow(icon: "house.fill", label: "At Home",
-                                 value: formatHours(max(0, snapshot.loggedHours - snapshot.awayFromHomeHours)))
-                }.buttonStyle(.plain)
-                let categoryHours = InsightsSnapshot.categoryHours(in: snapshot.segments)
-                let workHours = categoryHours["Work"] ?? 0
-                if workHours > 0.01 {
-                    daySummaryRow(icon: "briefcase.fill", label: "At Work", value: formatHours(workHours))
-                }
-                let travel = InsightsSnapshot.travelHours(in: snapshot.segments)
-                if travel > 0.01 {
-                    daySummaryRow(icon: "car.fill", label: "Travelling", value: formatHours(travel))
-                }
-                if let monthAverageNightlySleep, monthAverageNightlySleep > 0 {
-                    Button { openSleep() } label: {
-                        daySummaryRow(icon: "bed.double.fill", label: "Sleep average",
-                                     value: formatHours(monthAverageNightlySleep / 3600))
-                    }.buttonStyle(.plain)
-                }
-                if let steps = healthSummary?.steps ?? monthSteps, steps > 0 {
-                    let elapsedSeconds = min(now, interval.end).timeIntervalSince(interval.start)
-                    let elapsedDays = max(1, Int(ceil(elapsedSeconds / 86_400)))
-                    daySummaryRow(icon: "shoeprints.fill", label: "Steps · Apple Health",
-                                 value: "\(Int(steps).formatted()) total · \(Int(steps / Double(elapsedDays)).formatted())/day avg")
-                }
-                if let distance = healthSummary?.walkingRunningMeters, distance > 0 {
-                    daySummaryRow(icon: "figure.walk", label: "Walking/running · Apple Health", value: formatHealthDistance(distance))
-                }
-                if let energy = healthSummary?.activeEnergyKilocalories, energy > 0 {
-                    daySummaryRow(icon: "flame.fill", label: "Active energy · Apple Health", value: "\(Int(energy.rounded())) kcal")
-                }
-                if let exercise = healthSummary?.exerciseMinutes, exercise > 0 {
-                    daySummaryRow(icon: "figure.run", label: "Exercise · Apple Health", value: "\(Int(exercise.rounded())) min")
-                }
-                if let change = HealthInsightsSummary.meaningfulChange(
-                    current: healthSummary?.averageDailySteps,
-                    previous: previousHealthSummary?.averageDailySteps,
-                    minimum: 500
-                ) {
-                    daySummaryRow(icon: change >= 0 ? "arrow.up.right" : "arrow.down.right",
-                                  label: "Steps vs last month",
-                                  value: "\(Int(abs(change).rounded()).formatted())/day \(change >= 0 ? "more" : "less")")
-                }
-            }
-        }
-        .padding(20).lifeCard()
-        .accessibilityIdentifier("insights-month-scorecard")
-    }
-
-    @ViewBuilder private var monthlyHeadlineSection: some View {
-        if let headline = monthlyInsights.headline {
-            VStack(alignment: .leading, spacing: 7) {
-                Text("This month").font(.title2.bold())
-                Text(headline).font(.title3.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
-                Text("Compared with last month").font(.subheadline).foregroundStyle(.secondary)
-            }
-            .padding(20).lifeCard()
-            .accessibilityIdentifier("insights-month-headline")
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("This month. \(headline). Compared with last month")
-        }
-    }
-
-    @ViewBuilder private var monthlyChangesSection: some View {
-        let changes = monthlyInsights.changes
-        if !changes.isEmpty {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("What changed").font(.headline)
-                ForEach(changes.prefix(4)) { change in
-                    Button { openComparison(change) } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: insightSymbol(for: change.category))
-                                .foregroundStyle(insightColor(for: change.category))
-                                .frame(width: 36, height: 36)
-                                .background(insightColor(for: change.category).opacity(0.12), in: Circle())
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(change.category).font(.subheadline.weight(.medium))
-                                Text(change.delta >= 0 ? "More time" : "Less time")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Image(systemName: change.delta >= 0 ? "arrow.up.right" : "arrow.down.right")
-                                .foregroundStyle(.secondary)
-                            VStack(alignment: .trailing, spacing: 2) {
-                                Text(formatHours(abs(change.delta)))
-                                    .font(.subheadline.bold().monospacedDigit())
-                                if let percentage = change.percentage {
-                                    Text(monthlyPercentageText(percentage))
-                                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                                } else {
-                                    Text("New").font(.caption).foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("\(change.category), \(change.delta >= 0 ? "more" : "less") \(formatHours(abs(change.delta))) than last month")
-                }
-            }
-            .padding(20).lifeCard()
-            .accessibilityIdentifier("insights-month-changes")
-        }
-    }
-
-    private func monthlyPercentageText(_ percentage: Double) -> String {
-        "\(Int((abs(percentage) * 100).rounded()))%"
-    }
-
-    private var monthlyBalanceSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Monthly balance").font(.headline)
-            Text("Recorded time by life area").font(.subheadline).foregroundStyle(.secondary)
-            if monthlyInsights.balance.isEmpty {
-                InsightEmptyRow(icon: "chart.bar.xaxis", title: "Not enough recorded activity", detail: "These groups appear once the month has usable data.")
-            } else {
-                MonthlyBalanceVisual(items: monthlyInsights.balance, onSelect: openCategory)
-            }
-        }
-        .padding(20).lifeCard()
-        .accessibilityIdentifier("insights-month-balance")
-    }
 
     private var lifeAreaBalanceSection: some View {
         let totals = LifeArea.totals(in: snapshot.segments)
@@ -1275,79 +1131,12 @@ struct InsightsView: View {
     /// `InsightsView` already has (`window = .day`, `anchorDate = <that day>`)
     /// rather than pushing a second screen for what is already reachable from
     /// this one.
-    private var weeklyStripSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("This week").font(.title2.bold())
-            Text("Each column is a day; colours show where your time went.")
-                .font(.subheadline).foregroundStyle(.secondary)
-            WeeklyStrip(days: weekDays, today: now, selectedDate: anchorDate) { date in
-                anchorDate = date
-                window = .day
-            }
-        }
-        .padding(20).lifeCard()
-        .accessibilityIdentifier("insights-weekly-strip")
-    }
-
-    /// Reuses `daySummaryRow` from the Day layout — the same label/value row
-    /// style, just a different set of facts. A row is simply absent when
-    /// there's nothing to show it (no Health access, nothing at Work this
-    /// week) rather than a placeholder zero.
-    private var weeklyScorecardSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Week scorecard").font(.headline)
-            VStack(spacing: 10) {
-                daySummaryRow(icon: "house.fill", label: "At Home",
-                             value: formatHours(max(0, snapshot.loggedHours - snapshot.awayFromHomeHours)))
-                let categoryHours = InsightsSnapshot.categoryHours(in: snapshot.segments)
-                let workHours = categoryHours["Work"] ?? 0
-                if workHours > 0.01 {
-                    daySummaryRow(icon: "briefcase.fill", label: "At Work", value: formatHours(workHours))
-                }
-                let travel = InsightsSnapshot.travelHours(in: snapshot.segments)
-                if travel > 0.01 {
-                    daySummaryRow(icon: "car.fill", label: "Travelling", value: formatHours(travel))
-                }
-                if let weekAverageNightlySleep, weekAverageNightlySleep > 0 {
-                    Button { openSleep() } label: {
-                        daySummaryRow(icon: "bed.double.fill", label: "Sleep average",
-                                     value: formatHours(weekAverageNightlySleep / 3600))
-                    }.buttonStyle(.plain)
-                }
-                if let steps = healthSummary?.steps ?? weekSteps, steps > 0 {
-                    // Divided by the days actually elapsed in the week so far,
-                    // not always 7 -- a Tuesday viewing of the current week
-                    // shouldn't have its daily average diluted by Wed–Sun,
-                    // which haven't happened yet.
-                    let elapsedSeconds = min(now, interval.end).timeIntervalSince(interval.start)
-                    let elapsedDays = max(1, min(7, Int(ceil(elapsedSeconds / 86_400))))
-                    daySummaryRow(icon: "shoeprints.fill", label: "Steps · Apple Health",
-                                 value: "\(Int(steps).formatted()) total · \(Int(steps / Double(elapsedDays)).formatted())/day avg")
-                }
-                if let distance = healthSummary?.walkingRunningMeters, distance > 0 {
-                    daySummaryRow(icon: "figure.walk", label: "Walking/running · Apple Health", value: formatHealthDistance(distance))
-                }
-                if let energy = healthSummary?.activeEnergyKilocalories, energy > 0 {
-                    daySummaryRow(icon: "flame.fill", label: "Active energy · Apple Health", value: "\(Int(energy.rounded())) kcal")
-                }
-                if let exercise = healthSummary?.exerciseMinutes, exercise > 0 {
-                    daySummaryRow(icon: "figure.run", label: "Exercise · Apple Health", value: "\(Int(exercise.rounded())) min")
-                }
-                if let workouts = healthSummary?.workoutCount, workouts > 0 {
-                    daySummaryRow(icon: "figure.run.circle.fill", label: "Workouts · Apple Health",
-                                  value: "\(workouts) · \(Int(healthSummary?.workoutMinutes.rounded() ?? 0)) min")
-                }
-            }
-        }
-        .padding(20).lifeCard()
-        .accessibilityIdentifier("insights-week-scorecard")
-    }
-
-    /// Combines the weekly facts and derived life-area balance so the Week view
-    /// has one useful context card instead of two competing lists.
-    private var weeklyYourWeekSection: some View {
+    /// The Week layout's per-metric facts, built from the same fetched health
+    /// values and resolved segments as the rest of this screen — the presentation
+    /// prep `WeekInsightsView` itself must not repeat, since it receives no
+    /// SwiftData/health state, only this already-resolved array.
+    private var weeklyYourWeekMetrics: [WeeklyYourWeekMetric] {
         let categoryHours = InsightsSnapshot.categoryHours(in: snapshot.segments)
-        let totals = LifeArea.totals(in: snapshot.segments)
         let atHome = max(0, snapshot.loggedHours - snapshot.awayFromHomeHours)
         let workHours = categoryHours["Work"] ?? 0
         let travelHours = InsightsSnapshot.travelHours(in: snapshot.segments)
@@ -1378,81 +1167,17 @@ struct InsightsView: View {
             metrics.append(.init(id: "workouts", icon: "figure.run.circle.fill", title: "Workouts · Apple Health",
                                  value: "\(workouts) · \(Int(healthSummary?.workoutMinutes.rounded() ?? 0)) min"))
         }
-        return WeeklyYourWeekCard(metrics: metrics, areaTotals: totals, periodTitle: periodTitle,
-                                  interval: snapshot.analysisInterval, segments: snapshot.segments)
-            .accessibilityIdentifier("insights-week-your-week")
+        return metrics
     }
 
-    /// How many of `weeklyBaselineTotals`' completed weeks count as "usual" —
-    /// within the requested 6–8, fixed rather than adaptive so the comparison
-    /// basis stated in the section subtitle is always literally true.
-    private static let weekBaselineWeeks = 8
-    /// Sleep already has its own scorecard row; Home is deliberately *not*
-    /// excluded here even though `InsightsTrends.habitExclusions` excludes it
-    /// from the habits card — that exclusion is about presence never being
-    /// news ("everyone is home every week"), but a change in *how much* time
-    /// was spent at Home is exactly what this section exists to say.
-    private static let weekRoutineChangeExclusions: Set<String> = ["Sleep", "Unlogged", "Uncategorised"]
-
-    private struct WeekRoutineChange: Identifiable {
-        let category: String
-        let latest: Double
-        let baseline: Double
-        var id: String { category }
-        var delta: Double { latest - baseline }
-    }
-
-    /// This week's per-category hours appended to the rolling baseline and
-    /// run through the exact same `InsightsTrends.series` math the trend
-    /// lines already use — the same "mean of the *nonzero* earlier weeks"
-    /// baseline, so one quiet holiday week can't silently drag a category's
-    /// usual down without it showing up as a real change either.
+    /// This week's per-category hours appended to the rolling baseline and run
+    /// through `InsightsTrends.series` — see `WeekRoutineChange.changes` for the
+    /// math, kept beside its type in `WeekInsightsView.swift` and unit-tested
+    /// there. Still a coordinator property because it needs `weeklyBaselineTotals`,
+    /// which only this screen's own trend fetch (`reloadTrends`) populates.
     private var weekRoutineChanges: [WeekRoutineChange] {
-        guard !weeklyBaselineTotals.isEmpty else { return [] }
-        let thisWeek = WeeklyTotals(weekStart: interval.start, hours: InsightsSnapshot.categoryHours(in: snapshot.segments))
-        let combined = Array(weeklyBaselineTotals.suffix(Self.weekBaselineWeeks)) + [thisWeek]
-        guard combined.count > 1 else { return [] }
-        let categories = Set(combined.flatMap { $0.hours.keys }).subtracting(Self.weekRoutineChangeExclusions)
-        let changes = categories.compactMap { category -> WeekRoutineChange? in
-            let series = InsightsTrends.series(for: category, title: category,
-                                               symbol: insightSymbol(for: category), weeks: combined)
-            guard series.baseline > 0 else { return nil }
-            let change = abs(series.latest - series.baseline) / series.baseline
-            guard change >= InsightsTrends.noticeableChange else { return nil }
-            return WeekRoutineChange(category: category, latest: series.latest, baseline: series.baseline)
-        }
-        return Array(changes.sorted { abs($0.delta) > abs($1.delta) }.prefix(3))
-    }
-
-    @ViewBuilder private var weeklyRoutineChangesSection: some View {
-        let changes = weekRoutineChanges
-        if !changes.isEmpty {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("What changed").font(.headline)
-                Text("Compared with your last \(Self.weekBaselineWeeks) weeks")
-                    .font(.subheadline).foregroundStyle(.secondary)
-                VStack(spacing: 10) {
-                    ForEach(changes) { change in
-                        HStack(spacing: 14) {
-                            Image(systemName: change.delta >= 0 ? "arrow.up.right" : "arrow.down.right")
-                                .font(.headline).foregroundStyle(.secondary)
-                                .frame(width: 36, height: 36)
-                                .background(Color.secondary.opacity(0.1), in: Circle())
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(change.category).font(.subheadline.weight(.medium))
-                                Text("\(formatHours(change.latest)) vs usual \(formatHours(change.baseline))")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                        }
-                        .accessibilityElement(children: .combine)
-                        .accessibilityLabel("\(change.category), \(formatHours(change.latest)) this week, usually \(formatHours(change.baseline))")
-                    }
-                }
-            }
-            .padding(20).lifeCard()
-            .accessibilityIdentifier("insights-week-routine-changes")
-        }
+        WeekRoutineChange.changes(currentWeekStart: interval.start, currentSegments: snapshot.segments,
+                                  baselineTotals: weeklyBaselineTotals)
     }
 
     /// `nil` whenever there isn't a real commute to summarise: no Home/Work
@@ -1464,87 +1189,10 @@ struct InsightsView: View {
     private var weeklyCommuteSummary: InsightsSnapshot.WeekCommuteSummary? {
         guard homePlace != nil, workPlace != nil else { return nil }
         let commutes = CommuteDetection.commutes(in: visits, savedPlaces: savedPlaces, now: now)
-        let baselineWeeks = Array(weeklyBaselineTotals.suffix(Self.weekBaselineWeeks))
+        let baselineWeeks = Array(weeklyBaselineTotals.suffix(WeekRoutineChange.baselineWeekCount))
         let nonzero = baselineWeeks.map { $0.hours[CommuteDetection.categoryName] ?? 0 }.filter { $0 > 0 }
         let baselineHours = nonzero.isEmpty ? nil : nonzero.reduce(0, +) / Double(nonzero.count)
         return InsightsSnapshot.weekCommuteSummary(commutes: commutes, weekInterval: interval, baselineHours: baselineHours)
-    }
-
-    @ViewBuilder private var weeklyGettingAroundSection: some View {
-        if snapshot.travel.isMeaningful || weeklyCommuteSummary != nil {
-            GettingAroundCard(summary: snapshot.travel, commute: weeklyCommuteSummary,
-                              period: snapshot.analysisInterval)
-        }
-    }
-
-    @ViewBuilder private var weeklyCommuteSection: some View {
-        if let summary = weeklyCommuteSummary {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Commute").font(.headline)
-                VStack(spacing: 10) {
-                    daySummaryRow(icon: "calendar", label: "Commute days", value: "\(summary.days)")
-                    daySummaryRow(icon: "clock.fill", label: "Total time", value: formatHours(summary.totalHours))
-                    daySummaryRow(icon: "gauge.medium", label: "Average", value: "\(Int(summary.averageMinutes.rounded()))m")
-                    if let change = summary.changeFromUsual {
-                        let direction = change >= 0 ? "more" : "less"
-                        daySummaryRow(
-                            icon: change >= 0 ? "arrow.up.right" : "arrow.down.right",
-                            label: "Vs usual", value: "\(formatHours(abs(change))) \(direction)"
-                        )
-                    }
-                }
-            }
-            .padding(20).lifeCard()
-            .accessibilityIdentifier("insights-week-commute")
-        }
-    }
-
-    private var monthlyPlacesSection: some View {
-        MonthlyPlaceStorySection(story: monthlyInsights, selection: $monthlyPlaceSection,
-                                 periodTitle: periodTitle, interval: snapshot.analysisInterval,
-                                 segments: snapshot.segments, now: snapshot.generatedAt)
-            .padding(20).lifeCard()
-            .accessibilityIdentifier("insights-month-places")
-    }
-
-    private var monthlyCalendarSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Month at a glance").font(.headline)
-            MonthCalendarHeatmap(days: monthDays) { date in
-                anchorDate = date
-                window = .day
-            }
-            MonthCalendarLegend()
-        }
-        .padding(20).lifeCard()
-        .accessibilityIdentifier("insights-month-calendar")
-    }
-
-    private struct MonthCalendarLegend: View {
-        private let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 2)
-
-        var body: some View {
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 5) {
-                legendItem(color: .secondary.opacity(0.12), title: "No data", swatchOpacity: 1)
-                legendItem(color: insightColor(for: "Home"), title: "Mostly Home", swatchOpacity: 0.7)
-                legendItem(color: insightColor(for: "Work"), title: "Activity", swatchOpacity: 0.7)
-                legendItem(color: insightColor(for: "Travel"), title: "Away from Home", swatchOpacity: 0.7)
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Calendar colours: no data, mostly Home, activity, and away from Home")
-            .accessibilityIdentifier("month-calendar-legend")
-        }
-
-        private func legendItem(color: Color, title: String, swatchOpacity: Double) -> some View {
-            HStack(spacing: 6) {
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(color.opacity(swatchOpacity))
-                    .frame(width: 12, height: 12)
-                Text(title)
-            }
-        }
     }
 
     private var awayFromHomeSection: some View {
@@ -2218,113 +1866,6 @@ struct DayInsightMetricTile: View {
     }
 }
 
-private struct WeeklyYourWeekMetric: Identifiable {
-    let id: String
-    let icon: String
-    let title: String
-    let value: String
-    var action: (() -> Void)?
-}
-
-private struct WeeklyYourWeekCard: View {
-    let metrics: [WeeklyYourWeekMetric]
-    let areaTotals: [LifeArea: Double]
-    let periodTitle: String
-    let interval: DateInterval
-    let segments: [InsightSegment]
-
-    private var areas: [LifeArea] {
-        LifeArea.allCases.filter { areaTotals[$0, default: 0] > 0.01 }
-    }
-
-    private var totalHours: Double {
-        areas.reduce(0) { $0 + areaTotals[$1, default: 0] }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Your week").font(.title2.bold())
-            VStack(spacing: 10) {
-                ForEach(metrics) { metric in
-                    metricRow(metric)
-                }
-            }
-            Divider()
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Life areas").font(.headline)
-                areaBar
-                LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading),
-                                    GridItem(.flexible(), alignment: .leading)], spacing: 8) {
-                    ForEach(areas) { area in
-                        NavigationLink {
-                            InsightLifeAreaDetailView(area: area, periodTitle: periodTitle,
-                                                      interval: interval, segments: segments)
-                        } label: {
-                            HStack(spacing: 6) {
-                                Circle().fill(insightColor(for: area.rawValue)).frame(width: 8, height: 8)
-                                Text(area.rawValue).font(.caption)
-                                    .lineLimit(1).minimumScaleFactor(0.8)
-                                Spacer(minLength: 2)
-                                Text(formatHours(areaTotals[area, default: 0]))
-                                    .font(.caption.bold().monospacedDigit())
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("\(area.rawValue), \(formatHours(areaTotals[area, default: 0]))")
-                    }
-                }
-                .accessibilityHint("Select a life area to see its activities.")
-            }
-        }
-        .padding(20)
-        .lifeCard()
-        .accessibilityIdentifier("insights-week-life-areas")
-    }
-
-    @ViewBuilder
-    private func metricRow(_ metric: WeeklyYourWeekMetric) -> some View {
-        if let action = metric.action {
-            Button(action: action) { metricContent(metric) }
-                .buttonStyle(.plain)
-        } else {
-            metricContent(metric)
-        }
-    }
-
-    private func metricContent(_ metric: WeeklyYourWeekMetric) -> some View {
-        HStack(spacing: 10) {
-            Label(metric.title, systemImage: metric.icon)
-                .font(.subheadline).foregroundStyle(.secondary)
-                .lineLimit(2).minimumScaleFactor(0.8)
-            Spacer(minLength: 8)
-            Text(metric.value)
-                .font(.subheadline.bold().monospacedDigit())
-                .multilineTextAlignment(.trailing)
-                .lineLimit(2)
-                .minimumScaleFactor(0.8)
-        }
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(metric.title): \(metric.value)")
-    }
-
-    private var areaBar: some View {
-        GeometryReader { proxy in
-            HStack(spacing: 1) {
-                ForEach(areas) { area in
-                    Rectangle()
-                        .fill(insightColor(for: area.rawValue))
-                        .frame(width: max(2, proxy.size.width * areaTotals[area, default: 0] / max(totalHours, 0.01)))
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 5))
-        }
-        .frame(height: 18)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Life-area balance across \(formatHours(totalHours))")
-    }
-}
-
 /// Selection belongs to the small list, not the page-level snapshot. This keeps
 /// a highlight tap from rebuilding Health, travel, or comparison aggregation.
 private struct InsightsActivitySelectionList: View {
@@ -2421,281 +1962,6 @@ private struct InsightsPlaceSelectionList: View {
                 .accessibilityIdentifier("insights-selected-place")
             }
         }
-    }
-}
-
-private struct MonthlyHeroMetric: Identifiable {
-    let id: String
-    let icon: String
-    let title: String
-    let value: String
-    let detail: String
-    var action: (() -> Void)?
-}
-
-private struct MonthlyHeroCard: View {
-    let headline: String
-    let subtitle: String
-    let metrics: [MonthlyHeroMetric]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("This month").font(.title2.bold())
-            Text(headline)
-                .font(.title3.weight(.semibold))
-                .fixedSize(horizontal: false, vertical: true)
-            Text(subtitle)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12),
-                                GridItem(.flexible(), spacing: 12)], spacing: 12) {
-                ForEach(metrics) { metric in
-                    metricTile(metric)
-                }
-            }
-        }
-        .padding(20)
-        .lifeCard()
-        .accessibilityIdentifier("insights-month-hero")
-        .accessibilityElement(children: .contain)
-    }
-
-    @ViewBuilder
-    private func metricTile(_ metric: MonthlyHeroMetric) -> some View {
-        if let action = metric.action {
-            Button(action: action) { tileContent(metric) }
-                .buttonStyle(.plain)
-        } else {
-            tileContent(metric)
-        }
-    }
-
-    private func tileContent(_ metric: MonthlyHeroMetric) -> some View {
-        let detailColor: Color = metric.detail == "This month" ? .secondary : .blue
-        return VStack(alignment: .leading, spacing: 6) {
-            Label(metric.title, systemImage: metric.icon)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .minimumScaleFactor(0.8)
-            Text(metric.value)
-                .font(.title3.bold().monospacedDigit())
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-            Text(metric.detail)
-                .font(.caption)
-                .foregroundStyle(detailColor)
-                .lineLimit(2)
-                .minimumScaleFactor(0.8)
-        }
-        .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
-        .padding(12)
-        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
-        .contentShape(RoundedRectangle(cornerRadius: 12))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(metric.title): \(metric.value), \(metric.detail)")
-    }
-}
-
-private struct MonthlyBalanceVisual: View {
-    let items: [MonthlyInsights.Balance]
-    let onSelect: (String) -> Void
-    @State private var selectedName: String?
-
-    private var totalHours: Double {
-        items.reduce(0) { $0 + $1.hours }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            GeometryReader { proxy in
-                HStack(spacing: 2) {
-                    ForEach(items) { item in
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(item.color.opacity(selectedName == nil || selectedName == item.name ? 1 : 0.28))
-                            .frame(width: max(2, proxy.size.width * item.hours / max(totalHours, 0.01)))
-                            .overlay {
-                                if selectedName == item.name {
-                                    RoundedRectangle(cornerRadius: 4).stroke(.primary, lineWidth: 1.5)
-                                }
-                            }
-                    }
-                }
-                .clipShape(Capsule())
-            }
-            .frame(height: 18)
-            .accessibilityElement()
-            .accessibilityLabel("Monthly balance")
-            .accessibilityValue(items.map { "\($0.name), \(formatHours($0.hours))" }.joined(separator: ". "))
-
-            LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading),
-                                GridItem(.flexible(), alignment: .leading)], spacing: 8) {
-                ForEach(items) { item in
-                    Button { selectedName = selectedName == item.name ? nil : item.name } label: {
-                        HStack(spacing: 7) {
-                            Circle().fill(item.color).frame(width: 9, height: 9)
-                            Text(item.name)
-                                .font(.caption)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.8)
-                            Spacer(minLength: 2)
-                            Text(formatHours(item.hours))
-                                .font(.caption.bold().monospacedDigit())
-                        }
-                        .foregroundStyle(.primary)
-                        .opacity(selectedName == nil || selectedName == item.name ? 1 : 0.42)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("\(item.name), \(formatHours(item.hours))")
-                    .accessibilityValue(selectedName == item.name ? "Selected. Double tap to clear selection." : "Double tap to select")
-                }
-            }
-
-            if let selectedName, let selected = items.first(where: { $0.name == selectedName }) {
-                Button { onSelect(selected.name) } label: {
-                    HStack {
-                        Label(selected.name, systemImage: insightSymbol(for: selected.name))
-                        Spacer()
-                        Text(formatHours(selected.hours)).font(.subheadline.bold().monospacedDigit())
-                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
-                    }
-                }
-                .buttonStyle(.plain)
-                .padding(.top, 2)
-                .accessibilityLabel("Open \(selected.name) details, \(formatHours(selected.hours))")
-                .accessibilityIdentifier("month-selected-balance")
-            }
-        }
-    }
-}
-
-private struct MonthlyPlaceStorySection: View {
-    let story: MonthlyInsights
-    @Binding var selection: MonthlyPlaceSection
-    let periodTitle: String
-    let interval: DateInterval
-    let segments: [InsightSegment]
-    let now: Date
-
-    private var selectedPlaces: [MonthlyInsights.PlaceStory] {
-        switch selection {
-        case .mostTime: return story.placesByTime
-        case .mostVisits: return story.placesByVisits
-        case .new: return story.newPlaces
-        case .changed: return story.biggestPlaceChange.map { [$0] } ?? []
-        }
-    }
-
-    private var selectedEmptyMessage: String {
-        switch selection {
-        case .mostTime: return "No places recorded in this period."
-        case .mostVisits: return "No visits recorded in this period."
-        case .new: return "No new places with enough recorded history."
-        case .changed: return "No meaningful place change to show yet."
-        }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Place story").font(.headline)
-            Picker("Place story", selection: $selection) {
-                ForEach(MonthlyPlaceSection.allCases) { section in
-                    Text(section.rawValue).tag(section)
-                }
-            }
-            .pickerStyle(.segmented)
-            .accessibilityIdentifier("month-place-story-picker")
-
-            if selectedPlaces.isEmpty {
-                Text(selectedEmptyMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                ForEach(selectedPlaces.prefix(5)) { place in
-                    MonthlyPlaceStoryRow(place: place, detail: detail(for: place), periodTitle: periodTitle,
-                                         interval: interval, segments: segments, now: now)
-                }
-            }
-
-            if story.allPlaces.count > 5 {
-                NavigationLink {
-                    MonthlyPlaceStoryList(places: story.allPlaces, periodTitle: periodTitle,
-                                          interval: interval, segments: segments, now: now)
-                } label: {
-                    Label("See all places", systemImage: "list.bullet")
-                        .font(.subheadline.weight(.medium))
-                }
-                .accessibilityIdentifier("month-see-all-places")
-            }
-        }
-    }
-
-    private func detail(for place: MonthlyInsights.PlaceStory) -> String {
-        switch selection {
-        case .mostTime: return formatHours(place.hours)
-        case .mostVisits: return "\(place.visits) \(place.visits == 1 ? "visit" : "visits")"
-        case .new: return formatHours(place.hours)
-        case .changed:
-            return "\(place.delta >= 0 ? "+" : "−")\(formatHours(abs(place.delta))) vs last month"
-        }
-    }
-}
-
-private struct MonthlyPlaceStoryList: View {
-    let places: [MonthlyInsights.PlaceStory]
-    let periodTitle: String
-    let interval: DateInterval
-    let segments: [InsightSegment]
-    let now: Date
-
-    var body: some View {
-        List {
-            Section("All places in this period") {
-                ForEach(places) { place in
-                    MonthlyPlaceStoryRow(place: place, detail: "\(formatHours(place.hours)) · \(place.visits) \(place.visits == 1 ? "visit" : "visits")",
-                                          periodTitle: periodTitle, interval: interval, segments: segments, now: now)
-                }
-            }
-        }
-        .navigationTitle("Places")
-        .navigationBarTitleDisplayMode(.inline)
-        .safeAreaInset(edge: .top) { PeriodBanner(title: periodTitle, interval: interval) }
-        .accessibilityIdentifier("month-all-places")
-    }
-}
-
-private struct MonthlyPlaceStoryRow: View {
-    let place: MonthlyInsights.PlaceStory
-    let detail: String
-    let periodTitle: String
-    let interval: DateInterval
-    let segments: [InsightSegment]
-    let now: Date
-
-    var body: some View {
-        NavigationLink {
-            InsightPlaceHistoryView(placeName: place.name, periodTitle: periodTitle, interval: interval,
-                                    rows: InsightsSnapshot.sliceRows(forPlace: place.name, segments: segments,
-                                                                      interval: interval, now: now))
-        } label: {
-            HStack(spacing: 10) {
-                ActivityIcon(activity: place.activity, context: place.name,
-                             color: insightColor(for: place.category), size: 34)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(place.name).font(.subheadline.weight(.medium)).lineLimit(1)
-                    Text(place.category).font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Text(detail).font(.caption.bold().monospacedDigit()).multilineTextAlignment(.trailing)
-                Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(place.name), \(detail)")
-        .accessibilityIdentifier("month-place-\(place.id)")
     }
 }
 

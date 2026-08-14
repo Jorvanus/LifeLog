@@ -2,6 +2,26 @@
 
 ## 2026-08-14
 
+### Split Month and Week out of `InsightsView`
+
+- Extracted the Month and Week layouts into `MonthInsightsView.swift` and
+  `WeekInsightsView.swift`, matching the pattern the earlier Day/Year split
+  already established (`DayInsightsView`, `YearInsightsView`): each new type
+  takes only prepared values and explicit action closures, does no SwiftData
+  or `@Query` work of its own, and `InsightsView` stays the single owner of
+  the selected period, snapshot refresh, and presentation routes (sheets,
+  navigation). `InsightsView.swift` drops from 2,708 to under 2,000 lines.
+- `WeekRoutineChange.changes(currentWeekStart:currentSegments:baselineTotals:)`
+  is now a plain, `@MainActor` static function beside its type, pulled out of
+  a view-only computed property so it can be unit-tested directly —
+  see the new cases in `InsightsWeekBaselineTests`.
+- Along the way, dropped four private view fragments confirmed unreachable
+  from any layout (`weeklyScorecardSection`, `weeklyCommuteSection`,
+  `monthlyScorecardSection`, `monthlyHeadlineSection`) rather than moving
+  dead code into the new files. A larger, separate pocket of dead code
+  (`standardLayout` and everything only it reaches) was left alone — flagged
+  in `TODO.md` rather than folded into this change.
+
 ### Merge two activities into one
 
 - Added a real "Merge into another activity" action to an activity's detail
