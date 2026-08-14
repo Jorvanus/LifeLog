@@ -40,6 +40,19 @@
   older or future payloads recoverable during backup and repair, and reports
   unreadable evidence instead of silently treating it as an empty route or list.
 
+### Largest test files split into focused suites
+
+- `ActivityLocationPolicyTests`, `TimelineFixtureCoverageTests`,
+  `InsightsAggregationCacheTests`, and `LifeLogUITests` — the four largest
+  test files, together over 5,000 lines in a single struct or class each —
+  are now organised into topic-scoped suites (arrival/departure matching,
+  duplicate callbacks, overlap resolution, travel construction, cache
+  invalidation vs. stale-result handling, Insights day/week/month/year UI
+  workflows, etc.), with reusable fixture builders moved into explicit
+  `TestSupport` helpers that take time zone, calendar, clock, and fixture
+  shape as injectable parameters instead of hidden defaults. No test cases,
+  assertions, or production behaviour changed.
+
 ## 2026-08-13
 
 ### History remains readable as LifeLog evolves
