@@ -703,6 +703,13 @@ struct InsightsView: View {
         return "\(formatHours(abs(delta)))\(unit) \(direction) than last month"
     }
 
+    private var monthAverageDailySteps: Double? {
+        guard let monthSteps, monthSteps > 0 else { return nil }
+        let queryEnd = interval.contains(now) ? now : interval.end
+        let elapsedDays = max(1, Int(ceil(max(0, queryEnd.timeIntervalSince(interval.start)) / 86_400)))
+        return monthSteps / Double(elapsedDays)
+    }
+
     private var monthlyHeroMetrics: [MonthlyHeroMetric] {
         let currentCategories = InsightsSnapshot.categoryHours(in: snapshot.segments)
         let previousCategories = InsightsSnapshot.categoryHours(in: snapshot.previousSegments)
@@ -729,7 +736,7 @@ struct InsightsView: View {
         if let sleep = monthAverageNightlySleep, sleep > 0 {
             metrics.append(.init(id: "sleep", icon: "bed.double.fill", title: "Sleep · Apple Health",
                                  value: formatHours(sleep / 3600), detail: "Nightly average", action: { openSleep() }))
-        } else if let steps = healthSummary?.averageDailySteps, steps > 0 {
+        } else if let steps = monthAverageDailySteps, steps > 0 {
             metrics.append(.init(id: "steps", icon: "shoeprints.fill", title: "Steps · Apple Health",
                                  value: "\(Int(steps.rounded()).formatted())/day", detail: "Daily average"))
         }
@@ -860,7 +867,7 @@ struct InsightsView: View {
         if snapshot.awayFromHomeHours > 0.01 {
             metrics.append(.init(id: "day-metric-away", icon: "figure.walk.departure", title: "Away from Home", value: formatHours(snapshot.awayFromHomeHours)))
         }
-        if let steps = healthSummary?.steps ?? todaySteps, steps > 0 {
+        if let steps = todaySteps ?? healthSummary?.steps, steps > 0 {
             metrics.append(.init(id: "day-metric-steps", icon: "shoeprints.fill", title: "Steps", value: Int(steps).formatted()))
         }
         if let lastNightSleep, lastNightSleep.totalSleep > 0 {
@@ -994,7 +1001,7 @@ struct InsightsView: View {
             metrics.append(.init(id: "sleep", icon: "bed.double.fill", title: "Sleep average",
                                  value: formatHours(weekAverageNightlySleep / 3600), action: { openSleep() }))
         }
-        if let steps = healthSummary?.steps ?? weekSteps, steps > 0 {
+        if let steps = weekSteps ?? healthSummary?.steps, steps > 0 {
             metrics.append(.init(id: "steps", icon: "shoeprints.fill", title: "Steps · Apple Health",
                                  value: "\(Int(steps).formatted()) total · \(Int(steps / Double(elapsedDays)).formatted())/day avg"))
         }
@@ -1071,10 +1078,11 @@ struct InsightsView: View {
             } else {
                 let month = DateInterval(start: cursor, end: monthEnd)
                 let summary = await activityData.healthSummary(for: month)
+                let monthSteps = await activityData.stepCount(for: month)
                 guard !Task.isCancelled, requestKey == annualKey else { return }
                 let sleepValue = summary?.sleep.map { $0.totalSleep / max(1, month.duration / 86_400) / 3600 }
                 sleep.append(sleepValue)
-                steps.append(summary?.averageDailySteps)
+                steps.append(monthSteps.map { $0 / max(1, month.duration / 86_400) })
                 walking.append(summary?.walkingRunningMeters.map { $0 / 1_000 })
                 energy.append(summary?.activeEnergyKilocalories)
                 exercise.append(summary?.exerciseMinutes)
