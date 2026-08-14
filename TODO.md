@@ -1,26 +1,18 @@
 # LifeLog — current roadmap
 
-Audited against `main` at `718c3ee` on 2026-08-12. This is an open-work list,
+Audited against `main` at `e4ce878` on 2026-08-14. This is an open-work list,
 not a history of shipped features. Completed callback replay, resolver invariants,
 conservative Saved Place learning, resolution diagnostics, sleep-evidence plumbing,
-and the first archive-query pass have been removed.
+the first archive-query pass, and the distinct Day/Week/Month/Year Insights layouts
+have been removed.
 
-LifeLog is a private app for one iPhone 17 Pro Max. Real-device correctness and a
-responsive 32,000-row archive outrank App Store preparation and speculative features.
+LifeLog is a private app for one iPhone 17 Pro Max. A responsive 32,000-row archive,
+clear code boundaries, and reliable local data outrank App Store preparation and
+speculative features.
 
 ## Next three deliverables
 
-1. [ ] **Prove the shipped sleep-evidence update on real hardware.** The app now
-   rebuilds a complete affected night, waits to acknowledge Health observer delivery
-   until import finishes, distinguishes measured sleep from estimated time in bed,
-   and supports confirmed manual sleep. Run its deterministic suite when the Xcode 27
-   beta services are healthy, then prove on the phone: Watch worn overnight, Watch not
-   worn with an iPhone Sleep Schedule, no sleep source, delayed Watch sync, one deleted
-   stage, a deleted night, and partial/denied Health access. Completion means one
-   correct overnight entry, no duplicate in-bed card beside measured sleep, and a
-   useful Settings/Diagnostics explanation for every case.
-
-2. [ ] **Add archive search without putting notes on Timeline’s normal path.** Build
+1. [ ] **Add archive search without putting notes on Timeline’s normal path.** Build
    one explicit search screen for place and activity, with note search as a slower
    opt-in mode. Reuse `VisitHistoryQuery`, add result limits/paging, and measure it on
    the 32,000-row archive. Decide from measurements whether normalized place, Maps ID,
@@ -28,15 +20,20 @@ responsive 32,000-row archive outrank App Store preparation and speculative feat
    schema migration merely because an index sounds useful. Completion means ordinary
    Timeline never fetches note text for search and a broad query cannot freeze the UI.
 
-3. [ ] **Prove location quality and hardware behavior on real hardware.** LifeLog now
-   detects reduced-accuracy location (the Precise Location toggle and a genuinely
-   poor fix), shows it in Settings and Diagnostics, and an approximate fix no longer
-   teaches a Saved Place or wins a fine-distance comparison against a better
-   candidate. Run the existing hardware checklist with detailed diagnostics: named
-   Saved Place arrival, geofence exit, Wi-Fi departure assistance, region ranking,
-   noisy signal, repeated callback, and an outdoor continuous walk that must not
-   satisfy the stationary fallback — including a real reduced-accuracy session to
-   confirm Settings/Diagnostics reflect it correctly.
+2. [ ] **Split `InsightsView` into a small screen coordinator and explicit section views.**
+   It is now 2,700+ lines with 47 `some View`/`@ViewBuilder` fragments, so a change to one
+   piece of state still re-evaluates the parent composition. Preserve one owner for the
+   selected period, snapshot refresh, and presentation routes, but extract the Month and
+   Week sections first into `View` types with narrow, prepared inputs and explicit actions.
+   Keep aggregation and SwiftData queries out of view initializers; leave focused tests
+   beside the extracted data/presentation types.
+
+3. [ ] **Finish the Insights data-access boundary.** Replace the remaining unbounded
+   history reads in `placeHistory(matching:)`, `annualHistoricalPlaces()`, and
+   `yearOverYearHighlight()` with narrow queries, paging, or prepared aggregates. Keep
+   all-history work off the interaction path and surface a loading/failure state where a
+   retrospective cannot be prepared immediately. Use the 32,000-row archive to decide
+   whether an index or schema change is justified.
 
 ## Correctness and recovery
 
@@ -46,10 +43,11 @@ responsive 32,000-row archive outrank App Store preparation and speculative feat
   manual-entry fixtures. Decide whether Add Visit should warn about or resolve overlaps
   rather than leaving every downstream calculation to defend itself.
 
-- [ ] **Prove protected-store recovery on the phone.** After a successful foreground
-  open, apply complete protection to the three store files, lock the phone, provoke a
-  background save failure, then verify the pending failure appears after relaunch.
-  Preserve the aggregate diagnostic evidence, never the personal store.
+- [ ] **Complete protected-store recovery as a first-class code path.** Centralise the
+  three-store-file protection policy, make pending-save recovery idempotent across
+  relaunches, and ensure all failure reporting stays aggregate-only. Add deterministic
+  fixtures for protected/unavailable files and interrupted recovery; avoid coupling the
+  UI to raw store contents.
 
 - [ ] **Choose the Health re-import boundary.** Routine Health refresh is bounded and
   the manual re-import reads 30 days. If older workout routes matter, add a date-range
@@ -58,16 +56,16 @@ responsive 32,000-row archive outrank App Store preparation and speculative feat
 
 ## Archive performance and storage
 
-- [ ] **Finish the broad-query audit.** Most history-facing views are now bounded, but
-  broad collections remain in Diagnostics, Settings, Places, and journal compaction.
-  Classify each as bounded-by-retention, genuinely whole-store, or accidental. Replace
-  accidental queries; for intentional whole-store tools, load on demand away from the
-  interaction path and show progress.
+- [ ] **Finish the broad-query audit outside Insights.** Diagnostics, Settings, Places,
+  and journal compaction still need classification as bounded-by-retention, genuinely
+  whole-store, or accidental. Replace accidental reads with a narrow predicate, paging,
+  or an aggregate; for genuine whole-store tools, load on demand away from the interaction
+  path and show progress. Do not add a schema index without measured evidence.
 
-- [ ] **Run the complete physical-phone budget after the sleep/data-shape changes.**
-  Measure cold/warm launch, Timeline return from Insights/Settings/Visit Editor,
-  Activities, day/week/month/year Insights, editor opening, and archive search. Keep
-  aggregate timings only and investigate any main-thread interaction over 250 ms.
+- [ ] **Make performance budgets executable regression checks.** Keep the existing
+  diagnostic timings, but add repeatable archive fixtures and focused benchmarks for
+  Timeline return, period Insights, editor opening, archive search, and export setup.
+  Record aggregate timings only and investigate main-thread interaction over 250 ms.
 
 - [ ] **Protect exports and temporary files consistently.** Backups and reports need
   an explicit strong protection class, short expiry after sharing, low-storage
@@ -79,25 +77,27 @@ responsive 32,000-row archive outrank App Store preparation and speculative feat
   count/size/delete controls for coordinates, Health/Motion-derived rows, imported
   journal data, diagnostics, exports, and all app data.
 
-## Testability and diagnostics
+## Code quality, navigation, and diagnostics
 
 - [ ] **Make MapKit lookup deterministic.** Inject the search transport and test cache
   expiry, cancellation, retry, bounded/deduplicated candidates, lookup opt-out, and
   manual-pin fallback without live Apple Maps.
 
-- [ ] **Add visual regression coverage.** Current UI tests prove reachability, not
-  layout. Capture approved light/dark screenshots at normal and Accessibility XXXL for
-  Timeline rows, Place History, Visit Editor, Add Visit, Diagnostics resolution choices,
-  sleep fallback, and the Insights donut.
+- [ ] **Make Insights navigation intentional and testable.** The tab-level navigation
+  foundation is already modern (`Tab` and `NavigationStack`); do not rewrite it for style.
+  Audit each Insights action by purpose: temporary edit/add flows may remain sheets, while
+  browse-deeper flows (activity, place, life area, comparison) need a consistent route,
+  reliable Back behaviour, and an escape back to the same period and scroll context.
+  Reuse the existing Place History and Visit Editor rather than adding parallel screens.
 
 - [ ] **Isolate UI-test preferences.** Seeded tests already use an in-memory store, but
   every app-owned `UserDefaults` marker also needs a scratch suite/reset so test order
   cannot change one-shot repairs, hardware evidence, or permission-facing state.
 
-- [ ] **Calibrate thresholds from real traces.** Review several weeks before changing
-  `walkingBurstGap`, passing-stay thresholds, journey absorption, or stationary-cluster
-  values. Record the trace pattern and the deterministic fixtures changed by any new
-  threshold.
+- [ ] **Move inference thresholds into named, documented policy.** Consolidate
+  `walkingBurstGap`, passing-stay thresholds, journey absorption, and stationary-cluster
+  values behind a small policy type with units and rationale. Keep deterministic fixtures
+  alongside each threshold so a change states exactly which behaviours it intends to move.
 
 - [ ] **Add a day investigation screen only if Diagnostics remains too fragmented.**
   Resolution choices and the callback journal are now inspectable without Timeline.
@@ -116,12 +116,14 @@ responsive 32,000-row archive outrank App Store preparation and speculative feat
   unused labels are separated; confirm bulk adoption and icon/colour editing remain
   understandable beside activity history.
 
-- [ ] Improve Insights only after the above evidence is trustworthy. Candidate work,
-  in order: commute overhead after explicit Home/Work roles; focused Overview/Trends/
-  Places sections; waking-life balance; exploration/novelty; dwell/focus duration.
-  Insights must show its evidence and uncertainty rather than turning archive size into
-  false confidence. Timeline micro-badges remain deferred after the first design made
-  cards wrap badly.
+- [ ] **Tighten the new Month review before extending Insights.**
+  Month now has a comparison-led hero, changes, life-area balance, place stories, and a
+  calendar drawn from the resolved segments. Make the evidence thresholds and empty/
+  partial/source-filtered presentation rules explicit in `MonthlyInsights`, and ensure
+  every place route reaches the existing history/editor surfaces while sleep remains
+  separate from waking-life totals. Only then prioritise the next evidence-backed slice:
+  commute overhead after explicit Home/Work roles, exploration/novelty, or dwell/focus
+  duration. Do not convert archive volume into false confidence.
 
 - [ ] Consider photos, read-only App Intents/Shortcuts, widgets, and multi-device sync
   only after local retention, deletion, backup, and recovery behavior is designed.
