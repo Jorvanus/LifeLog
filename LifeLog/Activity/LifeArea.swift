@@ -51,25 +51,9 @@ enum LifeArea: String, CaseIterable, Codable, Identifiable, Sendable, Hashable {
     }
 
     static func totals(in segments: [InsightSegment]) -> [LifeArea: Double] {
-        // Catalog names are user-editable, so build this map defensively instead
-        // of assuming case-insensitive uniqueness in imported or older stores.
-        var definitions: [String: ActivityDefinition] = [:]
-        for definition in ActivityCatalog.load() {
-            definitions[definition.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()] = definition
-            for legacyName in definition.legacyNames {
-                definitions[legacyName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()] = definition
-            }
-        }
         var totals: [LifeArea: Double] = [:]
         for segment in segments where !segment.isUnlogged {
-            let area: LifeArea
-            if let visit = segment.visit,
-               let definition = definitions[visit.activity.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()],
-               let stored = LifeArea(rawValue: definition.lifeArea) {
-                area = stored
-            } else {
-                area = LifeArea.default(for: segment.activity, category: segment.category)
-            }
+            let area = LifeArea.default(for: segment.activity, category: segment.category)
             totals[area, default: 0] += segment.hours
         }
         return totals

@@ -29,7 +29,6 @@ struct ActivityDetailView: View {
     @State private var existingID: UUID?
     @State private var name = ""
     @State private var category = "Other"
-    @State private var lifeArea = LifeArea.other.rawValue
     @State private var editSymbol = "circle.fill"
     @State private var categoryColorValue: Color = .gray
     @State private var loadedEditableState = false
@@ -193,9 +192,6 @@ struct ActivityDetailView: View {
             Picker("Group under", selection: $category) {
                 ForEach(ActivityCatalog.categories, id: \.self) { Text($0).tag($0) }
             }
-            Picker("Life area for Insights", selection: $lifeArea) {
-                ForEach(LifeArea.allCases) { Text($0.rawValue).tag($0.rawValue) }
-            }
             NavigationLink {
                 ActivityIconPicker(symbol: $editSymbol, tint: categoryColorValue)
             } label: {
@@ -205,7 +201,7 @@ struct ActivityDetailView: View {
             }
             .accessibilityIdentifier("activity-icon-link")
         } footer: {
-            Text("The group remains your activity catalogue. Life area is only used to combine activities in Insights; changing it re-counts existing visits straight away.")
+            Text("This group also decides which Insights life area the activity counts towards; changing it re-counts existing visits straight away.")
         }
     }
 
@@ -359,7 +355,6 @@ struct ActivityDetailView: View {
         existingID = definition.id
         name = definition.name
         category = definition.category
-        lifeArea = definition.lifeArea
         editSymbol = definition.symbol
         categoryColorValue = activityColor(definition.name)
     }
@@ -371,8 +366,7 @@ struct ActivityDetailView: View {
         guard !cleanName.isEmpty else { return }
         var definition = ActivityDefinition(id: existingID ?? UUID(), name: cleanName,
                                   category: cleanCategory.isEmpty ? "Other" : cleanCategory,
-                                  symbol: cleanSymbol.isEmpty ? "circle.fill" : cleanSymbol,
-                                  lifeArea: lifeArea)
+                                  symbol: cleanSymbol.isEmpty ? "circle.fill" : cleanSymbol)
         definition.colorHex = activityColorHex(categoryColorValue)
 
         let previousName = activityName

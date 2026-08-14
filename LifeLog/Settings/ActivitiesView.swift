@@ -158,7 +158,6 @@ struct ActivityEditor: View {
     let onSave: (ActivityDefinition) -> Void
     @State private var name = ""
     @State private var category = "Other"
-    @State private var lifeArea = LifeArea.other.rawValue
     @State private var symbol = "circle.fill"
     @State private var categoryColorValue: Color = .gray
 
@@ -172,9 +171,6 @@ struct ActivityEditor: View {
             ColorPicker("Activity colour", selection: $categoryColorValue, supportsOpacity: false)
             Picker("Group under", selection: $category) {
                 ForEach(ActivityCatalog.categories, id: \.self) { Text($0).tag($0) }
-            }
-            Picker("Life area for Insights", selection: $lifeArea) {
-                ForEach(LifeArea.allCases) { Text($0.rawValue).tag($0.rawValue) }
             }
             NavigationLink {
                 ActivityIconPicker(symbol: $symbol, tint: categoryColorValue)
@@ -201,13 +197,9 @@ struct ActivityEditor: View {
         let cleanCategory = TextSafety.clean(category, maximumLength: 40)
         let cleanSymbol = TextSafety.clean(symbol, maximumLength: 60)
         saveActivityColor(categoryColorValue, forActivity: cleanName)
-        let selectedLifeArea = lifeArea == LifeArea.other.rawValue
-            ? LifeArea.default(for: cleanName, category: cleanCategory).rawValue
-            : lifeArea
         var definition = ActivityDefinition(id: UUID(), name: cleanName,
                                   category: cleanCategory.isEmpty ? "Other" : cleanCategory,
-                                  symbol: cleanSymbol.isEmpty ? "circle.fill" : cleanSymbol,
-                                  lifeArea: selectedLifeArea)
+                                  symbol: cleanSymbol.isEmpty ? "circle.fill" : cleanSymbol)
         definition.colorHex = activityColorHex(categoryColorValue)
         onSave(definition)
         dismiss()

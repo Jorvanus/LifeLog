@@ -7,23 +7,25 @@ struct ActivityDefinition: Codable, Identifiable, Hashable, Sendable {
     var category: String
     var symbol: String
     var colorHex: String?
-    /// Stored per activity so a user can change Insights grouping without changing
-    /// the existing editable activity category or any place data.
+    /// The life area an activity counts towards in Insights (Year's chart, Month's
+    /// balance). Not independently editable -- always derived from `category` via
+    /// `LifeArea.default(for:category:)`, so there is exactly one taxonomy a person
+    /// maintains. Kept as a stored field only because it is part of the persisted
+    /// schema (`ActivityDefinitionRecord`); a schema migration to drop the column
+    /// isn't worth it when recomputing on every read/write keeps it always correct.
     var lifeArea: String
     /// Historical display labels which still point to this definition. This is a
     /// compatibility alias, not a normalised search key: two separately-created
     /// labels are never combined merely because their spelling looks alike.
     var legacyNames: [String]
 
-    init(id: UUID = UUID(), name: String, category: String = "Other", symbol: String = "circle.fill",
-         lifeArea: String? = nil) {
+    init(id: UUID = UUID(), name: String, category: String = "Other", symbol: String = "circle.fill") {
         self.id = id
         self.name = TextSafety.clean(name, maximumLength: 80)
         self.category = TextSafety.clean(category, maximumLength: 40)
         self.symbol = TextSafety.clean(symbol, maximumLength: 60)
         self.colorHex = nil
-        self.lifeArea = lifeArea.flatMap { LifeArea(rawValue: $0)?.rawValue }
-            ?? LifeArea.default(for: self.name, category: self.category).rawValue
+        self.lifeArea = LifeArea.default(for: self.name, category: self.category).rawValue
         self.legacyNames = []
     }
 
@@ -35,8 +37,11 @@ struct ActivityDefinition: Codable, Identifiable, Hashable, Sendable {
         let name = try values.decode(String.self, forKey: .name)
         let category = try values.decodeIfPresent(String.self, forKey: .category) ?? "Other"
         let symbol = try values.decodeIfPresent(String.self, forKey: .symbol) ?? "circle.fill"
-        let storedArea = try values.decodeIfPresent(String.self, forKey: .lifeArea)
-        self.init(id: id, name: name, category: category, symbol: symbol, lifeArea: storedArea)
+        // The stored `lifeArea` is ignored and recomputed from `category` on every
+        // load -- this is what makes an old activity that was never given an
+        // explicit life area (or one whose category changed since) self-heal
+        // without a migration.
+        self.init(id: id, name: name, category: category, symbol: symbol)
         colorHex = try values.decodeIfPresent(String.self, forKey: .colorHex)
         legacyNames = try values.decodeIfPresent([String].self, forKey: .legacyNames) ?? []
     }
@@ -328,14 +333,11 @@ enum ActivityCatalog {
         return "Other"
     }
 
-    /// Resolves a visit label to the derived life area. A stored definition wins;
-    /// imported/deleted labels use the same category/name fallback as Insights.
+    /// Resolves a visit label to its life area, always derived from the category
+    /// (a stored definition's own `category`, or the same fallback Insights uses
+    /// for imported/deleted labels) -- there is no independent life-area override.
     static func lifeArea(for activity: String, category: String? = nil) -> LifeArea {
         let key = activity.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let definition = load().first(where: { $0.matchesSnapshot(key) }),
-           let area = LifeArea(rawValue: definition.lifeArea) {
-            return area
-        }
         return LifeArea.default(for: key, category: category ?? self.category(for: key))
     }
 

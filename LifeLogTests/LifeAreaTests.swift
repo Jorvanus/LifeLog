@@ -12,14 +12,20 @@ struct LifeAreaTests {
         #expect(LifeArea.default(for: "Sleeping", category: "Sleep") == .sleepRest)
     }
 
-    @Test("An activity can override its default life area without changing its category")
-    func customMapping() {
-        let defaults = UserDefaults(suiteName: "LifeAreaTests.custom")!
-        defaults.removePersistentDomain(forName: "LifeAreaTests.custom")
+    @Test("Life area is not independently editable -- a stored value from before this design self-heals to the derived one")
+    func staleStoredLifeAreaSelfHeals() throws {
+        let defaults = UserDefaults(suiteName: "LifeAreaTests.staleStore")!
+        defaults.removePersistentDomain(forName: "LifeAreaTests.staleStore")
         ActivityCatalog.withStorage(defaults) {
-            ActivityCatalog.save([ActivityDefinition(name: "Coffee", category: "Food & Drink",
-                                                      symbol: "cup.and.saucer.fill", lifeArea: LifeArea.social.rawValue)])
-            #expect(ActivityCatalog.lifeArea(for: "Coffee") == .social)
+            // Simulates a definition persisted back when `lifeArea` could be set
+            // independently of `category` -- decoding must ignore the stale
+            // "Social" value and recompute from the category instead.
+            let json = """
+            [{"id":"\(UUID().uuidString)","name":"Coffee","category":"Food & Drink",
+              "symbol":"cup.and.saucer.fill","lifeArea":"Social","legacyNames":[]}]
+            """
+            defaults.set(Data(json.utf8), forKey: "LifeLog.ActivityCatalog.v1")
+            #expect(ActivityCatalog.lifeArea(for: "Coffee") == .foodDrink)
             #expect(ActivityCatalog.category(for: "Coffee") == "Food & Drink")
         }
     }
