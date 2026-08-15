@@ -36,7 +36,13 @@ struct DuplicateCallbackTests {
         let locations = try context.fetch(FetchDescriptor<Visit>(sortBy: [SortDescriptor(\.arrival)]))
             .filter(ActivityLocationPolicy.isLocationVisit)
 
-        #expect(removed == 2)
+        // Three repairs, not two: the two folded duplicates, plus closing the surviving
+        // open Home stay at Shopping's arrival — asserted on the next line but two. The
+        // return value is the number of repairs the pass made, and callers save on it,
+        // so the close belongs in the count. It went uncounted until 2026-08-16, which
+        // meant a pass whose only work was a close or a trim reported nothing and had
+        // its change dropped by any caller that saves conditionally.
+        #expect(removed == 3)
         #expect(locations.count == 2)
         #expect(locations[0].departure == base.addingTimeInterval(1_800))
         #expect(locations[1].departure == nil)
