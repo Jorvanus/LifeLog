@@ -1,6 +1,77 @@
 import SwiftUI
 import SwiftData
 
+/// Every "browse deeper" destination Insights can push, on one `NavigationStack`
+/// (the one `InsightsView` itself owns) via one `.navigationDestination(for:)`.
+///
+/// Before this, the same four destinations were reached two different ways: Week
+/// and Month already pushed `InsightGroupDetailView`/`InsightPlaceHistoryView`
+/// directly via `NavigationLink { DestinationView(...) }`, while the donut, the
+/// Year chart and the Month comparison list opened the same (or an equivalent)
+/// destination as a `.sheet` with its own throwaway `NavigationStack` inside. A
+/// visit opened three sheets deep that way -- life area sheet, activity `NavigationLink`
+/// inside it, `VisitEditor` `NavigationLink` inside that -- rendered inside a
+/// `.medium`/`.large` detent card, and Back had to be swiped/dismissed through
+/// each layer to return to Insights rather than popped.
+///
+/// Cases carry only identifying values, never `rows`/`segments` themselves:
+/// `SliceRow` and `InsightSegment` both hold a `Visit?`, a SwiftData `@Model`
+/// reference, which does not belong in a `Hashable`/`Codable` navigation path.
+/// `InsightsView.routeDestination(_:)` recomputes the bounded rows from its own
+/// `snapshot` when a route is revealed -- a side effect of this is that a
+/// destination already on screen updates itself when the snapshot reloads (an
+/// added visit, say) instead of showing what Insights knew at the moment it was
+/// opened, which is what `InsightActivityDetailView`'s add-visit sheet used to
+/// paper over by dismissing itself back to Insights (see the sheet's own comment,
+/// removed below, for the old reasoning).
+///
+/// `.visit` does the same thing `ArchiveSearchView`'s `.navigationDestination(for:
+/// UUID.self)` already does for the same reason: a `Visit` is a `@Model` reference,
+/// so the route carries its durable `stableID` and `InsightVisitDestination`
+/// resolves the current object from the store when the route is revealed, rather
+/// than carrying a reference that could go stale or cross an actor boundary.
+enum InsightsRoute: Hashable {
+    case activity(name: String, isUnlogged: Bool)
+    case sleep
+    case group(title: String, groups: [String])
+    case place(name: String)
+    case comparison(name: String, hours: Double, previousHours: Double, delta: Double)
+    case visit(stableID: UUID)
+}
+
+/// Resolves a route's `stableID` to the live `Visit` `VisitEditor` needs. Mirrors
+/// `ArchiveSearchView`'s private `ArchiveSearchResultDestination` -- same reasoning,
+/// kept as a separate small view here rather than widening that one's visibility,
+/// since the two navigation stacks (Search, Insights) have no other reason to share
+/// a type.
+struct InsightVisitDestination: View {
+    let stableID: UUID
+    @Environment(\.modelContext) private var context
+    @State private var visit: Visit?
+    @State private var notFound = false
+
+    var body: some View {
+        Group {
+            if let visit {
+                VisitEditor(visit: visit)
+            } else if notFound {
+                ContentUnavailableView("Visit not found", systemImage: "questionmark.circle",
+                                       description: Text("This entry may have been removed or merged."))
+            } else {
+                ProgressView()
+            }
+        }
+        .task { load() }
+    }
+
+    private func load() {
+        var descriptor = FetchDescriptor<Visit>(predicate: #Predicate { $0.stableID == stableID })
+        descriptor.fetchLimit = 1
+        visit = try? context.fetch(descriptor).first
+        notFound = visit == nil
+    }
+}
+
 /// Detail destinations opened from Insights. They deliberately receive the
 /// already bounded segments from the parent instead of querying the archive.
 struct InsightActivityDetailView: View {
@@ -10,7 +81,6 @@ struct InsightActivityDetailView: View {
     let rows: [SliceRow]
     var isUnlogged: Bool = false
     @State private var addingVisit = false
-    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         List {
@@ -37,7 +107,7 @@ struct InsightActivityDetailView: View {
                 } else {
                     ForEach(rows) { row in
                         if let visit = row.visit {
-                            NavigationLink { VisitEditor(visit: visit) } label: {
+                            NavigationLink(value: InsightsRoute.visit(stableID: visit.stableID)) {
                                 InsightRowLabel(title: visit.displayPlaceName,
                                                 detail: "\(visit.arrival.formatted(date: .abbreviated, time: .shortened)) · \(formatHours(row.hours))")
                             }
@@ -51,24 +121,14 @@ struct InsightActivityDetailView: View {
         .navigationTitle(activity)
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .top) { PeriodBanner(title: periodTitle, interval: interval) }
-        // This screen's own `rows` was computed once, from what Insights knew before
-        // the visit existed, so it stays stale even after the visit is saved. Rather
-        // than re-querying just to re-show the same now-wrong "Unlogged" placeholder,
-        // close back to Insights -- the outer sheet's `onDismiss: reloadInsights`
-        // (in InsightsView) picks up the new visit from there.
-        .sheet(isPresented: $addingVisit, onDismiss: { dismiss() }) { ManualVisitView(range: interval) }
+        // `rows` is no longer a stale snapshot to escape: this view is reached
+        // through `InsightsView.routeDestination(_:)`, which recomputes it from
+        // `snapshot.segments` on every render, so it already reflects a visit added
+        // here as soon as the invalidation notification `ManualVisitView`'s save
+        // posts reaches `InsightsView` -- no dismissal needed.
+        .sheet(isPresented: $addingVisit) { ManualVisitView(range: interval) }
         .accessibilityIdentifier("insight-activity-detail")
     }
-}
-
-/// Sheet-presentation payload for `InsightGroupDetailView`: which real groups to
-/// show (see that view's `groups` doc) and the title to show them under, since a
-/// folded "Other" selection still reads as "Other" to the person even though it
-/// spans several underlying groups.
-struct GroupSelection: Identifiable {
-    let title: String
-    let groups: [String]
-    var id: String { title }
 }
 
 struct InsightGroupDetailView: View {
@@ -103,10 +163,7 @@ struct InsightGroupDetailView: View {
             }
             Section("Activities in this group") {
                 ForEach(activities, id: \.name) { activity in
-                    NavigationLink {
-                        InsightActivityDetailView(activity: activity.name, periodTitle: periodTitle,
-                                                  interval: interval, rows: activity.rows)
-                    } label: {
+                    NavigationLink(value: InsightsRoute.activity(name: activity.name, isUnlogged: false)) {
                         InsightRowLabel(title: activity.name, detail: formatHours(activity.hours))
                     }
                 }
@@ -147,7 +204,7 @@ struct InsightPlaceHistoryView: View {
                 } else {
                     ForEach(rows) { row in
                         if let visit = row.visit {
-                            NavigationLink { VisitEditor(visit: visit) } label: {
+                            NavigationLink(value: InsightsRoute.visit(stableID: visit.stableID)) {
                                 InsightRowLabel(title: visit.suspectedActivity.isEmpty ? "Visit" : visit.suspectedActivity,
                                                 detail: "\(visit.arrival.formatted(date: .abbreviated, time: .shortened)) · \(formatHours(row.hours))")
                             }
@@ -290,7 +347,7 @@ struct InsightComparisonDetailView: View {
                 Text("This comparison describes a difference in recorded time. It does not explain why the change happened.")
                     .font(.footnote).foregroundStyle(.secondary)
             } header: {
-                Text("Compared with (baselineTitle)")
+                Text("Compared with \(baselineTitle)")
             }
         }
         .navigationTitle(comparison.name)

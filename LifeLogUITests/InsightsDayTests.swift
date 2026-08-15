@@ -244,7 +244,10 @@ final class InsightsDayTests: LifeLogUITestCase {
         sleep.tap()
         XCTAssertTrue(element("insight-sleep-detail").waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["LifeLog estimated score"].exists)
-        app.swipeDown()
+        // Pushed, not sheeted, since sleep is a "browse deeper" drill-down like
+        // activity/place/group/comparison -- Back pops it rather than a swipe
+        // dismissing a sheet.
+        app.navigationBars.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(element("insights-period-picker").waitForExistence(timeout: 5))
 
         let donutTarget = element("insights-donut-tap-target")

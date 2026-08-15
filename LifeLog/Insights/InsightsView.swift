@@ -40,10 +40,15 @@ struct InsightsView: View {
     @State private var anchorDate = Date.now
     @State private var choosingDate = false
     @State private var draftAnchorDate = Date.now
-    @State private var selectedSlice: TimeSlice?
-    @State private var selectedGroup: GroupSelection?
-    @State private var selectedPlace: PlaceTotal?
-    @State private var selectedComparison: TrendComparison?
+    /// Every "browse deeper" push -- activity, sleep, group, place, comparison,
+    /// visit -- goes through this one path and `InsightsRoute`, instead of the
+    /// per-destination `@State selected…` + `.sheet` pairs this replaced. The
+    /// period (`window`/`anchorDate`) and the scroll position both live above this
+    /// on `InsightsView` itself, which a push never tears down, so returning from
+    /// any depth lands back on the same period and roughly the same scroll offset
+    /// for free -- see `InsightsRoute`'s own doc comment for the sheet-inside-sheet
+    /// problem this replaces.
+    @State private var path = NavigationPath()
     @State private var now = Date.now
     @State private var snapshot = InsightsSnapshot.empty
     @State private var exportFile: TrendExportFile?
@@ -98,7 +103,7 @@ struct InsightsView: View {
         "\(window.rawValue)-\(insightsScope.rawValue)-\(interval.start.timeIntervalSinceReferenceDate)-\(interval.end.timeIntervalSinceReferenceDate)"
     }
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ZStack {
                 Color.lifeBackground.ignoresSafeArea()
                 ScrollView {
@@ -139,40 +144,8 @@ struct InsightsView: View {
                         }
                 }.presentationDetents([.medium])
             }
-            .sheet(item: $selectedSlice, onDismiss: { reloadInsights() }) { slice in
-                let rows = sliceRows(for: slice)
-                NavigationStack {
-                    if slice.name.localizedCaseInsensitiveContains("sleep") {
-                        InsightSleepDetailView(periodTitle: periodTitle, interval: snapshot.analysisInterval,
-                                               segments: snapshot.segments, activityData: activityData)
-                    } else {
-                        InsightActivityDetailView(activity: slice.name, periodTitle: periodTitle,
-                                                  interval: snapshot.analysisInterval, rows: rows,
-                                                  isUnlogged: slice.isUnlogged)
-                    }
-                }.presentationDetents([.medium, .large])
-            }
-            .sheet(item: $selectedGroup) { selection in
-                NavigationStack {
-                    InsightGroupDetailView(title: selection.title, groups: selection.groups, periodTitle: periodTitle,
-                                              interval: snapshot.analysisInterval,
-                                              segments: snapshot.segments)
-                }
-                .presentationDetents([.medium, .large])
-            }
-            .sheet(item: $selectedPlace, onDismiss: { reloadInsights() }) { place in
-                let rows = sliceRows(for: place)
-                NavigationStack {
-                    InsightPlaceHistoryView(placeName: place.name, periodTitle: periodTitle,
-                                            interval: snapshot.analysisInterval, rows: rows)
-                }.presentationDetents([.medium, .large])
-            }
-            .sheet(item: $selectedComparison) { comparison in
-                NavigationStack {
-                    InsightComparisonDetailView(comparison: comparison, periodTitle: periodTitle,
-                                                baselineTitle: "last \(window.title.lowercased())")
-                }
-                .presentationDetents([.medium, .large])
+            .navigationDestination(for: InsightsRoute.self) { route in
+                routeDestination(route)
             }
             .sheet(item: $selectedDaySegment, onDismiss: { reloadInsights() }) { segment in
                 if let visit = segment.visit {
@@ -556,21 +529,31 @@ struct InsightsView: View {
         }
         let hours = matching.reduce(0) { $0 + $1.hours }
         guard hours > 0 else { return }
-        selectedSlice = TimeSlice(name: name, hours: hours, color: insightColor(for: name),
-                                  symbol: insightSymbol(for: name), isUnlogged: false)
+        path.append(InsightsRoute.activity(name: name, isUnlogged: false))
     }
 
     private func openSleep() {
         let hours = snapshot.segments.filter(\.isSleep).reduce(0) { $0 + $1.hours }
         guard hours > 0 else { return }
-        selectedSlice = TimeSlice(name: "Sleep", hours: hours, color: insightColor(for: "Sleep"),
-                                  symbol: insightSymbol(for: "Sleep"), isUnlogged: false)
+        path.append(InsightsRoute.sleep)
+    }
+
+    /// The donut's own selection: unlike `openCategory`/`openSleep`, which are
+    /// reached from a named button and already know which of the two they mean,
+    /// a tapped wedge only carries a display name, so this keeps the
+    /// name-contains-"sleep" branch the old `$selectedSlice` sheet used to have.
+    private func pushSlice(_ slice: TimeSlice) {
+        guard !slice.isUnlogged else { return }
+        if slice.name.localizedCaseInsensitiveContains("sleep") {
+            path.append(InsightsRoute.sleep)
+        } else {
+            path.append(InsightsRoute.activity(name: slice.name, isUnlogged: slice.isUnlogged))
+        }
     }
 
     private func openComparison(_ change: MonthlyInsights.ActivityChange) {
-        let comparison = TrendComparison(name: change.category, hours: change.hours,
-                                          previousHours: change.previousHours, delta: change.delta)
-        selectedComparison = comparison
+        path.append(InsightsRoute.comparison(name: change.category, hours: change.hours,
+                                             previousHours: change.previousHours, delta: change.delta))
     }
 
     /// Loads the season of trend history Week's rolling baseline needs.
@@ -672,10 +655,9 @@ struct InsightsView: View {
     @ViewBuilder private var yearLayout: some View {
         YearInsightsView(insights: annualInsights, openGroup: { row in
             guard row.totalHours > 0, !row.foldedGroups.isEmpty else { return }
-            selectedGroup = GroupSelection(title: row.group, groups: row.foldedGroups)
+            path.append(InsightsRoute.group(title: row.group, groups: row.foldedGroups))
         }, openPlace: { place in
-            selectedPlace = PlaceTotal(name: place.name, category: place.category, activity: place.category,
-                                       latitude: 0, longitude: 0, hours: place.hours)
+            path.append(InsightsRoute.place(name: place.name))
         }, period: snapshot.analysisInterval, placesLoading: annualPlacesLoading)
         healthSetupSection
     }
@@ -807,7 +789,7 @@ struct InsightsView: View {
                 loggedHours: snapshot.loggedHours,
                 totalHours: snapshot.totalHours,
                 analysisInterval: snapshot.analysisInterval,
-                onSelectEntry: { selectedSlice = $0 }
+                onSelectEntry: pushSlice
             )
 
             // The legend grid that sat here is gone. Each wedge already carries its icon
@@ -1284,9 +1266,37 @@ struct InsightsView: View {
                                           interval: snapshot.analysisInterval, now: snapshot.generatedAt)
     }
 
-    private func sliceRows(for place: PlaceTotal) -> [SliceRow] {
-        InsightsSnapshot.sliceRows(forPlace: place.name, segments: snapshot.segments,
-                                   interval: snapshot.analysisInterval, now: snapshot.generatedAt)
+    /// Builds every pushed destination fresh from the current `snapshot` rather than
+    /// from a value captured when the route was pushed -- see `InsightsRoute`'s doc
+    /// comment. `@ViewBuilder` rather than a `switch` over view types directly in
+    /// `.navigationDestination` because the six cases return six different concrete
+    /// view types.
+    @ViewBuilder
+    private func routeDestination(_ route: InsightsRoute) -> some View {
+        switch route {
+        case let .activity(name, isUnlogged):
+            let rows = isUnlogged ? [] : InsightsSnapshot.sliceRows(forCategory: name, segments: snapshot.segments,
+                                                                    interval: snapshot.analysisInterval, now: snapshot.generatedAt)
+            InsightActivityDetailView(activity: name, periodTitle: periodTitle,
+                                      interval: snapshot.analysisInterval, rows: rows, isUnlogged: isUnlogged)
+        case .sleep:
+            InsightSleepDetailView(periodTitle: periodTitle, interval: snapshot.analysisInterval,
+                                   segments: snapshot.segments, activityData: activityData)
+        case let .group(title, groups):
+            InsightGroupDetailView(title: title, groups: groups, periodTitle: periodTitle,
+                                   interval: snapshot.analysisInterval, segments: snapshot.segments)
+        case let .place(name):
+            let rows = InsightsSnapshot.sliceRows(forPlace: name, segments: snapshot.segments,
+                                                  interval: snapshot.analysisInterval, now: snapshot.generatedAt)
+            InsightPlaceHistoryView(placeName: name, periodTitle: periodTitle,
+                                    interval: snapshot.analysisInterval, rows: rows)
+        case let .comparison(name, hours, previousHours, delta):
+            InsightComparisonDetailView(
+                comparison: TrendComparison(name: name, hours: hours, previousHours: previousHours, delta: delta),
+                periodTitle: periodTitle, baselineTitle: "last \(window.title.lowercased())")
+        case let .visit(stableID):
+            InsightVisitDestination(stableID: stableID)
+        }
     }
 
     private func move(_ amount: Int) {

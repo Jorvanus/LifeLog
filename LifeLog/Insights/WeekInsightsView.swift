@@ -168,10 +168,7 @@ struct WeeklyYourWeekCard: View {
                 LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading),
                                     GridItem(.flexible(), alignment: .leading)], spacing: 8) {
                     ForEach(groups, id: \.self) { area in
-                        NavigationLink {
-                            InsightGroupDetailView(title: area, groups: [area], periodTitle: periodTitle,
-                                                      interval: interval, segments: segments)
-                        } label: {
+                        NavigationLink(value: InsightsRoute.group(title: area, groups: [area])) {
                             HStack(spacing: 6) {
                                 Circle().fill(insightColor(for: area)).frame(width: 8, height: 8)
                                 Text(area).font(.caption)

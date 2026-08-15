@@ -177,4 +177,56 @@ final class InsightsPeriodTests: LifeLogUITestCase {
         XCTAssertTrue(app.buttons["Workouts"].exists)
         XCTAssertTrue(app.staticTexts["Apple Health is not connected"].waitForExistence(timeout: 5))
     }
+
+    /// Group and place drill-downs used to be sheets with their own throwaway
+    /// `NavigationStack` -- reaching one from Year and another from Week/Month
+    /// were two different presentation mechanisms for the same destination, and
+    /// Back meant swiping a sheet away rather than popping. Both are pushed on
+    /// the Insights tab's own stack now, through one `InsightsRoute`, so this
+    /// proves the actual round trip -- push, land on the right screen, Back --
+    /// returns to Year still selected, not to whatever period the tab defaults to.
+    func testYearGroupAndPlaceDrillDownsPushAndReturnToYear() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+        app.tabBars.buttons["Insights"].tap()
+
+        XCTAssertTrue(app.buttons["Year"].waitForExistence(timeout: 5))
+        app.buttons["Year"].tap()
+        XCTAssertTrue(element("annual-group-chart").waitForExistence(timeout: 10))
+
+        let home = element("annual-group-Home")
+        XCTAssertTrue(home.waitForExistence(timeout: 5))
+        home.tap()
+        let openGroup = element("annual-selected-group")
+        XCTAssertTrue(openGroup.waitForExistence(timeout: 5))
+        openGroup.tap()
+
+        XCTAssertTrue(element("insight-group-detail").waitForExistence(timeout: 5),
+                      "the group drill-down must actually open, not just select the chart row")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.buttons["Year"].waitForExistence(timeout: 5),
+                      "Back must return to Year, the period that was open, not reset to Day")
+        XCTAssertTrue(element("annual-group-chart").waitForExistence(timeout: 5))
+
+        var places = element("insights-year-places")
+        var attempts = 0
+        while !places.exists && attempts < 8 {
+            app.swipeUp()
+            attempts += 1
+        }
+        XCTAssertTrue(places.waitForExistence(timeout: 5))
+        let firstPlace = places.buttons.firstMatch
+        XCTAssertTrue(firstPlace.waitForExistence(timeout: 5))
+        firstPlace.tap()
+        let openPlace = element("year-selected-place")
+        XCTAssertTrue(openPlace.waitForExistence(timeout: 5))
+        openPlace.tap()
+
+        XCTAssertTrue(element("insight-place-history-detail").waitForExistence(timeout: 5),
+                      "the place drill-down must actually open, not just select the row")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.buttons["Year"].waitForExistence(timeout: 5),
+                      "Back must return to Year a second time, from a different drill-down")
+    }
 }

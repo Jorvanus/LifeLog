@@ -337,15 +337,13 @@ private struct MonthlyPlaceStorySection: View {
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 ForEach(selectedPlaces.prefix(5)) { place in
-                    MonthlyPlaceStoryRow(place: place, detail: detail(for: place), periodTitle: periodTitle,
-                                         interval: interval, segments: segments, now: now)
+                    MonthlyPlaceStoryRow(place: place, detail: detail(for: place))
                 }
             }
 
             if story.allPlaces.count > 5 {
                 NavigationLink {
-                    MonthlyPlaceStoryList(places: story.allPlaces, periodTitle: periodTitle,
-                                          interval: interval, segments: segments, now: now)
+                    MonthlyPlaceStoryList(places: story.allPlaces, periodTitle: periodTitle, interval: interval)
                 } label: {
                     Label("See all places", systemImage: "list.bullet")
                         .font(.subheadline.weight(.medium))
@@ -370,15 +368,12 @@ private struct MonthlyPlaceStoryList: View {
     let places: [MonthlyInsights.PlaceStory]
     let periodTitle: String
     let interval: DateInterval
-    let segments: [InsightSegment]
-    let now: Date
 
     var body: some View {
         List {
             Section("All places in this period") {
                 ForEach(places) { place in
-                    MonthlyPlaceStoryRow(place: place, detail: "\(formatHours(place.hours)) · \(place.visits) \(place.visits == 1 ? "visit" : "visits")",
-                                          periodTitle: periodTitle, interval: interval, segments: segments, now: now)
+                    MonthlyPlaceStoryRow(place: place, detail: "\(formatHours(place.hours)) · \(place.visits) \(place.visits == 1 ? "visit" : "visits")")
                 }
             }
         }
@@ -392,17 +387,9 @@ private struct MonthlyPlaceStoryList: View {
 private struct MonthlyPlaceStoryRow: View {
     let place: MonthlyInsights.PlaceStory
     let detail: String
-    let periodTitle: String
-    let interval: DateInterval
-    let segments: [InsightSegment]
-    let now: Date
 
     var body: some View {
-        NavigationLink {
-            InsightPlaceHistoryView(placeName: place.name, periodTitle: periodTitle, interval: interval,
-                                    rows: InsightsSnapshot.sliceRows(forPlace: place.name, segments: segments,
-                                                                      interval: interval, now: now))
-        } label: {
+        NavigationLink(value: InsightsRoute.place(name: place.name)) {
             HStack(spacing: 10) {
                 ActivityIcon(activity: place.activity, context: place.name,
                              color: insightColor(for: place.category), size: 34)
