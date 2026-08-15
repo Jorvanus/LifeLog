@@ -82,6 +82,9 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     private var context: ModelContext?
     private var serviceSession: CLServiceSession?
     private var serviceSessionRequirement: CLServiceSession.AuthorizationRequirement?
+    /// Distinguishes one session from its replacement, so a finished stream only ever
+    /// clears its own session. See `releaseServiceSession(generation:)`.
+    private var serviceSessionGeneration = 0
     private var diagnosticTask: Task<Void, Never>?
     private var identifyingVisits: Set<ObjectIdentifier> = []
     /// MapKit and reverse geocoding are a single resolution attempt. A noisy stream
@@ -194,18 +197,33 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         }
     }
 
+    /// Holds the session that keeps Core Location delivering, rebuilding it whenever
+    /// there is not a live one.
+    ///
+    /// The guard used to compare the requirement alone, which made a dead session
+    /// permanent: `serviceSessionRequirement` stayed `.always` after a session ended —
+    /// its diagnostic stream finishing or throwing, typically once authorization was
+    /// refused — so every later `startBackgroundWorkflow()` matched the stale
+    /// requirement and returned without creating a replacement. Background recording
+    /// then stayed off no matter how many times it was restarted, and only a relaunch
+    /// (which builds a fresh recorder) brought it back. Checking that a session
+    /// actually exists, and clearing it when its stream ends, lets a restart restart.
     private func holdServiceSession(requiring requirement: CLServiceSession.AuthorizationRequirement) {
-        guard serviceSessionRequirement != requirement else { return }
+        guard LocationRecoveryCoordinator.shouldRebuildServiceSession(
+            held: serviceSessionRequirement, hasLiveSession: serviceSession != nil, required: requirement
+        ) else { return }
         diagnosticTask?.cancel()
         serviceSession?.invalidate()
 
         let session = CLServiceSession(authorization: requirement)
+        serviceSessionGeneration += 1
+        let generation = serviceSessionGeneration
         serviceSession = session
         serviceSessionRequirement = requirement
         diagnosticTask = Task { [weak self, session] in
             do {
                 for try await diagnostic in session.diagnostics {
-                    guard !Task.isCancelled else { break }
+                    guard !Task.isCancelled else { return }
                     self?.handle(diagnostic)
                 }
             } catch is CancellationError {
@@ -213,7 +231,21 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             } catch {
                 self?.lastError = "Location permission status couldn't be refreshed."
             }
+            // Reached only when this session's stream is finished for good. A
+            // cancelled task is a deliberate replacement and returns above, so it
+            // never releases the newer session out from under itself.
+            guard !Task.isCancelled else { return }
+            self?.releaseServiceSession(generation: generation)
         }
+    }
+
+    /// Drops the cached session once its stream has ended, so the next
+    /// `holdServiceSession` builds a new one. The generation check means a session
+    /// that has already been replaced cannot clear its successor.
+    private func releaseServiceSession(generation: Int) {
+        guard generation == serviceSessionGeneration else { return }
+        serviceSession = nil
+        serviceSessionRequirement = nil
     }
 
     private func handle(_ diagnostic: CLServiceSession.Diagnostic) {
@@ -225,6 +257,58 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             lastError = "Always Location access is required to record visits in the background."
         } else if diagnostic.insufficientlyInUse {
             lastError = "Open LifeLog before starting background location logging."
+        }
+    }
+
+    /// Records authorization transitions, because losing Always is the one way
+    /// background recording stops that leaves no other trace.
+    ///
+    /// iOS periodically re-asks whether an app may keep using location in the
+    /// background, and answering "While Using" silently ends visit and
+    /// significant-location delivery. `isBackgroundLoggingEnabled` is LifeLog's own
+    /// preference, so it stays on and Settings keeps saying background logging is
+    /// enabled while nothing is being recorded. The only previous signal was
+    /// `lastError`, a transient string that any later message overwrites; with
+    /// nothing durable, the outage had to be diagnosed by guesswork afterwards.
+    ///
+    /// Written durably for the drop, so it survives an authorization change delivered
+    /// at launch before `connect(_:)` has supplied a `ModelContext` — precisely the
+    /// case where iOS downgraded the app while it was not running and the owner opens
+    /// it to find recording stopped.
+    private func recordAuthorizationChange(from previous: CLAuthorizationStatus,
+                                           to current: CLAuthorizationStatus) {
+        guard previous != current else { return }
+        if previous == .authorizedAlways, current != .authorizedAlways {
+            let consequence = isBackgroundLoggingEnabled
+                ? "Background recording has stopped until Always access is restored."
+                : "Background logging is off, so nothing was being recorded anyway."
+            Diagnostics.recordDurable(
+                context, subsystem: "Core Location",
+                message: "Always Location access was lost (now \(Self.name(for: current))). \(consequence)",
+                severity: isBackgroundLoggingEnabled ? "warning" : "info",
+                eventCode: .generic
+            )
+            return
+        }
+        if current == .authorizedAlways {
+            Diagnostics.record(context, subsystem: "Core Location",
+                               message: "Always Location access granted; background recording is active.",
+                               severity: "info")
+            return
+        }
+        Diagnostics.record(context, subsystem: "Core Location",
+                           message: "Location authorization changed from \(Self.name(for: previous)) to \(Self.name(for: current)).",
+                           severity: current == .denied || current == .restricted ? "warning" : "info")
+    }
+
+    private static func name(for status: CLAuthorizationStatus) -> String {
+        switch status {
+        case .authorizedAlways: "Always"
+        case .authorizedWhenInUse: "While Using"
+        case .denied: "Denied"
+        case .restricted: "Restricted"
+        case .notDetermined: "Not determined"
+        @unknown default: "Unknown"
         }
     }
 
@@ -254,18 +338,20 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     private func handle(_ event: CoreLocationEvent) {
         switch event {
         case let .authorizationChanged(status, accuracy):
+            let previousAuthorization = authorization
+            let previousAccuracyAuthorization = accuracyAuthorization
             authorization = status
-        let previousAccuracyAuthorization = accuracyAuthorization
             accuracyAuthorization = accuracy
-        if accuracyAuthorization == .reducedAccuracy, previousAccuracyAuthorization != .reducedAccuracy {
-            Diagnostics.record(context, subsystem: "Core Location",
-                               message: "Precise Location turned off; arrivals will resolve less accurately until it's back on.")
-        }
+            if accuracyAuthorization == .reducedAccuracy, previousAccuracyAuthorization != .reducedAccuracy {
+                Diagnostics.record(context, subsystem: "Core Location",
+                                   message: "Precise Location turned off; arrivals will resolve less accurately until it's back on.")
+            }
+            recordAuthorizationChange(from: previousAuthorization, to: authorization)
             if authorization == .authorizedAlways, isBackgroundLoggingEnabled {
-            startBackgroundWorkflow()
+                startBackgroundWorkflow()
             }
             if authorization == .authorizedAlways || authorization == .authorizedWhenInUse {
-            refreshCurrentLocation()
+                refreshCurrentLocation()
             }
         case let .visitArrival(coordinate, arrival, accuracy, callbackDelay):
             if callbackDelay > 15 * 60 {

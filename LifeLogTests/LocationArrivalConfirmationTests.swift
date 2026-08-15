@@ -112,6 +112,28 @@ struct LocationArrivalConfirmationTests {
             enabled: false, authorization: .authorizedAlways
         ) == false)
     }
+
+    @Test("A restart rebuilds the location session when the held one is gone")
+    func deadServiceSessionIsRebuiltRatherThanAssumedLive() {
+        // The bug: the recorder kept `.always` as its requirement after the session
+        // behind it ended, so restarting background recording matched the stale
+        // requirement and did nothing. Recording stayed off until the app was quit.
+        #expect(LocationRecoveryCoordinator.shouldRebuildServiceSession(
+            held: .always, hasLiveSession: false, required: .always
+        ))
+        // A live session for the same requirement is the one case that must not be
+        // torn down and rebuilt, or every restart would drop delivery for a moment.
+        #expect(LocationRecoveryCoordinator.shouldRebuildServiceSession(
+            held: .always, hasLiveSession: true, required: .always
+        ) == false)
+        // Upgrading from the when-in-use session `requestPermission` holds.
+        #expect(LocationRecoveryCoordinator.shouldRebuildServiceSession(
+            held: .whenInUse, hasLiveSession: true, required: .always
+        ))
+        #expect(LocationRecoveryCoordinator.shouldRebuildServiceSession(
+            held: nil, hasLiveSession: false, required: .always
+        ))
+    }
 }
 
 /// `CLVisit` has no public initializer -- CoreLocation only ever hands one to the

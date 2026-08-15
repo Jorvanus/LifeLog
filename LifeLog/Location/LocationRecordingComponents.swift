@@ -68,6 +68,21 @@ enum LocationRecoveryCoordinator {
     static func shouldStartBackgroundWorkflow(enabled: Bool, authorization: CLAuthorizationStatus) -> Bool {
         enabled && authorization != .notDetermined
     }
+
+    /// Whether `LocationRecorder.holdServiceSession` must build a new
+    /// `CLServiceSession`, given what it is holding and what is being asked for.
+    ///
+    /// The decision used to be `held != required` alone, which made a dead session
+    /// permanent: the recorder kept the requirement of a session whose diagnostic
+    /// stream had already ended, so a restart matched the stale requirement and
+    /// returned without creating a replacement. Background recording then stayed off
+    /// until the app was quit and reopened. `hasLiveSession` is the missing half —
+    /// matching a requirement means nothing if nothing is actually holding it.
+    static func shouldRebuildServiceSession(held: CLServiceSession.AuthorizationRequirement?,
+                                            hasLiveSession: Bool,
+                                            required: CLServiceSession.AuthorizationRequirement) -> Bool {
+        held != required || !hasLiveSession
+    }
 }
 
 /// Pure geofence planning seam; the monitor owns iOS registration while this keeps

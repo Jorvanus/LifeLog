@@ -2,6 +2,19 @@
 
 ## 2026-08-16
 
+### Background recording recovers on its own, and says when it stopped
+
+- **A refused location session no longer stays refused.** Once the session
+  holding background delivery ended — usually because Always access was declined
+  — LifeLog believed it still had one, so every later attempt to restart
+  background recording returned without doing anything. Recording stayed off
+  until the app was quit and reopened. Restarting now rebuilds the session.
+- **Losing Always access is recorded in Diagnostics.** iOS periodically asks
+  whether an app may keep using location in the background, and answering "While
+  Using" silently ends visit delivery while Settings still shows background
+  logging switched on. That drop is now written to Settings → Diagnostics, and
+  written durably, so it survives arriving before the app has finished starting.
+
 ### Repair the imported archive from Settings
 
 - Added **Settings → Data import → Repair archive**: a scan-then-apply pass over
