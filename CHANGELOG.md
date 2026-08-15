@@ -2,6 +2,27 @@
 
 ## 2026-08-15
 
+### Fix "Health & Fitness" and "Sleep & Rest" rendering grey in the Year chart
+
+- `AnnualInsights.LifeArea.category` was set to the area's own display name
+  ("Sleep & Rest", "Health & Fitness"), then passed straight to
+  `insightColor`/`categoryColor`, which look a category up in
+  `CategoryPalette` by exact (case-insensitive) match. `CategoryPalette` is
+  keyed by `ActivityCatalog`'s shorter category vocabulary ("Sleep",
+  "Fitness"), so neither ever matched and both silently fell through to the
+  grey fallback — on the year chart, "Sleep & Rest" is usually the largest
+  slice of every month, so most of every bar read as grey. "Errands" (mapped
+  to no `CategoryPalette` key at all, "Errands") had the same latent bug,
+  invisible only because it has never yet been prominent enough to make the
+  chart's top-5 cut.
+- `category` now holds a representative real category per area (Fitness,
+  Shopping, Sleep) used only for colour/symbol lookup; `insightSymbol`'s
+  substring matching had always tolerated the longer display names, which is
+  why only colour, not icon, was ever wrong. Grouping segments into areas is
+  untouched — it already matched on `area.name`, never `category`.
+- Added `namedAreasDoNotFallBackToGrey` (`AnnualInsightsTests`), which checks
+  every named area resolves a colour distinct from the grey fallback.
+
 ### Audit cross-visit `DateInterval` construction; warn on overlapping Add Visit entries
 
 - Reviewed every `DateInterval(start:end:)` built from two different visits'

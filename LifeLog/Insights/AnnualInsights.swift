@@ -7,6 +7,13 @@ import SwiftUI
 struct AnnualInsights {
     struct LifeArea: Identifiable, Hashable {
         let name: String
+        /// A representative `ActivityCatalog` category, used only to look up this
+        /// area's colour and symbol -- `CategoryPalette` is keyed by that shorter,
+        /// underlying vocabulary ("Sleep", "Fitness"), not by this display name
+        /// ("Sleep & Rest", "Health & Fitness"). The two used to be assumed the
+        /// same string; they never were, so this area's slice fell through to the
+        /// grey fallback colour every chart, even though `insightSymbol`'s looser
+        /// substring match happened to still find the right icon.
         let category: String
         var id: String { name }
     }
@@ -14,12 +21,12 @@ struct AnnualInsights {
     static let areas: [LifeArea] = [
         .init(name: "Home", category: "Home"),
         .init(name: "Work", category: "Work"),
-        .init(name: "Health & Fitness", category: "Health & Fitness"),
+        .init(name: "Health & Fitness", category: "Fitness"),
         .init(name: "Social", category: "Social"),
         .init(name: "Food & Drink", category: "Food & Drink"),
-        .init(name: "Errands", category: "Errands"),
+        .init(name: "Errands", category: "Shopping"),
         .init(name: "Travel", category: "Travel"),
-        .init(name: "Sleep & Rest", category: "Sleep & Rest"),
+        .init(name: "Sleep & Rest", category: "Sleep"),
         .init(name: "Other", category: "Other")
     ]
 

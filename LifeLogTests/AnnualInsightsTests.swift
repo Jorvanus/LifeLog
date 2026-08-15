@@ -97,6 +97,21 @@ struct AnnualInsightsTests {
         #expect(rows.reduce(0) { $0 + $1.totalHours } == 12 * 310.2)
     }
 
+    /// `LifeArea.category` exists only to look up a colour and symbol, and
+    /// `CategoryPalette` is keyed by `ActivityCatalog`'s shorter category
+    /// vocabulary ("Sleep", "Fitness"), not by these longer display names
+    /// ("Sleep & Rest", "Health & Fitness"). Every named area but "Other" must
+    /// resolve to its own colour rather than silently falling through to the
+    /// grey fallback every other area also shares.
+    @Test("Every named annual life area resolves its own colour, not the grey fallback")
+    func namedAreasDoNotFallBackToGrey() {
+        let fallback = insightColor(for: "unmatched-category-xyz")
+        for area in AnnualInsights.areas where area.name != "Other" {
+            #expect(insightColor(for: area.category) != fallback,
+                    "\(area.name) (category \"\(area.category)\") resolved to the grey fallback")
+        }
+    }
+
     private func segment(_ category: String, start: Date, hours: Double,
                          source: String = "automatic", place: String? = "Test place") -> InsightSegment {
         let visit = Visit(arrival: start, departure: start.addingTimeInterval(hours * 3_600),
