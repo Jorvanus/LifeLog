@@ -56,6 +56,7 @@ struct ManualVisitView: View {
     @State private var departure = Date()
     @State private var resolution: ManualPlaceResolution = .none
     @State private var saveFailed = false
+    @State private var confirmingOverlap = false
 
     /// Scoped to `range` rather than the whole archive, and including every source
     /// — imported-journal too — since `VisitSuggestion` now needs the same picture
@@ -75,6 +76,32 @@ struct ManualVisitView: View {
 
     private var suggestions: [VisitSuggestion] {
         VisitSuggestion.make(from: visits, range: range, savedPlaces: savedPlaces)
+    }
+
+    /// `departure` alone can predate `arrival` while the person is still dragging
+    /// the picker; this is the value actually written, so overlap detection asks
+    /// the same question `save()` does rather than a looser one.
+    private var effectiveDeparture: Date { max(arrival, departure) }
+
+    /// Existing visits this entry would claim the same minutes as. Nothing here
+    /// changes what gets saved — a hand-entered visit is left exactly as written,
+    /// the same rule `canRejoin` and `mergeOverlappingStays` already apply — this
+    /// only tells the person before it happens, since nothing downstream else will.
+    private var overlappingVisits: [Visit] {
+        Self.overlapping(arrival: arrival, departure: effectiveDeparture, among: visits)
+    }
+
+    /// A free function so the overlap rule can be checked without standing up the
+    /// view: any visit whose own span shares a minute with `[arrival, departure)`.
+    static func overlapping(arrival: Date, departure: Date, among visits: [Visit], now: Date = .now) -> [Visit] {
+        visits.filter { $0.arrival < departure && ($0.departure ?? now) > arrival }
+    }
+
+    private var overlapSummary: String {
+        overlappingVisits
+            .sorted { $0.arrival < $1.arrival }
+            .map { "\($0.displayPlaceName), \($0.arrival.formatted(date: .omitted, time: .shortened))–\(($0.departure ?? .now).formatted(date: .omitted, time: .shortened))" }
+            .joined(separator: "\n")
     }
 
     var body: some View {
@@ -133,7 +160,7 @@ struct ManualVisitView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { save() }
+                    Button("Save") { attemptSave() }
                         .disabled(TextSafety.clean(place, maximumLength: 120).isEmpty)
                 }
             }
@@ -142,13 +169,27 @@ struct ManualVisitView: View {
             } message: {
                 Text("LifeLog left your existing timeline unchanged.")
             }
+            .alert("This overlaps your existing timeline", isPresented: $confirmingOverlap) {
+                Button("Save Anyway", role: .destructive) { save() }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This time overlaps:\n\(overlapSummary)")
+            }
+        }
+    }
+
+    private func attemptSave() {
+        if overlappingVisits.isEmpty {
+            save()
+        } else {
+            confirmingOverlap = true
         }
     }
 
     private func save() {
         let safePlace = TextSafety.clean(place, maximumLength: 120)
         let safeActivity = TextSafety.clean(activity, maximumLength: 80)
-        let safeDeparture = max(arrival, departure)
+        let safeDeparture = effectiveDeparture
         let coordinate = resolution.coordinate
         let inferred = InferenceEngine.activity(placeName: safePlace, arrival: arrival)
         let visit = Visit(arrival: arrival, departure: safeDeparture,

@@ -226,4 +226,61 @@ struct OverlapResolutionTests {
         #expect(entered.departure == base.addingTimeInterval(2 * 60 * 60))
         #expect(try context.fetch(FetchDescriptor<Visit>()).filter(ActivityLocationPolicy.isLocationVisit).count == 1)
     }
+
+    /// Two hand-entered visits claiming the same minutes at different places — the
+    /// shape the audit of cross-visit `DateInterval` construction went looking for.
+    /// `mergeOverlappingStays` only ever touches `source == "automatic"` rows, so a
+    /// manual overlap like this survives untouched rather than being resolved; the
+    /// point of the test is that nothing downstream traps building an interval from
+    /// the pair of them.
+    @Test("Overlapping manual visits survive reconciliation without crashing")
+    func overlappingManualVisitsDoNotCrashReconciliation() throws {
+        let context = try ActivityLocationPolicyFixtures.makeContext()
+        // Backfilled Work 9:00–5:00, with a second manual entry for a dentist
+        // appointment logged 1:00–1:45 that the person forgot they had already
+        // covered by the Work entry — arrival for the second sits before the
+        // first's departure, so any code assuming visits are non-overlapping by
+        // arrival order builds an inverted interval from this pair.
+        let work = Visit(arrival: base, departure: base.addingTimeInterval(8 * 60 * 60),
+                         latitude: -23.40, longitude: 150.50,
+                         placeName: "Work", inferredActivity: "Working", source: "manual")
+        let dentist = Visit(arrival: base.addingTimeInterval(4 * 60 * 60),
+                            departure: base.addingTimeInterval(4.75 * 60 * 60),
+                            latitude: -23.41, longitude: 150.52,
+                            placeName: "Dentist", inferredActivity: "Appointment", source: "manual")
+        [work, dentist].forEach(context.insert)
+        try context.save()
+
+        // Neither the archive-wide merge nor a full reconciliation pass may trap
+        // building a `DateInterval` from this pair, and a manual entry's times are
+        // never rewritten by either.
+        let merged = try ActivityLocationPolicy.mergeOverlappingStays(context: context)
+        try ActivityLocationPolicy.reconcileAll(context: context, now: base.addingTimeInterval(9 * 60 * 60))
+        try context.save()
+
+        #expect(merged == 0)
+        #expect(work.arrival == base)
+        #expect(work.departure == base.addingTimeInterval(8 * 60 * 60))
+        #expect(dentist.arrival == base.addingTimeInterval(4 * 60 * 60))
+        #expect(dentist.departure == base.addingTimeInterval(4.75 * 60 * 60))
+    }
+
+    /// The exact regression `CommuteDetection` hit on-device: a movement record's
+    /// `remainingSegments` must not build a `DateInterval` assuming the manual stay
+    /// it overlaps starts after the movement's own start.
+    @Test("A movement record overlapping a manual visit does not crash segment subtraction")
+    func movementOverlappingManualVisitDoesNotCrash() {
+        let manual = Visit(arrival: base.addingTimeInterval(30 * 60),
+                           departure: base.addingTimeInterval(90 * 60),
+                           latitude: -23.37, longitude: 150.51,
+                           placeName: "Friend's house", inferredActivity: "Visiting", source: "manual")
+        // Starts before the manual visit and ends inside it.
+        let movement = DateInterval(start: base, end: base.addingTimeInterval(60 * 60))
+
+        let remaining = ActivityLocationPolicy.remainingSegments(for: movement, locationVisits: [manual])
+
+        #expect(remaining.count == 1)
+        #expect(remaining[0].start == base)
+        #expect(remaining[0].end == manual.arrival)
+    }
 }

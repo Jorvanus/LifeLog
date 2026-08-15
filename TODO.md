@@ -14,12 +14,6 @@ speculative features.
 
 ## Correctness and recovery
 
-- [ ] **Audit cross-visit `DateInterval` construction.** `CommuteDetection` previously
-  trapped when overlapping manual visits produced an end before a start. Inspect every
-  interval built from two different visits, guard invalid ordering, and add overlapping
-  manual-entry fixtures. Decide whether Add Visit should warn about or resolve overlaps
-  rather than leaving every downstream calculation to defend itself.
-
 - [ ] **Complete protected-store recovery as a first-class code path.** Centralise the
   three-store-file protection policy, make pending-save recovery idempotent across
   relaunches, and ensure all failure reporting stays aggregate-only. Add deterministic

@@ -1,5 +1,28 @@
 # Change log
 
+## 2026-08-15
+
+### Audit cross-visit `DateInterval` construction; warn on overlapping Add Visit entries
+
+- Reviewed every `DateInterval(start:end:)` built from two different visits'
+  fields across `Location/` and `Activity/` (import segmentation, workout/stay
+  absorption, journey bounding, stay rejoining, HealthKit merge). All were
+  already guarded — `CommuteDetection`'s 2026-08-10 crash had been the one
+  unguarded case and was already fixed — so no further guards were needed, but
+  the audit was previously undone.
+- Added regression fixtures for the crash's shape: two overlapping manual
+  visits going through `mergeOverlappingStays`/`reconcileAll`
+  (`OverlapResolutionTests`), and a movement record overlapping a manual stay
+  going through `remainingSegments` — the exact construction that trapped in
+  `CommuteDetection`.
+- `ManualVisitView` (Add Visit) now warns before saving a visit that overlaps
+  an existing one, naming the conflicting visit(s) and asking for a "Save
+  Anyway" confirmation, rather than silently writing an overlap for every
+  downstream calculation to discover on its own. Manual visits are still never
+  auto-resolved or rewritten — same rule `canRejoin` and
+  `mergeOverlappingStays` already apply to a hand-entered visit's times.
+  Covered by `ManualVisitViewTests`.
+
 ## 2026-08-14
 
 ### Remove InsightsView's orphaned standardLayout dead code
