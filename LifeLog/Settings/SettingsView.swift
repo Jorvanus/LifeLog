@@ -160,8 +160,13 @@ struct SettingsView: View {
                         .font(.footnote).foregroundStyle(.secondary)
                     NavigationLink { JournalCompactionView() } label: { Label("Manage imported journal storage", systemImage: "arrow.triangle.2.circlepath") }
                         .accessibilityIdentifier("journal-storage-link")
+                    NavigationLink { ArchiveRepairView() } label: { Label("Repair archive", systemImage: "bandage") }
+                        .accessibilityIdentifier("archive-repair-link")
                 } header: {
                     Text("Data import")
+                } footer: {
+                    Text("Repair finds stays the import never closed, duplicate records, and history that can be improved. It shows what it found before changing anything.")
+                        .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("Local backup") {
                     Button {

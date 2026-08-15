@@ -53,7 +53,10 @@ struct ActivityDefinition: Codable, Identifiable, Hashable, Sendable {
 /// directly; the name lookup exists only for old snapshots waiting for a batch.
 @MainActor
 enum ActivityIdentityMigration {
-    static let batchSize = 500
+    /// `nonisolated` because it is an immutable constant that the off-main-actor
+    /// `linkAll` path and its tests need to reason about page size without hopping
+    /// to the main actor for a number that can never change.
+    nonisolated static let batchSize = 500
 
     struct Progress: Sendable, Equatable {
         let adoptedDefinitions: Int
@@ -80,14 +83,55 @@ enum ActivityIdentityMigration {
         return adopted
     }
 
-    /// Links one bounded page of old rows. A completed label must exactly equal one
+    /// Resolves a label to one definition ID.
+    ///
+    /// Exact display label first, for the reason documented on the type: two
+    /// separately-created activities such as `Cafe` and `Café` must not collapse
+    /// into one. A case-only fallback follows, and only when exactly one active
+    /// definition matches case-insensitively — which is what `Cafe`/`Café` do
+    /// *not* do, since they differ by a diacritic rather than by case, so the
+    /// concern that motivated exact matching is left intact.
+    ///
+    /// Without the fallback a label differing only in capitalisation can never
+    /// link. The archive carries 177 visits labelled `coffee` against a catalogue
+    /// entry named `Coffee`, and every other free-text activity comparison in the
+    /// app — `matchesSnapshot`, `ActivityRenameActor.mergeActivity` — is already
+    /// case-insensitive, so those rows were reachable by rename but not by
+    /// linking.
+    struct LabelIndex {
+        let exact: [String: UUID]
+        let folded: [String: UUID]
+
+        init(definitions: [ActivityDefinitionRecord]) {
+            let active = definitions.filter(\.isActive)
+            exact = Dictionary(grouping: active, by: \.name)
+                .compactMapValues { $0.count == 1 ? $0[0].stableID : nil }
+            folded = Dictionary(grouping: active, by: { $0.name.lowercased() })
+                .compactMapValues { matches in
+                    let ids = Set(matches.map(\.stableID))
+                    return ids.count == 1 ? ids.first : nil
+                }
+        }
+
+        func id(for label: String) -> UUID? {
+            exact[label] ?? folded[label.lowercased()]
+        }
+
+        /// True when the label only links via the case-only fallback. Reported by
+        /// the repair scan so the owner can see how many rows were unreachable
+        /// for that reason alone.
+        func matchesByCaseOnly(_ label: String) -> Bool {
+            exact[label] == nil && folded[label.lowercased()] != nil
+        }
+    }
+
+    /// Links one bounded page of old rows. A completed label must match one
     /// persisted definition; ambiguous or imported labels remain snapshots until the
     /// owner explicitly adopts/categorises them.
     static func backfillNextBatch(context: ModelContext, limit: Int = batchSize) throws -> Progress {
         let adopted = try adoptLegacyDefinitions(context: context)
         let definitions = try context.fetch(FetchDescriptor<ActivityDefinitionRecord>())
-        let exactIDs = Dictionary(grouping: definitions.filter(\.isActive), by: \.name)
-            .compactMapValues { $0.count == 1 ? $0[0].stableID : nil }
+        let exactIDs = LabelIndex(definitions: definitions)
 
         var visitDescriptor = FetchDescriptor<Visit>(predicate: #Predicate { $0.activityDefinitionID == nil },
                                                       sortBy: [SortDescriptor(\.arrival)])
@@ -95,7 +139,7 @@ enum ActivityIdentityMigration {
         let visits = try context.fetch(visitDescriptor)
         var linkedVisits = 0
         for visit in visits {
-            if let id = exactIDs[visit.activity] {
+            if let id = exactIDs.id(for: visit.activity) {
                 visit.activityDefinitionID = id
                 linkedVisits += 1
             }
@@ -107,7 +151,7 @@ enum ActivityIdentityMigration {
         let places = try context.fetch(placeDescriptor)
         var linkedPlaces = 0
         for place in places {
-            if let id = exactIDs[place.defaultActivity] {
+            if let id = exactIDs.id(for: place.defaultActivity) {
                 place.activityDefinitionID = id
                 linkedPlaces += 1
             }
@@ -116,6 +160,47 @@ enum ActivityIdentityMigration {
         return Progress(adoptedDefinitions: adopted, linkedVisits: linkedVisits,
                         linkedPlaces: linkedPlaces,
                         hasMore: visits.count == limit || places.count == limit)
+    }
+
+    /// Links every remaining unlinked row in one pass, for the attended repair in
+    /// Settings.
+    ///
+    /// The paged `backfillNextBatch` is sized for launch, where the only budget
+    /// that matters is time-to-first-screen — but it links at most one page per
+    /// launch, so an archive of 25,000 visits needs roughly fifty cold launches to
+    /// finish, and rows whose label never matches are re-fetched on every one of
+    /// them. That is fine as a background trickle and useless as a way to actually
+    /// complete the migration, which is what this is for. `nonisolated` so
+    /// `ArchiveRepairActor` can run it off the main actor, where a whole-archive
+    /// rewrite belongs; it saves nothing itself, leaving the caller's transaction
+    /// to commit the whole repair at once.
+    nonisolated static func linkAll(context: ModelContext) throws -> Int {
+        let definitions = try context.fetch(FetchDescriptor<ActivityDefinitionRecord>())
+        let index = LabelIndex(definitions: definitions)
+        var linked = 0
+        for visit in try context.fetch(FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.activityDefinitionID == nil }
+        )) {
+            guard let id = index.id(for: visit.activity) else { continue }
+            visit.activityDefinitionID = id
+            linked += 1
+        }
+        for place in try context.fetch(FetchDescriptor<SavedPlace>(
+            predicate: #Predicate { $0.activityDefinitionID == nil }
+        )) {
+            guard let id = index.id(for: place.defaultActivity) else { continue }
+            place.activityDefinitionID = id
+            linked += 1
+        }
+        return linked
+    }
+
+    /// How many unlinked visits match a definition only by case. Reported by the
+    /// repair scan; read-only.
+    nonisolated static func caseOnlyMatchCount(visits: [Visit],
+                                               definitions: [ActivityDefinitionRecord]) -> Int {
+        let index = LabelIndex(definitions: definitions)
+        return visits.filter { $0.activityDefinitionID == nil && index.matchesByCaseOnly($0.activity) }.count
     }
 
     /// A rename changes one definition. Visit and place snapshots stay untouched so

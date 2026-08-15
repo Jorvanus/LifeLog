@@ -447,7 +447,7 @@ struct LocalBackupTests {
         #expect(validation.resolvedOverlaps == 0)
     }
 
-    @Test("Activity identity migration keeps similar names separate and links only exact snapshots")
+    @Test("Activity identity migration keeps diacritic-distinct names separate but links a case-only difference")
     func activityIdentityMigrationIsConservative() throws {
         let context = try makeContext()
         let defaultsSuite = "ActivityIdentityMigration.\(UUID().uuidString)"
@@ -472,7 +472,32 @@ struct LocalBackupTests {
         let visits = try context.fetch(FetchDescriptor<Visit>(sortBy: [SortDescriptor(\.arrival)]))
         #expect(visits[0].activityDefinitionID == cafe.id)
         #expect(visits[1].activityDefinitionID == accented.id)
-        #expect(visits[2].activityDefinitionID == nil)
+        // "CAFE" is "Cafe" typed in caps, and links to it. The rule that matters
+        // is that `Cafe` and `Café` stay two activities — they differ by a
+        // diacritic, not by case, so the case-only fallback never sees them as
+        // the same candidate. See `ActivityIdentityMigration.LabelIndex`.
+        #expect(visits[2].activityDefinitionID == cafe.id)
+    }
+
+    @Test("Two activities differing only in case link to neither")
+    func activityIdentityMigrationRefusesAmbiguousCase() throws {
+        let context = try makeContext()
+        let defaultsSuite = "ActivityIdentityMigration.ambiguous.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: defaultsSuite)!
+        defer { defaults.removePersistentDomain(forName: defaultsSuite) }
+        // Deliberately created as two separate activities. Folding them would be
+        // irreversible data loss, so an ambiguous fold links nothing and leaves
+        // the snapshot label intact.
+        let lower = ActivityDefinition(name: "gym", category: "Fitness", symbol: "dumbbell.fill")
+        let upper = ActivityDefinition(name: "Gym", category: "Fitness", symbol: "dumbbell.fill")
+        try ActivityCatalog.withStorage(defaults) {
+            ActivityCatalog.save([lower, upper])
+            context.insert(Visit(arrival: base, latitude: 0, longitude: 0, placeName: "A", inferredActivity: "GYM"))
+            try context.save()
+            _ = try ActivityIdentityMigration.backfillNextBatch(context: context)
+        }
+        let visits = try context.fetch(FetchDescriptor<Visit>())
+        #expect(visits[0].activityDefinitionID == nil)
     }
 
     @Test("Activity identity backfill is bounded for a large archive")

@@ -1,5 +1,49 @@
 # Change log
 
+## 2026-08-16
+
+### Repair the imported archive from Settings
+
+- Added **Settings → Data import → Repair archive**: a scan-then-apply pass over
+  the whole archive that reports what it found before changing anything, and
+  takes a full local backup immediately before it does. Each repair is chosen
+  individually and none is on by default, because every one of them rewrites or
+  removes recorded history.
+- **Close runaway stays.** Stays over 24 hours that the import never closed — the
+  worst claims 567 hours and swallows 65 later visits — are closed where a visit
+  at a *different, named* place begins. Movement recorded inside a stay (a walk,
+  a nap, a journey with no place of its own) never closes it, so the pass cannot
+  invent a departure that never happened; anything without such a boundary is
+  reported for manual editing rather than guessed at.
+- **Merge duplicate records.** Rows sharing an activity whose start and end both
+  fall within five seconds are the same event recorded twice; the earliest
+  survives. This is the general form of the existing `health-sleep` repair, which
+  only ever covered one source.
+- **Collapse nested journeys.** A journey recorded wholly inside another journey
+  adds nothing the outer row does not already carry. A real stop inside a journey
+  is kept.
+- **Add coordinates from Saved Places.** Imported visits whose place name matches
+  a Saved Place take that place's coordinates, stamped with a new `name-backfill`
+  provenance so an inferred position can never be mistaken for a recorded fix,
+  and can be reverted as a set. Because the reach of this depends entirely on the
+  Saved Place list, the screen also names the place names used most often that
+  have no Saved Place yet, so it is clear what would widen it.
+- **Link activities to the catalogue.** The launch migration links one 500-row
+  page per launch, which an archive of 25,000 visits would need roughly fifty
+  cold launches to finish. The repair finishes the remainder in one pass.
+
+### Link activity labels that differ only in capitalisation
+
+- `ActivityIdentityMigration` matched snapshot labels against catalogue names
+  exactly, so a visit labelled `coffee` could never link to the activity named
+  `Coffee` — 177 visits in the owner's archive, permanently unreachable by rename
+  or merge even though every other free-text activity comparison in the app is
+  already case-insensitive. Matching now falls back to a case-only match, and
+  only when exactly one active definition matches that way. Names differing by
+  more than case (`Cafe` and `Café`) still resolve to two separate activities,
+  which is what the exact-match rule existed to protect, and two activities
+  deliberately differing only in case link to neither.
+
 ## 2026-08-15
 
 ### Refresh and consolidate timeline activity artwork

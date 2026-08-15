@@ -118,12 +118,19 @@ enum VisitRecognitionConfidence: Codable, Sendable, Equatable, Hashable {
 
 enum PlaceFieldProvenance: Codable, Sendable, Equatable, Hashable {
     case maps, savedPlace, manual, nameFallback
+    /// Coordinates inferred by `ArchiveRepair` from the visit's place name
+    /// matching a Saved Place, for imported history that never had any. Kept
+    /// distinct from `.savedPlace` — which means the visit was actually recorded
+    /// inside that place's geofence — so a reader can tell an inference from a
+    /// fix, and so the backfill can be identified and reversed as a set.
+    case nameBackfill
     case unknown(String)
 
     static let mapsRaw = "maps"
     static let savedPlaceRaw = "saved-place"
     static let manualRaw = "manual"
     static let nameFallbackRaw = "name-fallback"
+    static let nameBackfillRaw = "name-backfill"
 
     init?(rawValue: String?) {
         guard let rawValue else { return nil }
@@ -132,6 +139,7 @@ enum PlaceFieldProvenance: Codable, Sendable, Equatable, Hashable {
         case Self.savedPlaceRaw: self = .savedPlace
         case Self.manualRaw: self = .manual
         case Self.nameFallbackRaw: self = .nameFallback
+        case Self.nameBackfillRaw: self = .nameBackfill
         default: self = .unknown(rawValue)
         }
     }
@@ -141,9 +149,14 @@ enum PlaceFieldProvenance: Codable, Sendable, Equatable, Hashable {
         case .savedPlace: Self.savedPlaceRaw
         case .manual: Self.manualRaw
         case .nameFallback: Self.nameFallbackRaw
+        case .nameBackfill: Self.nameBackfillRaw
         case .unknown(let raw): raw
         }
     }
+    /// True when the coordinates were inferred rather than observed. Anything
+    /// deciding how far to trust a position — geofence learning, place scoring —
+    /// should treat these as weaker evidence than a recorded fix.
+    var isInferredCoordinate: Bool { self == .nameBackfill }
     init(from decoder: Decoder) throws { self = Self(rawValue: try decoder.singleValueContainer().decode(String.self))! }
     func encode(to encoder: Encoder) throws { var container = encoder.singleValueContainer(); try container.encode(rawValue) }
 }

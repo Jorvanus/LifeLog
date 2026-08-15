@@ -6,6 +6,7 @@ struct RootView: View {
     private enum UITestDestination: String, Identifiable {
         case diagnostics
         case journalStorage
+        case archiveRepair
         var id: String { rawValue }
     }
 
@@ -33,6 +34,7 @@ struct RootView: View {
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("-uiTesting"), arguments.contains("-ui-test-open-diagnostics") { return .diagnostics }
         if arguments.contains("-uiTesting"), arguments.contains("-ui-test-open-journal-storage") { return .journalStorage }
+        if arguments.contains("-uiTesting"), arguments.contains("-ui-test-open-archive-repair") { return .archiveRepair }
         return nil
     }()
 
@@ -154,6 +156,7 @@ struct RootView: View {
                 switch destination {
                 case .diagnostics: DiagnosticsView(recorder: recorder)
                 case .journalStorage: JournalCompactionView()
+                case .archiveRepair: ArchiveRepairView()
                 }
             }
         }

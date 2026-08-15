@@ -172,6 +172,62 @@ final class SettingsAndDiagnosticsTests: LifeLogUITestCase {
         XCTAssertTrue(element("journal-empty-state").waitForExistence(timeout: 5))
     }
 
+    /// Scanning must never arm anything by itself: the scan is read-only, and the
+    /// apply action stays unavailable until a step with work is deliberately
+    /// chosen.
+    ///
+    /// Only the invariant is asserted, not "tapping a step enables apply" — what a
+    /// seeded launch offers work for is not stable. `RootView` runs the activity
+    /// backfill at launch, which links the whole small fixture before this screen
+    /// is reached, so whether any step has work at all depends on a race with that
+    /// `.task`. The invariant holds either way.
+    ///
+    /// Deliberately at the default text size, unlike the sibling storage test: that
+    /// one exists to check layout at Accessibility XXXL, this one checks behaviour.
+    /// `Form` instantiates its rows lazily, so an oversized launch simply pushes
+    /// the later steps out of existence and the test fails for a reason that has
+    /// nothing to do with what it is asserting.
+    func testArchiveRepairScanDoesNotArmApply() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed", "-ui-test-open-archive-repair"]
+        app.launch()
+
+        XCTAssertTrue(element("archive-repair-screen").waitForExistence(timeout: 10))
+
+        let scan = element("repair-scan")
+        XCTAssertTrue(scan.waitForExistence(timeout: 5))
+        scan.tap()
+
+        // The scan has produced findings once the first step row exists.
+        let firstStep = element("repair-step-closeRunawayStays")
+        XCTAssertTrue(firstStep.waitForExistence(timeout: 15), "scan must report what it found")
+
+        // Every step must be reachable, so nothing the scan reports is hidden below
+        // a fold the person cannot get to.
+        for step in ["closeRunawayStays", "mergeDuplicates", "collapseNestedJourneys",
+                     "backfillCoordinates", "linkActivities"] {
+            XCTAssertTrue(scrollToElement("repair-step-\(step)").exists,
+                          "repair step \(step) must be reachable")
+        }
+
+        let apply = scrollToElement("apply-archive-repair")
+        XCTAssertTrue(apply.exists, "the apply action must be reachable")
+        XCTAssertFalse(apply.isEnabled, "scanning alone must never arm the repair")
+    }
+
+    /// Scrolls a Form until the identified element is instantiated and on screen.
+    /// `Form` is lazy, so an element below the fold does not merely fail
+    /// `isHittable` — it does not exist yet.
+    private func scrollToElement(_ identifier: String, attempts: Int = 12) -> XCUIElement {
+        let target = element(identifier)
+        var swipes = 0
+        while !(target.exists && target.isHittable) && swipes < attempts {
+            app.swipeUp()
+            swipes += 1
+        }
+        return target
+    }
+
     func testSettingsBackupFailure() {
         app.terminate()
         app.launchArguments = ["-uiTesting", "-ui-test-fail-backup", "-AppleInterfaceStyle", "Dark"]
