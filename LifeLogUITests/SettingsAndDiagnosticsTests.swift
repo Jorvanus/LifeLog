@@ -205,7 +205,8 @@ final class SettingsAndDiagnosticsTests: LifeLogUITestCase {
         // Every step must be reachable, so nothing the scan reports is hidden below
         // a fold the person cannot get to.
         for step in ["closeRunawayStays", "mergeDuplicates", "collapseNestedJourneys",
-                     "backfillCoordinates", "mergeDuplicateDefinitions", "linkActivities"] {
+                     "backfillCoordinates", "renameSleepPlaceholders", "mergeDuplicateDefinitions",
+                     "linkActivities"] {
             XCTAssertTrue(scrollToElement("repair-step-\(step)").exists,
                           "repair step \(step) must be reachable")
         }

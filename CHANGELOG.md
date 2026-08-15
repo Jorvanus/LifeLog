@@ -2,6 +2,25 @@
 
 ## 2026-08-16
 
+### Fold imported sleep visits into "Sleep" instead of "Imported journal"
+
+- The owner noticed "Imported journal" showing up in Insights' "Places that
+  shaped the year" as its own sleep place, splitting sleep history across two
+  names instead of the one every other night uses. Cause: a sleep visit
+  imported from the CSV journal never captured a place, so it defaulted to the
+  literal placeholder text "Imported journal" -- which nothing downstream
+  treats as equivalent to "no place" once the visit already has its own
+  activity, so it groups as if it were a real, distinct place wherever the app
+  groups history by place name (Insights' place totals, Timeline, Activities'
+  "Top locations").
+- Added **Name imported sleep entries "Sleep"** as a new archive repair step.
+  It renames the placeholder to "Sleep" -- the name every `health-sleep`
+  visit already carries -- for any sleep visit whose place is still a
+  placeholder, and never touches a sleep visit already recorded at a real
+  place. Purely a text rename: no time, activity, or other field changes.
+
+## 2026-08-16
+
 ### Background recording recovers on its own, and says when it stopped
 
 - **A refused location session no longer stays refused.** Once the session

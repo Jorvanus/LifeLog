@@ -311,6 +311,54 @@ struct ArchiveRepairTests {
         #expect(remaining.isEmpty)
     }
 
+    // MARK: - Sleep placeholder places
+
+    @Test("A sleep visit named after the import placeholder is renamed to Sleep")
+    func renamesImportedJournalSleepVisit() throws {
+        let sleeping = visit(0, 8, place: "Imported journal", activity: "Sleeping")
+
+        let renamed = ArchiveRepair.renameSleepPlaceholders(in: [sleeping])
+
+        #expect(renamed == 1)
+        #expect(sleeping.placeName == "Sleep")
+    }
+
+    @Test("A sleep visit already named Sleep is not touched")
+    func leavesAlreadyNamedSleepVisitsAlone() throws {
+        let sleeping = visit(0, 8, place: "Sleep", activity: "Sleeping")
+
+        #expect(ArchiveRepair.renameSleepPlaceholders(in: [sleeping]) == 0)
+        #expect(sleeping.placeName == "Sleep")
+    }
+
+    @Test("A sleep visit recorded at a real place keeps that place")
+    func keepsARealPlaceForASleepVisit() throws {
+        // The whole safety property: only a placeholder is overwritten, never a
+        // place something or someone actually captured.
+        let sleeping = visit(0, 8, place: "8 Justin St", activity: "Sleeping", source: "automatic")
+
+        #expect(ArchiveRepair.renameSleepPlaceholders(in: [sleeping]) == 0)
+        #expect(sleeping.placeName == "8 Justin St")
+    }
+
+    @Test("A non-sleep visit at the import placeholder is not renamed")
+    func leavesNonSleepImportedJournalVisitsAlone() throws {
+        let travelling = visit(0, 1, place: "Imported journal", activity: "Travelling")
+
+        #expect(ArchiveRepair.renameSleepPlaceholders(in: [travelling]) == 0)
+        #expect(travelling.placeName == "Imported journal")
+    }
+
+    @Test("Sleep placeholder matching is case-insensitive on both fields")
+    func sleepPlaceholderMatchingIsCaseInsensitive() throws {
+        let sleeping = Visit(arrival: start, departure: start.addingTimeInterval(8 * 3600),
+                             latitude: 0, longitude: 0, placeName: "imported JOURNAL",
+                             inferredActivity: "SLEEPING", source: "imported-journal")
+
+        #expect(ArchiveRepair.renameSleepPlaceholders(in: [sleeping]) == 1)
+        #expect(sleeping.placeName == "Sleep")
+    }
+
     // MARK: - Duplicate activity definitions
 
     @Test("Two definitions with the exact same name are grouped, oldest first")
@@ -510,5 +558,26 @@ struct ArchiveRepairTests {
 
         let rescanned = try await actor.scan()
         #expect(rescanned.duplicateDefinitionRows == 0)
+    }
+
+    @Test("Scan surfaces sleep placeholders and applying renames them")
+    func scanAndApplyResolveSleepPlaceholders() async throws {
+        let container = try ModelContainer(
+            for: Visit.self, SavedPlace.self, ActivityDefinitionRecord.self, VisitCorrection.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let context = ModelContext(container)
+        context.insert(visit(0, 8, place: "Imported journal", activity: "Sleeping"))
+        try context.save()
+
+        let actor = ArchiveRepairActor(modelContainer: container)
+        let findings = try await actor.scan()
+        #expect(findings.sleepPlaceholderRows == 1)
+
+        let report = try await actor.apply(steps: [.renameSleepPlaceholders])
+        #expect(report.sleepPlaceholdersRenamed == 1)
+
+        let rescanned = try await actor.scan()
+        #expect(rescanned.sleepPlaceholderRows == 0)
     }
 }

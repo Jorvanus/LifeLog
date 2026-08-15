@@ -91,6 +91,10 @@ struct ArchiveRepairView: View {
                 if findings.nestedJourneys > 0 {
                     LabeledContent("Nested journeys", value: "\(findings.nestedJourneys)")
                 }
+                if findings.sleepPlaceholderRows > 0 {
+                    LabeledContent("Sleep entries named \"Imported journal\"", value: "\(findings.sleepPlaceholderRows)")
+                        .accessibilityIdentifier("repair-sleep-placeholder-count")
+                }
                 if findings.duplicateDefinitionRows > 0 {
                     LabeledContent("Duplicate activity definitions", value: "\(findings.duplicateDefinitionRows)")
                         .accessibilityIdentifier("repair-duplicate-definition-count")
@@ -196,6 +200,7 @@ struct ArchiveRepairView: View {
             if report.duplicatesMerged > 0 { LabeledContent("Duplicates merged", value: "\(report.duplicatesMerged)") }
             if report.journeysCollapsed > 0 { LabeledContent("Journeys collapsed", value: "\(report.journeysCollapsed)") }
             if report.coordinatesAdded > 0 { LabeledContent("Coordinates added", value: "\(report.coordinatesAdded)") }
+            if report.sleepPlaceholdersRenamed > 0 { LabeledContent("Sleep entries renamed", value: "\(report.sleepPlaceholdersRenamed)") }
             if report.definitionsMerged > 0 { LabeledContent("Duplicate definitions merged", value: "\(report.definitionsMerged)") }
             if report.activitiesLinked > 0 { LabeledContent("Activities linked", value: "\(report.activitiesLinked)") }
             if report.stillNeedingReview > 0 {
@@ -259,7 +264,7 @@ struct ArchiveRepairView: View {
                     selection = []
                     applying = false
                     Diagnostics.record(context, subsystem: "Archive repair",
-                                       message: "Closed \(result.staysClosed) runaway stays, merged \(result.duplicatesMerged) duplicates, collapsed \(result.journeysCollapsed) nested journeys, added \(result.coordinatesAdded) coordinates, merged \(result.definitionsMerged) duplicate definitions, linked \(result.activitiesLinked) activities.",
+                                       message: "Closed \(result.staysClosed) runaway stays, merged \(result.duplicatesMerged) duplicates, collapsed \(result.journeysCollapsed) nested journeys, added \(result.coordinatesAdded) coordinates, renamed \(result.sleepPlaceholdersRenamed) sleep entries, merged \(result.definitionsMerged) duplicate definitions, linked \(result.activitiesLinked) activities.",
                                        severity: "info", repairCount: result.totalChanges)
                     message = "Repair complete. \(result.totalChanges) records changed. The backup is ready to share."
                 }

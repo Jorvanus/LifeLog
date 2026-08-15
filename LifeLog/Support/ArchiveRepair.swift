@@ -51,11 +51,14 @@ enum ArchiveRepair {
         /// they silently block activity linking until merged.
         var duplicateDefinitionNames = 0
         var duplicateDefinitionRows = 0
+        /// Sleep visits whose place is still a placeholder rather than the
+        /// canonical `sleepPlaceName` every other sleep source already uses.
+        var sleepPlaceholderRows = 0
 
         var isEmpty: Bool {
             runawayStays == 0 && duplicateRows == 0 && nestedJourneys == 0
                 && coordinateBackfills == 0 && unlinkedActivityRows == 0
-                && duplicateDefinitionRows == 0
+                && duplicateDefinitionRows == 0 && sleepPlaceholderRows == 0
         }
 
         /// Rows a step would touch, for the preview list. Kept beside the step
@@ -66,6 +69,7 @@ enum ArchiveRepair {
             case .mergeDuplicates: duplicateRows
             case .collapseNestedJourneys: nestedJourneys
             case .backfillCoordinates: coordinateBackfills
+            case .renameSleepPlaceholders: sleepPlaceholderRows
             case .mergeDuplicateDefinitions: duplicateDefinitionRows
             case .linkActivities: unlinkedActivityRows
             }
@@ -82,6 +86,7 @@ enum ArchiveRepair {
         case mergeDuplicates
         case collapseNestedJourneys
         case backfillCoordinates
+        case renameSleepPlaceholders
         case mergeDuplicateDefinitions
         case linkActivities
 
@@ -93,6 +98,7 @@ enum ArchiveRepair {
             case .mergeDuplicates: "Merge duplicate records"
             case .collapseNestedJourneys: "Collapse nested journeys"
             case .backfillCoordinates: "Add coordinates from Saved Places"
+            case .renameSleepPlaceholders: "Name imported sleep entries \"Sleep\""
             case .mergeDuplicateDefinitions: "Merge duplicate activity definitions"
             case .linkActivities: "Link activities to the catalogue"
             }
@@ -108,6 +114,8 @@ enum ArchiveRepair {
                 "Journeys recorded wholly inside another journey, from the same import running twice."
             case .backfillCoordinates:
                 "Imported visits whose place name matches a Saved Place get that place's coordinates, marked as derived from the name rather than recorded by GPS."
+            case .renameSleepPlaceholders:
+                "Sleep visits imported without a place currently show as \"Imported journal\", splitting your sleep history into two places wherever it's grouped by name. Naming them \"Sleep\" merges them with every other night."
             case .mergeDuplicateDefinitions:
                 "Activities in your catalogue that share an identical name under different identities, most likely created by a past ID-stability bug. Every visit or Saved Place pointing at a duplicate is repointed to the earliest one before the duplicate is removed."
             case .linkActivities:
@@ -121,7 +129,7 @@ enum ArchiveRepair {
         var deletesRows: Bool {
             switch self {
             case .mergeDuplicates, .collapseNestedJourneys, .mergeDuplicateDefinitions: true
-            case .closeRunawayStays, .backfillCoordinates, .linkActivities: false
+            case .closeRunawayStays, .backfillCoordinates, .renameSleepPlaceholders, .linkActivities: false
             }
         }
     }
@@ -134,13 +142,14 @@ enum ArchiveRepair {
         var duplicatesMerged = 0
         var journeysCollapsed = 0
         var coordinatesAdded = 0
+        var sleepPlaceholdersRenamed = 0
         var definitionsMerged = 0
         var activitiesLinked = 0
         var stillNeedingReview = 0
 
         var totalChanges: Int {
             staysClosed + duplicatesMerged + journeysCollapsed + coordinatesAdded
-                + definitionsMerged + activitiesLinked
+                + sleepPlaceholdersRenamed + definitionsMerged + activitiesLinked
         }
     }
 
@@ -409,6 +418,44 @@ enum ArchiveRepair {
         return reverted
     }
 
+    // MARK: - Sleep placeholder places
+
+    /// The place name every genuine sleep source already uses — the sample from
+    /// `health-sleep` visits is literally `placeName: "Sleep"`. Renaming to this
+    /// specific string, rather than anything else, is what makes an imported
+    /// night merge with every other night wherever the app groups by place name.
+    static let sleepPlaceName = "Sleep"
+
+    /// Sleep visits whose place is still one of `isUnnamedPlace`'s placeholders —
+    /// almost always "Imported journal", since the CSV import never captured a
+    /// place for a night's sleep at all.
+    ///
+    /// This exists because nothing downstream treats "Imported journal" as
+    /// equivalent to "no place" once a visit reaches Insights or Timeline: both
+    /// read `displayPlaceName`, which only substitutes for `needsCategorisation`
+    /// rows, and a sleep visit with its own `userActivity` already set does not
+    /// need categorising. So "Imported journal" sits there as if it were a real,
+    /// distinct place — competing with, rather than joining, every other night's
+    /// "Sleep" wherever the app groups history by place (Insights' place totals,
+    /// Timeline, Activities' "Top locations").
+    ///
+    /// Only a visit whose *current* place is already a placeholder is touched. A
+    /// sleep visit genuinely recorded at a real place — an automatic callback
+    /// that resolved to "8 Justin St", say — keeps that name; this never
+    /// overwrites a place someone or something actually captured.
+    static func sleepPlaceholderVisits(in visits: [Visit]) -> [Visit] {
+        visits.filter { visit in
+            isUnnamedPlace(visit.placeName) && visit.activity.localizedCaseInsensitiveContains("sleep")
+        }
+    }
+
+    @discardableResult
+    static func renameSleepPlaceholders(in visits: [Visit]) -> Int {
+        let matches = sleepPlaceholderVisits(in: visits)
+        for visit in matches { visit.placeName = sleepPlaceName }
+        return matches.count
+    }
+
     // MARK: - Duplicate activity definitions
 
     /// One name shared by more than one active `ActivityDefinitionRecord`, and
@@ -509,6 +556,7 @@ actor ArchiveRepairActor {
         findings.coordinateBackfills = ArchiveRepair.coordinateBackfills(in: visits, savedPlaces: savedPlaces).count
         findings.uncoordinatedRows = visits.filter { $0.latitude == 0 && $0.longitude == 0 }.count
         findings.unmatchedPlaces = ArchiveRepair.unmatchedPlaces(in: visits, savedPlaces: savedPlaces)
+        findings.sleepPlaceholderRows = ArchiveRepair.sleepPlaceholderVisits(in: visits).count
         findings.unlinkedActivityRows = visits.filter { $0.activityDefinitionID == nil }.count
         findings.caseOnlyMismatches = ActivityIdentityMigration.caseOnlyMatchCount(visits: visits,
                                                                                    definitions: definitions)
@@ -547,6 +595,8 @@ actor ArchiveRepairActor {
             case .backfillCoordinates:
                 let savedPlaces = try modelContext.fetch(FetchDescriptor<SavedPlace>())
                 report.coordinatesAdded = ArchiveRepair.backfillCoordinates(in: visits, savedPlaces: savedPlaces)
+            case .renameSleepPlaceholders:
+                report.sleepPlaceholdersRenamed = ArchiveRepair.renameSleepPlaceholders(in: visits)
             case .mergeDuplicateDefinitions:
                 let places = try modelContext.fetch(FetchDescriptor<SavedPlace>())
                 let definitions = try modelContext.fetch(FetchDescriptor<ActivityDefinitionRecord>())
