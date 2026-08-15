@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 /// Detail destinations opened from Insights. They deliberately receive the
 /// already bounded segments from the parent instead of querying the archive.
@@ -123,6 +124,14 @@ struct InsightPlaceHistoryView: View {
     let periodTitle: String
     let interval: DateInterval
     let rows: [SliceRow]
+    @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
+    @Query(sort: \SavedPlace.name) private var savedPlaces: [SavedPlace]
+
+    @State private var pickingMergeTarget = false
+    @State private var mergeTarget: SavedPlace?
+    @State private var mergeInFlight = false
+    @State private var mergeFailed = false
 
     var body: some View {
         List {
@@ -148,11 +157,120 @@ struct InsightPlaceHistoryView: View {
                     }
                 }
             }
+            if !mergeCandidates.isEmpty {
+                Section {
+                    Button {
+                        pickingMergeTarget = true
+                    } label: {
+                        if mergeInFlight {
+                            HStack { ProgressView(); Text("Merging…") }
+                        } else {
+                            Label("Merge into another place", systemImage: "arrow.triangle.merge")
+                        }
+                    }
+                    .disabled(mergeInFlight)
+                    .accessibilityIdentifier("merge-place-button")
+                } footer: {
+                    Text("For when the same place shows up under more than one name -- an imported address and a Saved Place, say. Moves every visit here onto the place you pick and combines them in Insights.")
+                }
+            }
         }
         .navigationTitle(placeName)
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .top) { PeriodBanner(title: periodTitle, interval: interval) }
         .accessibilityIdentifier("insight-place-history-detail")
+        .alert("Merge didn’t finish", isPresented: $mergeFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("“\(placeName)” could not be merged just now. Nothing changed; try again.")
+        }
+        .confirmationDialog("Merge into “\(mergeTarget?.name ?? "")”?", isPresented: Binding(
+            get: { mergeTarget != nil }, set: { if !$0 { mergeTarget = nil } }),
+            titleVisibility: .visible
+        ) {
+            if let mergeTarget {
+                Button("Merge into “\(mergeTarget.name)”", role: .destructive) { performMerge(into: mergeTarget) }
+            }
+            Button("Cancel", role: .cancel) { mergeTarget = nil }
+        } message: {
+            Text("Moves every visit recorded as “\(placeName)” onto “\(mergeTarget?.name ?? "")”. This can’t be undone from here -- export a backup first if you’re unsure.")
+        }
+        .sheet(isPresented: $pickingMergeTarget) {
+            NavigationStack {
+                PlaceMergeTargetPicker(candidates: mergeCandidates) { target in
+                    pickingMergeTarget = false
+                    mergeTarget = target
+                }
+            }
+        }
+    }
+
+    /// Saved Places this history could merge into -- every Saved Place except one
+    /// already carrying this exact name, since that would be a no-op merge.
+    private var mergeCandidates: [SavedPlace] {
+        savedPlaces.filter { $0.name.caseInsensitiveCompare(placeName) != .orderedSame }
+    }
+
+    /// Runs in the background so a large archive cannot stall the confirmation
+    /// dialog's dismissal.
+    private func performMerge(into target: SavedPlace) {
+        mergeTarget = nil
+        mergeInFlight = true
+        let source = placeName
+        let targetName = target.name
+        Task {
+            do {
+                _ = try await PlaceRenameActor(modelContainer: context.container)
+                    .mergePlace(sourceNames: [source], targetName: targetName)
+                InsightsInvalidation.invalidate(reason: "Places merged", context: context)
+                mergeInFlight = false
+                dismiss()
+            } catch is CancellationError {
+                mergeInFlight = false
+            } catch {
+                mergeInFlight = false
+                mergeFailed = true
+            }
+        }
+    }
+}
+
+private struct PlaceMergeTargetPicker: View {
+    let candidates: [SavedPlace]
+    let onPick: (SavedPlace) -> Void
+    @State private var search = ""
+
+    private var filtered: [SavedPlace] {
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return candidates }
+        return candidates.filter { $0.name.localizedCaseInsensitiveContains(query) }
+    }
+
+    var body: some View {
+        List {
+            if filtered.isEmpty {
+                ContentUnavailableView("No other places", systemImage: "arrow.triangle.merge",
+                                       description: Text("There’s nothing else in your Saved Places to merge into."))
+            } else {
+                Section {
+                    ForEach(filtered) { place in
+                        Button {
+                            onPick(place)
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: place.role == "home" ? "house.fill" : "mappin.circle.fill")
+                                    .foregroundStyle(.secondary)
+                                Text(place.name).foregroundStyle(.primary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Merge into…")
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $search, prompt: "Find a place")
+        .accessibilityIdentifier("place-merge-target-picker")
     }
 }
 
