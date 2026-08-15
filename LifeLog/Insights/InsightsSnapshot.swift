@@ -567,7 +567,12 @@ extension InsightsSnapshot {
     /// of segments already built for the period being looked at — reading this
     /// off `snapshot.segments` is what keeps "this week's" numbers consistent
     /// with the donut and Timeline without a second pass over raw visits.
-    static func categoryHours(in segments: [InsightSegment]) -> [String: Double] {
+    /// `nonisolated` because it reads nothing but its own argument, matching the
+    /// `categoryHours(visits:range:now:)` overload above. Month's balance is built
+    /// off the main actor and needs exactly this sum; without it the alternative is
+    /// a second copy of the same three lines, which is how the two groupings this
+    /// release removed drifted apart in the first place.
+    nonisolated static func categoryHours(in segments: [InsightSegment]) -> [String: Double] {
         var totals: [String: Double] = [:]
         for segment in segments where !segment.isUnlogged {
             totals[segment.category, default: 0] += segment.hours

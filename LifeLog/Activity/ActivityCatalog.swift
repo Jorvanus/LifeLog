@@ -7,13 +7,6 @@ struct ActivityDefinition: Codable, Identifiable, Hashable, Sendable {
     var category: String
     var symbol: String
     var colorHex: String?
-    /// The life area an activity counts towards in Insights (Year's chart, Month's
-    /// balance). Not independently editable -- always derived from `category` via
-    /// `LifeArea.default(for:category:)`, so there is exactly one taxonomy a person
-    /// maintains. Kept as a stored field only because it is part of the persisted
-    /// schema (`ActivityDefinitionRecord`); a schema migration to drop the column
-    /// isn't worth it when recomputing on every read/write keeps it always correct.
-    var lifeArea: String
     /// Historical display labels which still point to this definition. This is a
     /// compatibility alias, not a normalised search key: two separately-created
     /// labels are never combined merely because their spelling looks alike.
@@ -25,11 +18,14 @@ struct ActivityDefinition: Codable, Identifiable, Hashable, Sendable {
         self.category = TextSafety.clean(category, maximumLength: 40)
         self.symbol = TextSafety.clean(symbol, maximumLength: 60)
         self.colorHex = nil
-        self.lifeArea = LifeArea.default(for: self.name, category: self.category).rawValue
         self.legacyNames = []
     }
 
-    private enum CodingKeys: String, CodingKey { case id, name, category, symbol, colorHex, lifeArea, legacyNames }
+    // `lifeArea` was a second grouping stored alongside `category`. It is gone, and
+    // its key is absent here on purpose: an older backup still carrying one decodes
+    // fine, because a JSON key with no matching property is ignored, and re-encodes
+    // without it. No format version change, and nothing to migrate.
+    private enum CodingKeys: String, CodingKey { case id, name, category, symbol, colorHex, legacyNames }
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -37,10 +33,6 @@ struct ActivityDefinition: Codable, Identifiable, Hashable, Sendable {
         let name = try values.decode(String.self, forKey: .name)
         let category = try values.decodeIfPresent(String.self, forKey: .category) ?? "Other"
         let symbol = try values.decodeIfPresent(String.self, forKey: .symbol) ?? "circle.fill"
-        // The stored `lifeArea` is ignored and recomputed from `category` on every
-        // load -- this is what makes an old activity that was never given an
-        // explicit life area (or one whose category changed since) self-heal
-        // without a migration.
         self.init(id: id, name: name, category: category, symbol: symbol)
         colorHex = try values.decodeIfPresent(String.self, forKey: .colorHex)
         legacyNames = try values.decodeIfPresent([String].self, forKey: .legacyNames) ?? []
@@ -80,8 +72,7 @@ enum ActivityIdentityMigration {
         for definition in definitions where !existingIDs.contains(definition.id) {
             context.insert(ActivityDefinitionRecord(
                 stableID: definition.id, name: definition.name, category: definition.category,
-                symbol: definition.symbol, colorHex: definition.colorHex,
-                lifeArea: definition.lifeArea
+                symbol: definition.symbol, colorHex: definition.colorHex
             ))
             adopted += 1
         }
@@ -150,13 +141,13 @@ enum ActivityIdentityMigration {
             record.category = definition.category
             record.symbol = definition.symbol
             record.colorHex = definition.colorHex
-            record.lifeArea = definition.lifeArea
+            record.lifeArea = definition.category
             record.isActive = true
             record.modifiedAt = .now
         } else {
             context.insert(ActivityDefinitionRecord(stableID: definition.id, name: definition.name,
                                                     category: definition.category, symbol: definition.symbol,
-                                                    colorHex: definition.colorHex, lifeArea: definition.lifeArea))
+                                                    colorHex: definition.colorHex))
         }
         try context.save()
     }
@@ -196,11 +187,11 @@ enum ActivityCatalog {
         ("Coffee", "Food & Drink", "cup.and.saucer.fill"), ("Beers", "Food & Drink", "mug.fill"),
         ("Breakfast", "Food & Drink", "sunrise.fill"), ("Lunch", "Food & Drink", "fork.knife"),
         ("Dining out", "Food & Drink", "fork.knife"), ("Eating", "Food & Drink", "fork.knife"),
-        ("Shopping", "Shopping", "bag.fill"),
+        ("Shopping", "Errands", "bag.fill"),
         ("Concert", "Entertainment", "music.mic"), ("Football", "Entertainment", "sportscourt.fill"),
-        ("Exercising", "Fitness", "figure.run"), ("Healthcare", "Healthcare", "cross.case.fill"),
-        ("Studying", "Education", "book.fill"), ("Travelling", "Travel", "car.fill"),
-        ("Socialising", "Social", "person.2.fill"), ("Visiting", "Other", "mappin.and.ellipse"),
+        ("Exercising", "Fitness", "figure.run"), ("Healthcare", "Health", "cross.case.fill"),
+        ("Studying", "Work", "book.fill"), ("Travelling", "Travel", "car.fill"),
+        ("Socialising", "Social", "person.2.fill"), ("Visiting", "Social", "mappin.and.ellipse"),
         ("Watching a movie", "Entertainment", "film.fill")
     ] + generatedDefaults
 
@@ -211,9 +202,12 @@ enum ActivityCatalog {
     /// empty while the timeline was full of both.
     static let generatedDefaults: [(name: String, category: String, symbol: String)] = [
         ("Sleeping", "Sleep", "bed.double.fill"),
-        // An iPhone schedule estimates this without measuring sleep. Keep it out of
-        // the Sleep category so Insights never treats time in bed as hours asleep.
-        ("In bed", "Other", "bed.double.fill"),
+        // An iPhone schedule estimates this without measuring sleep. It sits in Sleep
+        // for grouping -- it is rest either way -- which is safe because every sleep
+        // *duration* Insights reports comes from HealthKit (`sleepSummary`,
+        // `averageNightlySleep`), never from a group total. It was "Other" only while
+        // "Other" was the dumping ground this release exists to empty.
+        ("In bed", "Sleep", "bed.double.fill"),
         ("Walking", "Fitness", "figure.walk"),
         ("Running", "Fitness", "figure.run"),
         ("Cycling", "Fitness", "bicycle"),
@@ -222,7 +216,7 @@ enum ActivityCatalog {
         ("Strength training", "Fitness", "dumbbell.fill"),
         ("Commuting", "Commute", "car.fill"),
         ("In transit", "Travel", "bus.fill"),
-        ("Dog walk", "Fitness", "pawprint.fill")
+        ("Dog walk", "Pets", "pawprint.fill")
     ]
 
     private static let adoptedGeneratedKey = "LifeLog.ActivityCatalog.generatedAdopted.v1"
@@ -324,21 +318,53 @@ enum ActivityCatalog {
         // when the entry has been deleted, or when history holds a label the catalogue
         // never had — a name the app ships still means what it always meant.
         if let shipped = shippedCategory(for: key) { return shipped }
-        let text = key.lowercased()
-        if text.contains("sleep") { return "Sleep" }
-        if text.contains("walk") || text.contains("run") || text.contains("cycl") || text.contains("exercise") {
-            return "Fitness"
-        }
-        if text.contains("travel") || text.contains("transit") { return "Travel" }
-        return "Other"
+        return inferredCategory(for: key)
     }
 
-    /// Resolves a visit label to its life area, always derived from the category
-    /// (a stored definition's own `category`, or the same fallback Insights uses
-    /// for imported/deleted labels) -- there is no independent life-area override.
-    static func lifeArea(for activity: String, category: String? = nil) -> LifeArea {
-        let key = activity.trimmingCharacters(in: .whitespacesAndNewlines)
-        return LifeArea.default(for: key, category: category ?? self.category(for: key))
+    /// The group a label belongs to when nothing else knows it: an imported journal
+    /// entry, or anything typed straight onto a visit. This used to be four rules
+    /// wide (sleep/walk/travel), which is why an archive full of real labels --
+    /// CrossFit, Holiday, Dentist, Fuel up -- collapsed into "Other" and stayed
+    /// there. Widened deliberately: every rule below is a word that already appears
+    /// in recorded history, and the fallback is the last resort rather than the
+    /// common case.
+    ///
+    /// Order matters. The more specific word wins, so "Dog walk" is Pets rather than
+    /// Fitness and "Work trip" is Work rather than Travel.
+    static func inferredCategory(for label: String) -> String {
+        let text = label.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !text.isEmpty else { return fallbackCategory }
+        func any(_ words: [String]) -> Bool { words.contains { text.contains($0) } }
+
+        if any(["nala", "dog walk", "vet", "puppy", "kennel"]) { return "Pets" }
+        if any(["sleep", "nap", "in bed"]) { return "Sleep" }
+        // Ahead of Work on purpose: "Strength training" contains "training", and Work
+        // claims that word. Nothing filed under Work contains a word from here, so
+        // reading Fitness first costs nothing and keeps a gym session out of the office.
+        if any(["crossfit", "gym", "walk", "run", "cycl", "swim", "rowing", "yoga",
+                "exercis", "fitness", "netball", "race", "strength", "sport"]) { return "Fitness" }
+        if any(["work", "meeting", "conference", "training", "study", "studying",
+                "shift", "rostered", "office"]) { return "Work" }
+        if any(["doctor", "dentist", "physio", "hospital", "health", "massage",
+                "cryo", "covid", "blood", "medical", "chemist", "pharmacy",
+                "specialist", "surgery"]) { return "Health" }
+        if any(["eat", "food", "beer", "coffee", "lunch", "dinner", "breakfast",
+                "snack", "takeaway", "brunch", "cafe", "café", "pub", "drink",
+                "restaurant"]) { return "Food & Drink" }
+        if any(["shop", "grocer", "fuel", "carwash", "car service", "mail",
+                "errand", "bank", "post", "library", "books", "boarder",
+                "haircut", "laundry"]) { return "Errands" }
+        if any(["commut", "bus", "train station", "catch bus"]) { return "Commute" }
+        if any(["holiday", "flight", "travel", "transit", "cruise", "layover",
+                "airport", "trip", "drive to"]) { return "Travel" }
+        if any(["cinema", "movie", "film", "concert", "football", "bowling",
+                "golf", "gig", "theatre"]) { return "Entertainment" }
+        if any(["friend", "family", "mum", "dad", "wedding", "birthday", "funeral",
+                "party", "social", "visit", "dnd", "trivia", "catch up", "niece", "nephew",
+                "confraternity"]) { return "Social" }
+        if any(["sex", "hookup", "toilet", "time out", "shower", "personal"]) { return "Personal" }
+        if any(["home"]) { return "Home" }
+        return fallbackCategory
     }
 
     /// The group a name LifeLog ships with belongs to, whether or not the catalogue
@@ -365,9 +391,18 @@ enum ActivityCatalog {
 
     /// The groups LifeLog ships with. A starting point, not the whole list: the
     /// person can add their own, so read `categories` rather than this.
-    static let defaultCategories = ["Home", "Work", "Commute", "Food & Drink", "Shopping",
-                                    "Fitness", "Healthcare", "Education", "Travel",
-                                    "Entertainment", "Social", "Sleep", "Other"]
+    /// The groups LifeLog ships with, and the only vocabulary Insights counts by.
+    ///
+    /// There used to be a second, fixed taxonomy on top of this one -- "life areas" --
+    /// which Month's balance, Week's breakdown and the Year chart grouped by while the
+    /// rest of Insights grouped by these. It bought one merged row on real data and
+    /// cost three colours (its names were not in `CategoryPalette`, so 57% of a year
+    /// drew grey), an unmapped Education, and two names for the same hours on one
+    /// screen -- "Sleep" above "Sleep & Rest". Groups already do the job, and unlike
+    /// life areas a person can edit them.
+    static let defaultCategories = ["Home", "Sleep", "Work", "Fitness", "Food & Drink",
+                                    "Health", "Social", "Entertainment", "Travel",
+                                    "Commute", "Errands", "Pets", "Personal", "Other"]
 
     /// The group every activity falls back to. It can never be removed, because
     /// deleting a group has to leave its activities somewhere.
@@ -458,31 +493,16 @@ enum ActivityCatalog {
     /// Best guess at where a label belongs, used to pre-fill the category when
     /// adopting an activity from history. Only a starting point — the person can
     /// change it, and a wrong guess only affects Insights grouping.
+    ///
+    /// Delegates to `inferredCategory` rather than keeping its own keyword table.
+    /// There were two tables, and they disagreed: this one sent "fuel" to Travel
+    /// while the other had no rule for it at all, so the same label was grouped one
+    /// way when adopted and another way when read straight from history. One table
+    /// is the only way they cannot drift — the same lesson `category(for:)` records
+    /// about the hand-written switch that used to sit in front of it.
     static func suggestedCategory(for activity: String) -> String {
         let key = activity.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let rules: [(String, [String])] = [
-            ("Sleep", ["sleep", "nap"]),
-            ("Home", ["home", "chores", "housework"]),
-            ("Work", ["work", "office", "meeting", "conference", "shift", "roster"]),
-            ("Food & Drink", ["eat", "food", "coffee", "beer", "breakfast", "lunch",
-                              "dinner", "dining", "brunch", "cafe", "pub", "drinks"]),
-            ("Shopping", ["shop", "groceries", "grocery", "market", "errand"]),
-            ("Fitness", ["gym", "crossfit", "exercis", "walk", "run", "cycl", "swim",
-                         "train", "sport", "yoga"]),
-            ("Healthcare", ["doctor", "medical", "dentist", "hospital", "physio",
-                            "blood", "health", "appointment"]),
-            ("Education", ["study", "school", "class", "course", "library", "uni"]),
-            ("Commute", ["commut"]),
-            ("Travel", ["travel", "transit", "flight", "fly", "drive", "driving",
-                        "holiday", "trip", "airport", "fuel"]),
-            ("Entertainment", ["movie", "cinema", "concert", "football", "game",
-                               "show", "gig", "theatre", "theater"]),
-            ("Social", ["friend", "family", "social", "visit", "party", "catch"])
-        ]
-        for (category, keywords) in rules where keywords.contains(where: { key.contains($0) }) {
-            return category
-        }
-        return "Other"
+        return inferredCategory(for: key)
     }
 
     /// Resolves a label the inference rules produced into the wording the person
@@ -592,6 +612,46 @@ enum ActivityCatalog {
     static func seed() {
         if storage.data(forKey: storageKey) == nil { save(load()) }
         adoptGeneratedActivities()
+    }
+
+    private static let adoptedHistoryKey = "LifeLog.ActivityCatalog.historyAdopted.v1"
+
+    /// Brings every label the archive already uses into the catalogue, once.
+    ///
+    /// An imported journal arrives as free text on visits, not as catalogue entries,
+    /// so its labels were only ever *readable* — they could not be renamed, grouped,
+    /// recoloured or given an icon, and `category(for:)` had nothing to look them up
+    /// in. On a real import that left 52 labels and 77 days of history permanently
+    /// filed under "Other", which is most of what made that bucket look broken.
+    ///
+    /// Adoption is what makes them ordinary: each becomes a normal `ActivityDefinition`
+    /// with a suggested group, editable and mergeable like any other. Runs once and
+    /// only ever adds what is absent, on the same reasoning as
+    /// `adoptGeneratedActivities` — an activity deleted on purpose afterwards stays
+    /// deleted instead of returning at the next launch.
+    ///
+    /// Returns how many were added, so the caller can decide whether Insights needs
+    /// invalidating rather than invalidating unconditionally at every launch.
+    @discardableResult
+    static func adoptHistoryLabels(context: ModelContext) throws -> Int {
+        guard !storage.bool(forKey: adoptedHistoryKey) else { return 0 }
+        var catalogue = load()
+        // Labels only -- the visits themselves are untouched. A visit records what was
+        // done; adopting changes what the catalogue knows about that wording.
+        var seen = Set<String>()
+        var added = 0
+        for visit in try context.fetch(FetchDescriptor<Visit>()) {
+            let label = TextSafety.clean(visit.activity, maximumLength: 80)
+            guard !label.isEmpty, seen.insert(label.lowercased()).inserted,
+                  !catalogue.contains(where: { $0.matchesSnapshot(label) }) else { continue }
+            let category = suggestedCategory(for: label)
+            catalogue.append(ActivityDefinition(name: label, category: category,
+                                                symbol: ActivityIcons.symbol(forCategory: category)))
+            added += 1
+        }
+        if added > 0 { save(catalogue) }
+        storage.set(true, forKey: adoptedHistoryKey)
+        return added
     }
 
     /// Adds a label the archive already uses to the catalogue, so it can be renamed,

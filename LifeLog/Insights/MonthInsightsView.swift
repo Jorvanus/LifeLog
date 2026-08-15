@@ -99,7 +99,7 @@ struct MonthInsightsView: View {
     private var balanceSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Monthly balance").font(.headline)
-            Text("Recorded time by life area").font(.subheadline).foregroundStyle(.secondary)
+            Text("Recorded time by group").font(.subheadline).foregroundStyle(.secondary)
             if insights.balance.isEmpty {
                 InsightEmptyRow(icon: "chart.bar.xaxis", title: "Not enough recorded activity", detail: "These groups appear once the month has usable data.")
             } else {

@@ -127,6 +127,14 @@ struct RootView: View {
                                    message: "Renamed the seeded Home time label to At home across \(moved) visits.",
                                    severity: "info")
             }
+            // Same reason as the two merges above: needs a context. Insights is only
+            // invalidated when this actually adopted something, which is once.
+            if let adopted = try? ActivityCatalog.adoptHistoryLabels(context: context), adopted > 0 {
+                Diagnostics.record(context, subsystem: "Activities",
+                                   message: "Adopted \(adopted) labels from recorded history into the activity catalogue.",
+                                   severity: "info")
+                InsightsInvalidation.invalidate(reason: "History labels adopted", context: context)
+            }
             let startedAt = Date.now
             recorder.connect(context)
             activityData.connect(context, container: modelContainer)

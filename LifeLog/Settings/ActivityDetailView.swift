@@ -201,7 +201,7 @@ struct ActivityDetailView: View {
             }
             .accessibilityIdentifier("activity-icon-link")
         } footer: {
-            Text("This group also decides which Insights life area the activity counts towards; changing it re-counts existing visits straight away.")
+            Text("The group is how Insights adds this activity up. Changing it re-counts existing visits straight away.")
         }
     }
 

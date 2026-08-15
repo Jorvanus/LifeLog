@@ -136,18 +136,18 @@ private struct YearPlaceStoryCard: View {
 
 struct YearInsightsView: View {
     let insights: AnnualInsights
-    let openArea: (AnnualLifeAreaChartData) -> Void
+    let openGroup: (AnnualGroupChartData) -> Void
     let openPlace: (AnnualInsights.Place) -> Void
     let period: DateInterval
     var placesLoading: Bool = false
-    @State private var selectedArea: AnnualInsights.LifeArea?
+    @State private var selectedGroup: String?
     @State private var selectedPlaceSection: YearPlaceSection = .mostTime
     @State private var selectedHealthSection: AnnualHealthSection = .movement
 
     var body: some View {
         VStack(spacing: 22) {
             annualStory
-            lifeAreas
+            groups
             placeSummary
             movementAndWellbeing
             TravelInsightsCard(title: "Travel", summary: insights.travel, period: period)
@@ -188,15 +188,15 @@ struct YearInsightsView: View {
         return "\(formatHours(abs(delta))) \(direction) than last year"
     }
 
-    private var lifeAreas: some View {
+    private var groups: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("How the year was spent").font(.title2.bold())
-            Text("Select an area to highlight its monthly total.")
+            Text("Select a group to highlight its monthly total.")
                 .font(.subheadline).foregroundStyle(.secondary)
-            AnnualLifeAreasChart(months: insights.months, selectedArea: $selectedArea, openArea: openArea)
+            AnnualGroupsChart(months: insights.months, selectedGroup: $selectedGroup, openGroup: openGroup)
         }
         .padding(20).lifeCard()
-        .accessibilityIdentifier("insights-year-life-areas")
+        .accessibilityIdentifier("insights-year-groups")
     }
 
     private var placeSummary: some View {

@@ -1,34 +1,17 @@
 import Foundation
 import SwiftUI
 
-/// The annual view's small, derived vocabulary. It is deliberately not an editable
-/// catalogue: individual activities remain the source of truth and are mapped here
-/// only when a year needs a readable life-area story.
+/// The annual view, grouped by the same activity groups every other Insights screen
+/// counts by.
+///
+/// This used to carry a second, fixed nine-name vocabulary ("life areas") that only
+/// Year, Month's balance and Week's breakdown grouped by, while the rest of Insights
+/// grouped by `ActivityCatalog` categories. Three of those names had no
+/// `CategoryPalette` entry, so most of a real year drew in identical grey; one
+/// shipped category mapped to none of them and vanished into Other; and one screen
+/// could label the same hours "Sleep" and "Sleep & Rest" an inch apart. Groups say
+/// the same thing, colour correctly, and — unlike life areas — can be edited.
 struct AnnualInsights {
-    struct LifeArea: Identifiable, Hashable {
-        let name: String
-        /// A representative `ActivityCatalog` category, used only to look up this
-        /// area's colour and symbol -- `CategoryPalette` is keyed by that shorter,
-        /// underlying vocabulary ("Sleep", "Fitness"), not by this display name
-        /// ("Sleep & Rest", "Health & Fitness"). The two used to be assumed the
-        /// same string; they never were, so this area's slice fell through to the
-        /// grey fallback colour every chart, even though `insightSymbol`'s looser
-        /// substring match happened to still find the right icon.
-        let category: String
-        var id: String { name }
-    }
-
-    static let areas: [LifeArea] = [
-        .init(name: "Home", category: "Home"),
-        .init(name: "Work", category: "Work"),
-        .init(name: "Health & Fitness", category: "Fitness"),
-        .init(name: "Social", category: "Social"),
-        .init(name: "Food & Drink", category: "Food & Drink"),
-        .init(name: "Errands", category: "Shopping"),
-        .init(name: "Travel", category: "Travel"),
-        .init(name: "Sleep & Rest", category: "Sleep"),
-        .init(name: "Other", category: "Other")
-    ]
 
     struct Month: Identifiable {
         let date: Date
@@ -77,9 +60,12 @@ struct AnnualInsights {
     let currentLoggedHours: Double
     let priorLoggedHours: Double
 
-    static func area(for segment: InsightSegment) -> LifeArea {
-        let raw = ActivityCatalog.lifeArea(for: segment.activity, category: segment.category)
-        return areas.first { $0.name == raw.rawValue } ?? areas.last!
+    /// The group a segment counts towards. `InsightSegment.category` is already
+    /// resolved through the catalogue when the snapshot is built, so this is a
+    /// read rather than a second lookup that could disagree with it.
+    static func group(for segment: InsightSegment) -> String {
+        let name = segment.category.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? ActivityCatalog.fallbackCategory : name
     }
 
     static func make(current: [InsightSegment], previous: [InsightSegment],
@@ -126,7 +112,7 @@ struct AnnualInsights {
                 let start = max(segment.start, monthInterval.start)
                 let end = min(segment.end, monthInterval.end)
                 guard end > start else { continue }
-                let area = area(for: segment).name
+                let area = group(for: segment)
                 totals[area, default: 0] += end.timeIntervalSince(start) / 3600
             }
             result.append(Month(date: cursor, label: formatter.string(from: cursor),
@@ -163,8 +149,8 @@ struct AnnualInsights {
 
     private static func milestones(current: [InsightSegment], previous: [InsightSegment],
                                    newPlaces: [Place]) -> Milestones {
-        let currentTotals = Dictionary(grouping: current, by: { area(for: $0).name }).mapValues { $0.reduce(0) { $0 + $1.hours } }
-        let previousTotals = Dictionary(grouping: previous, by: { area(for: $0).name }).mapValues { $0.reduce(0) { $0 + $1.hours } }
+        let currentTotals = Dictionary(grouping: current, by: { group(for: $0) }).mapValues { $0.reduce(0) { $0 + $1.hours } }
+        let previousTotals = Dictionary(grouping: previous, by: { group(for: $0) }).mapValues { $0.reduce(0) { $0 + $1.hours } }
         let increase = currentTotals.compactMap { name, hours -> (String, Double)? in
             let old = previousTotals[name] ?? 0
             guard hours >= 4, old > 0, hours - old >= 1 else { return nil }
@@ -179,7 +165,7 @@ struct AnnualInsights {
         for day in activeDays {
             if let previousDay, Calendar.current.dateComponents([.day], from: previousDay, to: day).day == 1 { run += 1 } else { run = 1 }
             if run > longest.days, let segment = days[day]?.max(by: { $0.hours < $1.hours }) {
-                longest = (area(for: segment).name, run)
+                longest = (group(for: segment), run)
             }
             previousDay = day
         }

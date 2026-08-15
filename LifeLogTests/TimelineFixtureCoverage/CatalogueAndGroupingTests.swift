@@ -12,7 +12,7 @@ struct CatalogueAndGroupingTests {
         // A catalogue that says "Work", the way a real timeline usually does.
         let catalogue = [
             ActivityDefinition(name: "Work", category: "Work", symbol: "briefcase.fill"),
-            ActivityDefinition(name: "Seeing Doctor", category: "Healthcare", symbol: "cross.case.fill"),
+            ActivityDefinition(name: "Seeing Doctor", category: "Health", symbol: "cross.case.fill"),
             ActivityDefinition(name: "Eating", category: "Food & Drink", symbol: "fork.knife"),
             ActivityDefinition(name: "Beers", category: "Food & Drink", symbol: "mug.fill")
         ]
@@ -23,8 +23,9 @@ struct CatalogueAndGroupingTests {
         // Two candidates in one category is ambiguous, so the original wording stands
         // rather than guessing between "Eating" and "Beers".
         #expect(ActivityCatalog.preferredLabel(for: "Eating", in: catalogue) == "Eating")
-        // Nothing to map to leaves the label untouched.
-        #expect(ActivityCatalog.preferredLabel(for: "Studying", in: catalogue) == "Studying")
+        // Nothing to map to leaves the label untouched. "Cycling" groups under
+        // Fitness, which this catalogue has no activity in.
+        #expect(ActivityCatalog.preferredLabel(for: "Cycling", in: catalogue) == "Cycling")
     }
 
     /// The case that shipped broken: each label alone had a test, both together did
@@ -151,10 +152,10 @@ struct CatalogueAndGroupingTests {
     func suggestedCategoriesCoverRealVocabulary() {
         #expect(ActivityCatalog.suggestedCategory(for: "Work") == "Work")
         #expect(ActivityCatalog.suggestedCategory(for: "Work Trip") == "Work")
-        #expect(ActivityCatalog.suggestedCategory(for: "Groceries") == "Shopping")
+        #expect(ActivityCatalog.suggestedCategory(for: "Groceries") == "Errands")
         #expect(ActivityCatalog.suggestedCategory(for: "CrossFit") == "Fitness")
-        #expect(ActivityCatalog.suggestedCategory(for: "Seeing Doctor") == "Healthcare")
-        #expect(ActivityCatalog.suggestedCategory(for: "Donate Blood") == "Healthcare")
+        #expect(ActivityCatalog.suggestedCategory(for: "Seeing Doctor") == "Health")
+        #expect(ActivityCatalog.suggestedCategory(for: "Donate Blood") == "Health")
         #expect(ActivityCatalog.suggestedCategory(for: "Sleeping") == "Sleep")
         #expect(ActivityCatalog.suggestedCategory(for: "Flight") == "Travel")
         #expect(ActivityCatalog.suggestedCategory(for: "Holiday") == "Travel")

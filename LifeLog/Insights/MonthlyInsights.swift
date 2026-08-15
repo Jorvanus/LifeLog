@@ -210,13 +210,13 @@ struct MonthlyInsights {
     }
 
     private static func balances(from segments: [InsightSegment]) -> [Balance] {
-        let totals = LifeArea.totals(in: segments)
-        return LifeArea.allCases.compactMap { area in
-            let hours = totals[area, default: 0]
-            guard hours > 0.01 else { return nil }
-            return Balance(name: area.rawValue, symbol: area.symbol, hours: hours,
-                           color: insightColor(for: area.rawValue))
-        }
+        let totals = InsightsSnapshot.categoryHours(in: segments)
+        return totals.filter { $0.value > 0.01 }
+            .sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
+            .map { group, hours in
+                Balance(name: group, symbol: insightSymbol(for: group), hours: hours,
+                        color: insightColor(for: group))
+            }
     }
 
     /// Read the activity's live definition for ordinary visits so a user-edited

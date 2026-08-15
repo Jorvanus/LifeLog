@@ -16,7 +16,7 @@ final class InsightsPeriodTests: LifeLogUITestCase {
         XCTAssertTrue(element("insights-getting-around").waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["Each column is a day; colours show where your time went."].exists)
         XCTAssertFalse(element("insights-week-scorecard").exists)
-        XCTAssertFalse(element("insights-week-life-areas").exists)
+        XCTAssertFalse(element("insights-week-groups").exists)
         XCTAssertFalse(element("insights-week-commute").exists)
 
         let selectedDay = app.descendants(matching: .any)
@@ -92,7 +92,7 @@ final class InsightsPeriodTests: LifeLogUITestCase {
         app.buttons["Month"].tap()
         XCTAssertTrue(element("insights-month-changes").waitForExistence(timeout: 10))
         XCTAssertTrue(element("insights-month-balance").waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["Recorded time by life area"].exists)
+        XCTAssertTrue(app.staticTexts["Recorded time by group"].exists)
         XCTAssertFalse(app.staticTexts["Meaningful differences from last month"].exists)
     }
 
@@ -114,7 +114,7 @@ final class InsightsPeriodTests: LifeLogUITestCase {
         XCTAssertFalse(element("month-selected-balance").exists)
     }
 
-    func testYearLifeAreaChartHasSelectableLegendAndDrillDown() {
+    func testYearGroupChartHasSelectableLegendAndDrillDown() {
         app.terminate()
         app.launchArguments = ["-uiTesting", "-ui-test-seed"]
         app.launch()
@@ -122,14 +122,14 @@ final class InsightsPeriodTests: LifeLogUITestCase {
 
         XCTAssertTrue(app.buttons["Year"].waitForExistence(timeout: 5))
         app.buttons["Year"].tap()
-        XCTAssertTrue(element("annual-life-area-chart").waitForExistence(timeout: 10))
-        let home = element("annual-life-area-Home")
+        XCTAssertTrue(element("annual-group-chart").waitForExistence(timeout: 10))
+        let home = element("annual-group-Home")
         XCTAssertTrue(home.waitForExistence(timeout: 5))
         home.tap()
-        XCTAssertTrue(element("annual-selected-life-area").waitForExistence(timeout: 5))
+        XCTAssertTrue(element("annual-selected-group").waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Home"].exists)
         home.tap()
-        XCTAssertFalse(element("annual-selected-life-area").exists)
+        XCTAssertFalse(element("annual-selected-group").exists)
     }
 
     func testYearPlacesUsesOneStableSelectedSegment() {

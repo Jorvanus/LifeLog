@@ -54,7 +54,7 @@ final class InsightsVisualRegressionTests: LifeLogUITestCase {
             ("Day", "insights-day-summary"),
             ("Week", "insights-week-your-week"),
             ("Month", "insights-month-calendar"),
-            ("Year", "annual-life-area-chart")
+            ("Year", "annual-group-chart")
         ]
 
         for configuration in configurations {
@@ -125,7 +125,7 @@ final class InsightsVisualRegressionTests: LifeLogUITestCase {
         XCTAssertTrue(app.buttons["Imported journal only"].waitForExistence(timeout: 5))
         app.buttons["Imported journal only"].tap()
         app.buttons["Year"].tap()
-        XCTAssertTrue(element("annual-life-area-chart").waitForExistence(timeout: 10))
+        XCTAssertTrue(element("annual-group-chart").waitForExistence(timeout: 10))
         XCTAssertTrue(element("insights-period-picker").label.contains("Imported journal only"))
         recordInsightsScreenshot("insights-imported-history-year")
     }

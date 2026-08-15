@@ -61,30 +61,30 @@ struct InsightActivityDetailView: View {
     }
 }
 
-/// Sheet-presentation payload for `InsightLifeAreaDetailView`: which real life
-/// areas to show (see that view's `areas` doc) and the title to display them
-/// under, since a folded "Other" selection still reads as "Other" to the person
-/// even though it spans several underlying `LifeArea` cases.
-struct LifeAreaSelection: Identifiable {
+/// Sheet-presentation payload for `InsightGroupDetailView`: which real groups to
+/// show (see that view's `groups` doc) and the title to show them under, since a
+/// folded "Other" selection still reads as "Other" to the person even though it
+/// spans several underlying groups.
+struct GroupSelection: Identifiable {
     let title: String
-    let areas: [LifeArea]
+    let groups: [String]
     var id: String { title }
 }
 
-struct InsightLifeAreaDetailView: View {
+struct InsightGroupDetailView: View {
     let title: String
-    /// Every real life area this drill-down represents. Usually one area, but
-    /// the Year chart's synthetic "Other" bucket folds several low-ranking
-    /// areas together for legibility (see `AnnualLifeAreaChartDataBuilder`), so
-    /// opening it has to match all of them, not the literal `.other` case alone.
-    let areas: [LifeArea]
+    /// Every real group this drill-down represents. Usually one, but the Year
+    /// chart's synthetic "Other" bucket folds several low-ranking groups together
+    /// for legibility (see `AnnualGroupChartDataBuilder`), so opening it has to
+    /// match all of them rather than the single label "Other".
+    let groups: [String]
     let periodTitle: String
     let interval: DateInterval
     let segments: [InsightSegment]
 
     private var activities: [(name: String, hours: Double, rows: [SliceRow])] {
         let matching = segments.filter {
-            !$0.isUnlogged && areas.contains(ActivityCatalog.lifeArea(for: $0.activity, category: $0.category))
+            !$0.isUnlogged && groups.contains(AnnualInsights.group(for: $0))
         }
         let grouped = Dictionary(grouping: matching, by: \.activity)
         return grouped.map { name, segments in
@@ -101,7 +101,7 @@ struct InsightLifeAreaDetailView: View {
                 LabeledContent("Period", value: periodTitle)
                 LabeledContent("Total", value: formatHours(activities.reduce(0) { $0 + $1.hours }))
             }
-            Section("Activities in this life area") {
+            Section("Activities in this group") {
                 ForEach(activities, id: \.name) { activity in
                     NavigationLink {
                         InsightActivityDetailView(activity: activity.name, periodTitle: periodTitle,
@@ -115,7 +115,7 @@ struct InsightLifeAreaDetailView: View {
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .top) { PeriodBanner(title: periodTitle, interval: interval) }
-        .accessibilityIdentifier("insight-life-area-detail")
+        .accessibilityIdentifier("insight-group-detail")
     }
 }
 

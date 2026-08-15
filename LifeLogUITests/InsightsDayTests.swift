@@ -270,11 +270,11 @@ final class InsightsDayTests: LifeLogUITestCase {
         // UI assertion keeps the weekday header attached to the interactive grid.
 
         app.buttons["Year"].tap()
-        let home = element("annual-life-area-Home")
+        let home = element("annual-group-Home")
         XCTAssertTrue(home.waitForExistence(timeout: 10))
         home.tap()
-        XCTAssertTrue(element("annual-selected-life-area").waitForExistence(timeout: 5))
+        XCTAssertTrue(element("annual-selected-group").waitForExistence(timeout: 5))
         home.tap()
-        XCTAssertFalse(element("annual-selected-life-area").exists)
+        XCTAssertFalse(element("annual-selected-group").exists)
     }
 }

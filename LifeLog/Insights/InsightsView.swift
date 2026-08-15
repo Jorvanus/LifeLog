@@ -41,7 +41,7 @@ struct InsightsView: View {
     @State private var choosingDate = false
     @State private var draftAnchorDate = Date.now
     @State private var selectedSlice: TimeSlice?
-    @State private var selectedLifeArea: LifeAreaSelection?
+    @State private var selectedGroup: GroupSelection?
     @State private var selectedPlace: PlaceTotal?
     @State private var selectedComparison: TrendComparison?
     @State private var now = Date.now
@@ -152,9 +152,9 @@ struct InsightsView: View {
                     }
                 }.presentationDetents([.medium, .large])
             }
-            .sheet(item: $selectedLifeArea) { selection in
+            .sheet(item: $selectedGroup) { selection in
                 NavigationStack {
-                    InsightLifeAreaDetailView(title: selection.title, areas: selection.areas, periodTitle: periodTitle,
+                    InsightGroupDetailView(title: selection.title, groups: selection.groups, periodTitle: periodTitle,
                                               interval: snapshot.analysisInterval,
                                               segments: snapshot.segments)
                 }
@@ -646,7 +646,7 @@ struct InsightsView: View {
     @ViewBuilder private var weekLayout: some View {
         WeekInsightsView(
             weekDays: weekDays, now: now, selectedDate: anchorDate,
-            yourWeekMetrics: weeklyYourWeekMetrics, areaTotals: LifeArea.totals(in: snapshot.segments),
+            yourWeekMetrics: weeklyYourWeekMetrics, groupTotals: InsightsSnapshot.categoryHours(in: snapshot.segments),
             periodTitle: periodTitle, analysisInterval: snapshot.analysisInterval, segments: snapshot.segments,
             travel: snapshot.travel, commuteSummary: weeklyCommuteSummary, routineChanges: weekRoutineChanges,
             onSelectDay: { date in anchorDate = date; window = .day }
@@ -670,11 +670,9 @@ struct InsightsView: View {
     }
 
     @ViewBuilder private var yearLayout: some View {
-        YearInsightsView(insights: annualInsights, openArea: { row in
-            guard row.totalHours > 0 else { return }
-            let areas = row.foldedAreas.compactMap { LifeArea(rawValue: $0.name) }
-            guard !areas.isEmpty else { return }
-            selectedLifeArea = LifeAreaSelection(title: row.area.name, areas: areas)
+        YearInsightsView(insights: annualInsights, openGroup: { row in
+            guard row.totalHours > 0, !row.foldedGroups.isEmpty else { return }
+            selectedGroup = GroupSelection(title: row.group, groups: row.foldedGroups)
         }, openPlace: { place in
             selectedPlace = PlaceTotal(name: place.name, category: place.category, activity: place.category,
                                        latitude: 0, longitude: 0, hours: place.hours)

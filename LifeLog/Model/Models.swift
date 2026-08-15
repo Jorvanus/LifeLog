@@ -254,6 +254,11 @@ final class ActivityDefinitionRecord {
     var category: String
     var symbol: String
     var colorHex: String?
+    /// Legacy column. It held a second, fixed grouping ("life area") that Insights
+    /// counted some screens by while counting the rest by `category`; groups are now
+    /// the only vocabulary, so nothing reads this. Kept, mirroring `category`, purely
+    /// so the persisted schema is unchanged — dropping a column costs a migration and
+    /// buys nothing here.
     var lifeArea: String
     var isActive: Bool
     var createdAt: Date
@@ -263,13 +268,13 @@ final class ActivityDefinitionRecord {
          symbol: String = "circle.fill", colorHex: String? = nil,
          lifeArea: String? = nil, isActive: Bool = true,
          createdAt: Date = .now, modifiedAt: Date = .now) {
+        let cleanCategory = TextSafety.clean(category, maximumLength: 40)
         self.stableID = stableID
         self.name = TextSafety.clean(name, maximumLength: 80)
-        self.category = TextSafety.clean(category, maximumLength: 40)
+        self.category = cleanCategory
         self.symbol = TextSafety.clean(symbol, maximumLength: 60)
         self.colorHex = colorHex
-        self.lifeArea = lifeArea.flatMap { LifeArea(rawValue: $0)?.rawValue }
-            ?? LifeArea.default(for: name, category: category).rawValue
+        self.lifeArea = lifeArea ?? cleanCategory
         self.isActive = isActive
         self.createdAt = createdAt
         self.modifiedAt = modifiedAt

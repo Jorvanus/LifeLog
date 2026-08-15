@@ -65,7 +65,7 @@ struct WeekInsightsView: View {
     let now: Date
     let selectedDate: Date
     let yourWeekMetrics: [WeeklyYourWeekMetric]
-    let areaTotals: [LifeArea: Double]
+    let groupTotals: [String: Double]
     let periodTitle: String
     let analysisInterval: DateInterval
     let segments: [InsightSegment]
@@ -76,7 +76,7 @@ struct WeekInsightsView: View {
 
     var body: some View {
         WeeklyStripSection(days: weekDays, now: now, selectedDate: selectedDate, onSelectDay: onSelectDay)
-        WeeklyYourWeekCard(metrics: yourWeekMetrics, areaTotals: areaTotals, periodTitle: periodTitle,
+        WeeklyYourWeekCard(metrics: yourWeekMetrics, groupTotals: groupTotals, periodTitle: periodTitle,
                            interval: analysisInterval, segments: segments)
             .accessibilityIdentifier("insights-week-your-week")
         if travel.isMeaningful || commuteSummary != nil {
@@ -140,17 +140,17 @@ private struct WeeklyRoutineChangesSection: View {
 
 struct WeeklyYourWeekCard: View {
     let metrics: [WeeklyYourWeekMetric]
-    let areaTotals: [LifeArea: Double]
+    let groupTotals: [String: Double]
     let periodTitle: String
     let interval: DateInterval
     let segments: [InsightSegment]
 
-    private var areas: [LifeArea] {
-        LifeArea.allCases.filter { areaTotals[$0, default: 0] > 0.01 }
+    private var groups: [String] {
+        groupTotals.filter { $0.value > 0.01 }.keys.sorted { groupTotals[$0, default: 0] > groupTotals[$1, default: 0] }
     }
 
     private var totalHours: Double {
-        areas.reduce(0) { $0 + areaTotals[$1, default: 0] }
+        groups.reduce(0) { $0 + groupTotals[$1, default: 0] }
     }
 
     var body: some View {
@@ -163,34 +163,34 @@ struct WeeklyYourWeekCard: View {
             }
             Divider()
             VStack(alignment: .leading, spacing: 10) {
-                Text("Life areas").font(.headline)
-                areaBar
+                Text("Groups").font(.headline)
+                groupBar
                 LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading),
                                     GridItem(.flexible(), alignment: .leading)], spacing: 8) {
-                    ForEach(areas) { area in
+                    ForEach(groups, id: \.self) { area in
                         NavigationLink {
-                            InsightLifeAreaDetailView(title: area.rawValue, areas: [area], periodTitle: periodTitle,
+                            InsightGroupDetailView(title: area, groups: [area], periodTitle: periodTitle,
                                                       interval: interval, segments: segments)
                         } label: {
                             HStack(spacing: 6) {
-                                Circle().fill(insightColor(for: area.rawValue)).frame(width: 8, height: 8)
-                                Text(area.rawValue).font(.caption)
+                                Circle().fill(insightColor(for: area)).frame(width: 8, height: 8)
+                                Text(area).font(.caption)
                                     .lineLimit(1).minimumScaleFactor(0.8)
                                 Spacer(minLength: 2)
-                                Text(formatHours(areaTotals[area, default: 0]))
+                                Text(formatHours(groupTotals[area, default: 0]))
                                     .font(.caption.bold().monospacedDigit())
                             }
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("\(area.rawValue), \(formatHours(areaTotals[area, default: 0]))")
+                        .accessibilityLabel("\(area), \(formatHours(groupTotals[area, default: 0]))")
                     }
                 }
-                .accessibilityHint("Select a life area to see its activities.")
+                .accessibilityHint("Select a group to see its activities.")
             }
         }
         .padding(20)
         .lifeCard()
-        .accessibilityIdentifier("insights-week-life-areas")
+        .accessibilityIdentifier("insights-week-groups")
     }
 
     @ViewBuilder
@@ -220,13 +220,13 @@ struct WeeklyYourWeekCard: View {
         .accessibilityLabel("\(metric.title): \(metric.value)")
     }
 
-    private var areaBar: some View {
+    private var groupBar: some View {
         GeometryReader { proxy in
             HStack(spacing: 1) {
-                ForEach(areas) { area in
+                ForEach(groups, id: \.self) { area in
                     Rectangle()
-                        .fill(insightColor(for: area.rawValue))
-                        .frame(width: max(2, proxy.size.width * areaTotals[area, default: 0] / max(totalHours, 0.01)))
+                        .fill(insightColor(for: area))
+                        .frame(width: max(2, proxy.size.width * groupTotals[area, default: 0] / max(totalHours, 0.01)))
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 5))

@@ -81,34 +81,51 @@ struct AnnualInsightsTests {
                 "a real prior pattern absent from this year's segments is reported")
     }
 
-    @Test("Annual chart keeps the five strongest areas and folds the rest into Other")
-    func annualChartDataUsesFiveAreasAndOther() {
+    @Test("Annual chart keeps the five strongest groups and folds the rest into Other")
+    func annualChartDataUsesFiveGroupsAndOther() {
         let start = calendar.date(from: DateComponents(year: 2026, month: 1, day: 1))!
         let months = (0..<12).map { offset in
             AnnualInsights.Month(date: calendar.date(byAdding: .month, value: offset, to: start)!,
                                  label: "M\(offset)", isPartial: false,
                                  hours: ["Home": 100, "Work": 80, "Travel": 60,
-                                         "Social": 40, "Health & Fitness": 20,
+                                         "Social": 40, "Fitness": 20,
                                          "Food & Drink": 10, "Errands": 0.2])
         }
-        let rows = AnnualLifeAreaChartDataBuilder.make(months: months)
-        #expect(rows.map(\.area.name) == ["Home", "Work", "Travel", "Social", "Health & Fitness", "Other"])
-        #expect(rows.last?.totalHours == 122.4)
-        #expect(rows.reduce(0) { $0 + $1.totalHours } == 12 * 310.2)
+        let rows = AnnualGroupChartDataBuilder.make(months: months)
+        #expect(rows.map(\.group) == ["Home", "Work", "Travel", "Social", "Fitness", "Other"])
+        // Summing a repeating decimal twelve times lands a few ulps from the literal,
+        // so these compare within a tolerance. They were written as `==` and failed on
+        // every run for exactly that reason -- 122.40000000000002 != 122.4 -- which
+        // read as a permanently broken test rather than as arithmetic behaving.
+        #expect(abs((rows.last?.totalHours ?? 0) - 122.4) < 0.0001)
+        #expect(abs(rows.reduce(0) { $0 + $1.totalHours } - 12 * 310.2) < 0.0001)
+        // The folded row has to name the groups it stands for, or opening it shows
+        // less than the bar it was tapped from.
+        #expect(rows.last?.foldedGroups == ["Errands", "Food & Drink"])
     }
 
-    /// `LifeArea.category` exists only to look up a colour and symbol, and
-    /// `CategoryPalette` is keyed by `ActivityCatalog`'s shorter category
-    /// vocabulary ("Sleep", "Fitness"), not by these longer display names
-    /// ("Sleep & Rest", "Health & Fitness"). Every named area but "Other" must
-    /// resolve to its own colour rather than silently falling through to the
-    /// grey fallback every other area also shares.
-    @Test("Every named annual life area resolves its own colour, not the grey fallback")
-    func namedAreasDoNotFallBackToGrey() {
+    /// Groups earn a series from history rather than from a fixed list, so one a
+    /// person added themselves can appear. The retired "life area" vocabulary was
+    /// fixed at nine names and could not.
+    @Test("A group the app never shipped still gets its own series")
+    func customGroupAppearsInTheChart() {
+        let start = calendar.date(from: DateComponents(year: 2026, month: 1, day: 1))!
+        let months = [AnnualInsights.Month(date: start, label: "M0", isPartial: false,
+                                           hours: ["Volunteering": 40, "Home": 10])]
+        let rows = AnnualGroupChartDataBuilder.make(months: months)
+        #expect(rows.map(\.group) == ["Volunteering", "Home"])
+    }
+
+    /// `CategoryPalette` is keyed by group name, and anything missing from it draws
+    /// the shared grey fallback. That is exactly how the retired life-area names
+    /// ("Sleep & Rest", "Health & Fitness", "Errands") went grey -- they were never
+    /// palette keys -- putting most of a real year into indistinguishable series.
+    @Test("Every shipped group resolves its own colour, not the grey fallback")
+    func shippedGroupsDoNotFallBackToGrey() {
         let fallback = insightColor(for: "unmatched-category-xyz")
-        for area in AnnualInsights.areas where area.name != "Other" {
-            #expect(insightColor(for: area.category) != fallback,
-                    "\(area.name) (category \"\(area.category)\") resolved to the grey fallback")
+        for group in ActivityCatalog.defaultCategories where group != ActivityCatalog.fallbackCategory {
+            #expect(insightColor(for: group) != fallback,
+                    "group \"\(group)\" resolved to the grey fallback")
         }
     }
 

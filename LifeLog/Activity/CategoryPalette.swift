@@ -26,13 +26,20 @@ enum CategoryPalette {
     /// another variation, so two small slices are still told apart.
     static let secondary: [String: String] = [
         "Travel": "007AFF",        // blue, away from Commute's teal
-        "Shopping": "5856D6",      // indigo, between Work and Travel
+        "Errands": "5856D6",       // indigo, between Work and Travel
         "Social": "30B0C7",        // cyan, a lighter cousin of Commute
-        "Healthcare": "E5342A",    // true red, deeper than Fitness pink
-        "Education": "FFCC00",     // yellow, brighter than Food's orange
+        "Health": "E5342A",        // true red, deeper than Fitness pink
         "Entertainment": "C87BE8", // violet, a lighter Work
+        "Pets": "A2845E",          // brown, unlike anything else here
+        "Personal": "B07AA1",      // plum, quieter than Work's purple
         "Uncategorised": "FF9F0A", // amber: a state, not a category
-        "Other": "8E8E93"          // grey, and the fallback
+        "Other": "8E8E93",         // grey, and the fallback
+        // Superseded group names. Kept so history still filed under one draws its own
+        // colour instead of dropping to grey -- the exact failure that made three
+        // life areas indistinguishable before groups became the only vocabulary.
+        "Shopping": "5856D6",
+        "Healthcare": "E5342A",
+        "Education": "FFCC00"
     ]
 
     static let fallbackHex = "8E8E93"
