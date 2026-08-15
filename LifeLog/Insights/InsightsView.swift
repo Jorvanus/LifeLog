@@ -1320,8 +1320,14 @@ struct DayInsightMetricTile: View {
             }
         }
         .buttonStyle(.plain)
-        .accessibilityIdentifier(identifier)
+        // Combine first, then identify. Applied the other way round the identifier
+        // lands on a container whose children are still separate elements, so it
+        // propagates to each of them -- the tile then matches three times (Button,
+        // its Text, its Image) and `.tap()` fails with "Multiple matching elements"
+        // rather than resolving one. Combining first makes the tile a single
+        // element, which is also what it is to a person reading it aloud.
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(identifier)
         .accessibilityLabel("\(title): \(value)")
     }
 
@@ -1342,7 +1348,9 @@ struct DayInsightMetricTile: View {
         .padding(12)
         .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
         .contentShape(RoundedRectangle(cornerRadius: 12))
-        .accessibilityIdentifier(identifier)
+        // No identifier here: `body` already carries it for the whole tile, and
+        // setting it on the content too is the other half of the duplicate-match
+        // failure -- the button and the thing inside it both answered to the name.
     }
 }
 

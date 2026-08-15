@@ -634,6 +634,14 @@ enum ActivityCatalog {
     /// invalidating rather than invalidating unconditionally at every launch.
     @discardableResult
     static func adoptHistoryLabels(context: ModelContext) throws -> Int {
+        // Never during UI tests. `UITestSeedData` clears this app's UserDefaults on a
+        // seeded launch, which resets the once-only flag below, so this would run on
+        // every fixture launch -- and the fixtures deliberately contain a label that
+        // is *not* in the catalogue, because that is what the "From your history"
+        // adoption flow exists to act on. Backfilling it silently would leave that
+        // flow with nothing to adopt and no way to test it. Same reasoning, and the
+        // same guard, as `ActivityDataService`'s Health import.
+        guard !ProcessInfo.processInfo.arguments.contains("-uiTesting") else { return 0 }
         guard !storage.bool(forKey: adoptedHistoryKey) else { return 0 }
         var catalogue = load()
         // Labels only -- the visits themselves are untouched. A visit records what was
