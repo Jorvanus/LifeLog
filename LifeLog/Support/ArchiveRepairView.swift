@@ -91,6 +91,10 @@ struct ArchiveRepairView: View {
                 if findings.nestedJourneys > 0 {
                     LabeledContent("Nested journeys", value: "\(findings.nestedJourneys)")
                 }
+                if findings.duplicateDefinitionRows > 0 {
+                    LabeledContent("Duplicate activity definitions", value: "\(findings.duplicateDefinitionRows)")
+                        .accessibilityIdentifier("repair-duplicate-definition-count")
+                }
                 if findings.unlinkedActivityRows > 0 {
                     LabeledContent("Unlinked activities", value: "\(findings.unlinkedActivityRows)")
                 }
@@ -155,6 +159,12 @@ struct ArchiveRepairView: View {
             if findings.runawayStays > findings.runawayStaysClosable {
                 Text("\(findings.runawayStays - findings.runawayStaysClosable) runaway stays have no visit at a different place to close them against. Those are left unchanged for you to edit by hand.")
             }
+            // Explains why linking may stay small even after this step is
+            // chosen: a name split across duplicate definitions needs the
+            // duplicate merged first, which is a separate step above it.
+            if findings.duplicateDefinitionRows > 0 {
+                Text("\(findings.duplicateDefinitionNames) activity name\(findings.duplicateDefinitionNames == 1 ? "" : "s") in your catalogue currently point at more than one identity, which blocks linking for every visit using that name until the duplicate is merged.")
+            }
         }
     }
 
@@ -186,6 +196,7 @@ struct ArchiveRepairView: View {
             if report.duplicatesMerged > 0 { LabeledContent("Duplicates merged", value: "\(report.duplicatesMerged)") }
             if report.journeysCollapsed > 0 { LabeledContent("Journeys collapsed", value: "\(report.journeysCollapsed)") }
             if report.coordinatesAdded > 0 { LabeledContent("Coordinates added", value: "\(report.coordinatesAdded)") }
+            if report.definitionsMerged > 0 { LabeledContent("Duplicate definitions merged", value: "\(report.definitionsMerged)") }
             if report.activitiesLinked > 0 { LabeledContent("Activities linked", value: "\(report.activitiesLinked)") }
             if report.stillNeedingReview > 0 {
                 LabeledContent("Still need review", value: "\(report.stillNeedingReview)")
@@ -248,7 +259,7 @@ struct ArchiveRepairView: View {
                     selection = []
                     applying = false
                     Diagnostics.record(context, subsystem: "Archive repair",
-                                       message: "Closed \(result.staysClosed) runaway stays, merged \(result.duplicatesMerged) duplicates, collapsed \(result.journeysCollapsed) nested journeys, added \(result.coordinatesAdded) coordinates, linked \(result.activitiesLinked) activities.",
+                                       message: "Closed \(result.staysClosed) runaway stays, merged \(result.duplicatesMerged) duplicates, collapsed \(result.journeysCollapsed) nested journeys, added \(result.coordinatesAdded) coordinates, merged \(result.definitionsMerged) duplicate definitions, linked \(result.activitiesLinked) activities.",
                                        severity: "info", repairCount: result.totalChanges)
                     message = "Repair complete. \(result.totalChanges) records changed. The backup is ready to share."
                 }

@@ -311,6 +311,93 @@ struct ArchiveRepairTests {
         #expect(remaining.isEmpty)
     }
 
+    // MARK: - Duplicate activity definitions
+
+    @Test("Two definitions with the exact same name are grouped, oldest first")
+    func groupsDuplicateDefinitionsByExactName() throws {
+        let older = ActivityDefinitionRecord(stableID: UUID(), name: "Gym", category: "Fitness",
+                                             symbol: "dumbbell.fill", createdAt: start)
+        let newer = ActivityDefinitionRecord(stableID: UUID(), name: "Gym", category: "Fitness",
+                                             symbol: "dumbbell.fill", createdAt: start.addingTimeInterval(60))
+
+        let groups = ArchiveRepair.duplicateDefinitionGroups(in: [newer, older])
+
+        #expect(groups.count == 1)
+        #expect(groups.first?.canonical.stableID == older.stableID)
+        #expect(groups.first?.duplicates.map(\.stableID) == [newer.stableID])
+    }
+
+    @Test("A name held by only one active definition is not a duplicate")
+    func singleDefinitionIsNotADuplicate() throws {
+        let solo = ActivityDefinitionRecord(stableID: UUID(), name: "Work", category: "Work",
+                                            symbol: "briefcase.fill")
+        #expect(ArchiveRepair.duplicateDefinitionGroups(in: [solo]).isEmpty)
+    }
+
+    @Test("An inactive definition does not create a false duplicate")
+    func inactiveDefinitionIsExcludedFromDuplicateDetection() throws {
+        let active = ActivityDefinitionRecord(stableID: UUID(), name: "Gym", category: "Fitness",
+                                              symbol: "dumbbell.fill", isActive: true)
+        let retired = ActivityDefinitionRecord(stableID: UUID(), name: "Gym", category: "Fitness",
+                                               symbol: "dumbbell.fill", isActive: false)
+        #expect(ArchiveRepair.duplicateDefinitionGroups(in: [active, retired]).isEmpty)
+    }
+
+    @Test("Merging a duplicate definition repoints visits and places to the canonical one")
+    func mergeDuplicateDefinitionsRepointsReferences() throws {
+        let canonical = ActivityDefinitionRecord(stableID: UUID(), name: "Gym", category: "Fitness",
+                                                  symbol: "dumbbell.fill", createdAt: start)
+        let duplicate = ActivityDefinitionRecord(stableID: UUID(), name: "Gym", category: "Fitness",
+                                                  symbol: "dumbbell.fill", createdAt: start.addingTimeInterval(60))
+        let onCanonical = visit(0, 1, place: "CrossFit CQ", activity: "Gym")
+        onCanonical.activityDefinitionID = canonical.stableID
+        let onDuplicate = visit(1, 1, place: "CrossFit CQ", activity: "Gym")
+        onDuplicate.activityDefinitionID = duplicate.stableID
+        let unrelated = visit(2, 1, place: "Woolworths Gracemere", activity: "Groceries")
+        let place = SavedPlace(name: "CrossFit CQ", latitude: 0, longitude: 0,
+                               radius: 100, defaultActivity: "Gym")
+        place.activityDefinitionID = duplicate.stableID
+
+        let removed = ArchiveRepair.mergeDuplicateDefinitions(
+            in: [onCanonical, onDuplicate, unrelated], places: [place],
+            definitions: [canonical, duplicate]
+        )
+
+        #expect(removed.map(\.stableID) == [duplicate.stableID])
+        #expect(onCanonical.activityDefinitionID == canonical.stableID, "already-canonical rows are untouched")
+        #expect(onDuplicate.activityDefinitionID == canonical.stableID, "repointed to the survivor")
+        #expect(unrelated.activityDefinitionID == nil, "a row pointing at neither definition is untouched")
+        #expect(place.activityDefinitionID == canonical.stableID)
+    }
+
+    @Test("Merging duplicates unblocks linking for the name they shared")
+    func mergingDuplicatesUnblocksLinking() throws {
+        // The exact failure mode this exists for: two definitions named "Gym"
+        // make the name ambiguous, so `linkAll` refuses every visit labelled
+        // "Gym" until the duplicate is folded into one identity.
+        let context = try makeContext()
+        let older = ActivityDefinitionRecord(stableID: UUID(), name: "Gym", category: "Fitness",
+                                             symbol: "dumbbell.fill", createdAt: start)
+        let newer = ActivityDefinitionRecord(stableID: UUID(), name: "Gym", category: "Fitness",
+                                             symbol: "dumbbell.fill", createdAt: start.addingTimeInterval(60))
+        context.insert(older)
+        context.insert(newer)
+        let gymVisit = visit(0, 1, place: "CrossFit CQ", activity: "Gym")
+        context.insert(gymVisit)
+        try context.save()
+
+        #expect(try ActivityIdentityMigration.linkAll(context: context) == 0,
+               "an ambiguous name must not link while the duplicate exists")
+
+        let removed = ArchiveRepair.mergeDuplicateDefinitions(in: [gymVisit], places: [],
+                                                               definitions: [older, newer])
+        removed.forEach(context.delete)
+        try context.save()
+
+        #expect(try ActivityIdentityMigration.linkAll(context: context) == 1)
+        #expect(gymVisit.activityDefinitionID == older.stableID)
+    }
+
     // MARK: - Actor
 
     @Test("Scan reports counts without changing anything")
@@ -369,6 +456,14 @@ struct ArchiveRepairTests {
         let outer = visit(700, 1, place: "Imported journal", activity: "Travelling")
         context.insert(outer)
         context.insert(visit(700.25, 0.5, place: "Imported journal", activity: "Travelling"))
+        // A duplicate-definition name blocking linking, so the full apply proves
+        // the merge step actually unblocks the linking step that follows it.
+        let older = ActivityDefinitionRecord(stableID: UUID(), name: "Groceries", category: "Shopping",
+                                             symbol: "cart.fill", createdAt: start)
+        let newer = ActivityDefinitionRecord(stableID: UUID(), name: "Groceries", category: "Shopping",
+                                             symbol: "cart.fill", createdAt: start.addingTimeInterval(60))
+        context.insert(older)
+        context.insert(newer)
         try context.save()
 
         let report = try await ArchiveRepairActor(modelContainer: container)
@@ -377,7 +472,43 @@ struct ArchiveRepairTests {
         #expect(report.staysClosed == 1)
         #expect(report.journeysCollapsed == 1)
         #expect(report.coordinatesAdded == 1)
+        #expect(report.definitionsMerged == 1)
+        // The "Groceries" visit could only link once the duplicate definition
+        // was folded — this is the regression this step exists to fix.
+        #expect(report.activitiesLinked >= 1)
         let remaining = try ModelContext(container).fetch(FetchDescriptor<Visit>())
         #expect(remaining.count == 3)
+        let groceriesVisit = remaining.first { $0.activity == "Groceries" }
+        #expect(groceriesVisit?.activityDefinitionID == older.stableID)
+    }
+
+    @Test("Scan surfaces duplicate activity definitions and applying merges them")
+    func scanAndApplyResolveDuplicateDefinitions() async throws {
+        let container = try ModelContainer(
+            for: Visit.self, SavedPlace.self, ActivityDefinitionRecord.self, VisitCorrection.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let context = ModelContext(container)
+        let older = ActivityDefinitionRecord(stableID: UUID(), name: "Gym", category: "Fitness",
+                                             symbol: "dumbbell.fill", createdAt: start)
+        let newer = ActivityDefinitionRecord(stableID: UUID(), name: "Gym", category: "Fitness",
+                                             symbol: "dumbbell.fill", createdAt: start.addingTimeInterval(60))
+        context.insert(older)
+        context.insert(newer)
+        try context.save()
+
+        let actor = ArchiveRepairActor(modelContainer: container)
+        let findings = try await actor.scan()
+        #expect(findings.duplicateDefinitionNames == 1)
+        #expect(findings.duplicateDefinitionRows == 1)
+
+        let report = try await actor.apply(steps: [.mergeDuplicateDefinitions])
+        #expect(report.definitionsMerged == 1)
+
+        let remainingDefs = try ModelContext(container).fetch(FetchDescriptor<ActivityDefinitionRecord>())
+        #expect(remainingDefs.map(\.stableID) == [older.stableID])
+
+        let rescanned = try await actor.scan()
+        #expect(rescanned.duplicateDefinitionRows == 0)
     }
 }

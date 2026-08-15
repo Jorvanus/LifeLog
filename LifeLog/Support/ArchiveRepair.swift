@@ -46,10 +46,16 @@ enum ArchiveRepair {
         /// that would fix the most of them.
         var uncoordinatedRows = 0
         var unmatchedPlaces: [UnmatchedPlace] = []
+        /// Extra `ActivityDefinitionRecord` rows sharing a name with another active
+        /// definition. See `duplicateDefinitionGroups` for why these exist and why
+        /// they silently block activity linking until merged.
+        var duplicateDefinitionNames = 0
+        var duplicateDefinitionRows = 0
 
         var isEmpty: Bool {
             runawayStays == 0 && duplicateRows == 0 && nestedJourneys == 0
                 && coordinateBackfills == 0 && unlinkedActivityRows == 0
+                && duplicateDefinitionRows == 0
         }
 
         /// Rows a step would touch, for the preview list. Kept beside the step
@@ -60,6 +66,7 @@ enum ArchiveRepair {
             case .mergeDuplicates: duplicateRows
             case .collapseNestedJourneys: nestedJourneys
             case .backfillCoordinates: coordinateBackfills
+            case .mergeDuplicateDefinitions: duplicateDefinitionRows
             case .linkActivities: unlinkedActivityRows
             }
         }
@@ -67,12 +74,15 @@ enum ArchiveRepair {
 
     /// The repairs the owner can choose between. Ordered as they must run: closing
     /// runaways first means the duplicate and journey passes see corrected spans,
-    /// and linking activities last means it sees the final surviving row set.
+    /// duplicate definitions are folded before linking so an ambiguous name no
+    /// longer blocks it, and linking activities runs last so it sees the final
+    /// surviving row set.
     enum Step: String, CaseIterable, Identifiable, Sendable {
         case closeRunawayStays
         case mergeDuplicates
         case collapseNestedJourneys
         case backfillCoordinates
+        case mergeDuplicateDefinitions
         case linkActivities
 
         var id: Self { self }
@@ -83,6 +93,7 @@ enum ArchiveRepair {
             case .mergeDuplicates: "Merge duplicate records"
             case .collapseNestedJourneys: "Collapse nested journeys"
             case .backfillCoordinates: "Add coordinates from Saved Places"
+            case .mergeDuplicateDefinitions: "Merge duplicate activity definitions"
             case .linkActivities: "Link activities to the catalogue"
             }
         }
@@ -97,6 +108,8 @@ enum ArchiveRepair {
                 "Journeys recorded wholly inside another journey, from the same import running twice."
             case .backfillCoordinates:
                 "Imported visits whose place name matches a Saved Place get that place's coordinates, marked as derived from the name rather than recorded by GPS."
+            case .mergeDuplicateDefinitions:
+                "Activities in your catalogue that share an identical name under different identities, most likely created by a past ID-stability bug. Every visit or Saved Place pointing at a duplicate is repointed to the earliest one before the duplicate is removed."
             case .linkActivities:
                 "Visits still carrying only a text label are linked to their catalogue activity, so renaming or merging reaches them."
             }
@@ -107,7 +120,7 @@ enum ArchiveRepair {
         /// field" from "this removes history" before agreeing to it.
         var deletesRows: Bool {
             switch self {
-            case .mergeDuplicates, .collapseNestedJourneys: true
+            case .mergeDuplicates, .collapseNestedJourneys, .mergeDuplicateDefinitions: true
             case .closeRunawayStays, .backfillCoordinates, .linkActivities: false
             }
         }
@@ -121,11 +134,13 @@ enum ArchiveRepair {
         var duplicatesMerged = 0
         var journeysCollapsed = 0
         var coordinatesAdded = 0
+        var definitionsMerged = 0
         var activitiesLinked = 0
         var stillNeedingReview = 0
 
         var totalChanges: Int {
-            staysClosed + duplicatesMerged + journeysCollapsed + coordinatesAdded + activitiesLinked
+            staysClosed + duplicatesMerged + journeysCollapsed + coordinatesAdded
+                + definitionsMerged + activitiesLinked
         }
     }
 
@@ -393,6 +408,78 @@ enum ArchiveRepair {
         }
         return reverted
     }
+
+    // MARK: - Duplicate activity definitions
+
+    /// One name shared by more than one active `ActivityDefinitionRecord`, and
+    /// which of them should survive.
+    ///
+    /// This exists because `ActivityIdentityMigration.LabelIndex` — both the
+    /// existing per-launch backfill and this repair's own `linkActivities` step —
+    /// refuses to link a name that matches more than one active definition. That
+    /// refusal is deliberate for `Cafe` versus `Café`: two definitions with
+    /// different names are almost certainly two real activities, and folding them
+    /// would be irreversible data loss. But two definitions with the *exact same*
+    /// name text are not that case — nothing distinguishes them, so they are far
+    /// more likely to be one activity accidentally split into two identities, the
+    /// shape `ActivityCatalog.load()` produced while it could hand out a fresh
+    /// random ID for what a person experienced as renaming or re-picking an
+    /// existing activity (fixed by `ActivityCatalog.seed()` running at launch).
+    /// Until the duplicates are folded, every visit and Saved Place carrying that
+    /// name is permanently unlinkable, however many times linking runs.
+    struct DuplicateDefinitionGroup {
+        let name: String
+        let canonical: ActivityDefinitionRecord
+        let duplicates: [ActivityDefinitionRecord]
+    }
+
+    static func duplicateDefinitionGroups(in definitions: [ActivityDefinitionRecord]) -> [DuplicateDefinitionGroup] {
+        let grouped = Dictionary(grouping: definitions.filter(\.isActive), by: \.name)
+        return grouped.compactMap { name, records in
+            guard records.count > 1 else { return nil }
+            // The earliest-created record is the one existing visits and Saved
+            // Places are most likely to already point at, so it keeps its
+            // identity and the newer rows fold into it. `stableID` breaks a tie
+            // between records created at the same instant, so the choice is
+            // deterministic rather than depending on fetch order.
+            let sorted = records.sorted {
+                $0.createdAt != $1.createdAt
+                    ? $0.createdAt < $1.createdAt
+                    : $0.stableID.uuidString < $1.stableID.uuidString
+            }
+            return DuplicateDefinitionGroup(name: name, canonical: sorted[0], duplicates: Array(sorted.dropFirst()))
+        }
+    }
+
+    /// Folds every duplicate definition into its group's canonical record:
+    /// repoints any visit or Saved Place pointing at a duplicate's `stableID`,
+    /// then returns the now-orphaned duplicates for the caller to delete.
+    ///
+    /// Never rewrites `userActivity`/`inferredActivity` text, unlike
+    /// `ActivityRenameActor.mergeActivity` — the display label is already
+    /// identical between duplicates by construction, so only the identity a
+    /// visit or place points at needs to change, never what it says.
+    @discardableResult
+    static func mergeDuplicateDefinitions(in visits: [Visit], places: [SavedPlace],
+                                          definitions: [ActivityDefinitionRecord]) -> [ActivityDefinitionRecord] {
+        let groups = duplicateDefinitionGroups(in: definitions)
+        guard !groups.isEmpty else { return [] }
+        var canonicalID: [UUID: UUID] = [:]
+        for group in groups {
+            for duplicate in group.duplicates { canonicalID[duplicate.stableID] = group.canonical.stableID }
+        }
+        for visit in visits {
+            if let id = visit.activityDefinitionID, let replacement = canonicalID[id] {
+                visit.activityDefinitionID = replacement
+            }
+        }
+        for place in places {
+            if let id = place.activityDefinitionID, let replacement = canonicalID[id] {
+                place.activityDefinitionID = replacement
+            }
+        }
+        return groups.flatMap(\.duplicates)
+    }
 }
 
 /// Runs the repair off the main actor. A whole-archive scan is exactly the shape
@@ -425,6 +512,9 @@ actor ArchiveRepairActor {
         findings.unlinkedActivityRows = visits.filter { $0.activityDefinitionID == nil }.count
         findings.caseOnlyMismatches = ActivityIdentityMigration.caseOnlyMatchCount(visits: visits,
                                                                                    definitions: definitions)
+        let dupDefGroups = ArchiveRepair.duplicateDefinitionGroups(in: definitions)
+        findings.duplicateDefinitionNames = dupDefGroups.count
+        findings.duplicateDefinitionRows = dupDefGroups.reduce(0) { $0 + $1.duplicates.count }
         return findings
     }
 
@@ -457,6 +547,13 @@ actor ArchiveRepairActor {
             case .backfillCoordinates:
                 let savedPlaces = try modelContext.fetch(FetchDescriptor<SavedPlace>())
                 report.coordinatesAdded = ArchiveRepair.backfillCoordinates(in: visits, savedPlaces: savedPlaces)
+            case .mergeDuplicateDefinitions:
+                let places = try modelContext.fetch(FetchDescriptor<SavedPlace>())
+                let definitions = try modelContext.fetch(FetchDescriptor<ActivityDefinitionRecord>())
+                let removable = ArchiveRepair.mergeDuplicateDefinitions(in: visits, places: places,
+                                                                        definitions: definitions)
+                removable.forEach(modelContext.delete)
+                report.definitionsMerged = removable.count
             case .linkActivities:
                 // Deliberately the whole remainder rather than one page: the paged
                 // launch backfill exists to keep launch responsive, and this is an

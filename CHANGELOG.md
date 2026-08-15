@@ -15,6 +15,31 @@
   logging switched on. That drop is now written to Settings → Diagnostics, and
   written durably, so it survives arriving before the app has finished starting.
 
+### Fix duplicate activity definitions silently blocking archive repair's linking step
+
+- The owner ran the new archive repair on-device and linking barely moved
+  (9.4% -> 9.8% of visits, against a scan that had reported ~90% should link).
+  Every other step matched its prediction almost exactly. Root cause: the
+  `ActivityCatalog.seed()` ID-instability bug (fixed 2026-08-14) had, over its
+  lifetime, produced multiple `ActivityDefinitionRecord` rows sharing the exact
+  same name under different identities. `ActivityIdentityMigration.LabelIndex`
+  refuses to link a name matching more than one active definition on purpose --
+  the same rule that keeps `Cafe` and `Café` apart -- so every visit whose
+  activity had a duplicate definition was permanently unlinkable, however many
+  times linking ran.
+- Added **Merge duplicate activity definitions** as a new archive repair step,
+  positioned before linking. It groups active definitions by exact name,
+  repoints every visit and Saved Place pointing at a duplicate to the
+  earliest-created one, and removes the duplicate. Unlike `Cafe`/`Café`, an
+  identical name is not ambiguous -- there is nothing left to distinguish two
+  rows once their text is the same, so this is safe to do without a person's
+  judgement.
+- The archive repair scan now also reports how many activity names are
+  affected, so the gap between "found" and "linked" is explained rather than
+  looking like a bug on its own.
+
+## 2026-08-16
+
 ### Repair the imported archive from Settings
 
 - Added **Settings → Data import → Repair archive**: a scan-then-apply pass over
