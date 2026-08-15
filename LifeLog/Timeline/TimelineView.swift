@@ -71,9 +71,17 @@ struct TimelineView: View {
     // Bump this marker whenever de-duplication rules become stronger so an
     // installed timeline receives the one-time repair as well as new callbacks.
     @AppStorage("automatic-location-deduplicated-v3") private var automaticLocationDeduplicated = false
-    // Merges the duplicate sleep visits the pre-fix arrival-window bug could
-    // leave behind. New duplicates should no longer occur, so this runs once.
-    @AppStorage(SleepSessionRepair.repairKey) private var sleepDuplicatesMerged = false
+    /// Merges duplicate sleep visits. This used to be an `@AppStorage` flag that ran
+    /// once ever, on the assumption that the pre-fix arrival-window bug it targeted
+    /// (2026-08-10) was the only way a duplicate could appear. It was not: exact
+    /// duplicates (identical arrival, departure, and HealthKit sample IDs) turned up
+    /// again on 2026-08-13 and -14, after that fix, most likely from a live sync
+    /// racing an Erase-all-data-then-Restore cycle rather than the original bug.
+    /// Rather than chase every way a duplicate could still occur, this now runs once
+    /// per launch instead of once ever -- a local, source-only fetch with no
+    /// HealthKit or network calls, so repeating it costs nothing, and the store
+    /// self-heals regardless of the mechanism.
+    @State private var sleepDuplicatesMerged = false
 
     init(recorder: LocationRecorder, returnStartedAt: Binding<Date?> = .constant(nil)) {
         self.recorder = recorder

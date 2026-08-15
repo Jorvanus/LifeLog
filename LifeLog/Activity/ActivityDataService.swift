@@ -31,7 +31,18 @@ final class ActivityDataService {
     private var context: ModelContext?
     private var modelContainer: ModelContainer?
     private let sampleReader = ActivitySampleReader()
-    private var importWriter: ActivityImportActor?
+    /// A `Task`, not the actor itself. `backgroundWriter()` awaits `Task.detached`
+    /// before this is set, so two overlapping callers (see its own comment) used to
+    /// each find it `nil` and each construct their own `ActivityImportActor` --
+    /// distinct in-memory instances of the same underlying store, neither able to see
+    /// the other's not-yet-saved insert. That produced exact duplicate sleep visits
+    /// with identical arrival, departure and HealthKit sample IDs on 2026-08-13 and
+    /// -14: two Insights `.task(id:)` refreshes racing at launch, most likely the
+    /// same one SwiftUI cancels only cooperatively, so a superseded run kept
+    /// importing after a new one started. Caching the creation `Task` instead of its
+    /// result makes every caller `await` the same in-flight construction, so there is
+    /// only ever one writer regardless of how many callers race to ask for it.
+    private var importWriterTask: Task<ActivityImportActor, Never>?
     private var importTask: Task<Void, Never>?
     private var stepCache: [String: Double] = [:]
     private var healthObserverQueries: [HKQuery] = []
@@ -841,14 +852,26 @@ final class ActivityDataService {
 
     /// ModelActor contexts inherit their creation executor. Constructing this actor
     /// from a detached utility task guarantees its SwiftData context is not main-bound.
-    private func backgroundWriter() async -> ActivityImportActor? {
-        if let importWriter { return importWriter }
+    ///
+    /// Caches the construction `Task`, not its result -- see `importWriterTask`'s own
+    /// comment for why the difference matters. Assigning the task before the first
+    /// `await` keeps the whole check-then-create sequence a single atomic step on the
+    /// main actor: a second caller arriving while construction is still in flight
+    /// finds `importWriterTask` already set and awaits that same task instead of
+    /// starting a second one.
+    ///
+    /// Internal, not private: `ActivityDataServiceConcurrencyTests` calls this
+    /// directly to prove two overlapping callers converge on one actor instance --
+    /// the property this whole cache exists for, which no test of the public
+    /// `refreshSleep` surface alone can pin down without a live HealthKit fixture.
+    func backgroundWriter() async -> ActivityImportActor? {
+        if let importWriterTask { return await importWriterTask.value }
         guard let modelContainer else { return nil }
-        let writer = await Task.detached(priority: .utility) {
+        let task = Task.detached(priority: .utility) {
             ActivityImportActor(modelContainer: modelContainer)
-        }.value
-        if importWriter == nil { importWriter = writer }
-        return importWriter
+        }
+        importWriterTask = task
+        return await task.value
     }
 
     private func updateProgress(id: UUID, state: ActivityImportProgress.State, title: String,

@@ -1,14 +1,15 @@
 import Foundation
 import SwiftData
 
-/// One-time cleanup for the duplicate `health-sleep` visits a matching bug in
-/// `ActivityImportActor.insertBatch` could create before it was fixed
-/// (2026-08-10): a session whose freshly re-merged start moved by more than two
-/// minutes between refreshes read as a new visit instead of an update to the
-/// existing one, and was inserted beside it.
+/// Cleanup for duplicate `health-sleep` visits. Originally targeted one specific
+/// bug in `ActivityImportActor.insertBatch`, fixed 2026-08-10: a session whose
+/// freshly re-merged start moved by more than two minutes between refreshes read
+/// as a new visit instead of an update to the existing one. Exact duplicates kept
+/// appearing after that fix (2026-08-13, -14), so `TimelineView` no longer treats
+/// this as a one-time repair for one bug -- it runs every launch instead, since
+/// this is a cheap, local, idempotent fold regardless of what produced the
+/// duplicate.
 enum SleepSessionRepair {
-    static let repairKey = "sleep-duplicates-merged-v1"
-
     /// Folds overlapping, or near-adjacent (within the sample reader's own
     /// 15-minute merge gap), `health-sleep` visits into the earliest-starting one
     /// in the cluster — the same "keep the first, absorb the rest" shape
