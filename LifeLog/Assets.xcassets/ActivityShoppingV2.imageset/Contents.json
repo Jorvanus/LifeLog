@@ -1,26 +1,66 @@
 {
   "images" : [
     {
-      "filename" : "ActivityShoppingV2-light.png",
-      "idiom" : "universal",
-      "scale" : "1x",
       "appearances" : [
         {
           "appearance" : "luminosity",
           "value" : "light"
         }
-      ]
+      ],
+      "filename" : "ActivityShoppingV2-light.png",
+      "idiom" : "universal",
+      "scale" : "1x"
     },
     {
-      "filename" : "ActivityShoppingV2-dark.png",
-      "idiom" : "universal",
-      "scale" : "1x",
       "appearances" : [
         {
           "appearance" : "luminosity",
           "value" : "dark"
         }
-      ]
+      ],
+      "filename" : "ActivityShoppingV2-dark.png",
+      "idiom" : "universal",
+      "scale" : "1x"
+    },
+    {
+      "appearances" : [
+        {
+          "appearance" : "luminosity",
+          "value" : "light"
+        }
+      ],
+      "idiom" : "universal",
+      "scale" : "2x"
+    },
+    {
+      "appearances" : [
+        {
+          "appearance" : "luminosity",
+          "value" : "dark"
+        }
+      ],
+      "idiom" : "universal",
+      "scale" : "2x"
+    },
+    {
+      "appearances" : [
+        {
+          "appearance" : "luminosity",
+          "value" : "light"
+        }
+      ],
+      "idiom" : "universal",
+      "scale" : "3x"
+    },
+    {
+      "appearances" : [
+        {
+          "appearance" : "luminosity",
+          "value" : "dark"
+        }
+      ],
+      "idiom" : "universal",
+      "scale" : "3x"
     }
   ],
   "info" : {

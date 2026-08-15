@@ -139,17 +139,17 @@ struct ActivityArtworkBoundsTests {
         let expected = [
             "At home": "ActivityHome", "Working": "ActivityWorkV2",
             "Coffee": "ActivityCoffeeV2", "Beers": "ActivityBeersV2",
-            "Shopping": "ActivityShoppingV2", "Healthcare": "ActivityHealthcare",
-            "Travelling": "ActivityDriving", "Sleeping": "ActivitySleep",
+            "Shopping": "ActivityShoppingV2", "Healthcare": "ActivityDoctorVisit",
+            "Travelling": "ActivityDriving",
             "Walking": "ActivityWalking", "Exercising": "ActivityFitnessV2",
             "Commuting": "ActivityDriving", "Running": "ActivityFitnessV2",
             "Cycling": "ActivityFitnessV2", "Swimming": "ActivityFitnessV2",
             "Yoga": "ActivityFitnessV2", "Strength training": "ActivityFitnessV2",
             "Breakfast": "ActivityBreakfast", "Lunch": "ActivityLunch",
-            "Dining out": "ActivityDiningOut", "Eating": "ActivityEating",
+            "Dining out": "ActivityDiningOut", "Eating": "ActivityDiningOut",
             "Concert": "ActivityConcert", "Watching a movie": "ActivityWatchingMovie",
             "Studying": "ActivityStudying", "Football": "ActivityFootball",
-            "Socialising": "ActivitySocialising", "Visiting": "ActivityVisiting"
+            "Socialising": "ActivitySocialising", "Visiting": "ActivitySocialising"
         ]
         for (activity, asset) in expected {
             #expect(ActivityScene(activity: activity).assetNameForTesting == asset,
@@ -163,7 +163,9 @@ struct ActivityArtworkBoundsTests {
     @Test("Every shipped activity has an illustration")
     func everyShippedActivityHasArtwork() {
         var without: [String] = []
-        for entry in ActivityCatalog.defaults {
+        // Rest has no decorative scene by design; the icon and duration already
+        // communicate it more clearly than a generic sleeping-person illustration.
+        for entry in ActivityCatalog.defaults where entry.name != "Sleeping" && entry.name != "In bed" {
             guard let asset = ActivityScene(activity: entry.name).assetNameForTesting,
                   UIImage(named: asset) != nil else {
                 without.append(entry.name)

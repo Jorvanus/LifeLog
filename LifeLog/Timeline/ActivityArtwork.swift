@@ -76,8 +76,10 @@ struct ActivityIcon: View {
         // nothing at all, and "Dining out" must not fall through to the cafe.
         if text.contains("breakfast") || text.contains("brunch") { return "ActivityBreakfast" }
         if text.contains("lunch") { return "ActivityLunch" }
-        if text.contains("dining") || text.contains("dinner") || text.contains("restaurant") { return "ActivityDiningOut" }
-        if text.contains("eating") || text.contains("meal") { return "ActivityEating" }
+        // Dining Out is the single meal scene. Historical Eating labels remain
+        // readable, without keeping a second nearly-identical illustration.
+        if text.contains("dining") || text.contains("dinner") || text.contains("restaurant")
+            || text.contains("eating") || text.contains("meal") { return "ActivityDiningOut" }
         if text.contains("concert") || text.contains("gig") || text.contains("live music") { return "ActivityConcert" }
         if text.contains("movie") || text.contains("film") || text.contains("cinema")
             || text.contains("watching tv") || text.contains("television") {
@@ -98,13 +100,16 @@ struct ActivityIcon: View {
             return "ActivityFitnessV2"
         }
         if text.contains("meeting") { return "ActivityMeetingV2" }
-        if text.contains("doctor") { return "ActivityDoctorVisit" }
-        if text.contains("health") || text.contains("medical") || text.contains("hospital") { return "ActivityHealthcare" }
+        // A doctor consultation is the shared visual language for health care.
+        if text.contains("doctor") || text.contains("health") || text.contains("medical")
+            || text.contains("hospital") { return "ActivityDoctorVisit" }
         if text.contains("grocer") || text.contains("supermarket") { return "ActivityGroceries" }
-        if text.contains("family") || text.contains("child") { return "ActivityVisitingFamily" }
-        if text.contains("desk") { return "ActivityDesk" }
+        if text.contains("family") || text.contains("child") { return "ActivityFamily" }
+        if text.contains("desk") { return "ActivityWorkV2" }
         if text.contains("shop") { return "ActivityShoppingV2" }
-        if text.contains("sleep") || text.contains("in bed") { return "ActivitySleep" }
+        // Sleep is deliberately text-and-icon only: showing someone asleep adds
+        // no useful context to the current-activity card.
+        if text.contains("sleep") || text.contains("in bed") { return nil }
         if text.contains("cafe") || text.contains("café") { return "ActivityCafe" }
         if text.contains("coffee") { return "ActivityCoffeeV2" }
         if text.contains("work") || text.contains("office") { return "ActivityWorkV2" }
@@ -118,7 +123,7 @@ struct ActivityIcon: View {
         if text.contains("walk") { return "ActivityWalking" }
         // Last, because it is the label for a place LifeLog could not name — anything
         // more specific above should have claimed the visit before it reaches here.
-        if text.contains("visiting") || text.contains("visit") { return "ActivityVisiting" }
+        if text.contains("visiting") || text.contains("visit") { return "ActivitySocialising" }
         return nil
     }
 }

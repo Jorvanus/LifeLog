@@ -2,6 +2,11 @@
 
 ## 2026-08-15
 
+### Refresh and consolidate timeline activity artwork
+
+- Reworked the light and dark activity scenes for concerts, dining out, blood donation, doctor visits, home, shopping, socialising, transit, and family visits in the app's existing calm illustrated style. The recurring figure is now athletic and bearded, group scenes actually include other people, and donation framing keeps the person visible in the card.
+- Consolidated duplicate scenes: Dining Out covers eating, Doctor Visit covers healthcare, Work covers desk, Fitness V2 covers exercise, Socialising covers visiting, and Family covers visiting family. Sleep remains an icon-only activity card.
+
 ### Fix "Health & Fitness" and "Sleep & Rest" rendering grey in the Year chart
 
 - `AnnualInsights.LifeArea.category` was set to the area's own display name

@@ -1,26 +1,66 @@
 {
   "images" : [
     {
-      "filename" : "ActivityHome-light.png",
-      "idiom" : "universal",
-      "scale" : "1x",
       "appearances" : [
         {
           "appearance" : "luminosity",
           "value" : "light"
         }
-      ]
+      ],
+      "filename" : "ActivityHome-light.png",
+      "idiom" : "universal",
+      "scale" : "1x"
     },
     {
-      "filename" : "ActivityHome-dark.png",
-      "idiom" : "universal",
-      "scale" : "1x",
       "appearances" : [
         {
           "appearance" : "luminosity",
           "value" : "dark"
         }
-      ]
+      ],
+      "filename" : "ActivityHome-dark.png",
+      "idiom" : "universal",
+      "scale" : "1x"
+    },
+    {
+      "appearances" : [
+        {
+          "appearance" : "luminosity",
+          "value" : "light"
+        }
+      ],
+      "idiom" : "universal",
+      "scale" : "2x"
+    },
+    {
+      "appearances" : [
+        {
+          "appearance" : "luminosity",
+          "value" : "dark"
+        }
+      ],
+      "idiom" : "universal",
+      "scale" : "2x"
+    },
+    {
+      "appearances" : [
+        {
+          "appearance" : "luminosity",
+          "value" : "light"
+        }
+      ],
+      "idiom" : "universal",
+      "scale" : "3x"
+    },
+    {
+      "appearances" : [
+        {
+          "appearance" : "luminosity",
+          "value" : "dark"
+        }
+      ],
+      "idiom" : "universal",
+      "scale" : "3x"
     }
   ],
   "info" : {

@@ -1,26 +1,66 @@
 {
   "images" : [
     {
-      "filename" : "ActivityHotel-light.png",
-      "idiom" : "universal",
-      "scale" : "1x",
       "appearances" : [
         {
           "appearance" : "luminosity",
           "value" : "light"
         }
-      ]
+      ],
+      "filename" : "ActivityHotel-light.png",
+      "idiom" : "universal",
+      "scale" : "1x"
     },
     {
-      "filename" : "ActivityHotel-dark.png",
-      "idiom" : "universal",
-      "scale" : "1x",
       "appearances" : [
         {
           "appearance" : "luminosity",
           "value" : "dark"
         }
-      ]
+      ],
+      "filename" : "ActivityHotel-dark.png",
+      "idiom" : "universal",
+      "scale" : "1x"
+    },
+    {
+      "appearances" : [
+        {
+          "appearance" : "luminosity",
+          "value" : "light"
+        }
+      ],
+      "idiom" : "universal",
+      "scale" : "2x"
+    },
+    {
+      "appearances" : [
+        {
+          "appearance" : "luminosity",
+          "value" : "dark"
+        }
+      ],
+      "idiom" : "universal",
+      "scale" : "2x"
+    },
+    {
+      "appearances" : [
+        {
+          "appearance" : "luminosity",
+          "value" : "light"
+        }
+      ],
+      "idiom" : "universal",
+      "scale" : "3x"
+    },
+    {
+      "appearances" : [
+        {
+          "appearance" : "luminosity",
+          "value" : "dark"
+        }
+      ],
+      "idiom" : "universal",
+      "scale" : "3x"
     }
   ],
   "info" : {
