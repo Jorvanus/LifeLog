@@ -199,7 +199,12 @@ tier_fast() {
   run_xcodebuild "fast-build" "** TEST BUILD SUCCEEDED **" "build" \
     -project "$PROJECT" -scheme "$SCHEME" -destination "$DESTINATION" \
     -derivedDataPath "$DERIVED_FOCUSED" build-for-testing -skip-testing:LifeLogUITests
-  run_xcodebuild "fast-unit-tests" "** TEST SUCCEEDED **" "tests" \
+  # "** TEST EXECUTE SUCCEEDED **", not the "** TEST SUCCEEDED **" every other
+  # tier expects: this is the only tier that splits the build from the run, and
+  # test-without-building prints the EXECUTE form. Asking for the wrong one made
+  # `fast` incapable of reporting a pass -- every run ended in a marker FAIL after
+  # its tests had all passed, which reads exactly like a real failure.
+  run_xcodebuild "fast-unit-tests" "** TEST EXECUTE SUCCEEDED **" "tests" \
     -project "$PROJECT" -scheme "$SCHEME" -destination "$DESTINATION" \
     -derivedDataPath "$DERIVED_FOCUSED" test-without-building -only-testing:LifeLogTests "${skip[@]}"
   report_version_alignment "$DERIVED_FOCUSED"
