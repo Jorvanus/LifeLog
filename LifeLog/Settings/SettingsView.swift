@@ -20,6 +20,8 @@ struct SettingsView: View {
     @State private var backupTask: Task<Void, Never>?
     @State private var importMessage: String?
     @State private var addingManualSleep = false
+    @State private var confirmingErase = false
+    @State private var erasingData = false
     @AppStorage(LocationDiagnostics.detailKey) private var detailedLocationDiagnostics = false
     let recorder: LocationRecorder
     let activityData: ActivityDataService
@@ -183,6 +185,22 @@ struct SettingsView: View {
                     Text("Backups include visits, Saved Places, corrections, diagnostics, detailed location callbacks, ignored state, activities, category colours, and LifeLog preferences. Restore into an empty store for a complete replacement.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
+                Section {
+                    Button(role: .destructive) {
+                        confirmingErase = true
+                    } label: { Label("Erase all data", systemImage: "trash") }
+                        .accessibilityIdentifier("erase-all-data")
+                        .disabled(erasingData)
+                    if erasingData {
+                        HStack {
+                            ProgressView()
+                            Text("Erasing…").foregroundStyle(.secondary)
+                        }
+                    }
+                } footer: {
+                    Text("Deletes every visit, Saved Place, correction, diagnostic, and location callback so the store is empty and ready for Restore backup. Make a backup first if you want a way back.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
                 if let error = recorder.lastError ?? activityData.lastError { Section("Last issue") { Text(error) } }
                 Section {
                     NavigationLink { DiagnosticsView(recorder: recorder) } label: {
@@ -215,6 +233,12 @@ struct SettingsView: View {
                     Text(importMessage ?? "")
                 }
                 .sheet(isPresented: $addingManualSleep) { ManualSleepEntryView() }
+                .confirmationDialog("Erase all data?", isPresented: $confirmingErase, titleVisibility: .visible) {
+                    Button("Erase everything", role: .destructive) { eraseAllData() }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("This permanently deletes every visit, Saved Place, correction, diagnostic, and location callback on this device. There is no undo other than a backup you made beforehand.")
+                }
         }
     }
 
@@ -236,6 +260,32 @@ struct SettingsView: View {
                 return
             } catch {
                 importMessage = "LifeLog couldn’t create a backup."
+            }
+        }
+    }
+
+    /// Wipes exactly the model types `LocalBackupService.restore` fully repopulates
+    /// (Visit, SavedPlace, VisitCorrection, DiagnosticEvent, LocationEvent), so
+    /// "Erase all data" then "Restore backup" round-trips cleanly into the empty
+    /// store the restore footer already says it expects. `ActivityCatalog` and
+    /// portable preferences are left alone: restore overwrites both unconditionally
+    /// regardless of what was here before, so erasing them first buys nothing.
+    private func eraseAllData() {
+        erasingData = true
+        Task {
+            defer { erasingData = false }
+            do {
+                try context.delete(model: Visit.self)
+                try context.delete(model: SavedPlace.self)
+                try context.delete(model: VisitCorrection.self)
+                try context.delete(model: DiagnosticEvent.self)
+                try context.delete(model: LocationEvent.self)
+                try context.save()
+                InsightsInvalidation.invalidate(reason: "All data erased", context: context)
+                importMessage = "All data erased. Restart LifeLog to refresh all screens."
+            } catch {
+                context.rollback()
+                importMessage = "LifeLog couldn’t erase all data."
             }
         }
     }

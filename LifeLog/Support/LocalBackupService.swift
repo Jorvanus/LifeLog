@@ -163,9 +163,13 @@ extension LifeLogBackup {
             }
         }
         for event in locationEvents ?? [] {
-            guard event.accuracy >= 0 else {
-                throw BackupValidationError.invalidLocationEvent(reason: "negative accuracy")
-            }
+            // Negative accuracy is not corrupt data -- it is CoreLocation's own
+            // convention for "unavailable", and `LocationJournal.record`'s default
+            // parameter (-1) uses it for exactly that: a geofence exit only ever
+            // carries a bare coordinate, never a `CLLocation` with a real accuracy
+            // reading, so every geofence-exit event legitimately has none. Rejecting
+            // the whole restore over this would mean no backup with a geofence exit
+            // in it could ever be restored.
             if let arrival = event.arrival, let departure = event.departure, departure < arrival {
                 throw BackupValidationError.invalidLocationEvent(reason: "departure before arrival")
             }

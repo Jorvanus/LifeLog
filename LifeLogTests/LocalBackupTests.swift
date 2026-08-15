@@ -349,6 +349,25 @@ struct LocalBackupTests {
         #expect(try context.fetch(FetchDescriptor<Visit>()).isEmpty)
     }
 
+    @Test("A geofence-exit location event's negative accuracy is not rejected -- it means \"unavailable\", not corrupt")
+    func negativeAccuracyLocationEventRestores() throws {
+        let backup = LifeLogBackup(version: LifeLogBackup.currentVersion, createdAt: .now,
+            visits: [], savedPlaces: [], corrections: [], diagnostics: [],
+            locationEvents: [
+                .init(recordedAt: base, callbackType: "geofence-exit", callbackAt: base,
+                      arrival: base.addingTimeInterval(-1800), departure: base, latitude: 0, longitude: 0,
+                      accuracy: -1, distanceFromCurrentVisit: nil, transition: "closed", visitArrival: base.addingTimeInterval(-1800))
+            ],
+            ignoredVisitKeys: [], activityDefinitions: [], preferences: [:])
+        let data = try JSONEncoder.lifeLogBackup.encode(backup)
+
+        let context = try makeContext()
+        try LocalBackupService.restore(data, into: context)
+        let events = try context.fetch(FetchDescriptor<LocationEvent>())
+        #expect(events.count == 1)
+        #expect(events.first?.accuracy == -1)
+    }
+
     // MARK: - Restore failure without partial data
 
     @Test("A backup that fails validation partway through its visits leaves earlier records unrestored too")
