@@ -373,6 +373,20 @@ extension ActivityLocationPolicy {
         // closing it. They are excluded from every screen, so this only bounds their
         // stored duration; it never changes what is displayed.
         var healed = 0
+        // Stays closed or trimmed against a later arrival below. Counted for the same
+        // reason `healed` is: a caller that saves only on a non-zero count discards an
+        // uncounted mutation when trimming is the only work the pass did. `TimelineView`
+        // is exactly such a caller (`if removed > 0 { try context.save() }`), so a pass
+        // that trimmed an overlap and found no duplicate returned 0 and threw the trim
+        // away. The incremental `deduplicateAutomaticLocations(in:context:)` has always
+        // counted these two branches; only this full-store variant did not.
+        //
+        // Note what this does *not* explain: the relaunch audit reaches this through
+        // `VisitMutationService.perform`, which saves unconditionally, so trims on that
+        // path were already persisting. An overlap that survives repeated launches is a
+        // different fault -- something re-widening the stay afterwards -- and is not
+        // addressed here.
+        var bounded = 0
         for stale in visits where isSupersededLocation(stale) && stale.departure == nil {
             stale.departure = stale.arrival
             healed += 1
@@ -455,6 +469,7 @@ extension ActivityLocationPolicy {
                 if previous.departure == nil, candidate.arrival > previous.arrival {
                     previous.departure = candidate.arrival
                     previous.locationResolutionExplanation = .coordinateTime
+                    bounded += 1
                     LocationDiagnostics.record(.closed, subject: "Open stay",
                                                reason: "a later arrival proves it ended",
                                                evidence: "\(previous.placeName) closed at \(candidate.placeName)'s arrival",
@@ -466,6 +481,7 @@ extension ActivityLocationPolicy {
                     // own recorded departure that's wrong here, not the later arrival.
                     previous.departure = max(previous.arrival, candidate.arrival)
                     previous.locationResolutionExplanation = .coordinateTime
+                    bounded += 1
                     LocationDiagnostics.record(.closed, subject: "Overlapping stay",
                                                reason: "a later arrival precedes this stay's recorded departure",
                                                evidence: "\(previous.placeName) trimmed to \(candidate.placeName)'s arrival",
@@ -474,9 +490,10 @@ extension ActivityLocationPolicy {
                 retained.append(candidate)
             }
         }
-        // Healed rows are counted so the caller still saves, and is still told it
-        // repaired something, on a pass that only closed stranded records.
-        return removed + healed
+        // Healed and bounded rows are counted so the caller still saves, and is still
+        // told it repaired something, on a pass that only closed stranded records or
+        // trimmed an overlap.
+        return removed + healed + bounded
     }
 
     /// Local deduplication for the sorted repair window. A duplicate can only be

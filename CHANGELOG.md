@@ -2,6 +2,14 @@
 
 ## 2026-08-16
 
+### Keep an overlap repair that had nothing else to do
+
+- A pass that trimmed an overlapping stay, or closed an open one against a later
+  arrival, reported no repairs unless it had also folded a duplicate callback.
+  Timeline saves that pass only when it reports a repair, so a trim that was the
+  only correction found was applied and then discarded. It is counted now, and
+  kept.
+
 ### Fold imported sleep visits into "Sleep" instead of "Imported journal"
 
 - The owner noticed "Imported journal" showing up in Insights' "Places that
