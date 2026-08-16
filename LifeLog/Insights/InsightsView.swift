@@ -773,7 +773,7 @@ struct InsightsView: View {
         InsightsUnloggedTimeReviewLink(
             gapCount: unloggedSegments.count,
             totalHours: unloggedSegments.reduce(0) { $0 + $1.hours },
-            onOpen: { path.append(.unloggedTime) }
+            onOpen: { path.append(InsightsRoute.unloggedTime) }
         )
     }
 

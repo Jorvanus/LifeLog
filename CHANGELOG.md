@@ -55,6 +55,7 @@
 - Insights now lists every unlogged gap for the selected period in one review
   screen, so adding a visit starts from the exact gap instead of an unreachable
   donut-centre link.
+- The review route now opens reliably from the unlogged-time card.
 
 ## 2026-08-16
 
