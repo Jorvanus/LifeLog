@@ -529,6 +529,48 @@ struct ArchiveRepairTests {
         #expect(sleepThenWalkSegments.map(\.activity) == ["At home"])
     }
 
+    @Test("A gap between Work and a walking fragment, in either order, is fillable as a single Work segment")
+    func workWalkingTransitionFillsAsWork() throws {
+        // Placed inside what would otherwise be the 5pm-midnight "At home" band,
+        // to prove the override bypasses the clock entirely.
+        let gapStart = mondayMidnight.addingTimeInterval(18 * 3600)
+        let gapEnd = mondayMidnight.addingTimeInterval(19 * 3600)
+
+        let work = Visit(arrival: gapStart.addingTimeInterval(-3600), departure: gapStart,
+                         latitude: 0, longitude: 0, placeName: "Regional Office",
+                         inferredActivity: "Work", source: "automatic")
+        let walk = Visit(arrival: gapEnd, departure: gapEnd.addingTimeInterval(3600),
+                         latitude: 0, longitude: 0, placeName: "Walking",
+                         inferredActivity: "Walking", source: "health-walking")
+
+        let workThenWalk = ArchiveRepair.UnloggedGap(start: gapStart, end: gapEnd, before: work, after: walk)
+        #expect(ArchiveRepair.templateSegments(for: workThenWalk, calendar: utc).map(\.activity) == ["Work"])
+        #expect(ArchiveRepair.fillableGaps(in: [work, walk]).count == 1)
+
+        let walkThenWork = ArchiveRepair.UnloggedGap(start: gapStart, end: gapEnd, before: walk, after: work)
+        #expect(ArchiveRepair.templateSegments(for: walkThenWork, calendar: utc).map(\.activity) == ["Work"])
+    }
+
+    @Test("A gap between Travelling and sleep, in either order, is fillable as a single At home segment")
+    func travellingSleepTransitionFillsAsHome() throws {
+        let gapStart = mondayMidnight.addingTimeInterval(22 * 3600)
+        let gapEnd = mondayMidnight.addingTimeInterval(23 * 3600)
+
+        let travelling = Visit(arrival: gapStart.addingTimeInterval(-3600), departure: gapStart,
+                               latitude: 0, longitude: 0, placeName: "Imported journal",
+                               inferredActivity: "Travelling", source: "imported-journal")
+        let sleep = Visit(arrival: gapEnd, departure: gapEnd.addingTimeInterval(3600),
+                          latitude: 0, longitude: 0, placeName: "Sleep",
+                          inferredActivity: "Sleeping", source: "health-sleep")
+
+        let travelThenSleep = ArchiveRepair.UnloggedGap(start: gapStart, end: gapEnd, before: travelling, after: sleep)
+        #expect(ArchiveRepair.templateSegments(for: travelThenSleep, calendar: utc).map(\.activity) == ["At home"])
+        #expect(ArchiveRepair.fillableGaps(in: [travelling, sleep]).count == 1)
+
+        let sleepThenTravel = ArchiveRepair.UnloggedGap(start: gapStart, end: gapEnd, before: sleep, after: travelling)
+        #expect(ArchiveRepair.templateSegments(for: sleepThenTravel, calendar: utc).map(\.activity) == ["At home"])
+    }
+
     @Test("A short gap entirely within one band produces a single segment")
     func shortGapWithinOneBandIsOneSegment() throws {
         // Monday 18:00 -> 19:00: entirely inside the 5pm-midnight "At home" band.
