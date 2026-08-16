@@ -22,8 +22,10 @@ import SwiftData
 /// never touches a `Visit` at all — it corrects catalogue metadata left behind by
 /// a since-fixed ID-instability bug (`ActivityCatalog.seed()`), not anything the
 /// live pipeline is still doing. And `fillRoutineGaps` additionally accepts a gap
-/// bordered on both sides by a Health `.healthWalking` fragment — see
-/// `isWalkingFragment` for why that one live source is let through.
+/// bordered on both sides by a Health `.healthWalking` fragment, or bordered by
+/// a walking fragment on one side and a Health sleep visit on the other — see
+/// `isWalkingFragment` and `isWalkingSleepTransition` for why those two live
+/// sources are let through.
 ///
 /// The archive did briefly get this wrong: the first shipped version of
 /// `duplicateRows`/`nestedJourneyRows` matched across every source, and on the
@@ -63,13 +65,35 @@ enum ArchiveRepair {
         visit.visitSource == .healthWalking
     }
 
+    /// A Health-tracked sleep visit. Paired with `isWalkingFragment` below to
+    /// catch the other shape of gap the same fragmentation produces: a walk
+    /// ending shortly before bed, or one starting shortly after waking, with
+    /// nothing logged in between. That gap is not a stretch of actual sleep —
+    /// the `Sleeping` visit itself already covers whenever sleep was
+    /// recorded — and it is not a walk either; it is the ordinary business of
+    /// being home before or after each. See `isWalkingSleepTransition`.
+    static func isSleepFragment(_ visit: Visit) -> Bool {
+        visit.visitSource == .healthSleep
+    }
+
+    /// A gap between a Health walking fragment and a Health sleep visit, in
+    /// either order. Unlike `isWalkingFragment`-bordered gaps, which still go
+    /// through the full day/night template, this shape is filled as a single
+    /// "At home" visit regardless of the clock — see `templateSegments`.
+    static func isWalkingSleepTransition(_ before: Visit, _ after: Visit) -> Bool {
+        (isWalkingFragment(before) && isSleepFragment(after))
+            || (isSleepFragment(before) && isWalkingFragment(after))
+    }
+
     /// Whether a gap's two bordering visits qualify it for the routine
-    /// template fill — either both sides of the one-time import, or both
-    /// sides a Health walking fragment. See `isWalkingFragment` for why the
-    /// second case exists; nothing else broadens this.
+    /// template fill: both sides of the one-time import, both sides a Health
+    /// walking fragment, or a walking/sleep transition on either side. See
+    /// `isWalkingFragment` and `isWalkingSleepTransition` for why; nothing
+    /// else broadens this.
     static func gapBordersEligibleForFill(_ before: Visit, _ after: Visit) -> Bool {
         (isImportOnly(before) && isImportOnly(after))
             || (isWalkingFragment(before) && isWalkingFragment(after))
+            || isWalkingSleepTransition(before, after)
     }
 
     /// A stay longer than this is treated as never having been closed rather than
@@ -188,7 +212,7 @@ enum ArchiveRepair {
             case .renameWalkingPlaceholders:
                 "Walking visits imported without a place currently show as \"Imported journal\" too. Naming them \"Walking\" merges them with every other walk recorded by Health."
             case .fillRoutineGaps:
-                "Nothing logged, midnight–7am becomes Sleeping, 7–9am and 5pm–midnight become At home, and 9am–5pm becomes Work on a weekday or At home on a weekend. Only gaps of a day or less are filled — bordered on both sides by imported history, or by a Health-tracked walk either side of a gap that's really the same stay reported in fragments. Anything longer, or bordering anything else live-tracked, is left alone."
+                "Nothing logged, midnight–7am becomes Sleeping, 7–9am and 5pm–midnight become At home, and 9am–5pm becomes Work on a weekday or At home on a weekend. Only gaps of a day or less are filled — bordered on both sides by imported history, by a Health-tracked walk either side of a gap that's really the same stay reported in fragments, or by a walk and a night's sleep either side, which always becomes At home rather than following the clock. Anything longer, or bordering anything else live-tracked, is left alone."
             case .mergeDuplicateDefinitions:
                 "Activities in your catalogue that share an identical name under different identities, most likely created by a past ID-stability bug. Every visit or Saved Place pointing at a duplicate is repointed to the earliest one before the duplicate is removed."
             }
@@ -655,6 +679,14 @@ enum ArchiveRepair {
     }
 
     static func templateSegments(for gap: UnloggedGap, calendar: Calendar = .current) -> [GapFillSegment] {
+        // A walking/sleep transition is home time by construction, not
+        // whatever the clock happens to say — see `isWalkingSleepTransition`.
+        // Filling it against the day/night bands below would risk labelling
+        // it "Sleeping" for a gap that, by definition, sits outside the
+        // recorded sleep visit itself.
+        if isWalkingSleepTransition(gap.before, gap.after) {
+            return [GapFillSegment(start: gap.start, end: gap.end, activity: "At home")]
+        }
         var segments: [GapFillSegment] = []
         var cursor = gap.start
         while cursor < gap.end {
