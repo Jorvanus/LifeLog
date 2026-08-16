@@ -80,4 +80,27 @@ struct ManualVisitViewTests {
         )
         #expect(Set(overlapping.map(\.persistentModelID)) == Set([work, errand].map(\.persistentModelID)))
     }
+
+    /// A departure left equal to arrival used to save fine -- nothing checked for it --
+    /// and produced a manual "Confirmed" visit with zero duration that no repair pass
+    /// would ever touch, since a person's own entry outranks the automatic guesses
+    /// those passes are willing to fold together. Captured on a real device
+    /// 2026-08-16: a 0m Home entry sat forever beside the stay it was meant to describe.
+    @Test("Saving is blocked when departure has not moved past arrival")
+    func cannotSaveAZeroDurationVisit() {
+        #expect(!ManualVisitView.canSave(place: "Home", arrival: base, departure: base))
+        // The picker can also leave departure dragged before arrival; `effectiveDeparture`
+        // clamps that to `arrival`, so it is the same zero-duration case, not a negative one.
+        #expect(!ManualVisitView.canSave(place: "Home", arrival: base, departure: base.addingTimeInterval(-60)))
+    }
+
+    @Test("Saving is allowed once departure moves past arrival")
+    func canSaveOnceThereIsSomeDuration() {
+        #expect(ManualVisitView.canSave(place: "Home", arrival: base, departure: base.addingTimeInterval(60)))
+    }
+
+    @Test("Saving is blocked when the place is empty, independent of duration")
+    func cannotSaveWithoutAPlace() {
+        #expect(!ManualVisitView.canSave(place: "  ", arrival: base, departure: base.addingTimeInterval(60 * 60)))
+    }
 }

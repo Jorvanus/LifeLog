@@ -2,6 +2,14 @@
 
 ## 2026-08-16
 
+### Add Visit no longer lets a zero-duration entry save
+
+- Leaving departure equal to arrival in Add Visit produced a visit with nothing
+  in it — no duration, no evidence of what happened — that then sat on Timeline
+  forever, since a manually confirmed entry is never touched by the automatic
+  repair passes that clean up device guesses. Save is now disabled until
+  departure moves past arrival, alongside the existing check for an empty place.
+
 ### Stop a place from splitting into extra Timeline rows every time you walk home
 
 - A walk whose route proved it left a place, then returned, could leave two Home

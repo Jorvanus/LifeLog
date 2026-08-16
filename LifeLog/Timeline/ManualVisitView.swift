@@ -110,6 +110,14 @@ struct ManualVisitView: View {
         visits.filter { $0.arrival < departure && ($0.departure ?? now) > arrival }
     }
 
+    /// A visit saved with departure equal to arrival records nothing -- no duration,
+    /// no evidence of what happened -- and, unlike an automatic guess, a manual entry
+    /// is never folded into anything else by the repair passes, so it would stand
+    /// apart forever after.
+    static func canSave(place: String, arrival: Date, departure: Date) -> Bool {
+        !TextSafety.clean(place, maximumLength: 120).isEmpty && max(arrival, departure) > arrival
+    }
+
     private var overlapSummary: String {
         overlappingVisits
             .sorted { $0.arrival < $1.arrival }
@@ -193,7 +201,7 @@ struct ManualVisitView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { attemptSave() }
-                        .disabled(TextSafety.clean(place, maximumLength: 120).isEmpty)
+                        .disabled(!Self.canSave(place: place, arrival: arrival, departure: departure))
                 }
             }
             .alert("Couldn’t save visit", isPresented: $saveFailed) {
