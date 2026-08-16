@@ -112,15 +112,7 @@ final class ActivityDataService {
     private func configureBackgroundDelivery() {
         guard HKHealthStore.isHealthDataAvailable() else { return }
         guard healthObserverQueries.isEmpty else { return }
-        guard let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return }
-        var types: [HKSampleType] = [sleepType, HKWorkoutType.workoutType()]
-        types += [HKQuantityTypeIdentifier.stepCount, .distanceWalkingRunning,
-                  .activeEnergyBurned, .appleExerciseTime, .appleStandTime,
-                  .restingHeartRate, .walkingHeartRateAverage, .heartRateRecoveryOneMinute,
-                  .respiratoryRate].compactMap {
-            HKObjectType.quantityType(forIdentifier: $0)
-        }
-        for type in types {
+        for type in HealthKitTypeCatalog.observedTypes {
             let query = HKObserverQuery(sampleType: type, predicate: nil) { [weak self] _, completion, _ in
                 let delivery = HealthObserverDelivery(completion)
                 Task { @MainActor [weak self] in
@@ -249,6 +241,10 @@ final class ActivityDataService {
         case HKSeriesType.workoutRoute(): "Workout routes"
         case HKObjectType.categoryType(forIdentifier: .sleepAnalysis): "Sleep"
         case HKObjectType.quantityType(forIdentifier: .stepCount): "Steps"
+        case HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning): "Walking + running distance"
+        case HKObjectType.quantityType(forIdentifier: .activeEnergyBurned): "Active energy"
+        case HKObjectType.quantityType(forIdentifier: .appleExerciseTime): "Exercise minutes"
+        case HKObjectType.quantityType(forIdentifier: .appleStandTime): "Stand hours"
         case HKObjectType.quantityType(forIdentifier: .restingHeartRate): "Resting heart rate"
         case HKObjectType.quantityType(forIdentifier: .walkingHeartRateAverage): "Walking heart rate"
         case HKObjectType.quantityType(forIdentifier: .heartRateRecoveryOneMinute): "Heart-rate recovery"
@@ -619,21 +615,10 @@ final class ActivityDataService {
         }
     }
 
-    private var healthTypes: Set<HKSampleType> {
-        var types: Set<HKSampleType> = [HKWorkoutType.workoutType()]
-        if let sleep = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) { types.insert(sleep) }
-        if let steps = HKObjectType.quantityType(forIdentifier: .stepCount) { types.insert(steps) }
-        for identifier in [HKQuantityTypeIdentifier.restingHeartRate,
-                           .walkingHeartRateAverage, .heartRateRecoveryOneMinute,
-                           .respiratoryRate] {
-            if let type = HKObjectType.quantityType(forIdentifier: identifier) { types.insert(type) }
-        }
-        // Workout routes are a separate permission from the workout itself. Without
-        // it a walk is only a start and an end time, and LifeLog cannot tell a loop
-        // around the block from walking about indoors.
-        types.insert(HKSeriesType.workoutRoute())
-        return types
-    }
+    /// See `HealthKitTypeCatalog` — this is every type that catalog says LifeLog
+    /// reads, so it can never again omit one `configureBackgroundDelivery` or
+    /// `ActivitySampleReader` already asks for.
+    private var healthTypes: Set<HKSampleType> { HealthKitTypeCatalog.readTypes }
 
     private let healthRequestedKey = "LifeLogHealthAccessRequested"
     private let motionRefreshKey = "LifeLog.MotionLastRefreshed"

@@ -2,6 +2,18 @@
 
 ## 2026-08-16
 
+### Health permission request no longer omits four Activity-ring metrics Insights already reads
+
+- `ActivityDataService` asked HealthKit for steps, sleep, workouts, routes, and
+  four heart/breathing signals, but never asked for walking + running
+  distance, active energy, exercise minutes, or stand hours — even though
+  Insights already queries all four and background delivery was already
+  observing them. A person who granted everything they were prompted for
+  still had those four silently return nothing. All three lists — the
+  read-authorization request, the background-delivery observer set, and what
+  Insights queries — now derive from one `HealthKitTypeCatalog`, with a test
+  suite that fails if they're ever asked to drift apart again.
+
 ### Local backup now represents the current schema, not a compatibility snapshot
 
 - The durable `ActivityDefinitionRecord` catalogue — every active activity, plus
