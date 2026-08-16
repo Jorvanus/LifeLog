@@ -157,18 +157,25 @@ struct InsightsDonutChart: View {
                 // wedge taps still reach the chartOverlay gesture below. Tapping
                 // the card itself opens the underlying visit(s), matching the
                 // legend rows' tap-to-navigate behaviour.
-                Button {
-                    onSelectEntry(focusedSlice)
-                } label: {
-                    if focusedSegment.isSleep {
-                        sleepCenter(for: focusedSegment)
-                    } else {
-                        focusedCenter(for: focusedSegment)
+                if focusedSegment.isUnlogged {
+                    unloggedCenter(for: focusedSegment)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Unlogged time, from \(timeLabel(focusedSegment.start)) to \(timeLabel(focusedSegment.end)), duration \(formatHours(focusedSegment.hours))")
+                        .accessibilityHint("Review unlogged time below the breakdown to add a visit for a specific gap")
+                } else {
+                    Button {
+                        onSelectEntry(focusedSlice)
+                    } label: {
+                        if focusedSegment.isSleep {
+                            sleepCenter(for: focusedSegment)
+                        } else {
+                            focusedCenter(for: focusedSegment)
+                        }
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens this entry to review or edit")
+                    .accessibilityIdentifier("insights-donut-selection")
                 }
-                .buttonStyle(.plain)
-                .accessibilityHint("Opens this entry to review or edit")
-                .accessibilityIdentifier("insights-donut-selection")
             } else {
                 VStack(spacing: 2) {
                     if let stepCount {
@@ -306,6 +313,35 @@ struct InsightsDonutChart: View {
         .frame(width: 176)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(segment.activity), \(segment.placeName ?? ""), \(segment.visit?.confidenceLabel ?? "not inferred"), evidence \(segment.visit.map(evidenceText) ?? "none"), in \(timeLabel(segment.start)), out \(segment.isLive ? "now" : timeLabel(segment.end)), duration \(formatHours(segment.end.timeIntervalSince(segment.start) / 3600))")
+    }
+
+    /// A gap has no Visit to open. Keeping this a readout avoids a compact
+    /// centre button that appears actionable but cannot know which of several
+    /// gaps the person wants to categorise.
+    private func unloggedCenter(for segment: InsightSegment) -> some View {
+        VStack(spacing: 3) {
+            Image(systemName: "clock.badge.questionmark")
+                .font(.title3.bold())
+                .foregroundStyle(.secondary)
+            Text("Unlogged").font(.headline)
+            Text("No inferred activity")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Divider().padding(.vertical, 2)
+            Text("In  \(timeLabel(segment.start))")
+            Text("Out  \(timeLabel(segment.end))")
+            Text(formatHours(segment.hours))
+                .font(.subheadline.bold().monospacedDigit())
+                .padding(.top, 2)
+            Text("Review gaps below")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.top, 3)
+        }
+        .font(.caption2.monospacedDigit())
+        .foregroundStyle(.primary)
+        .frame(width: 176)
+        .multilineTextAlignment(.center)
     }
 
     /// Small tappable-looking cue so the centre card reads as a button, not just

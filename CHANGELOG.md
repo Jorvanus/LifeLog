@@ -50,6 +50,12 @@
   facts in a tighter layout, with the remaining activity-ring details kept in its
   drill-down.
 
+### Unlogged time is easier to act on
+
+- Insights now lists every unlogged gap for the selected period in one review
+  screen, so adding a visit starts from the exact gap instead of an unreachable
+  donut-centre link.
+
 ## 2026-08-16
 
 ### Repair Archive drops six steps that will never find anything again

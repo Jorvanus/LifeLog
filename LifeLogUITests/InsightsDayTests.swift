@@ -169,6 +169,26 @@ final class InsightsDayTests: LifeLogUITestCase {
         XCTAssertTrue(element("insights-needs-attention").waitForExistence(timeout: 5))
     }
 
+    func testUnloggedTimeReviewListsExactPeriodGaps() {
+        launchSeededInsights(extraArguments: ["-ui-test-timeline-states"])
+
+        let review = element("insights-unlogged-time-review")
+        var swipes = 0
+        while !(review.exists && review.isHittable) && swipes < 12 {
+            app.swipeUp()
+            swipes += 1
+        }
+        XCTAssertTrue(review.exists, "The period breakdown must offer its unlogged gaps in a dedicated list")
+        review.tap()
+
+        XCTAssertTrue(element("insight-unlogged-time-list").waitForExistence(timeout: 5))
+        let gap = element("insight-unlogged-gap-row").firstMatch
+        XCTAssertTrue(gap.waitForExistence(timeout: 5))
+        gap.tap()
+        XCTAssertTrue(element("insight-gap-detail").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Add or categorise a visit"].exists)
+    }
+
     func testInsightsDateButtonOpensTheDatePicker() {
         app.tabBars.buttons["Insights"].tap()
         XCTAssertTrue(element("insights-screen").waitForExistence(timeout: 10))

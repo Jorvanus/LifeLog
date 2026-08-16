@@ -578,6 +578,7 @@ struct InsightsView: View {
             onAttention: openDayAttention
         )
         donutSection
+        unloggedTimeReviewLink
         healthSetupSection
     }
 
@@ -596,6 +597,7 @@ struct InsightsView: View {
             onSelectDay: { date in anchorDate = date; window = .day }
         )
         donutSection
+        unloggedTimeReviewLink
         healthSetupSection
     }
 
@@ -765,6 +767,21 @@ struct InsightsView: View {
         }
         .padding(20)
         .lifeCard()
+    }
+
+    private var unloggedTimeReviewLink: some View {
+        InsightsUnloggedTimeReviewLink(
+            gapCount: unloggedSegments.count,
+            totalHours: unloggedSegments.reduce(0) { $0 + $1.hours },
+            onOpen: { path.append(.unloggedTime) }
+        )
+    }
+
+    /// This is intentionally period- and scope-bounded. The archive-repair
+    /// browser remains the place to inspect every historical gap, whereas this
+    /// link answers the question raised by the selected Insights breakdown.
+    private var unloggedSegments: [InsightSegment] {
+        snapshot.segments.filter { $0.isUnlogged && $0.end <= snapshot.generatedAt && $0.hours > 0.01 }
     }
 
     /// The Saved Place explicitly given the Home role. A fact the owner stated, not
@@ -1255,6 +1272,9 @@ struct InsightsView: View {
             InsightComparisonDetailView(
                 comparison: TrendComparison(name: name, hours: hours, previousHours: previousHours, delta: delta),
                 periodTitle: periodTitle, baselineTitle: "last \(window.title.lowercased())")
+        case .unloggedTime:
+            InsightUnloggedTimeList(gaps: unloggedSegments, periodTitle: periodTitle,
+                                    onVisitSaved: { reloadInsights() })
         case let .visit(stableID):
             InsightVisitDestination(stableID: stableID)
         }

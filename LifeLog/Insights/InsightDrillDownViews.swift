@@ -36,7 +36,103 @@ enum InsightsRoute: Hashable {
     case group(title: String, groups: [String])
     case place(name: String)
     case comparison(name: String, hours: Double, previousHours: Double, delta: Double)
+    case unloggedTime
     case visit(stableID: UUID)
+}
+
+/// The gaps contributing to the selected Insights period. This is deliberately
+/// not the archive-wide repair list: it respects the period and source scope a
+/// person is already looking at, and every row opens the exact range to edit.
+struct InsightsUnloggedTimeReviewLink: View {
+    let gapCount: Int
+    let totalHours: Double
+    let onOpen: () -> Void
+
+    var body: some View {
+        if gapCount > 0 {
+            Button(action: onOpen) {
+                HStack(spacing: 12) {
+                    Image(systemName: "clock.badge.questionmark")
+                        .font(.headline)
+                        .foregroundStyle(.orange)
+                        .frame(width: 30, height: 30)
+                        .background(Color.orange.opacity(0.12), in: Circle())
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Unlogged time").font(.headline)
+                        Text("\(gapCount) gap\(gapCount == 1 ? "" : "s") · \(formatHours(totalHours))")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Text("Review")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.blue)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.bold())
+                        .foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(18)
+                .lifeCard()
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("insights-unlogged-time-review")
+            .accessibilityLabel("Unlogged time: \(gapCount) gap\(gapCount == 1 ? "" : "s"), \(formatHours(totalHours))")
+            .accessibilityHint("Lists every unlogged gap in this selected period")
+        }
+    }
+}
+
+struct InsightUnloggedTimeList: View {
+    let gaps: [InsightSegment]
+    let periodTitle: String
+    let onVisitSaved: () -> Void
+
+    var body: some View {
+        List {
+            Section {
+                LabeledContent("Period", value: periodTitle)
+                LabeledContent("Unlogged", value: formatHours(gaps.reduce(0) { $0 + $1.hours }))
+            }
+            Section("Gaps") {
+                ForEach(gaps) { gap in
+                    NavigationLink {
+                        InsightGapDetailView(gap: gap, periodTitle: periodTitle,
+                                             onVisitSaved: onVisitSaved)
+                    } label: {
+                        InsightUnloggedGapRow(gap: gap)
+                    }
+                    .accessibilityIdentifier("insight-unlogged-gap-row")
+                }
+            }
+        }
+        .navigationTitle("Unlogged time")
+        .navigationBarTitleDisplayMode(.inline)
+        .safeAreaInset(edge: .top) { PeriodBanner(title: periodTitle, interval: DateInterval(start: gaps.first?.start ?? .now, end: gaps.last?.end ?? .now)) }
+        .accessibilityIdentifier("insight-unlogged-time-list")
+    }
+}
+
+private struct InsightUnloggedGapRow: View {
+    let gap: InsightSegment
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(gap.start.formatted(date: .abbreviated, time: .shortened))
+                    .font(.subheadline.weight(.medium))
+                Text("Until \(gap.end.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text(formatHours(gap.hours))
+                .font(.subheadline.weight(.semibold))
+                .monospacedDigit()
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Unlogged time from \(gap.start.formatted(date: .abbreviated, time: .shortened)) to \(gap.end.formatted(date: .abbreviated, time: .shortened)), \(formatHours(gap.hours))")
+    }
 }
 
 /// Resolves a route's `stableID` to the live `Visit` `VisitEditor` needs. Mirrors
@@ -401,6 +497,7 @@ struct InsightSleepDetailView: View {
 struct InsightGapDetailView: View {
     let gap: InsightSegment
     let periodTitle: String
+    var onVisitSaved: () -> Void = {}
     @State private var adding = false
     @Environment(\.dismiss) private var dismiss
 
@@ -424,7 +521,10 @@ struct InsightGapDetailView: View {
         // Same reasoning as `InsightActivityDetailView`: this screen describes one
         // specific gap that no longer exists once a visit fills it, so close back to
         // Insights rather than linger showing a gap that was just resolved.
-        .sheet(isPresented: $adding, onDismiss: { dismiss() }) {
+        .sheet(isPresented: $adding, onDismiss: {
+            onVisitSaved()
+            dismiss()
+        }) {
             ManualVisitView(range: DateInterval(start: gap.start, end: gap.end))
         }
         .accessibilityIdentifier("insight-gap-detail")
