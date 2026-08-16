@@ -26,14 +26,6 @@ be changed safely outrank App Store preparation or speculative integrations.
   set, observer set, and summary-query set behind one source of truth and test that
   they cannot drift apart.
 
-- [ ] **Fix current-month comparisons.** A month in progress is currently totalled
-  only through today but compared with the entire previous month, so “more/less than
-  last month” can be structurally misleading. Compare equal elapsed calendar spans
-  (with calendar/DST-aware boundaries), or compare normalized daily averages and say
-  so in the UI. Make `MonthlyInsights` use the interval parameters it currently
-  accepts but ignores; cover the first day, mid-month, completed months, leap years,
-  and different month lengths.
-
 - [ ] **Finish the protected-store recovery path.** Recovery reports and copied-store
   manifests still identify the schema as V4 while the live migration plan is V11.
   Derive the schema/build identity rather than hard-coding it, apply protection to

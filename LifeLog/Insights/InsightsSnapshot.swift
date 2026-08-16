@@ -91,12 +91,13 @@ struct InsightsSnapshot {
         let analysisInterval = interval.contains(now)
             ? DateInterval(start: interval.start, end: min(interval.end, now))
             : interval
-        // Month is explicitly compared with the previous completed calendar month;
-        // comparing the current month's partial elapsed days would make a month look
-        // quieter simply because it is still in progress.
-        let previousInterval = window == .month && interval.contains(now)
-            ? window.previousComparisonInterval(for: interval)
-            : window.previousComparisonInterval(for: analysisInterval)
+        // Every window compares like-for-like elapsed spans: a month three days in
+        // is measured against the same first three days of the previous month, not
+        // the whole of it. Comparing partial current against a complete previous
+        // period made "more/less than last month" structurally misleading — early
+        // in a month, everything reads as a huge drop purely because less time has
+        // elapsed, regardless of what actually happened.
+        let previousInterval = window.previousComparisonInterval(for: analysisInterval)
 
         // Location visits are prepared once and reused by both periods. This avoids an
         // all-history scan for each individual walking or travel record.

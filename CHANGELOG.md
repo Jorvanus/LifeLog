@@ -1,5 +1,26 @@
 # Change log
 
+## 2026-08-17
+
+### Fixed current-month comparisons reading as a false drop
+
+- A month in progress was totalled only through today but compared against
+  the *entire* previous month, so "more/less than last month" was
+  structurally misleading — early in a month, everything read as a huge
+  drop purely because less time had elapsed, regardless of what actually
+  happened. `InsightsSnapshot.make` now compares every window, including
+  month, against the same elapsed span of the previous period, the same way
+  day/week/year already did.
+- `MonthlyInsights.make` accepted `currentInterval`/`previousInterval`
+  parameters but silently ignored them. They're now used to compute a new
+  `comparisonSubtitle` — "Compared with April" for a completed month,
+  "Compared with the first 12 days of April" for one still in progress — so
+  the UI states plainly what was actually compared instead of implying a
+  full month.
+- New tests cover the first day of a month, mid-month, a completed month,
+  a leap year (Feb 29 against Jan 29), and a 31-day month clamping against
+  a shorter one before it.
+
 ## 2026-08-16
 
 ### Restore is now genuinely atomic and requires an empty store

@@ -68,10 +68,21 @@ struct MonthlyInsights {
     let biggestPlaceChange: PlaceStory?
     let allPlaces: [PlaceStory]
     let balance: [Balance]
+    /// Which span of last month `current`/`previous` were actually compared over.
+    /// A completed month reads "Compared with April"; a month still in progress
+    /// says exactly how many days it was measured against, since "than last
+    /// month" alone would imply the whole month even though only the matching
+    /// elapsed days were used.
+    let comparisonSubtitle: String
 
     /// `current` and `previous` are already post-resolution. This is intentionally
     /// not a second catalogue: the eight presentation groups are derived from each
     /// activity's existing `ActivityCatalog.category(for:)` definition.
+    ///
+    /// `currentInterval`/`previousInterval` are the exact spans `current`/`previous`
+    /// were resolved over — always equal-length elapsed spans, never a partial month
+    /// against a complete one — and exist so `comparisonSubtitle` can say precisely
+    /// what was compared instead of the caller guessing separately.
     static func make(current: [InsightSegment], previous: [InsightSegment],
                      currentInterval: DateInterval, previousInterval: DateInterval,
                      now: Date = .now) -> MonthlyInsights {
@@ -97,8 +108,27 @@ struct MonthlyInsights {
                 .filter { meaningfulPlaceChange($0) }
                 .max { abs($0.delta) < abs($1.delta) },
             allPlaces: placesByTime,
-            balance: balances(from: current)
+            balance: balances(from: current),
+            comparisonSubtitle: comparisonSubtitle(currentInterval: currentInterval,
+                                                    previousInterval: previousInterval, now: now)
         )
+    }
+
+    /// A month still in progress has `currentInterval.end` pinned to `now` (see
+    /// `InsightsSnapshot.make`'s `analysisInterval`) rather than the calendar
+    /// month's real end, which is how this tells a partial month from a completed
+    /// one without needing a separate flag from the caller.
+    private static func comparisonSubtitle(currentInterval: DateInterval,
+                                           previousInterval: DateInterval, now: Date) -> String {
+        let monthName = previousInterval.start.formatted(.dateTime.month(.wide))
+        guard abs(currentInterval.end.timeIntervalSince(now)) < 1 else {
+            return "Compared with \(monthName)"
+        }
+        // Ceiling, not floor: two days and six hours in is day three in progress,
+        // the same convention `monthAverageDailySteps` already uses for "how many
+        // days has this month been going" elsewhere in Insights.
+        let days = max(1, Int(ceil(currentInterval.duration / 86_400)))
+        return "Compared with the first \(days) day\(days == 1 ? "" : "s") of \(monthName)"
     }
 
     static func daySummaries(segments: [InsightSegment], interval: DateInterval,

@@ -605,8 +605,9 @@ struct InsightsView: View {
     /// the same long-term sections as Year. These cards all read the same resolved
     /// current/previous segments as the donut.
     @ViewBuilder private var monthLayout: some View {
+        let insights = monthlyInsights
         MonthInsightsView(
-            insights: monthlyInsights, comparisonSubtitle: monthlyComparisonSubtitle,
+            insights: insights, comparisonSubtitle: insights.comparisonSubtitle,
             heroMetrics: monthlyHeroMetrics, monthDays: monthDays,
             periodTitle: periodTitle, analysisInterval: snapshot.analysisInterval, segments: snapshot.segments,
             now: snapshot.generatedAt, onOpenCategory: openCategory, onOpenComparison: openComparison,
@@ -627,13 +628,9 @@ struct InsightsView: View {
 
     private var monthlyInsights: MonthlyInsights {
         MonthlyInsights.make(current: snapshot.segments, previous: snapshot.previousSegments,
-                             currentInterval: interval,
-                             previousInterval: window.previousComparisonInterval(for: interval), now: now)
-    }
-
-    private var monthlyComparisonSubtitle: String {
-        let previous = window.previousComparisonInterval(for: interval)
-        return "Compared with \(previous.start.formatted(.dateTime.month(.wide)))"
+                             currentInterval: snapshot.analysisInterval,
+                             previousInterval: window.previousComparisonInterval(for: snapshot.analysisInterval),
+                             now: now)
     }
 
     private func monthlyChangeDetail(current: Double, previous: Double, unit: String = "") -> String {
