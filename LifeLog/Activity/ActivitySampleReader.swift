@@ -121,6 +121,12 @@ struct HealthTrendPoint: Identifiable, Equatable, Sendable {
     var id: Date { date }
 }
 
+struct HealthSleepSession: Equatable, Sendable {
+    let start: Date
+    let end: Date
+    let duration: TimeInterval
+}
+
 /// Health and Motion history is read away from the main actor and converted into
 /// small Sendable records before any database work begins.
 actor ActivitySampleReader {
@@ -154,6 +160,45 @@ actor ActivitySampleReader {
 
     func healthTrendFixtures(for metric: HealthTrendMetric, in interval: DateInterval) async -> [HealthQuantityFixture] {
         (try? await quantityFixtures(in: interval, identifier: metric.identifier, unit: metric.unit)) ?? []
+    }
+
+    /// Returns one compact value per recorded night for the personal sleep-pattern
+    /// comparison. The query is bounded by its caller and runs only on drill-down.
+    func sleepSessions(in interval: DateInterval) async -> [HealthSleepSession] {
+        guard let type = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return [] }
+        let padded = DateInterval(start: interval.start.addingTimeInterval(-12 * 60 * 60),
+                                  end: interval.end.addingTimeInterval(12 * 60 * 60))
+        let predicate = HKQuery.predicateForSamples(withStart: padded.start, end: padded.end,
+                                                     options: [.strictStartDate, .strictEndDate])
+        let descriptor = HKSampleQueryDescriptor<HKCategorySample>(
+            predicates: [.categorySample(type: type, predicate: predicate)],
+            sortDescriptors: [SortDescriptor(\.startDate)]
+        )
+        guard let samples = try? await descriptor.result(for: healthStore) else { return [] }
+        let calendar = Calendar.current
+        let asleepValues: Set<Int> = [
+            HKCategoryValueSleepAnalysis.asleepCore.rawValue,
+            HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
+            HKCategoryValueSleepAnalysis.asleepREM.rawValue,
+            HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue
+        ]
+        let grouped = Dictionary(grouping: samples.compactMap { sample -> DateInterval? in
+            guard asleepValues.contains(sample.value), sample.endDate > sample.startDate else { return nil }
+            return DateInterval(start: max(sample.startDate, padded.start), end: min(sample.endDate, padded.end))
+        }) { interval in
+            calendar.startOfDay(for: interval.start.addingTimeInterval(-12 * 60 * 60))
+        }
+        return grouped.compactMap { _, intervals in
+            let merged = intervals.sorted { $0.start < $1.start }.reduce(into: [DateInterval]()) { result, interval in
+                guard let last = result.last, interval.start <= last.end else { result.append(interval); return }
+                result[result.count - 1] = DateInterval(start: last.start, end: max(last.end, interval.end))
+            }
+            guard let first = merged.first, let last = merged.last else { return nil }
+            return HealthSleepSession(start: first.start, end: last.end,
+                                      duration: merged.reduce(0) { $0 + $1.duration })
+        }
+        .filter { $0.end <= interval.end && $0.start >= interval.start.addingTimeInterval(-12 * 60 * 60) }
+        .sorted { $0.start < $1.start }
     }
 
     private func quantityFixtures(in interval: DateInterval, identifier: HKQuantityTypeIdentifier,

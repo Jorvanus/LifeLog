@@ -15,6 +15,24 @@ struct SleepSummary: Equatable, Sendable {
     let core: TimeInterval
     let deep: TimeInterval
     let interruptions: Int
+    /// Earliest/latest recorded sleep evidence in the selected session. Optional
+    /// keeps summaries from sources that do not provide timing fully usable.
+    let sleepStart: Date?
+    let sleepEnd: Date?
+
+    init(totalSleep: TimeInterval, timeInBed: TimeInterval, awake: TimeInterval,
+         rem: TimeInterval, core: TimeInterval, deep: TimeInterval, interruptions: Int,
+         sleepStart: Date? = nil, sleepEnd: Date? = nil) {
+        self.totalSleep = totalSleep
+        self.timeInBed = timeInBed
+        self.awake = awake
+        self.rem = rem
+        self.core = core
+        self.deep = deep
+        self.interruptions = interruptions
+        self.sleepStart = sleepStart
+        self.sleepEnd = sleepEnd
+    }
 
     var estimatedScore: Int {
         let durationPoints = min(50, totalSleep / (8 * 60 * 60) * 50)
@@ -22,6 +40,22 @@ struct SleepSummary: Equatable, Sendable {
         let stagePoints = min(30, max(0, restorativeRatio / 0.35 * 30))
         let interruptionPoints = max(0, 20 - Double(interruptions) * 3)
         return Int((durationPoints + stagePoints + interruptionPoints).rounded())
+    }
+}
+
+/// A person's recent sleep pattern, used only to describe their own recorded
+/// timing and duration. It deliberately contains no normative target or health
+/// interpretation.
+struct SleepPatternBaseline: Equatable, Sendable {
+    let averageDuration: TimeInterval
+    let usualStartMinute: Int
+    let nights: Int
+
+    func timingDifference(from date: Date, calendar: Calendar = .current) -> Int {
+        let components = calendar.dateComponents([.hour, .minute], from: date)
+        let minute = (components.hour ?? 0) * 60 + (components.minute ?? 0)
+        let direct = abs(minute - usualStartMinute)
+        return min(direct, 24 * 60 - direct)
     }
 }
 
@@ -52,6 +86,7 @@ final class ActivityDataService {
     private let observerDeliveryCoordinator = HealthObserverDeliveryCoordinator()
     private var importCoordinator = IncrementalImportCoordinator()
     private var healthSummaryCache: [String: HealthInsightsSummary] = [:]
+    private var sleepPatternCache: [String: SleepPatternBaseline?] = [:]
     private let sleepAnchorKey = "LifeLog.HealthKit.sleepAnchor.v1"
     private let workoutAnchorKey = "LifeLog.HealthKit.workoutAnchor.v1"
 
@@ -61,7 +96,9 @@ final class ActivityDataService {
     private static let uiTestSleepSummary = SleepSummary(
         totalSleep: 7.25 * 60 * 60, timeInBed: 7.75 * 60 * 60,
         awake: 20 * 60, rem: 95 * 60, core: 4 * 60 * 60, deep: 70 * 60,
-        interruptions: 1
+        interruptions: 1,
+        sleepStart: Date(timeIntervalSinceReferenceDate: 789_000_000),
+        sleepEnd: Date(timeIntervalSinceReferenceDate: 789_026_100)
     )
     private static let uiTestHealthImportDate = Date(timeIntervalSinceReferenceDate: 789_004_800)
 
@@ -468,6 +505,40 @@ final class ActivityDataService {
         return summary.totalSleep / Double(nights)
     }
 
+    /// Reads one bounded run of completed nights for a personal baseline. This is
+    /// intentionally on-demand from the Health detail screen, never a side effect
+    /// of opening Insights or rendering a card.
+    func sleepPatternBaseline(before day: Date, nights: Int = 14) async -> SleepPatternBaseline? {
+        let calendar = Calendar.current
+        let end = calendar.startOfDay(for: day)
+        guard nights > 0,
+              let start = calendar.date(byAdding: .day, value: -nights, to: end) else { return nil }
+        let interval = DateInterval(start: start, end: end)
+        let key = "sleep-pattern-\(HealthSummaryReader.cacheKey(for: interval))"
+        if let cached = sleepPatternCache[key] { return cached }
+        let sessions = usesUITestHealthFixture
+            ? Self.uiTestSleepSessions(endingBefore: end, calendar: calendar)
+            : await sampleReader.sleepSessions(in: interval)
+        guard sessions.count >= 3 else {
+            sleepPatternCache[key] = nil
+            return nil
+        }
+        let averageDuration = sessions.reduce(0) { $0 + $1.duration } / Double(sessions.count)
+        let startMinutes = sessions.map { session -> Int in
+            let components = calendar.dateComponents([.hour, .minute], from: session.start)
+            return (components.hour ?? 0) * 60 + (components.minute ?? 0)
+        }
+        // Sleep starts can sit either side of midnight. Rotate early-morning
+        // values into the following day before averaging, then wrap back.
+        let rotated = startMinutes.map { $0 < 12 * 60 ? $0 + 24 * 60 : $0 }
+        let usualStartMinute = Int((Double(rotated.reduce(0, +)) / Double(rotated.count)).rounded()) % (24 * 60)
+        let baseline = SleepPatternBaseline(averageDuration: averageDuration,
+                                            usualStartMinute: usualStartMinute,
+                                            nights: sessions.count)
+        sleepPatternCache[key] = baseline
+        return baseline
+    }
+
     /// Reads the selected sleep session on demand so opening Insights does not add a
     /// HealthKit query to every chart render.
     func sleepSummary(for interval: DateInterval) async -> SleepSummary? {
@@ -536,6 +607,15 @@ final class ActivityDataService {
         )
     }
 
+    private static func uiTestSleepSessions(endingBefore end: Date, calendar: Calendar) -> [HealthSleepSession] {
+        (0..<14).compactMap { offset in
+            guard let start = calendar.date(byAdding: .day, value: -(offset + 1), to: end)?
+                .addingTimeInterval(22.75 * 60 * 60) else { return nil }
+            return HealthSleepSession(start: start, end: start.addingTimeInterval(7.25 * 60 * 60),
+                                      duration: 7.25 * 60 * 60)
+        }
+    }
+
     /// Daily averages for the Health Trends screen. HealthKit owns the raw
     /// samples; LifeLog only keeps the small, display-ready series in memory.
     func healthTrend(for metric: HealthTrendMetric, interval: DateInterval) async -> [HealthTrendPoint] {
@@ -553,6 +633,7 @@ final class ActivityDataService {
 
     private func invalidateHealthSummaryCache() {
         healthSummaryCache.removeAll(keepingCapacity: true)
+        sleepPatternCache.removeAll(keepingCapacity: true)
         stepCache.removeAll(keepingCapacity: true)
     }
 
@@ -890,6 +971,8 @@ private extension SleepSummary {
         var core = 0.0
         var deep = 0.0
         var interruptions = 0
+        var sleepStart: Date?
+        var sleepEnd: Date?
 
         var occupied: [Int: [DateInterval]] = [:]
         for sample in samples {
@@ -898,6 +981,11 @@ private extension SleepSummary {
             guard end > start,
                   let value = HKCategoryValueSleepAnalysis(rawValue: sample.value) else { continue }
             occupied[value.rawValue, default: []].append(DateInterval(start: start, end: end))
+            if value == .inBed || value == .asleepREM || value == .asleepCore ||
+                value == .asleepDeep || value == .asleepUnspecified {
+                sleepStart = min(sleepStart ?? start, start)
+                sleepEnd = max(sleepEnd ?? end, end)
+            }
         }
         // Watch and phone can report overlapping stage samples. Merge each
         // stage before calculating one overnight session so durations stay
@@ -934,6 +1022,7 @@ private extension SleepSummary {
         }
 
         self.init(totalSleep: totalSleep, timeInBed: max(timeInBed, totalSleep + awake), awake: awake,
-                  rem: rem, core: core, deep: deep, interruptions: interruptions)
+                  rem: rem, core: core, deep: deep, interruptions: interruptions,
+                  sleepStart: sleepStart, sleepEnd: sleepEnd)
     }
 }

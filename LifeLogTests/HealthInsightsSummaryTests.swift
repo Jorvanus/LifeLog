@@ -128,4 +128,16 @@ struct HealthInsightsSummaryTests {
         #expect(HealthInsightsSummary.knownWorkoutTypeName(rawValue: 37) == "Running")
         #expect(HealthInsightsSummary.knownWorkoutTypeName(rawValue: 999) == nil)
     }
+
+    @Test("Sleep timing baseline wraps around midnight")
+    func sleepTimingBaselineWrapsAcrossMidnight() {
+        let baseline = SleepPatternBaseline(averageDuration: 7 * 60 * 60,
+                                            usualStartMinute: 23 * 60 + 45, nights: 14)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Australia/Brisbane")!
+        let afterMidnight = calendar.date(from: DateComponents(year: 2026, month: 8, day: 17,
+                                                               hour: 0, minute: 15))!
+
+        #expect(baseline.timingDifference(from: afterMidnight, calendar: calendar) == 30)
+    }
 }

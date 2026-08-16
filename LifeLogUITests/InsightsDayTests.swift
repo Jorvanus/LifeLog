@@ -223,6 +223,25 @@ final class InsightsDayTests: LifeLogUITestCase {
         app.buttons["All history"].tap()
     }
 
+    func testHealthOverviewKeepsAppleHealthDataTogetherAndDrillsDown() {
+        launchSeededInsights(extraArguments: ["-ui-test-health-connected"])
+        let overview = element("insights-health-overview")
+        var attempts = 0
+        while !overview.exists && attempts < 10 {
+            app.swipeUp()
+            attempts += 1
+        }
+        XCTAssertTrue(overview.waitForExistence(timeout: 5))
+        overview.tap()
+        XCTAssertTrue(element("health-overview-detail").waitForExistence(timeout: 5))
+        XCTAssertTrue(element("health-overview-metrics").exists)
+        XCTAssertTrue(element("health-sleep-detail").exists)
+        XCTAssertTrue(element("health-workouts-detail").exists)
+        XCTAssertTrue(element("health-signals-detail").exists)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(element("insights-period-picker").waitForExistence(timeout: 5))
+    }
+
     /// Starts on Day (gap and sleep drill-downs, donut selection) and continues
     /// through Week/Month/Year to confirm each period restores its own selection
     /// state after a drill-down — kept here because the day-level assertions are

@@ -431,80 +431,41 @@ struct InsightsView: View {
     @ViewBuilder private var healthSetupSection: some View {
         if insightsScope.includesHealthData &&
             (needsHealthSetup || activityData.ui.lastImport != nil || healthSummary?.hasData != nil) {
-            VStack(alignment: .leading, spacing: 10) {
-                Label("Apple Health", systemImage: "heart.text.square")
-                    .font(.headline)
-                Text(needsHealthSetup
-                     ? "Connect Apple Health to add steps, sleep, and workouts to Insights."
-                     : healthSummary?.hasData == true
-                         ? "Health-derived summaries are shown separately from location records."
+            if let healthSummary, healthSummary.hasData {
+                HealthOverviewCard(summary: healthSummary, previous: previousHealthSummary,
+                                   interval: interval, periodTitle: periodTitle, activityData: activityData)
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Apple Health", systemImage: "heart.text.square")
+                        .font(.headline)
+                    Text(needsHealthSetup
+                         ? "Connect Apple Health to add steps, sleep, and workouts to Insights."
                          : "Apple Health is connected, but there is no data for this period.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                if let lastImport = activityData.ui.lastImport {
-                    Text("Last successful Health import: \(lastImport.formatted(date: .abbreviated, time: .shortened))")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-                if let workouts = healthSummary?.workouts, !workouts.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Workouts from Apple Health").font(.subheadline.weight(.semibold))
-                        ForEach(workouts.prefix(4)) { workout in
-                            HStack {
-                                Text(workout.type)
-                                Spacer()
-                                Text(formatHours(workout.duration / 3600))
-                                if let distance = workout.distanceMeters, distance > 0 {
-                                    Text("· \(formatHealthDistance(distance))")
-                                }
-                            }
-                            .font(.footnote)
-                        }
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Apple Health workouts: \(workouts.map { $0.type }.joined(separator: ", "))")
-                }
-                healthSignalRows
-                NavigationLink {
-                    HealthTrendsView(activityData: activityData, interval: interval, periodTitle: periodTitle)
-                } label: {
-                    Label("Open Health Trends", systemImage: "chart.xyaxis.line")
-                }
-                .accessibilityIdentifier("health-trends-link")
-                if !activityData.ui.unaskedTypes.isEmpty {
-                    Button("Connect Apple Health") {
-                        Task { await activityData.requestHealthAccess() }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityIdentifier("connect-health-from-insights")
-                } else {
-                    Button("Open Apple Health") { openAppleHealth() }
-                        .buttonStyle(.bordered)
-                        .accessibilityIdentifier("open-health-from-insights")
-                    Text("In Health, go to Sharing → Apps → LifeLog to review what LifeLog can read.")
-                        .font(.footnote)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
+                    if let lastImport = activityData.ui.lastImport {
+                        Text("Last successful Health import: \(lastImport.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    if !activityData.ui.unaskedTypes.isEmpty {
+                        Button("Connect Apple Health") {
+                            Task { await activityData.requestHealthAccess() }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .accessibilityIdentifier("connect-health-from-insights")
+                    } else {
+                        Button("Open Apple Health") { openAppleHealth() }
+                            .buttonStyle(.bordered)
+                            .accessibilityIdentifier("open-health-from-insights")
+                        Text("In Health, go to Sharing → Apps → LifeLog to review what LifeLog can read.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(20)
-            .lifeCard()
-            .accessibilityIdentifier("insights-health-setup")
-        }
-    }
-
-    private var healthSignalRows: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if let value = healthSummary?.restingHeartRateBPM {
-                daySummaryRow(icon: "heart.fill", label: "Resting heart rate", value: "\(Int(value.rounded())) bpm")
-            }
-            if let value = healthSummary?.walkingHeartRateBPM {
-                daySummaryRow(icon: "figure.walk", label: "Walking heart rate", value: "\(Int(value.rounded())) bpm")
-            }
-            if let value = healthSummary?.heartRateRecoveryBPM {
-                daySummaryRow(icon: "arrow.down.heart.fill", label: "One-minute recovery", value: "\(Int(value.rounded())) bpm recovered")
-            }
-            if let value = healthSummary?.respiratoryRate {
-                daySummaryRow(icon: "wind", label: "Respiratory rate", value: "\(Int(value.rounded())) breaths/min")
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(20)
+                .lifeCard()
+                .accessibilityIdentifier("insights-health-setup")
             }
         }
     }
@@ -1363,4 +1324,3 @@ struct DayInsightMetricTile: View {
         // failure -- the button and the thing inside it both answered to the name.
     }
 }
-

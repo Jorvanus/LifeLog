@@ -38,6 +38,18 @@
 - Recorded which old archive checks can now be retired and which recent-import safety
   nets still need to be moved rather than simply removed.
 
+### Apple Health is easier to understand
+
+- Insights now brings recorded movement, activity rings, workouts, sleep, and
+  heart and breathing signals into one Apple Health overview, with source-labelled
+  detail and a personal sleep duration and timing comparison.
+
+### Health overview is easier to scan
+
+- The Apple Health overview now foregrounds the most useful movement and sleep
+  facts in a tighter layout, with the remaining activity-ring details kept in its
+  drill-down.
+
 ## 2026-08-16
 
 ### Repair Archive drops six steps that will never find anything again
