@@ -73,6 +73,60 @@ struct OverlapResolutionTests {
         #expect(first.departure == base.addingTimeInterval(78 * 60))
     }
 
+    /// The morning of 2026-08-16, as captured: a walk's route proved it left Home, so
+    /// `separateStay` opened a continuation at the walk's end (07:51:43) -- the exact
+    /// instant Core Location's own geofence had already recorded arriving home, one
+    /// minute forty-one seconds earlier, having stood still for the tail of the walk.
+    /// Two rows for the same return, meeting with no gap between them. Neither
+    /// `isDuplicateArrival` (arrivals over a minute apart) nor the old strict-overlap
+    /// `describesSameStay` (they touch, they do not overlap) caught this, so it
+    /// recurred on every walk home and left Home split into extra rows on Timeline.
+    @Test("Two Home stays that exactly meet, with no gap, merge into one")
+    func mergesStaysThatExactlyAbut() throws {
+        let context = try ActivityLocationPolicyFixtures.makeContext()
+        let arrivedWhileWalking = Visit(
+            arrival: base, departure: base.addingTimeInterval(101),
+            latitude: -23.37, longitude: 150.51,
+            placeName: "Home", inferredActivity: "At home", source: "automatic"
+        )
+        let continuationAfterWalk = Visit(
+            arrival: base.addingTimeInterval(101), departure: base.addingTimeInterval(3_692),
+            latitude: -23.37, longitude: 150.51,
+            placeName: "Home", inferredActivity: "At home", source: "automatic"
+        )
+        [arrivedWhileWalking, continuationAfterWalk].forEach(context.insert)
+        try context.save()
+
+        #expect(try ActivityLocationPolicy.mergeOverlappingStays(context: context) == 1)
+        let live = try context.fetch(FetchDescriptor<Visit>(sortBy: [SortDescriptor(\.arrival)]))
+            .filter { ActivityLocationPolicy.isLocationVisit($0) }
+        #expect(live.count == 1)
+        #expect(live[0].arrival == base)
+        #expect(live[0].departure == base.addingTimeInterval(3_692))
+    }
+
+    /// The boundary this must not cross: a stay that genuinely ends and a different
+    /// stay that genuinely begins later, with unrecorded time between them, must not
+    /// be folded together just because nothing else happened in the gap. `Visit` has
+    /// no representation for "nothing recorded here" other than the gap itself, so
+    /// merging on proximity instead of an exact meeting point would erase it.
+    @Test("Stays with a real gap between them are not merged as if they touched")
+    func doesNotMergeStaysSeparatedByAGap() throws {
+        let context = try ActivityLocationPolicyFixtures.makeContext()
+        let morning = Visit(arrival: base, departure: base.addingTimeInterval(101),
+                            latitude: -23.37, longitude: 150.51,
+                            placeName: "Home", inferredActivity: "At home", source: "automatic")
+        let later = Visit(arrival: base.addingTimeInterval(102), departure: base.addingTimeInterval(3_692),
+                          latitude: -23.37, longitude: 150.51,
+                          placeName: "Home", inferredActivity: "At home", source: "automatic")
+        [morning, later].forEach(context.insert)
+        try context.save()
+
+        #expect(try ActivityLocationPolicy.mergeOverlappingStays(context: context) == 0)
+        #expect(morning.departure == base.addingTimeInterval(101))
+        #expect(later.arrival == base.addingTimeInterval(102))
+    }
+
     @Test("Returning to a place later is not merged into the earlier stay")
     func doesNotMergeASeparateReturn() throws {
         let context = try ActivityLocationPolicyFixtures.makeContext()
@@ -147,6 +201,44 @@ struct OverlapResolutionTests {
 
         #expect(!extended)
         #expect(home.departure == base, "the shop says where those minutes went")
+    }
+
+    /// The same shape as the test above, with the shop where the caller actually puts
+    /// it. `reconcileAll` builds its `activities` list as movement records only, so a
+    /// *stay* in the gap arrives in `stays` and never in `activities` — the test above
+    /// passes it as an activity and so could never catch this.
+    ///
+    /// Left unguarded, this was a permanent repair loop rather than a one-off error:
+    /// `resolveLocationCallbacks` trims Home back to the shop's arrival, then
+    /// `reconcileAll` stretches it forward to the walk again, both inside one audit.
+    /// A real overlap from 2026-08-07 reported itself trimmed on every launch for nine
+    /// days while the store never actually changed.
+    @Test("A stay is not stretched over another place the caller passed as a stay")
+    func stayIsNotStretchedOverAStayInTheGap() {
+        let home = Visit(arrival: base.addingTimeInterval(-9 * 3600),
+                         departure: base, latitude: -23.4454, longitude: 150.4581,
+                         placeName: "Home", inferredActivity: "At home", source: "automatic")
+        let shop = Visit(arrival: base.addingTimeInterval(2 * 60),
+                         departure: base.addingTimeInterval(6 * 60),
+                         latitude: -23.38, longitude: 150.52, placeName: "Gracemere Shopping World",
+                         inferredActivity: "Shopping", source: "automatic")
+        let walkStart = base.addingTimeInterval(10 * 60)
+        let walk = Visit(arrival: walkStart, departure: walkStart.addingTimeInterval(30 * 60),
+                         latitude: 0, longitude: 0, placeName: "Walking workout",
+                         inferredActivity: "Walking", source: "health-workout")
+
+        ActivityLocationPolicy.extendStay(
+            upTo: DateInterval(start: walk.arrival, end: walk.departure!),
+            stays: [home, shop], activities: [walk]
+        )
+
+        #expect(home.departure == base,
+                "stretching Home to the walk would re-open the overlap with the shop")
+        // The shop is a different matter, and extending it is right: it is the last
+        // place before the walk, so the minutes between belong to it. The bug was never
+        // that something got held open — it was Home reaching across the shop to do it.
+        #expect(shop.departure == walk.arrival,
+                "the shop is the place the walk actually set off from")
     }
 
     @Test("Stays split by a walk at the same place are rejoined")

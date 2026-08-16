@@ -304,7 +304,22 @@ extension ActivityLocationPolicy {
     private static func describesSameStay(_ host: Visit, _ candidate: Visit, now: Date) -> Bool {
         let hostEnd = host.departure ?? now
         let candidateEnd = candidate.departure ?? now
-        guard host.arrival < candidateEnd, hostEnd > candidate.arrival else { return false }
+        // Touching counts, not only overlapping. One stay recorded as two consecutive
+        // rows meets exactly, and strict `>` read that as two separate stays.
+        //
+        // The shape that produced it: a walk whose route proves it left home ends, and
+        // `separateStay` opens a continuation at the walk's end -- while Core Location's
+        // own geofence has already recorded the arrival a minute or two earlier, because
+        // the person got home and stood still while the workout was still running. On
+        // 2026-08-16 that was Home 07:50:02-07:51:43 and Home 07:51:43-08:53:14: the same
+        // arrival home, from two mechanisms, meeting at the instant the walk ended.
+        // Nothing folded them -- `isDuplicateArrival` wants arrivals within 60s and these
+        // were 101s apart, and this test wanted an overlap and they had none -- so the
+        // pair sat on the timeline as two Home rows and a new pair appeared with each
+        // walk. Only a zero gap is admitted: a stay that genuinely resumes after being
+        // away has whatever it did in between sitting in the gap, and that keeps its own
+        // row rather than being swallowed here.
+        guard host.arrival <= candidateEnd, hostEnd >= candidate.arrival else { return false }
         let sameIdentity: Bool
         if let hostIdentifier = host.mapsIdentifier, let candidateIdentifier = candidate.mapsIdentifier {
             sameIdentity = hostIdentifier == candidateIdentifier

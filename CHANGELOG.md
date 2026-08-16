@@ -2,6 +2,23 @@
 
 ## 2026-08-16
 
+### Stop a place from splitting into extra Timeline rows every time you walk home
+
+- A walk whose route proved it left a place, then returned, could leave two Home
+  rows behind instead of one: Core Location's own arrival, recorded the moment you
+  actually stopped, sitting beside a second row the reconciliation pass opens at
+  the exact instant the walk itself ends. The two meet with no gap between them,
+  but nothing merged them — the duplicate check wanted arrivals within a minute of
+  each other, and the overlap check wanted an actual overlap, and this pair had
+  neither. It happened on every walk out and back, so Home accumulated an extra
+  row after each one. Two stays of the same place that meet exactly, with no gap,
+  now merge into one.
+- Separately, a stay could be trimmed to fix an overlap and then silently
+  stretched back over the very same overlap by a later pass in the same
+  maintenance run, so the fix never actually stuck from one launch to the next.
+  Fixed by making the later pass aware of the other place sitting in the gap it
+  was about to paper over.
+
 ### Choose from all activities in Place History corrections
 
 - Replaced the place-specific activity menu with the shared full activity picker, including every Activity Label and the option to create a new one.

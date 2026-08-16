@@ -101,7 +101,23 @@ extension ActivityLocationPolicy {
                   movement.start.timeIntervalSince(departure) <= departureCatchUp else { return false }
             // Anything recorded inside the gap is evidence of what happened in it, and
             // it is not this. A stay is only stretched across silence.
-            return !activities.contains { other in
+            //
+            // `stays` as well as `activities`, because a gap containing another *place*
+            // is the least silent gap there is, and checking movement alone could not
+            // see one. `reconcileAll` passes only movement records here, so a stay in
+            // the gap did not block the extension and the person was read as never
+            // having left the first place -- straight over the top of somewhere they
+            // demonstrably were.
+            //
+            // That produced a permanent repair loop, because the two halves run in one
+            // audit: `resolveLocationCallbacks` trims the earlier stay back to the later
+            // arrival, then `reconcileAll` stretches it forward again to the journey
+            // that follows, restoring the exact overlap that was just removed. A real
+            // one (Home 2026-08-07 22:04:45Z, Gracemere Shoppingworld at 23:36:03Z, walk
+            // at 23:48:19Z) logged "Overlapping stay closed ... trimmed" on every launch
+            // for nine days while the store never changed.
+            let occupants = activities + stays
+            return !occupants.contains { other in
                 other !== stay && other.arrival < movement.start
                     && (other.departure ?? other.arrival) > departure
             }
