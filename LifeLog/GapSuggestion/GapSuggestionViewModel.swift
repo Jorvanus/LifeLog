@@ -18,6 +18,11 @@ import Observation
 @MainActor
 @Observable
 final class GapSuggestionViewModel {
+    enum ResultSource: Equatable {
+        case resolverRule
+        case appleIntelligence
+    }
+
     enum State: Equatable {
         case idle
         case unavailable(AskLifeLogAvailability)
@@ -38,6 +43,9 @@ final class GapSuggestionViewModel {
     /// kept only so the view can look up which candidate an accepted outcome
     /// refers to; never displayed or logged itself.
     private(set) var lastContext: GapSuggestionContext?
+    /// Kept separate from the outcome so the sheet never attributes a
+    /// deterministic resolver answer to Apple Intelligence.
+    private(set) var resultSource: ResultSource?
 
     private let service: GapSuggestionRequesting
     private var runID = UUID()
@@ -79,6 +87,7 @@ final class GapSuggestionViewModel {
         case .idle, .unavailable, .working: break
         }
         lastContext = nil
+        resultSource = nil
     }
 
     func requestSuggestion(gapStart: Date, gapEnd: Date, repairActor: ArchiveRepairActor,
@@ -87,6 +96,7 @@ final class GapSuggestionViewModel {
         runID = token
         state = .working
         lastContext = nil
+        resultSource = nil
 
         inFlightTask = Task { [service] in
             let startedAt = Date.now
@@ -100,6 +110,20 @@ final class GapSuggestionViewModel {
                 // filled or edited it since the sheet opened) — nothing to
                 // suggest, and never a stale suggestion for a gap that's gone.
                 state = .idle
+                return
+            }
+
+            if let resolverCandidate = context.candidates.first(where: { $0.kind == .resolverRuleStay }) {
+                let result = GapSuggestionOutcome(
+                    kind: .possibleStay, candidateID: resolverCandidate.id, confidence: .high,
+                    explanation: resolverCandidate.rationale, uncertaintyNote: nil)
+                lastContext = context
+                resultSource = .resolverRule
+                Diagnostics.gapSuggestionRequest(
+                    diagnosticsContext, durationMs: Int(Date.now.timeIntervalSince(startedAt) * 1000),
+                    contextSizeBucket: context.diagnosticSizeBucket, candidateCount: context.candidates.count,
+                    outcomeKind: result.kind.rawValue, confidence: result.confidence.rawValue)
+                state = .result(result)
                 return
             }
 
@@ -122,6 +146,7 @@ final class GapSuggestionViewModel {
                 state = .invalidOutput
             case .outcome(let result):
                 lastContext = context
+                resultSource = .appleIntelligence
                 // A shaky "possible" reads as authoritative if shown plainly —
                 // low confidence collapses into the same cautious message as
                 // an outright decline, regardless of which kind it carries.

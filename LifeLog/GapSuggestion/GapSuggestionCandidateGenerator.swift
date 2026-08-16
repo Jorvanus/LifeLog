@@ -23,7 +23,17 @@ enum GapSuggestionCandidateGenerator {
         return SavedPlaceRole.of(visit, in: savedPlaces)
     }
 
-    static func candidates(before: Visit, after: Visit, savedPlaces: [SavedPlace]) -> [GapSuggestionCandidate] {
+    static func candidates(before: Visit, after: Visit, savedPlaces: [SavedPlace],
+                           gapStart: Date? = nil, gapEnd: Date? = nil,
+                           calendar: Calendar = .current) -> [GapSuggestionCandidate] {
+        if let gapStart, let gapEnd,
+           let ruleCandidate = resolverRuleCandidate(before: before, after: after, savedPlaces: savedPlaces,
+                                                     gapStart: gapStart, gapEnd: gapEnd, calendar: calendar) {
+            // This is an existing, deterministic resolver conclusion, rather
+            // than competing evidence for a model to weigh. Presenting only it
+            // keeps a direct Home/Work/sleep/travel/walking repair actionable.
+            return [ruleCandidate]
+        }
         let beforeRole = role(of: before, savedPlaces: savedPlaces)
         let afterRole = role(of: after, savedPlaces: savedPlaces)
         let beforeNamed = !before.hasPlaceholderName
@@ -75,6 +85,34 @@ enum GapSuggestionCandidateGenerator {
             ))
         }
         return Array(results.prefix(maximumCandidates))
+    }
+
+    private static func resolverRuleCandidate(before: Visit, after: Visit, savedPlaces: [SavedPlace],
+                                              gapStart: Date, gapEnd: Date, calendar: Calendar) -> GapSuggestionCandidate? {
+        let gap = ArchiveRepair.UnloggedGap(start: gapStart, end: gapEnd, before: before, after: after)
+        guard let segment = ArchiveRepair.singleSegmentSuggestion(for: gap, calendar: calendar) else { return nil }
+
+        let role: SavedPlaceRole?
+        let placeName: String
+        switch segment.activity {
+        case "At home":
+            role = .home
+            placeName = savedPlaces.first(where: { $0.homeWorkRole == .home })?.name ?? "At home"
+        case "Work":
+            role = .work
+            placeName = savedPlaces.first(where: { $0.homeWorkRole == .work })?.name ?? "Work"
+        case "Sleeping":
+            role = nil
+            placeName = ArchiveRepair.sleepPlaceName
+        default:
+            return nil
+        }
+
+        return GapSuggestionCandidate(
+            id: "resolver-rule-stay", kind: .resolverRuleStay,
+            placeName: placeName, activity: segment.activity, homeWorkRole: role,
+            rationale: "LifeLog's existing Home, Work, sleep, travel, and walking repair rules resolve this whole gap as \(segment.activity)."
+        )
     }
 }
 
@@ -189,7 +227,9 @@ enum GapSuggestionContextBuilder {
         // fill, reused here rather than a second, possibly-diverging threshold.
         let candidates = durationSeconds > ArchiveRepair.gapFillCap
             ? []
-            : GapSuggestionCandidateGenerator.candidates(before: before, after: after, savedPlaces: savedPlaces)
+            : GapSuggestionCandidateGenerator.candidates(
+                before: before, after: after, savedPlaces: savedPlaces,
+                gapStart: gapStart, gapEnd: gapEnd, calendar: calendar)
 
         let historicalSummary = GapSuggestionHistoricalMatcher.summarize(
             before: before, after: after, allVisits: allVisits, savedPlaces: savedPlaces, now: now, calendar: calendar)

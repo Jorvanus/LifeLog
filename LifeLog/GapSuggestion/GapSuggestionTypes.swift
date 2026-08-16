@@ -26,6 +26,11 @@ enum GapSuggestionCandidateKind: String, Codable, Sendable, Equatable {
     /// The same non-Home/Work resolved place is recorded on both sides of the
     /// gap — evidence the person likely never left it.
     case nearbyResolvedPlaceStay
+    /// The existing Archive Repair rules resolve this whole gap to one stay.
+    /// This is never a model guess: it is offered as an editable draft directly
+    /// from the same Home, Work, sleep, travel, and walking rules used in
+    /// Archive Repair.
+    case resolverRuleStay
 }
 
 /// One valid, deterministic explanation LifeLog itself constructed for a gap —
@@ -72,7 +77,7 @@ enum GapSuggestionKind: String, Codable, Sendable, Equatable {
         switch self {
         case .possibleStay:
             return candidateKind == .continuationOfBeforeStay || candidateKind == .continuationOfAfterStay
-                || candidateKind == .nearbyResolvedPlaceStay
+                || candidateKind == .nearbyResolvedPlaceStay || candidateKind == .resolverRuleStay
         case .possibleTravel:
             return candidateKind == .homeWorkTransition
         case .noSuggestion, .needsManualReview:

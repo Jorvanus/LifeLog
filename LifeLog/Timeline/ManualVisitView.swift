@@ -279,6 +279,14 @@ struct ManualVisitView: View {
             let toLabel = afterVisit?.displayPlaceName ?? "Work"
             place = "\(fromLabel) → \(toLabel)"
             resolution = .none
+        case .resolverRuleStay:
+            if let role = candidate.homeWorkRole,
+               let savedPlace = savedPlaces.first(where: { $0.homeWorkRole == role }) {
+                selectPlace(from: savedPlace)
+            } else {
+                place = candidate.placeName ?? candidate.activity ?? ""
+                resolution = .none
+            }
         }
         if let candidateActivity = candidate.activity {
             activity = candidateActivity
@@ -318,6 +326,14 @@ struct ManualVisitView: View {
         resolution = (visit.latitude != 0 || visit.longitude != 0)
             ? .matched(name: visit.displayPlaceName, coordinate: visit.coordinate)
             : .none
+    }
+
+    /// A resolver rule may point at configured Home or Work directly, rather
+    /// than either bordering health fragment. Carry its coordinate into the
+    /// editable draft exactly as choosing that Saved Place by hand does.
+    private func selectPlace(from savedPlace: SavedPlace) {
+        place = savedPlace.name
+        resolution = .matched(name: savedPlace.name, coordinate: savedPlace.coordinate)
     }
 
     private func attemptSave() {

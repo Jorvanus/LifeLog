@@ -103,6 +103,43 @@ struct GapSuggestionCandidateGeneratorTests {
         #expect(candidates.first?.placeName == "Home")
     }
 
+    @Test("Existing Archive Repair transitions become a direct editable Home, Work, or sleep draft")
+    func archiveRepairRulesBecomeDirectDraftCandidates() {
+        let homePlace = home()
+        let workPlace = work()
+        let gapStart = start.addingTimeInterval(2 * 3600)
+        let gapEnd = start.addingTimeInterval(3 * 3600)
+
+        let walking = Visit(arrival: start, departure: gapStart, latitude: 0, longitude: 0,
+                            placeName: "Walking", inferredActivity: "Walking", source: "health-walking")
+        let sleep = Visit(arrival: gapEnd, departure: gapEnd.addingTimeInterval(3600), latitude: 0, longitude: 0,
+                          placeName: "Sleep", inferredActivity: "Sleeping", source: "health-sleep")
+        let homeCandidate = GapSuggestionCandidateGenerator.candidates(
+            before: walking, after: sleep, savedPlaces: [homePlace, workPlace],
+            gapStart: gapStart, gapEnd: gapEnd)
+        #expect(homeCandidate.map(\.kind) == [.resolverRuleStay])
+        #expect(homeCandidate.first?.placeName == "Home")
+        #expect(homeCandidate.first?.activity == "At home")
+
+        let workVisit = Visit(arrival: start, departure: gapStart, latitude: workPlace.latitude, longitude: workPlace.longitude,
+                              placeName: "Regional Office", inferredActivity: "Work", source: "automatic")
+        let walkingAfter = Visit(arrival: gapEnd, departure: gapEnd.addingTimeInterval(3600), latitude: 0, longitude: 0,
+                                 placeName: "Walking", inferredActivity: "Walking", source: "health-walking")
+        let workCandidate = GapSuggestionCandidateGenerator.candidates(
+            before: workVisit, after: walkingAfter, savedPlaces: [homePlace, workPlace],
+            gapStart: gapStart, gapEnd: gapEnd)
+        #expect(workCandidate.first?.placeName == "Regional Office")
+        #expect(workCandidate.first?.activity == "Work")
+
+        let travelling = Visit(arrival: start, departure: gapStart, latitude: 0, longitude: 0,
+                               placeName: "Imported journal", inferredActivity: "Travelling", source: "imported-journal")
+        let travelCandidate = GapSuggestionCandidateGenerator.candidates(
+            before: travelling, after: sleep, savedPlaces: [homePlace, workPlace],
+            gapStart: gapStart, gapEnd: gapEnd)
+        #expect(travelCandidate.first?.placeName == "Home")
+        #expect(travelCandidate.first?.activity == "At home")
+    }
+
     @Test("Two unrelated neighbouring businesses with no Home/Work role offer nothing")
     func neighbouringBusinessesOfferNoCandidate() {
         let before = visit(0, 1, place: "Coffee Society", activity: "Eating")

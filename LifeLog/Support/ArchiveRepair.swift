@@ -434,6 +434,20 @@ enum ArchiveRepair {
         return segments
     }
 
+    /// The one-visit form of the established Archive Repair rules. The gap
+    /// helper may offer this as an editable draft only when the exact same
+    /// resolver logic produces one complete segment; multi-part routine fills
+    /// remain in Archive Repair, where each segment can be reviewed honestly.
+    static func singleSegmentSuggestion(for gap: UnloggedGap,
+                                        calendar: Calendar = .current) -> GapFillSegment? {
+        guard gapBordersEligibleForFill(gap.before, gap.after),
+              gap.hours * 3600 <= gapFillCap
+        else { return nil }
+        let segments = templateSegments(for: gap, calendar: calendar)
+        guard segments.count == 1 else { return nil }
+        return segments[0]
+    }
+
     /// Left on every visit this step creates, so a later reader — or a revert
     /// — can tell an inferred routine fill from anything actually recorded.
     static let routineGapFillNote =

@@ -2,6 +2,15 @@
 
 ## 2026-08-17
 
+### Gap help now uses LifeLog's own known patterns first
+
+- Add Visit can now turn a single, established Home, Work, sleep, travel, or
+  Health-walking gap pattern into an editable draft immediately. For example,
+  the existing sleep↔walking rule now offers the configured Home and "At home"
+  rather than making you type it again or asking Apple Intelligence to guess.
+  Multi-part routine fills remain in Archive Repair, where every inferred part
+  can still be reviewed separately.
+
 ### Protected-store recovery now names the live schema and protects its exports
 
 - The store-recovery screen's diagnostic report and protected-store copy

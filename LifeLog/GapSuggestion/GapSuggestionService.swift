@@ -110,7 +110,8 @@ struct FoundationModelsGapSuggestionService: GapSuggestionRequesting {
         trust a specific candidate; "noSuggestion" when nothing here is usable.
         - candidateKind: the exact kind of the one candidate you chose \
         ("continuationOfBeforeStay", "continuationOfAfterStay", \
-        "homeWorkTransition", or "nearbyResolvedPlaceStay"), or "none" for \
+        "homeWorkTransition", "nearbyResolvedPlaceStay", or \
+        "resolverRuleStay"), or "none" for \
         "noSuggestion"/"needsManualReview".
         - confidence: "low", "medium", or "high" — be conservative. A long or \
         overnight gap, a gap bordering a still-open record, or a gap with no \
@@ -185,7 +186,7 @@ struct GapSuggestionRawOutcome: Sendable, Equatable {
 
     static let supportedKinds = ["noSuggestion", "possibleStay", "possibleTravel", "needsManualReview"]
     static let supportedCandidateKinds = [
-        "continuationOfBeforeStay", "continuationOfAfterStay", "homeWorkTransition", "nearbyResolvedPlaceStay", "none",
+        "continuationOfBeforeStay", "continuationOfAfterStay", "homeWorkTransition", "nearbyResolvedPlaceStay", "resolverRuleStay", "none",
     ]
 }
 

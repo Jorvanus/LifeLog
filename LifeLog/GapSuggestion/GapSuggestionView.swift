@@ -21,7 +21,7 @@ struct GapSuggestionSection: View {
         Section {
             content
         } header: {
-            Text("Apple Intelligence")
+            Text(viewModel.resultSource == .resolverRule ? "LifeLog suggestion" : "Apple Intelligence")
         } footer: {
             Text("A suggestion based on nearby records and prior patterns for this one gap — not a fact. You always review and save.")
         }
@@ -101,6 +101,9 @@ struct GapSuggestionSection: View {
         }
         switch outcome.kind {
         case .possibleStay:
+            if viewModel.resultSource == .resolverRule {
+                return "Likely at \(candidate.placeName ?? "the same place")."
+            }
             return "Possibly still at \(candidate.placeName ?? "the same place")."
         case .possibleTravel:
             if let before = viewModel.lastContext?.before?.displayLabel,

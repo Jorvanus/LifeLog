@@ -39,6 +39,44 @@ struct GapSuggestionViewModelTests {
         return (before.departure!, after.arrival)
     }
 
+    @discardableResult
+    private func seedWalkingSleepGap(in container: ModelContainer) throws -> (gapStart: Date, gapEnd: Date) {
+        let context = ModelContext(container)
+        let home = SavedPlace(name: "Home", latitude: -23.378, longitude: 150.511, defaultActivity: "At home")
+        home.homeWorkRole = .home
+        context.insert(home)
+        let gapStart = start.addingTimeInterval(3600)
+        let gapEnd = start.addingTimeInterval(2 * 3600)
+        let walking = Visit(arrival: start, departure: gapStart, latitude: 0, longitude: 0,
+                            placeName: "Walking", inferredActivity: "Walking", source: "health-walking")
+        let sleep = Visit(arrival: gapEnd, departure: gapEnd.addingTimeInterval(8 * 3600), latitude: 0, longitude: 0,
+                          placeName: "Sleep", inferredActivity: "Sleeping", source: "health-sleep")
+        context.insert(walking); context.insert(sleep)
+        try context.save()
+        return (gapStart, gapEnd)
+    }
+
+    @Test("A known Archive Repair rule bypasses Apple Intelligence and still returns an editable draft")
+    func resolverRuleBypassesUnavailableAppleIntelligence() async throws {
+        let container = try makeContainer()
+        let gap = try seedWalkingSleepGap(in: container)
+        let viewModel = GapSuggestionViewModel(
+            service: FakeGapSuggestionService.unavailable(.appleIntelligenceNotEnabled))
+
+        viewModel.requestSuggestion(gapStart: gap.gapStart, gapEnd: gap.gapEnd,
+                                    repairActor: ArchiveRepairActor(modelContainer: container), diagnosticsContext: nil)
+        await viewModel.waitForCompletion()
+
+        guard case .result(let outcome) = viewModel.state else {
+            Issue.record("Expected the known resolver rule to create a draft, got \(viewModel.state)")
+            return
+        }
+        #expect(viewModel.resultSource == .resolverRule)
+        #expect(outcome.confidence == .high)
+        #expect(viewModel.candidate(for: outcome)?.placeName == "Home")
+        #expect(viewModel.candidate(for: outcome)?.activity == "At home")
+    }
+
     @Test("Apple Intelligence unavailable is surfaced without ever building a suggestion")
     func unavailableSurfacedDirectly() async throws {
         let container = try makeContainer()
