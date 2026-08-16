@@ -489,6 +489,22 @@ struct ArchiveRepairTests {
         #expect(ArchiveRepair.fillableGaps(in: [liveBefore, importedAfter]).isEmpty)
     }
 
+    @Test("A gap bordered on both sides by a Health walking fragment is fillable")
+    func walkingFragmentBorderedGapIsFillable() throws {
+        let before = visit(0, 1, place: "Walking", activity: "Walking", source: "health-walking")
+        let after = visit(3, 1, place: "Walking", activity: "Walking", source: "health-walking")
+
+        #expect(ArchiveRepair.fillableGaps(in: [before, after]).count == 1)
+    }
+
+    @Test("A gap with only one side a Health walking fragment is not fillable")
+    func oneSidedWalkingFragmentIsNotFillable() throws {
+        let walkingBefore = visit(0, 1, place: "Walking", activity: "Walking", source: "health-walking")
+        let importedAfter = visit(3, 1, place: "Imported journal", activity: "Eating")
+
+        #expect(ArchiveRepair.fillableGaps(in: [walkingBefore, importedAfter]).isEmpty)
+    }
+
     @Test("A short gap entirely within one band produces a single segment")
     func shortGapWithinOneBandIsOneSegment() throws {
         // Monday 18:00 -> 19:00: entirely inside the 5pm-midnight "At home" band.

@@ -18,10 +18,12 @@ import SwiftData
 /// closed, bounded problem, while anything the live app has recorded since is a
 /// different question entirely — if the live pipeline is genuinely producing
 /// bad data, the fix belongs in the code that records it, not in a repair pass
-/// run by hand from Settings. The one exception is `mergeDuplicateDefinitions`,
-/// which never touches a `Visit` at all — it corrects catalogue metadata left
-/// behind by a since-fixed ID-instability bug (`ActivityCatalog.seed()`), not
-/// anything the live pipeline is still doing.
+/// run by hand from Settings. There are two exceptions. `mergeDuplicateDefinitions`
+/// never touches a `Visit` at all — it corrects catalogue metadata left behind by
+/// a since-fixed ID-instability bug (`ActivityCatalog.seed()`), not anything the
+/// live pipeline is still doing. And `fillRoutineGaps` additionally accepts a gap
+/// bordered on both sides by a Health `.healthWalking` fragment — see
+/// `isWalkingFragment` for why that one live source is let through.
 ///
 /// The archive did briefly get this wrong: the first shipped version of
 /// `duplicateRows`/`nestedJourneyRows` matched across every source, and on the
@@ -42,6 +44,32 @@ enum ArchiveRepair {
     /// from happening a second time.
     static func isImportOnly(_ visit: Visit) -> Bool {
         visit.visitSource == .importedJournal
+    }
+
+    /// The one deliberate crack in the `isImportOnly` boundary above: Health's
+    /// walking detector regularly fragments a single stay-at-a-place into a
+    /// burst of short `.healthWalking` visits with gaps between them — not
+    /// missed history, but the *same* stay getting reported in pieces. A gap
+    /// bordered on both sides by one of these fragments is therefore not "an
+    /// unlogged evening" in the sense the rest of this file means; it is
+    /// almost certainly still whatever place both fragments were recorded at.
+    /// Confirmed against a real archive: every sampled instance fell inside
+    /// the owner's own routine hours (home or work), never inside what would
+    /// read as a multi-hour walk. Routed through the same routine-schedule
+    /// template as an import-bordered gap, never through anything that would
+    /// label it "Walking" — this fixes the fragmentation, it does not
+    /// legitimise the phantom gap as movement.
+    static func isWalkingFragment(_ visit: Visit) -> Bool {
+        visit.visitSource == .healthWalking
+    }
+
+    /// Whether a gap's two bordering visits qualify it for the routine
+    /// template fill — either both sides of the one-time import, or both
+    /// sides a Health walking fragment. See `isWalkingFragment` for why the
+    /// second case exists; nothing else broadens this.
+    static func gapBordersEligibleForFill(_ before: Visit, _ after: Visit) -> Bool {
+        (isImportOnly(before) && isImportOnly(after))
+            || (isWalkingFragment(before) && isWalkingFragment(after))
     }
 
     /// A stay longer than this is treated as never having been closed rather than
@@ -160,7 +188,7 @@ enum ArchiveRepair {
             case .renameWalkingPlaceholders:
                 "Walking visits imported without a place currently show as \"Imported journal\" too. Naming them \"Walking\" merges them with every other walk recorded by Health."
             case .fillRoutineGaps:
-                "Nothing logged, midnight–7am becomes Sleeping, 7–9am and 5pm–midnight become At home, and 9am–5pm becomes Work on a weekday or At home on a weekend. Only gaps of a day or less, bordered on both sides by imported history, are filled — anything longer is left alone, since it's more likely a real absence than an unlogged evening."
+                "Nothing logged, midnight–7am becomes Sleeping, 7–9am and 5pm–midnight become At home, and 9am–5pm becomes Work on a weekday or At home on a weekend. Only gaps of a day or less are filled — bordered on both sides by imported history, or by a Health-tracked walk either side of a gap that's really the same stay reported in fragments. Anything longer, or bordering anything else live-tracked, is left alone."
             case .mergeDuplicateDefinitions:
                 "Activities in your catalogue that share an identical name under different identities, most likely created by a past ID-stability bug. Every visit or Saved Place pointing at a duplicate is repointed to the earliest one before the duplicate is removed."
             }
@@ -555,9 +583,8 @@ enum ArchiveRepair {
     // MARK: - Routine gap fill
 
     /// One stretch of time nothing at all covers, and the two visits it sits
-    /// between. `before`/`after` are what decide eligibility below — a gap
-    /// touching a live-tracked visit on either side is never filled, the same
-    /// `isImportOnly` boundary as every other step here.
+    /// between. `before`/`after` are what decide eligibility below — see
+    /// `gapBordersEligibleForFill` for the two shapes of border this fills.
     struct UnloggedGap {
         let start: Date
         let end: Date
@@ -608,7 +635,7 @@ enum ArchiveRepair {
 
     static func fillableGaps(in visits: [Visit], now: Date = .now) -> [UnloggedGap] {
         unloggedGaps(in: visits, now: now).filter { gap in
-            isImportOnly(gap.before) && isImportOnly(gap.after) && gap.hours * 3600 <= gapFillCap
+            gapBordersEligibleForFill(gap.before, gap.after) && gap.hours * 3600 <= gapFillCap
         }
     }
 
@@ -717,7 +744,7 @@ enum ArchiveRepair {
 
     static func gapListings(in visits: [Visit], now: Date = .now, calendar: Calendar = .current) -> [GapListing] {
         unloggedGaps(in: visits, now: now).map { gap in
-            let fillable = isImportOnly(gap.before) && isImportOnly(gap.after) && gap.hours * 3600 <= gapFillCap
+            let fillable = gapBordersEligibleForFill(gap.before, gap.after) && gap.hours * 3600 <= gapFillCap
             let preview = fillable ? templateSegments(for: gap, calendar: calendar).map(\.activity) : []
             return GapListing(
                 start: gap.start, end: gap.end,
