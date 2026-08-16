@@ -578,9 +578,16 @@ actor ArchiveRepairActor {
     /// Every unlogged gap in the archive, for `UnloggedGapsView` — read-only,
     /// same as `scan()`, and independent of it: browsing the full list must
     /// not require having already scanned for the batch repair.
-    func listGaps(now: Date = .now) throws -> [ArchiveRepair.GapListing] {
+    ///
+    /// `scope` is `nil` by default so every existing caller keeps seeing gaps
+    /// across all sources, exactly as before. Ask LifeLog passes its own
+    /// selected scope: excluding a source can open gaps that would not exist
+    /// under "all history", so the result must respect the same scope the rest
+    /// of the answer does rather than silently mixing sources back in.
+    func listGaps(now: Date = .now, scope: InsightsScope? = nil) throws -> [ArchiveRepair.GapListing] {
         let visits = try modelContext.fetch(FetchDescriptor<Visit>())
-        return ArchiveRepair.gapListings(in: visits, now: now)
+        let scoped = scope.map { s in visits.filter(s.includes) } ?? visits
+        return ArchiveRepair.gapListings(in: scoped, now: now)
     }
 
     /// Fills exactly one gap, identified by its own start and end — a `Visit`

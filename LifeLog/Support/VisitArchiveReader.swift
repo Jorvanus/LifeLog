@@ -197,6 +197,122 @@ actor VisitArchiveReader {
         return names
     }
 
+    // MARK: - Ask LifeLog
+
+    /// Shared first step for every Ask LifeLog query below: a bounded,
+    /// scope-filtered fetch resolved into the same overlap-aware segments the
+    /// donut and Timeline are built from. Never returned itself — only ever
+    /// consumed on this actor and reduced to a `Sendable` result before crossing
+    /// back out, the same discipline every other method here already follows.
+    private func scopedSegments(in interval: DateInterval, scope: InsightsScope, now: Date) throws -> [InsightSegment] {
+        let visits = try scopedVisits(in: interval, scope: scope)
+        try Task.checkCancellation()
+        let locationVisits = visits.filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
+        return InsightsSnapshot.makeSegments(visits: visits, locationVisits: locationVisits, range: interval, now: now)
+    }
+
+    private func scopedVisits(in interval: DateInterval, scope: InsightsScope) throws -> [Visit] {
+        let start = interval.start, end = interval.end
+        try Task.checkCancellation()
+        return try modelContext.fetch(FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.arrival < end && ($0.departure ?? end) >= start }
+        )).filter(scope.includes)
+    }
+
+    /// Total hours logged under one resolved activity over a bounded interval —
+    /// not a whole category. Backs Ask LifeLog's "activity total" query.
+    ///
+    /// Matches against every alias the resolved activity answers to (its current
+    /// label plus any legacy name), not just its current label:
+    /// `ActivityCatalog.renameActivity` rewrites existing visits' text when a
+    /// rename happens, but a row written before that rewrite ran, or restored
+    /// from a backup taken before it, can still carry the old label. Passing
+    /// only the current name here would silently undercount those rows even
+    /// though `AskLifeLogResolver` already resolved the phrase past the rename.
+    func activityTotalHours(activityAliases names: Set<String>, in interval: DateInterval, scope: InsightsScope, now: Date) throws -> Double {
+        let keys = Set(names.map(NameKey.matching)).subtracting([""])
+        guard !keys.isEmpty else { return 0 }
+        return try scopedSegments(in: interval, scope: scope, now: now)
+            .filter { !$0.isUnlogged && keys.contains(NameKey.matching($0.activity)) }
+            .reduce(0) { $0 + $1.hours }
+    }
+
+    /// Total hours at one specific place over a bounded interval. Backs Ask
+    /// LifeLog's "place total" query.
+    func placeTotalHours(place name: String, in interval: DateInterval, scope: InsightsScope, now: Date) throws -> Double {
+        let key = NameKey.matching(name)
+        guard !key.isEmpty else { return 0 }
+        return try scopedSegments(in: interval, scope: scope, now: now)
+            .filter { !$0.isUnlogged && $0.placeName.map { NameKey.matching($0) == key } == true }
+            .reduce(0) { $0 + $1.hours }
+    }
+
+    /// Every place's total hours over a bounded interval, ranked the identical
+    /// way the donut's own place list is. Backs "most/least time at a place".
+    func rankedPlaceHours(in interval: DateInterval, scope: InsightsScope, now: Date) throws -> [PlaceTotal] {
+        InsightsSnapshot.makePlaceTotals(segments: try scopedSegments(in: interval, scope: scope, now: now))
+    }
+
+    /// Visit counts per place over a bounded interval. Kept separate from
+    /// `rankedPlaceHours`: "most visited" and "most time spent" are different
+    /// rankings over the same places, and a place with many short stays should
+    /// be able to outrank one with fewer, longer ones on this metric.
+    func placeVisitCounts(in interval: DateInterval, scope: InsightsScope, now: Date) throws -> [String: Int] {
+        let visits = try scopedVisits(in: interval, scope: scope)
+            .filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
+        try Task.checkCancellation()
+        var counts: [String: Int] = [:]
+        for visit in visits {
+            let name = visit.displayPlaceName
+            guard !name.isEmpty else { continue }
+            counts[name, default: 0] += 1
+        }
+        return counts
+    }
+
+    /// Place totals restricted to segments starting on a given weekday and/or
+    /// falling in a given time-of-day band. Backs "where did I spend most Friday
+    /// evenings" — `weekday`/`timeBand` are already LifeLog's own closed
+    /// vocabulary (see `AskLifeLogWeekday`/`AskLifeLogTimeBand`), never raw text.
+    func weekdayTimePatternPlaces(weekday: AskLifeLogWeekday?, timeBand: AskLifeLogTimeBand?,
+                                  in interval: DateInterval, scope: InsightsScope, now: Date) throws -> [PlaceTotal] {
+        let calendar = Calendar.current
+        let matching = try scopedSegments(in: interval, scope: scope, now: now).filter { segment in
+            guard !segment.isUnlogged else { return false }
+            if let weekday, calendar.component(.weekday, from: segment.start) != weekday.rawValue { return false }
+            if let timeBand, !timeBand.contains(hour: calendar.component(.hour, from: segment.start)) { return false }
+            return true
+        }
+        return InsightsSnapshot.makePlaceTotals(segments: matching)
+    }
+
+    struct AskLifeLogComparison: Sendable, Equatable {
+        let name: String
+        let hours: Double
+        let previousHours: Double
+        let delta: Double
+    }
+
+    /// The single category with the largest absolute change between one interval
+    /// and its comparison baseline, matching `InsightsSnapshot`'s own comparison
+    /// selection (same 0.25-hour noise floor). Backs "what changed most".
+    func strongestComparison(in interval: DateInterval, previousInterval: DateInterval,
+                             scope: InsightsScope, now: Date) throws -> AskLifeLogComparison? {
+        let current = InsightsSnapshot.categoryHours(visits: try scopedVisits(in: interval, scope: scope),
+                                                      range: interval, now: now)
+        let previous = InsightsSnapshot.categoryHours(visits: try scopedVisits(in: previousInterval, scope: scope),
+                                                       range: previousInterval, now: now)
+        try Task.checkCancellation()
+        return Set(current.keys).union(previous.keys)
+            .map { name -> AskLifeLogComparison in
+                let hours = current[name] ?? 0
+                let previousHours = previous[name] ?? 0
+                return AskLifeLogComparison(name: name, hours: hours, previousHours: previousHours, delta: hours - previousHours)
+            }
+            .filter { abs($0.delta) >= 0.25 }
+            .max { abs($0.delta) < abs($1.delta) }
+    }
+
     func placeEntries(named name: String) throws -> [PlaceHistoryEntry] {
         try Task.checkCancellation()
         var placeDescriptor = FetchDescriptor<SavedPlace>(predicate: #Predicate { $0.name == name })

@@ -80,6 +80,11 @@ enum DiagnosticEventCode: Codable, Sendable, Equatable, Hashable {
     case errorReport
     case storeFailure
     case hardwareValidation
+    /// Ask LifeLog planning: latency, chosen plan type, and validation outcome
+    /// only. Never the question text or any resolved place/activity label.
+    case askLifeLogPlan
+    /// Ask LifeLog's local query execution: duration and result category only.
+    case askLifeLogQuery
     case unknown(String)
 
     static let legacyMessageRaw = "legacy-message"
@@ -90,6 +95,8 @@ enum DiagnosticEventCode: Codable, Sendable, Equatable, Hashable {
     static let errorReportRaw = "error-report"
     static let storeFailureRaw = "store-failure"
     static let hardwareValidationRaw = "hardware-validation"
+    static let askLifeLogPlanRaw = "ask-lifelog-plan"
+    static let askLifeLogQueryRaw = "ask-lifelog-query"
 
     init(rawValue: String) {
         switch rawValue {
@@ -101,6 +108,8 @@ enum DiagnosticEventCode: Codable, Sendable, Equatable, Hashable {
         case Self.errorReportRaw: self = .errorReport
         case Self.storeFailureRaw: self = .storeFailure
         case Self.hardwareValidationRaw: self = .hardwareValidation
+        case Self.askLifeLogPlanRaw: self = .askLifeLogPlan
+        case Self.askLifeLogQueryRaw: self = .askLifeLogQuery
         default: self = .unknown(rawValue)
         }
     }
@@ -114,6 +123,8 @@ enum DiagnosticEventCode: Codable, Sendable, Equatable, Hashable {
         case .errorReport: Self.errorReportRaw
         case .storeFailure: Self.storeFailureRaw
         case .hardwareValidation: Self.hardwareValidationRaw
+        case .askLifeLogPlan: Self.askLifeLogPlanRaw
+        case .askLifeLogQuery: Self.askLifeLogQueryRaw
         case .unknown(let raw): raw
         }
     }
@@ -125,6 +136,7 @@ enum DiagnosticEventCode: Codable, Sendable, Equatable, Hashable {
 /// to receive a new component name, and an older build must still show that evidence.
 enum DiagnosticSubsystem: Codable, Sendable, Equatable, Hashable {
     case timeline, insights, coreLocation, healthKit, launch, activities, activityImport, store
+    case askLifeLog
     case unknown(String)
 
     init(rawValue: String) {
@@ -137,6 +149,7 @@ enum DiagnosticSubsystem: Codable, Sendable, Equatable, Hashable {
         case "Activities": self = .activities
         case "Activity Import": self = .activityImport
         case "Store": self = .store
+        case "Ask LifeLog": self = .askLifeLog
         default: self = .unknown(rawValue)
         }
     }
@@ -150,6 +163,7 @@ enum DiagnosticSubsystem: Codable, Sendable, Equatable, Hashable {
         case .activities: "Activities"
         case .activityImport: "Activity Import"
         case .store: "Store"
+        case .askLifeLog: "Ask LifeLog"
         case .unknown(let raw): raw
         }
     }
@@ -296,6 +310,12 @@ enum Diagnostics {
         /// the Insights month and year windows: a broader scan than a date-scoped
         /// fetch, but still capped at one page's worth of rows.
         static let archiveSearch: TimeInterval = 1.0
+        /// Ask LifeLog's local query execution, measured against a 32,000-row
+        /// synthetic archive (`AskLifeLogQueryExecutorTests`) — between the
+        /// Insights month budget and the full archive search budget, since a
+        /// query answer is a single bounded read like search, not an
+        /// unbounded distinct-name scan.
+        static let askLifeLogQuery: TimeInterval = 1.0
         /// Year's archive-wide "new this year"/"not visited this year" place
         /// comparison (`VisitArchiveReader.historicalPlaceNames`), measured
         /// against a 32,000-row archive. Runs on the background archive-reader
@@ -559,6 +579,25 @@ enum Diagnostics {
                message: fields.joined(separator: " "), severity: severity,
                eventCode: .locationMetric, durationMs: durationMs.map { max(0, $0) },
                itemCount: candidateCount.map { max(0, $0) }, repairCount: repairs.map { max(0, $0) })
+    }
+
+    /// One privacy-safe record per Ask LifeLog planning attempt: how long the model
+    /// took, which supported plan type (if any) it chose, and whether the raw
+    /// output validated. Never the question text, the echoed subject phrase, or
+    /// the model's own response text.
+    static func askLifeLogPlan(_ context: ModelContext?, durationMs: Int, planKind: String, outcome: String) {
+        record(context, subsystem: DiagnosticSubsystem.askLifeLog.rawValue,
+               message: "plan kind=\(planKind) outcome=\(outcome) duration_ms=\(max(0, durationMs))",
+               severity: "info", eventCode: .askLifeLogPlan, durationMs: max(0, durationMs))
+    }
+
+    /// One privacy-safe record per local Ask LifeLog query execution: how long the
+    /// bounded archive read took and what category of result it produced. Never
+    /// the resolved place/activity name or any figure from the answer itself.
+    static func askLifeLogQuery(_ context: ModelContext?, durationMs: Int, resultCategory: String) {
+        record(context, subsystem: DiagnosticSubsystem.askLifeLog.rawValue,
+               message: "query result=\(resultCategory) duration_ms=\(max(0, durationMs))",
+               severity: "info", eventCode: .askLifeLogQuery, durationMs: max(0, durationMs))
     }
 
     /// Error diagnostics retain only an NSError domain/code pair. This distinguishes

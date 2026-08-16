@@ -72,6 +72,10 @@ struct InsightsView: View {
     @State private var editingVisit: Visit?
     @State private var addVisitRange = DateInterval(start: .now, duration: 0)
     @State private var isAddingVisit = false
+    @State private var isAskingLifeLog = false
+    /// Set by Ask LifeLog's drill-down action, then pushed from the sheet's own
+    /// `onDismiss` -- see the matching comment in `AskLifeLogView`.
+    @State private var pendingAskLifeLogRoute: InsightsRoute?
     @State private var todaySteps: Double?
     @State private var lastNightSleep: SleepSummary?
     /// Up to `InsightsTrends.habitWeeks` of completed weeks' per-category hours,
@@ -125,6 +129,29 @@ struct InsightsView: View {
             }
             .accessibilityIdentifier("insights-screen")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { isAskingLifeLog = true } label: {
+                        Image(systemName: "apple.intelligence")
+                    }
+                    .accessibilityLabel("Ask LifeLog")
+                    .accessibilityIdentifier("insights-ask-lifelog-button")
+                }
+            }
+            .sheet(isPresented: $isAskingLifeLog, onDismiss: {
+                guard let route = pendingAskLifeLogRoute else { return }
+                pendingAskLifeLogRoute = nil
+                path.append(route)
+            }) {
+                AskLifeLogView(
+                    context: .current(window: window, interval: interval, now: now, scope: insightsScope),
+                    reader: archive(),
+                    repairActor: ArchiveRepairActor(modelContainer: context.container),
+                    catalogue: ActivityCatalog.load(),
+                    planner: askLifeLogPlanner(),
+                    onDrillDown: { route in pendingAskLifeLogRoute = route }
+                )
+            }
             .sheet(isPresented: $choosingDate) {
                 NavigationStack {
                     DatePicker("Choose date", selection: $draftAnchorDate, displayedComponents: .date)
@@ -374,6 +401,16 @@ struct InsightsView: View {
         let reader = archiveReader ?? VisitArchiveReader(modelContainer: context.container)
         archiveReader = reader
         return reader
+    }
+
+    /// Seeded UI tests switch onto `FakeAskLifeLogPlanner` the same way
+    /// `UITestSeedData`/`UITestFailureInjection` gate deterministic behaviour
+    /// behind a launch argument, rather than depending on live Apple Intelligence.
+    private func askLifeLogPlanner() -> AskLifeLogPlanning {
+        if ProcessInfo.processInfo.arguments.contains(FakeAskLifeLogPlanner.launchArgument) {
+            return FakeAskLifeLogPlanner.uiTestPlanner()
+        }
+        return FoundationModelsAskLifeLogPlanner()
     }
 
     /// Every visit at places matching this name, unscoped by date — the archive

@@ -304,7 +304,11 @@ struct InsightsSnapshot {
     /// read, not from raw visit durations. A place visited twice with overlapping
     /// records (a corrected duplicate callback, say) must not count that overlap
     /// twice just because this total is grouped by place instead of by category.
-    private static func makePlaceTotals(segments: [InsightSegment]) -> [PlaceTotal] {
+    // nonisolated + internal rather than private: AskLifeLogQueryExecutor (via
+    // VisitArchiveReader, a background actor) reuses this same grouping so a
+    // place ranking it answers can never disagree with what Insights itself
+    // would show for the identical segments.
+    nonisolated static func makePlaceTotals(segments: [InsightSegment]) -> [PlaceTotal] {
         let matching = segments.filter { segment in
             guard !segment.isUnlogged, segment.placeName != nil,
                   let visit = segment.visit else { return false }
@@ -638,7 +642,7 @@ extension InsightsSnapshot {
 }
 
 
-struct PlaceTotal: Identifiable {
+struct PlaceTotal: Identifiable, Sendable {
     var id: String { name }
     let name: String
     let category: String

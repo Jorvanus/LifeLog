@@ -2,6 +2,34 @@
 
 ## 2026-08-17
 
+### Added Ask LifeLog
+
+- Insights now has a compact "Ask LifeLog" entry point (the sparkle button in
+  the toolbar) that answers a plain-language question about recorded history —
+  "How much time did I spend at Work this week?", "When did I last visit
+  Coffee Society?", "Show my longest unlogged gaps this month" — with a
+  factual, inspectable answer, not a chatbot.
+- Apple's on-device Foundation Models framework only ever chooses which of
+  LifeLog's own supported query types to run and its parameters (period,
+  place/activity phrase, ranking, weekday/time band); it never receives the
+  Visit archive, coordinates, notes, or Health data, and never computes a
+  total, ranking, comparison, or date itself. Every figure on screen comes
+  from LifeLog's existing Insights aggregation, place-history, and
+  unlogged-gap logic.
+- A named place or activity the model echoes back is resolved locally against
+  the current scope's own history — an exact match runs immediately, several
+  matches show a small disambiguation picker, and no match offers Archive
+  Search instead of guessing.
+- An answer shows the interpreted question, the selected period and source
+  scope, a comparison baseline explanation where relevant, and one direct
+  drill-down into the existing Activity, Place History, or Comparison screen.
+- Handles Apple Intelligence being unavailable or still preparing, unsupported
+  questions, ambiguous names, no matching data, and no comparable baseline
+  with a plain explanation rather than a guess — Insights and Archive Search
+  are unaffected either way.
+- Diagnostics record only plan/query latency, plan type, validation outcome,
+  and result category; never the question text or any resolved name.
+
 ### Fixed current-month comparisons reading as a false drop
 
 - A month in progress was totalled only through today but compared against
