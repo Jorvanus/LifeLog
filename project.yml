@@ -23,7 +23,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.aaronbaxter.LifeLog
         MARKETING_VERSION: "2.5.0"
-        CURRENT_PROJECT_VERSION: "173"
+        CURRENT_PROJECT_VERSION: "174"
         INFOPLIST_FILE: LifeLog/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
