@@ -2,6 +2,14 @@
 
 ## 2026-08-16
 
+### An overnight stay no longer reports its whole span on today's row
+
+- A Home stay that began yesterday evening and ran into this morning showed its
+  full duration — 23h 21m — on today's Timeline row, even though most of that
+  time belonged to yesterday. The row now shows only the part of the stay that
+  falls on the day being looked at; arrival still reads "Yesterday 7:45am" so
+  nothing about when it actually started is hidden.
+
 ### Add Visit no longer lets a zero-duration entry save
 
 - Leaving departure equal to arrival in Add Visit produced a visit with nothing

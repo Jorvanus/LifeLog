@@ -107,4 +107,49 @@ struct DayRolloverAndVisitPresentationTests {
         // Bounded by the day it is being read on rather than left running to the present.
         #expect(TimelineView.interval(of: day).end == dayEnd)
     }
+
+    /// A stay wholly inside the day being read shows its own true duration -- this is
+    /// the ordinary case, and clipping must be a no-op for it.
+    @Test("A same-day stay's duration is unclipped")
+    func durationWithinDayLeavesASameDayStayUntouched() {
+        let day = Calendar.current.startOfDay(for: base)
+        let arrival = day.addingTimeInterval(9 * 3600)
+        let departure = day.addingTimeInterval(10 * 3600)
+
+        let duration = durationWithinDay(arrival: arrival, departure: departure,
+                                         day: TimelineView.interval(of: day))
+        #expect(duration == 3600)
+    }
+
+    /// The real capture this exists for: a Home stay from yesterday 7:45am to this
+    /// morning 7:07am read 23h 21m on Timeline's "today" row -- its whole span, not
+    /// the roughly seven hours of it that actually fall on today. `visit.duration`
+    /// stays the honest total for anything that reads the record directly; this is
+    /// only what one row displays for the day it is shown on.
+    @Test("A stay that crosses into the day from before it is clipped to the day's start")
+    func durationWithinDayClipsAStayThatBeganTheDayBefore() {
+        let day = Calendar.current.startOfDay(for: base)
+        let arrival = day.addingTimeInterval(-16.25 * 3600) // yesterday 7:45am
+        let departure = day.addingTimeInterval(7 * 3600 + 7 * 60) // today 7:07am
+
+        let duration = durationWithinDay(arrival: arrival, departure: departure,
+                                         day: TimelineView.interval(of: day))
+        #expect(duration == 7 * 3600 + 7 * 60, "only the portion inside today")
+        #expect(departure.timeIntervalSince(arrival) > duration,
+                "the visit's own full duration is longer than what today's row shows")
+    }
+
+    /// The mirror case: a stay still open past midnight when the day being read has
+    /// already ended. `day.end`, not `.now`, bounds it -- the same reason an unclosed
+    /// stay on a past day is measured against the end of that day rather than the
+    /// present, immediately above.
+    @Test("A stay still open past the day's end is clipped to the day's end")
+    func durationWithinDayClipsAStayStillOpenAtTheDaysEnd() {
+        let day = Calendar.current.startOfDay(for: base)
+        let interval = TimelineView.interval(of: day)
+        let arrival = day.addingTimeInterval(20 * 3600)
+
+        let duration = durationWithinDay(arrival: arrival, departure: nil, day: interval)
+        #expect(duration == 4 * 3600)
+    }
 }

@@ -679,7 +679,7 @@ struct TimelineView: View {
             } else {
                 VStack(spacing: 12) {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { index, visit in
-                        JourneyRow(visit: visit, isCurrent: false,
+                        JourneyRow(visit: visit, day: interval, isCurrent: false,
                                    isFirst: index == 0, isLast: index == rows.count - 1)
                     }
                 }
@@ -799,7 +799,7 @@ struct TimelineView: View {
                     }
                     let historicalVisits = today.filter { current?.id != $0.id }
                     ForEach(Array(historicalVisits.enumerated()), id: \.element.id) { index, visit in
-                        JourneyRow(visit: visit, isCurrent: false,
+                        JourneyRow(visit: visit, day: TimelineView.interval(of: selectedDay), isCurrent: false,
                                    isFirst: current == nil && !isWaitingForVisitConfirmation && index == 0,
                                    isLast: index == historicalVisits.count - 1)
                     }
@@ -901,6 +901,19 @@ func formattedDuration(_ seconds: TimeInterval) -> String {
     return formatDurationMinutes(totalMinutes)
 }
 
+/// A stay's own duration *within `day`*, not the whole record's. A stay that
+/// started yesterday and is still open this morning is real and its arrival time
+/// says so honestly -- but showing its full span as a same-row duration reads as
+/// "home almost all day" when only a few hours of it actually fall on the day
+/// being looked at. A same-day visit is untouched (its arrival and departure
+/// already sit inside `day`); only one that crosses the boundary gets a different
+/// number here than the visit's own `duration` would give.
+func durationWithinDay(arrival: Date, departure: Date?, day: DateInterval) -> TimeInterval {
+    let start = max(arrival, day.start)
+    let end = min(departure ?? day.end, day.end)
+    return max(0, end.timeIntervalSince(start))
+}
+
 /// Distance as a person would say it: whole metres up to a kilometre, then one
 /// decimal place, because "1.4 km" is a walk and "1,428 m" is a measurement.
 func formattedDistance(_ metres: CLLocationDistance) -> String {
@@ -923,6 +936,7 @@ private func dayQualifiedTime(_ date: Date) -> String {
 private struct JourneyRow: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let visit: Visit
+    let day: DateInterval
     let isCurrent: Bool
     let isFirst: Bool
     let isLast: Bool
@@ -1058,5 +1072,7 @@ private struct JourneyRow: View {
         return "\(start) – \(end)"
     }
 
-    private var durationDescription: String { formattedDuration(visit.duration) }
+    private var durationDescription: String {
+        formattedDuration(durationWithinDay(arrival: visit.arrival, departure: visit.departure, day: day))
+    }
 }
