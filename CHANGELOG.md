@@ -2,6 +2,13 @@
 
 ## 2026-08-16
 
+### Merge place names from Place History
+
+- Added an archive-wide **Merge into another place** action to each Place History detail screen.
+- The target picker includes every other named place in the archive, so imported and non-saved place names can be consolidated in the same place where their full history is visible.
+
+## 2026-08-16
+
 ### Keep an overlap repair that had nothing else to do
 
 - A pass that trimmed an overlapping stay, or closed an open one against a later

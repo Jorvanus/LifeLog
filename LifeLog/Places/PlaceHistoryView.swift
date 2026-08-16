@@ -126,6 +126,7 @@ private struct PlaceVisitAnalytics {
 
 struct PlaceHistoryDetail: View {
     @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
     let placeName: String
     @State private var band: PlaceTimeBand = .allDay
     @State private var replacement = ""
@@ -134,6 +135,12 @@ struct PlaceHistoryDetail: View {
     @State private var breakdown: [(band: PlaceTimeBand, activities: [(String, Int)])] = []
     @State private var matching: [PlaceHistoryEntry] = []
     @State private var reader: VisitArchiveReader?
+    @State private var pickingMergeTarget = false
+    @State private var mergeTarget: PlaceHistorySummary?
+    @State private var mergeInFlight = false
+    /// The detail screen owns only one place's entries, so load the archive-wide
+    /// target names through the same reader used by the parent list.
+    @State private var summariesForMerge: [PlaceHistorySummary] = []
 
     private var analytics: PlaceVisitAnalytics { PlaceVisitAnalytics.make(from: matching) }
 
@@ -192,6 +199,23 @@ struct PlaceHistoryDetail: View {
             } footer: {
                 Text("Entries you have confirmed individually are never changed. This rewrites many entries at once and can only be undone from a backup, so create one first if you are unsure.")
             }
+            if !mergeCandidates.isEmpty {
+                Section {
+                    Button {
+                        pickingMergeTarget = true
+                    } label: {
+                        if mergeInFlight {
+                            HStack { ProgressView(); Text("Merging…") }
+                        } else {
+                            Label("Merge into another place", systemImage: "arrow.triangle.merge")
+                        }
+                    }
+                    .disabled(mergeInFlight)
+                    .accessibilityIdentifier("place-history-merge-button")
+                } footer: {
+                    Text("Moves every timeline entry recorded as “\(placeName)” onto the place you choose, including imported history. This cannot be undone here — export a backup first if you are unsure.")
+                }
+            }
         }
         .navigationTitle(placeName)
         .navigationBarTitleDisplayMode(.inline)
@@ -207,6 +231,30 @@ struct PlaceHistoryDetail: View {
         } message: {
             Text(message ?? "")
         }
+        .confirmationDialog("Merge into “\(mergeTarget?.name ?? "")”?", isPresented: Binding(
+            get: { mergeTarget != nil }, set: { if !$0 { mergeTarget = nil } }
+        ), titleVisibility: .visible) {
+            if let mergeTarget {
+                Button("Merge into “\(mergeTarget.name)”", role: .destructive) {
+                    performMerge(into: mergeTarget.name)
+                }
+            }
+            Button("Cancel", role: .cancel) { mergeTarget = nil }
+        } message: {
+            Text("Every entry recorded as “\(placeName)” will be renamed to “\(mergeTarget?.name ?? "")”.")
+        }
+        .sheet(isPresented: $pickingMergeTarget) {
+            NavigationStack {
+                PlaceHistoryMergeTargetPicker(candidates: mergeCandidates) { target in
+                    pickingMergeTarget = false
+                    mergeTarget = target
+                }
+            }
+        }
+    }
+
+    private var mergeCandidates: [PlaceHistorySummary] {
+        summariesForMerge.filter { $0.name.caseInsensitiveCompare(placeName) != .orderedSame }
     }
 
     private func reload() {
@@ -221,6 +269,9 @@ struct PlaceHistoryDetail: View {
         let currentGeneration = await InsightsAggregationActor.shared.currentGeneration()
         guard !Task.isCancelled, generation == currentGeneration else { return }
         matching = entries
+        if let summaryResult = try? await reader.placeSummaries(generation: generation) {
+            summariesForMerge = summaryResult.summaries
+        }
         breakdown = PlaceTimeBand.allCases.filter { $0 != .allDay }.map { slot in
             var counts: [String: Int] = [:]
             for visit in matching where slot.contains(visit.arrival) {
@@ -263,5 +314,62 @@ struct PlaceHistoryDetail: View {
         } else {
             message = "LifeLog couldn’t apply that change. Your timeline is unchanged."
         }
+    }
+
+    private func performMerge(into targetName: String) {
+        mergeTarget = nil
+        mergeInFlight = true
+        let sourceName = placeName
+        Task {
+            do {
+                _ = try await PlaceRenameActor(modelContainer: context.container)
+                    .mergePlace(sourceNames: [sourceName], targetName: targetName)
+                InsightsInvalidation.invalidate(reason: "Places merged from Place History", context: context)
+                mergeInFlight = false
+                dismiss()
+            } catch is CancellationError {
+                mergeInFlight = false
+            } catch {
+                mergeInFlight = false
+                message = "LifeLog couldn’t merge this place. Nothing changed — try again."
+            }
+        }
+    }
+}
+
+private struct PlaceHistoryMergeTargetPicker: View {
+    let candidates: [PlaceHistorySummary]
+    let onPick: (PlaceHistorySummary) -> Void
+    @State private var search = ""
+
+    private var filtered: [PlaceHistorySummary] {
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return candidates }
+        return candidates.filter { $0.name.localizedCaseInsensitiveContains(query) }
+    }
+
+    var body: some View {
+        List {
+            if filtered.isEmpty {
+                ContentUnavailableView("No other places", systemImage: "arrow.triangle.merge",
+                                       description: Text("There’s nothing else in Place History to merge into."))
+            } else {
+                ForEach(filtered) { place in
+                    Button {
+                        onPick(place)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(place.name).foregroundStyle(.primary)
+                            Text("\(place.count) \(place.count == 1 ? "entry" : "entries")")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Merge into…")
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $search, prompt: "Find a place")
+        .accessibilityIdentifier("place-history-merge-target-picker")
     }
 }
