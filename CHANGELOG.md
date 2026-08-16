@@ -2,6 +2,16 @@
 
 ## 2026-08-16
 
+### Rebuild the code roadmap from the current app
+
+- Replaced the previous TODO list with a fresh repository-wide assessment focused on
+  current lifecycle debt, Insights correctness and new uses, Health data, Settings,
+  backup/restore completeness, recovery, performance, and maintainable code boundaries.
+- Recorded which old archive checks can now be retired and which recent-import safety
+  nets still need to be moved rather than simply removed.
+
+## 2026-08-16
+
 ### Repair Archive drops six steps that will never find anything again
 
 - Merge duplicate records, Collapse nested journeys, Add coordinates from Saved
