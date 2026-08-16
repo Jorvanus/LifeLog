@@ -135,9 +135,11 @@ struct AnnualInsights {
                 // from the CSV import would show up as if they were real, and
                 // usually as the single largest "place" in the whole year,
                 // since it silently absorbs everything the import couldn't
-                // resolve. `renameSleepPlaceholders`/`renameWalkingPlaceholders`
-                // handle the two activities that do have one genuine canonical
-                // place to merge into instead of being excluded here.
+                // resolve. Sleep and walking entries carrying this placeholder
+                // were already renamed to their one genuine canonical place
+                // (`ArchiveRepair`'s now-retired sleep/walking placeholder
+                // steps, fully applied on 2026-08-16) rather than being
+                // excluded here.
                 guard !Visit.isUninformativePlaceName(name) else { continue }
                 if totals[name] == nil { totals[name] = (segment.category, 0, []) }
                 totals[name, default: (segment.category, 0, [])].hours += segment.hours

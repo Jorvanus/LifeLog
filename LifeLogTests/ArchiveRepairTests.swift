@@ -4,20 +4,18 @@ import Testing
 @testable import LifeLog
 
 /// The shapes these cover are the ones actually present in the owner's archive on
-/// 2026-08-15, not invented cases: a 567-hour "At home" stay at 8 Justin St with
-/// later visits nested inside it, ~1,000 near-identical rows one second apart,
-/// 2,957 journeys wholly inside another journey, 25,624 rows with no coordinates,
-/// and 177 visits labelled `coffee` against a catalogue entry named `Coffee`.
+/// 2026-08-15/16: an unclosed 500+ hour "At home" stay, and gaps between visits
+/// that either border the one-time CSV import or a live Health-tracked visit.
+///
+/// This file used to also cover duplicate records, nested journeys, coordinate
+/// backfill, sleep/walking placeholder renaming, and duplicate activity
+/// definitions — all six removed from `ArchiveRepair` on 2026-08-16 once a real
+/// export confirmed each found zero rows, permanently: every one of them only
+/// ever scanned `imported-journal`-sourced data, a pool that can never grow
+/// again now that the one-time import is done. Their tests went with them;
+/// `git log` has the record if that shape of damage is ever reintroduced.
 struct ArchiveRepairTests {
     private let start = Date(timeIntervalSince1970: 1_800_000_000)
-
-    private func makeContext() throws -> ModelContext {
-        let container = try ModelContainer(
-            for: Visit.self, SavedPlace.self, ActivityDefinitionRecord.self, VisitCorrection.self,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-        )
-        return ModelContext(container)
-    }
 
     private func visit(_ offsetHours: Double, _ durationHours: Double, place: String,
                        activity: String, source: String = "imported-journal") -> Visit {
@@ -92,166 +90,15 @@ struct ArchiveRepairTests {
         #expect(result.needingReview == 1)
     }
 
-    // MARK: - Duplicates
-
-    @Test("Near-identical rows collapse to the earliest")
-    func mergesNearIdenticalRows() throws {
-        let first = visit(0, 0.25, place: "Imported journal", activity: "Travelling")
-        // One second apart at both ends, the exact shape the import produced.
-        let second = Visit(arrival: first.arrival.addingTimeInterval(1),
-                           departure: first.departure!.addingTimeInterval(1),
-                           latitude: 0, longitude: 0, placeName: "Imported journal",
-                           inferredActivity: "Travelling", userActivity: "Travelling",
-                           source: "imported-journal")
-
-        let removable = ArchiveRepair.duplicateRows(in: [first, second])
-
-        #expect(removable.count == 1)
-        #expect(removable.first === second)
-    }
-
-    @Test("Three copies of one event leave one survivor")
-    func collapsesClusterToOneSurvivor() throws {
-        let base = visit(0, 0.25, place: "Imported journal", activity: "Travelling")
-        let copies = (1...2).map { offset in
-            Visit(arrival: base.arrival.addingTimeInterval(Double(offset)),
-                  departure: base.departure!.addingTimeInterval(Double(offset)),
-                  latitude: 0, longitude: 0, placeName: "Imported journal",
-                  inferredActivity: "Travelling", userActivity: "Travelling",
-                  source: "imported-journal")
-        }
-
-        let removable = ArchiveRepair.duplicateRows(in: [base] + copies)
-
-        #expect(removable.count == 2)
-        #expect(!removable.contains { $0 === base })
-    }
-
-    @Test("Two consecutive short journeys are not duplicates")
-    func keepsConsecutiveDistinctJourneys() throws {
-        let first = visit(0, 0.25, place: "Imported journal", activity: "Travelling")
-        let second = visit(0.5, 0.25, place: "Imported journal", activity: "Travelling")
-
-        #expect(ArchiveRepair.duplicateRows(in: [first, second]).isEmpty)
-    }
-
-    @Test("Rows sharing a span but not an activity are kept")
-    func keepsDifferentActivitiesAtSameTime() throws {
-        let home = visit(0, 8, place: "8 Justin St", activity: "At home")
-        let sleep = visit(0, 8, place: "8 Justin St", activity: "Sleeping")
-
-        #expect(ArchiveRepair.duplicateRows(in: [home, sleep]).isEmpty)
-    }
-
-    // MARK: - Nested journeys
-
-    @Test("A journey inside a journey is collapsed")
-    func collapsesNestedJourney() throws {
-        let outer = visit(0, 1, place: "Imported journal", activity: "Travelling")
-        let inner = visit(0.25, 0.5, place: "Imported journal", activity: "Travelling")
-
-        let removable = ArchiveRepair.nestedJourneyRows(in: [outer, inner])
-
-        #expect(removable.count == 1)
-        #expect(removable.first === inner)
-    }
-
-    @Test("A shop stop inside a journey is real and survives")
-    func keepsNonJourneyNestedInJourney() throws {
-        let outer = visit(0, 2, place: "Imported journal", activity: "Travelling")
-        let stop = visit(0.5, 0.5, place: "Woolworths Gracemere", activity: "Groceries")
-
-        #expect(ArchiveRepair.nestedJourneyRows(in: [outer, stop]).isEmpty)
-    }
-
-    @Test("Journeys that merely overlap are both kept")
-    func keepsPartiallyOverlappingJourneys() throws {
-        let first = visit(0, 1, place: "Imported journal", activity: "Travelling")
-        let second = visit(0.5, 1, place: "Imported journal", activity: "Travelling")
-
-        #expect(ArchiveRepair.nestedJourneyRows(in: [first, second]).isEmpty)
-    }
-
-    // MARK: - Coordinate backfill
-
-    @Test("Coordinates come from a Saved Place matching the visit's name")
-    func backfillsFromSavedPlace() throws {
-        let home = SavedPlace(name: "8 Justin St", latitude: -23.4455, longitude: 150.4523,
-                              radius: 100, defaultActivity: "At home")
-        let imported = visit(0, 8, place: "8 justin st", activity: "At home")
-
-        let added = ArchiveRepair.backfillCoordinates(in: [imported], savedPlaces: [home])
-
-        #expect(added == 1)
-        #expect(imported.latitude == home.latitude)
-        #expect(imported.longitude == home.longitude)
-        // Marked as inferred, so it can never be mistaken for a recorded fix.
-        #expect(imported.placeProvenance == .nameBackfill)
-        #expect(imported.placeProvenance?.isInferredCoordinate == true)
-    }
-
-    @Test("A visit that already has coordinates is left alone")
-    func doesNotOverwriteRecordedCoordinates() throws {
-        let home = SavedPlace(name: "8 Justin St", latitude: -23.4455, longitude: 150.4523,
-                              radius: 100, defaultActivity: "At home")
-        let recorded = Visit(arrival: start, departure: start.addingTimeInterval(3600),
-                             latitude: -23.9, longitude: 150.9, placeName: "8 Justin St",
-                             inferredActivity: "At home", source: "automatic")
-
-        #expect(ArchiveRepair.backfillCoordinates(in: [recorded], savedPlaces: [home]) == 0)
-        #expect(recorded.latitude == -23.9)
-    }
-
-    @Test("Two Saved Places sharing a name produce no coordinates")
-    func ambiguousNameIsNotBackfilled() throws {
-        let first = SavedPlace(name: "Work", latitude: -23.37, longitude: 150.51,
-                               radius: 100, defaultActivity: "Work")
-        let second = SavedPlace(name: "work", latitude: -23.38, longitude: 150.52,
-                                radius: 100, defaultActivity: "Work")
-        let imported = visit(0, 8, place: "Work", activity: "Work")
-
-        #expect(ArchiveRepair.backfillCoordinates(in: [imported], savedPlaces: [first, second]) == 0)
-        #expect(imported.latitude == 0)
-    }
-
-    @Test("Frequently used place names with no Saved Place are reported")
-    func reportsPlacesWorthSaving() throws {
-        // The real shape: the Saved Place is called "Home", nine years of journal
-        // call the same address "8 Justin St", so almost nothing matches.
-        let home = SavedPlace(name: "Home", latitude: -23.4455, longitude: 150.4523,
-                              radius: 100, defaultActivity: "At home")
-        let visits = (0..<5).map { visit(Double($0), 1, place: "8 Justin St", activity: "At home") }
-            + [visit(10, 1, place: "Home", activity: "At home")]
-            + (0..<2).map { visit(Double(20 + $0), 1, place: "Regional Office", activity: "Work") }
-
-        let unmatched = ArchiveRepair.unmatchedPlaces(in: visits, savedPlaces: [home])
-
-        #expect(unmatched.first?.name == "8 Justin St")
-        #expect(unmatched.first?.visits == 5)
-        // "Home" already has a Saved Place, so it is not something to add.
-        #expect(!unmatched.contains { $0.name == "Home" })
-        #expect(unmatched.contains { $0.name == "Regional Office" && $0.visits == 2 })
-    }
-
-    @Test("A backfill can be reverted, leaving hand-corrected rows alone")
-    func revertsOnlyInferredCoordinates() throws {
-        let home = SavedPlace(name: "8 Justin St", latitude: -23.4455, longitude: 150.4523,
-                              radius: 100, defaultActivity: "At home")
-        let inferred = visit(0, 8, place: "8 Justin St", activity: "At home")
-        ArchiveRepair.backfillCoordinates(in: [inferred], savedPlaces: [home])
-        let corrected = Visit(arrival: start, departure: start.addingTimeInterval(3600),
-                              latitude: -23.9, longitude: 150.9, placeName: "8 Justin St",
-                              inferredActivity: "At home", source: "manual",
-                              placeFieldProvenance: PlaceFieldProvenance.manualRaw)
-
-        let reverted = ArchiveRepair.revertCoordinateBackfill(in: [inferred, corrected])
-
-        #expect(reverted == 1)
-        #expect(inferred.latitude == 0)
-        #expect(corrected.latitude == -23.9)
-    }
-
     // MARK: - Activity linking
+
+    private func makeContext() throws -> ModelContext {
+        let container = try ModelContainer(
+            for: Visit.self, SavedPlace.self, ActivityDefinitionRecord.self, VisitCorrection.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        return ModelContext(container)
+    }
 
     @Test("A label differing only in case links to its definition")
     func linksCaseOnlyMismatch() throws {
@@ -309,94 +156,6 @@ struct ArchiveRepairTests {
             predicate: #Predicate { $0.activityDefinitionID == nil }
         ))
         #expect(remaining.isEmpty)
-    }
-
-    // MARK: - Sleep placeholder places
-
-    @Test("A sleep visit named after the import placeholder is renamed to Sleep")
-    func renamesImportedJournalSleepVisit() throws {
-        let sleeping = visit(0, 8, place: "Imported journal", activity: "Sleeping")
-
-        let renamed = ArchiveRepair.renameSleepPlaceholders(in: [sleeping])
-
-        #expect(renamed == 1)
-        #expect(sleeping.placeName == "Sleep")
-    }
-
-    @Test("A sleep visit already named Sleep is not touched")
-    func leavesAlreadyNamedSleepVisitsAlone() throws {
-        let sleeping = visit(0, 8, place: "Sleep", activity: "Sleeping")
-
-        #expect(ArchiveRepair.renameSleepPlaceholders(in: [sleeping]) == 0)
-        #expect(sleeping.placeName == "Sleep")
-    }
-
-    @Test("A sleep visit recorded at a real place keeps that place")
-    func keepsARealPlaceForASleepVisit() throws {
-        // The whole safety property: only a placeholder is overwritten, never a
-        // place something or someone actually captured.
-        let sleeping = visit(0, 8, place: "8 Justin St", activity: "Sleeping", source: "automatic")
-
-        #expect(ArchiveRepair.renameSleepPlaceholders(in: [sleeping]) == 0)
-        #expect(sleeping.placeName == "8 Justin St")
-    }
-
-    @Test("A non-sleep visit at the import placeholder is not renamed")
-    func leavesNonSleepImportedJournalVisitsAlone() throws {
-        let travelling = visit(0, 1, place: "Imported journal", activity: "Travelling")
-
-        #expect(ArchiveRepair.renameSleepPlaceholders(in: [travelling]) == 0)
-        #expect(travelling.placeName == "Imported journal")
-    }
-
-    @Test("Sleep placeholder matching is case-insensitive on both fields")
-    func sleepPlaceholderMatchingIsCaseInsensitive() throws {
-        let sleeping = Visit(arrival: start, departure: start.addingTimeInterval(8 * 3600),
-                             latitude: 0, longitude: 0, placeName: "imported JOURNAL",
-                             inferredActivity: "SLEEPING", source: "imported-journal")
-
-        #expect(ArchiveRepair.renameSleepPlaceholders(in: [sleeping]) == 1)
-        #expect(sleeping.placeName == "Sleep")
-    }
-
-    // MARK: - Walking placeholder places
-
-    @Test("A walking visit named after the import placeholder is renamed to Walking")
-    func renamesImportedJournalWalkingVisit() throws {
-        let walking = visit(0, 1, place: "Imported journal", activity: "Walking")
-
-        let renamed = ArchiveRepair.renameWalkingPlaceholders(in: [walking])
-
-        #expect(renamed == 1)
-        #expect(walking.placeName == "Walking")
-    }
-
-    @Test("A walking visit recorded at a real place keeps that place")
-    func keepsARealPlaceForAWalkingVisit() throws {
-        let walking = visit(0, 1, place: "Cedric Archer Park", activity: "Walking", source: "automatic")
-
-        #expect(ArchiveRepair.renameWalkingPlaceholders(in: [walking]) == 0)
-        #expect(walking.placeName == "Cedric Archer Park")
-    }
-
-    @Test("A dog walk is a distinct activity and is not folded into Walking")
-    func dogWalkIsNotRenamedToWalking() throws {
-        // "walk" is a substring of "Dog walk" too -- this is the case that rules
-        // out substring matching and requires an exact activity-name match.
-        let dogWalk = visit(0, 1, place: "Imported journal", activity: "Dog walk")
-
-        #expect(ArchiveRepair.renameWalkingPlaceholders(in: [dogWalk]) == 0)
-        #expect(dogWalk.placeName == "Imported journal")
-    }
-
-    @Test("Sleep and walking placeholders are independent")
-    func sleepAndWalkingPlaceholdersDoNotCrossMatch() throws {
-        let sleeping = visit(0, 8, place: "Imported journal", activity: "Sleeping")
-        let walking = visit(9, 1, place: "Imported journal", activity: "Walking")
-
-        #expect(ArchiveRepair.renameWalkingPlaceholders(in: [sleeping, walking]) == 1)
-        #expect(sleeping.placeName == "Imported journal", "the walking pass must not touch a sleep visit")
-        #expect(walking.placeName == "Walking")
     }
 
     // MARK: - Routine gap fill
@@ -808,93 +567,6 @@ struct ArchiveRepairTests {
         #expect(visits.count == 1, "no phantom visit was inserted for a gap that was never real")
     }
 
-    // MARK: - Duplicate activity definitions
-
-    @Test("Two definitions with the exact same name are grouped, oldest first")
-    func groupsDuplicateDefinitionsByExactName() throws {
-        let older = ActivityDefinitionRecord(stableID: UUID(), name: "Gym", category: "Fitness",
-                                             symbol: "dumbbell.fill", createdAt: start)
-        let newer = ActivityDefinitionRecord(stableID: UUID(), name: "Gym", category: "Fitness",
-                                             symbol: "dumbbell.fill", createdAt: start.addingTimeInterval(60))
-
-        let groups = ArchiveRepair.duplicateDefinitionGroups(in: [newer, older])
-
-        #expect(groups.count == 1)
-        #expect(groups.first?.canonical.stableID == older.stableID)
-        #expect(groups.first?.duplicates.map(\.stableID) == [newer.stableID])
-    }
-
-    @Test("A name held by only one active definition is not a duplicate")
-    func singleDefinitionIsNotADuplicate() throws {
-        let solo = ActivityDefinitionRecord(stableID: UUID(), name: "Work", category: "Work",
-                                            symbol: "briefcase.fill")
-        #expect(ArchiveRepair.duplicateDefinitionGroups(in: [solo]).isEmpty)
-    }
-
-    @Test("An inactive definition does not create a false duplicate")
-    func inactiveDefinitionIsExcludedFromDuplicateDetection() throws {
-        let active = ActivityDefinitionRecord(stableID: UUID(), name: "Gym", category: "Fitness",
-                                              symbol: "dumbbell.fill", isActive: true)
-        let retired = ActivityDefinitionRecord(stableID: UUID(), name: "Gym", category: "Fitness",
-                                               symbol: "dumbbell.fill", isActive: false)
-        #expect(ArchiveRepair.duplicateDefinitionGroups(in: [active, retired]).isEmpty)
-    }
-
-    @Test("Merging a duplicate definition repoints visits and places to the canonical one")
-    func mergeDuplicateDefinitionsRepointsReferences() throws {
-        let canonical = ActivityDefinitionRecord(stableID: UUID(), name: "Gym", category: "Fitness",
-                                                  symbol: "dumbbell.fill", createdAt: start)
-        let duplicate = ActivityDefinitionRecord(stableID: UUID(), name: "Gym", category: "Fitness",
-                                                  symbol: "dumbbell.fill", createdAt: start.addingTimeInterval(60))
-        let onCanonical = visit(0, 1, place: "CrossFit CQ", activity: "Gym")
-        onCanonical.activityDefinitionID = canonical.stableID
-        let onDuplicate = visit(1, 1, place: "CrossFit CQ", activity: "Gym")
-        onDuplicate.activityDefinitionID = duplicate.stableID
-        let unrelated = visit(2, 1, place: "Woolworths Gracemere", activity: "Groceries")
-        let place = SavedPlace(name: "CrossFit CQ", latitude: 0, longitude: 0,
-                               radius: 100, defaultActivity: "Gym")
-        place.activityDefinitionID = duplicate.stableID
-
-        let removed = ArchiveRepair.mergeDuplicateDefinitions(
-            in: [onCanonical, onDuplicate, unrelated], places: [place],
-            definitions: [canonical, duplicate]
-        )
-
-        #expect(removed.map(\.stableID) == [duplicate.stableID])
-        #expect(onCanonical.activityDefinitionID == canonical.stableID, "already-canonical rows are untouched")
-        #expect(onDuplicate.activityDefinitionID == canonical.stableID, "repointed to the survivor")
-        #expect(unrelated.activityDefinitionID == nil, "a row pointing at neither definition is untouched")
-        #expect(place.activityDefinitionID == canonical.stableID)
-    }
-
-    @Test("Merging duplicates unblocks linking for the name they shared")
-    func mergingDuplicatesUnblocksLinking() throws {
-        // The exact failure mode this exists for: two definitions named "Gym"
-        // make the name ambiguous, so `linkAll` refuses every visit labelled
-        // "Gym" until the duplicate is folded into one identity.
-        let context = try makeContext()
-        let older = ActivityDefinitionRecord(stableID: UUID(), name: "Gym", category: "Fitness",
-                                             symbol: "dumbbell.fill", createdAt: start)
-        let newer = ActivityDefinitionRecord(stableID: UUID(), name: "Gym", category: "Fitness",
-                                             symbol: "dumbbell.fill", createdAt: start.addingTimeInterval(60))
-        context.insert(older)
-        context.insert(newer)
-        let gymVisit = visit(0, 1, place: "CrossFit CQ", activity: "Gym")
-        context.insert(gymVisit)
-        try context.save()
-
-        #expect(try ActivityIdentityMigration.linkAll(context: context) == 0,
-               "an ambiguous name must not link while the duplicate exists")
-
-        let removed = ArchiveRepair.mergeDuplicateDefinitions(in: [gymVisit], places: [],
-                                                               definitions: [older, newer])
-        removed.forEach(context.delete)
-        try context.save()
-
-        #expect(try ActivityIdentityMigration.linkAll(context: context) == 1)
-        #expect(gymVisit.activityDefinitionID == older.stableID)
-    }
-
     // MARK: - Actor
 
     @Test("Scan reports counts without changing anything")
@@ -917,131 +589,51 @@ struct ArchiveRepairTests {
         #expect(runaway.departure == originalEnd)
     }
 
-    @Test("Applying only the selected step leaves the others untouched")
+    @Test("Applying only the selected step leaves the other untouched")
     func appliesOnlySelectedSteps() async throws {
         let container = try ModelContainer(
             for: Visit.self, SavedPlace.self, ActivityDefinitionRecord.self, VisitCorrection.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
         let context = ModelContext(container)
-        let outer = visit(0, 1, place: "Imported journal", activity: "Travelling")
-        let inner = visit(0.25, 0.5, place: "Imported journal", activity: "Travelling")
-        context.insert(outer)
-        context.insert(inner)
+        let runaway = visit(0, 500, place: "8 Justin St", activity: "At home")
+        context.insert(runaway)
+        context.insert(visit(30, 2, place: "Woolworths Gracemere", activity: "Groceries"))
+        // Also fillable, but `fillRoutineGaps` is deliberately not selected below.
+        context.insert(visit(60, 1, place: "Imported journal", activity: "Walking"))
+        context.insert(visit(70, 1, place: "Imported journal", activity: "Eating"))
         try context.save()
 
         let report = try await ArchiveRepairActor(modelContainer: container)
-            .apply(steps: [.backfillCoordinates])
+            .apply(steps: [.closeRunawayStays])
 
-        #expect(report.journeysCollapsed == 0)
+        #expect(report.staysClosed == 1)
+        #expect(report.routineGapsFilled == 0)
         let remaining = try ModelContext(container).fetch(FetchDescriptor<Visit>())
-        #expect(remaining.count == 2)
+        #expect(remaining.count == 4, "no gap-fill visits were inserted")
     }
 
-    @Test("A full apply closes, merges and collapses in one transaction")
+    @Test("A full apply closes runaways and fills gaps together")
     func appliesEveryStepTogether() async throws {
         let container = try ModelContainer(
             for: Visit.self, SavedPlace.self, ActivityDefinitionRecord.self, VisitCorrection.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
         let context = ModelContext(container)
-        context.insert(SavedPlace(name: "8 Justin St", latitude: -23.4455, longitude: 150.4523,
-                                  radius: 100, defaultActivity: "At home"))
         context.insert(visit(0, 500, place: "8 Justin St", activity: "At home"))
         // Inside the runaway's span, so it can actually act as the boundary.
         context.insert(visit(300, 2, place: "Woolworths Gracemere", activity: "Groceries"))
-        let outer = visit(700, 1, place: "Imported journal", activity: "Travelling")
-        context.insert(outer)
-        context.insert(visit(700.25, 0.5, place: "Imported journal", activity: "Travelling"))
-        let older = ActivityDefinitionRecord(stableID: UUID(), name: "Groceries", category: "Shopping",
-                                             symbol: "cart.fill", createdAt: start)
-        let newer = ActivityDefinitionRecord(stableID: UUID(), name: "Groceries", category: "Shopping",
-                                             symbol: "cart.fill", createdAt: start.addingTimeInterval(60))
-        context.insert(older)
-        context.insert(newer)
+        context.insert(visit(700, 1, place: "Imported journal", activity: "Walking"))
+        context.insert(visit(710, 1, place: "Imported journal", activity: "Eating"))
         try context.save()
 
         let report = try await ArchiveRepairActor(modelContainer: container)
             .apply(steps: Set(ArchiveRepair.Step.allCases))
 
         #expect(report.staysClosed == 1)
-        #expect(report.journeysCollapsed == 1)
-        #expect(report.coordinatesAdded == 1)
-        #expect(report.definitionsMerged == 1)
+        #expect(report.routineGapsFilled > 0)
         let remaining = try ModelContext(container).fetch(FetchDescriptor<Visit>())
-        #expect(remaining.count == 3)
-    }
-
-    @Test("Scan surfaces duplicate activity definitions and applying merges them")
-    func scanAndApplyResolveDuplicateDefinitions() async throws {
-        let container = try ModelContainer(
-            for: Visit.self, SavedPlace.self, ActivityDefinitionRecord.self, VisitCorrection.self,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-        )
-        let context = ModelContext(container)
-        let older = ActivityDefinitionRecord(stableID: UUID(), name: "Gym", category: "Fitness",
-                                             symbol: "dumbbell.fill", createdAt: start)
-        let newer = ActivityDefinitionRecord(stableID: UUID(), name: "Gym", category: "Fitness",
-                                             symbol: "dumbbell.fill", createdAt: start.addingTimeInterval(60))
-        context.insert(older)
-        context.insert(newer)
-        try context.save()
-
-        let actor = ArchiveRepairActor(modelContainer: container)
-        let findings = try await actor.scan()
-        #expect(findings.duplicateDefinitionNames == 1)
-        #expect(findings.duplicateDefinitionRows == 1)
-
-        let report = try await actor.apply(steps: [.mergeDuplicateDefinitions])
-        #expect(report.definitionsMerged == 1)
-
-        let remainingDefs = try ModelContext(container).fetch(FetchDescriptor<ActivityDefinitionRecord>())
-        #expect(remainingDefs.map(\.stableID) == [older.stableID])
-
-        let rescanned = try await actor.scan()
-        #expect(rescanned.duplicateDefinitionRows == 0)
-    }
-
-    @Test("Scan surfaces sleep placeholders and applying renames them")
-    func scanAndApplyResolveSleepPlaceholders() async throws {
-        let container = try ModelContainer(
-            for: Visit.self, SavedPlace.self, ActivityDefinitionRecord.self, VisitCorrection.self,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-        )
-        let context = ModelContext(container)
-        context.insert(visit(0, 8, place: "Imported journal", activity: "Sleeping"))
-        try context.save()
-
-        let actor = ArchiveRepairActor(modelContainer: container)
-        let findings = try await actor.scan()
-        #expect(findings.sleepPlaceholderRows == 1)
-
-        let report = try await actor.apply(steps: [.renameSleepPlaceholders])
-        #expect(report.sleepPlaceholdersRenamed == 1)
-
-        let rescanned = try await actor.scan()
-        #expect(rescanned.sleepPlaceholderRows == 0)
-    }
-
-    @Test("Scan surfaces walking placeholders and applying renames them")
-    func scanAndApplyResolveWalkingPlaceholders() async throws {
-        let container = try ModelContainer(
-            for: Visit.self, SavedPlace.self, ActivityDefinitionRecord.self, VisitCorrection.self,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-        )
-        let context = ModelContext(container)
-        context.insert(visit(0, 1, place: "Imported journal", activity: "Walking"))
-        try context.save()
-
-        let actor = ArchiveRepairActor(modelContainer: container)
-        let findings = try await actor.scan()
-        #expect(findings.walkingPlaceholderRows == 1)
-
-        let report = try await actor.apply(steps: [.renameWalkingPlaceholders])
-        #expect(report.walkingPlaceholdersRenamed == 1)
-
-        let rescanned = try await actor.scan()
-        #expect(rescanned.walkingPlaceholderRows == 0)
+        #expect(remaining.count == 4 + report.routineGapsFilled)
     }
 
     // MARK: - Source scoping
@@ -1052,34 +644,8 @@ struct ArchiveRepairTests {
     /// carrying its own `healthKitSampleIDs` -- because they happened to share
     /// an exact timestamp with an unrelated `imported-journal` row for the same
     /// walk. Two different sources agreeing on one event is corroboration, not
-    /// a duplicate. Every analysis function must treat a live-sourced visit as
-    /// untouchable, full stop, regardless of what it happens to resemble.
-
-    @Test("A live HealthKit workout is never matched as a duplicate of an imported row")
-    func healthWorkoutSurvivesAnIdenticalImportedRow() throws {
-        // The exact shape that was destroyed: same activity, same arrival, same
-        // departure, different source.
-        let imported = visit(0, 0.5, place: "Imported journal", activity: "Walking")
-        let workout = Visit(arrival: imported.arrival, departure: imported.departure!,
-                            latitude: 0, longitude: 0, placeName: "Walking workout",
-                            inferredActivity: "Walking", source: "health-workout",
-                            healthKitSampleIDs: [UUID()])
-
-        let removable = ArchiveRepair.duplicateRows(in: [imported, workout])
-
-        #expect(removable.isEmpty, "neither row may be removed -- a live source can never be a duplicate candidate")
-    }
-
-    @Test("A live automatic journey is never collapsed as nested inside an imported one")
-    func automaticJourneySurvivesNestingInAnImportedOne() throws {
-        let outer = visit(0, 2, place: "Imported journal", activity: "Travelling")
-        let inner = Visit(arrival: start.addingTimeInterval(0.5 * 3600),
-                          departure: start.addingTimeInterval(1 * 3600),
-                          latitude: 0, longitude: 0, placeName: "",
-                          inferredActivity: "Travelling", source: "automatic")
-
-        #expect(ArchiveRepair.nestedJourneyRows(in: [outer, inner]).isEmpty)
-    }
+    /// a duplicate. `closeRunawayStays` must still treat a live-sourced visit
+    /// as untouchable, full stop, regardless of what it happens to resemble.
 
     @Test("A live runaway stay is never closed by this repair")
     func liveRunawayStayIsNeverClosed() throws {
@@ -1093,38 +659,6 @@ struct ArchiveRepairTests {
 
         #expect(result.closed == 0)
         #expect(runaway.departure == originalEnd)
-    }
-
-    @Test("A live visit at a Saved Place name still gets no inferred coordinates")
-    func liveVisitIsNeverCoordinateBackfilled() throws {
-        let home = SavedPlace(name: "8 Justin St", latitude: -23.4455, longitude: 150.4523,
-                              radius: 100, defaultActivity: "At home")
-        let liveVisit = Visit(arrival: start, departure: start.addingTimeInterval(3600),
-                              latitude: 0, longitude: 0, placeName: "8 Justin St",
-                              inferredActivity: "At home", source: "manual")
-
-        #expect(ArchiveRepair.backfillCoordinates(in: [liveVisit], savedPlaces: [home]) == 0)
-        #expect(liveVisit.latitude == 0)
-    }
-
-    @Test("A live sleep visit is never renamed even with a placeholder place")
-    func liveSleepVisitIsNeverRenamed() throws {
-        let liveSleep = Visit(arrival: start, departure: start.addingTimeInterval(8 * 3600),
-                              latitude: 0, longitude: 0, placeName: "Identifying…",
-                              inferredActivity: "Sleeping", source: "manual")
-
-        #expect(ArchiveRepair.renameSleepPlaceholders(in: [liveSleep]) == 0)
-        #expect(liveSleep.placeName == "Identifying…")
-    }
-
-    @Test("A live walking visit is never renamed even with a placeholder place")
-    func liveWalkingVisitIsNeverRenamed() throws {
-        let liveWalk = Visit(arrival: start, departure: start.addingTimeInterval(3600),
-                             latitude: 0, longitude: 0, placeName: "Identifying…",
-                             inferredActivity: "Walking", source: "automatic")
-
-        #expect(ArchiveRepair.renameWalkingPlaceholders(in: [liveWalk]) == 0)
-        #expect(liveWalk.placeName == "Identifying…")
     }
 
     @Test("A runaway import can still close against a boundary from a live source")

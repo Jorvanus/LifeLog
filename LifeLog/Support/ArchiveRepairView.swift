@@ -26,11 +26,11 @@ struct ArchiveRepairView: View {
         return selectedStepsWithWork.reduce(0) { $0 + findings.count(for: $1) }
     }
 
-    /// Three distinct things a person can be agreeing to here, and each gets
-    /// its own sentence: removing history, inventing history for time nobody
-    /// recorded, or a plain field-level rewrite. A step can only ever be one
-    /// of these (`deletesRows` and `createsInferredRows` are mutually
-    /// exclusive across `Step`), so this never needs to combine two warnings.
+    /// Two distinct things a person can be agreeing to here, and each gets its
+    /// own sentence: inventing history for time nobody recorded, or a plain
+    /// field-level rewrite. A step can only ever be one of these
+    /// (`deletesRows` and `createsInferredRows` are mutually exclusive across
+    /// `Step`), so this never needs to combine two warnings.
     private var confirmationMessage: String {
         if selectedStepsWithWork.contains(where: \.deletesRows) {
             return "LifeLog will create a complete local backup first. This removes records permanently."
@@ -60,7 +60,7 @@ struct ArchiveRepairView: View {
                             .accessibilityIdentifier("repair-scan")
                     }
                 } footer: {
-                    Text("Checks every visit for stays that were never closed, duplicate records, and history that can be improved. Nothing is changed by scanning.")
+                    Text("Checks every visit for stays that were never closed and unlogged time that can be filled in. Nothing is changed by scanning.")
                 }
             }
             if let report { reportSection(report) }
@@ -98,24 +98,6 @@ struct ArchiveRepairView: View {
                     LabeledContent("Time they claim",
                                    value: formattedDuration(findings.runawayHours * 3600))
                 }
-                if findings.duplicateRows > 0 {
-                    LabeledContent("Duplicate records", value: "\(findings.duplicateRows)")
-                }
-                if findings.nestedJourneys > 0 {
-                    LabeledContent("Nested journeys", value: "\(findings.nestedJourneys)")
-                }
-                if findings.sleepPlaceholderRows > 0 {
-                    LabeledContent("Sleep entries named \"Imported journal\"", value: "\(findings.sleepPlaceholderRows)")
-                        .accessibilityIdentifier("repair-sleep-placeholder-count")
-                }
-                if findings.walkingPlaceholderRows > 0 {
-                    LabeledContent("Walking entries named \"Imported journal\"", value: "\(findings.walkingPlaceholderRows)")
-                        .accessibilityIdentifier("repair-walking-placeholder-count")
-                }
-                if findings.duplicateDefinitionRows > 0 {
-                    LabeledContent("Duplicate activity definitions", value: "\(findings.duplicateDefinitionRows)")
-                        .accessibilityIdentifier("repair-duplicate-definition-count")
-                }
                 if findings.unloggedGapCount > 0 {
                     LabeledContent("Unlogged gaps", value: "\(findings.unloggedGapCount)")
                         .accessibilityIdentifier("repair-unlogged-gap-count")
@@ -124,34 +106,10 @@ struct ArchiveRepairView: View {
                     NavigationLink("Review every gap") { UnloggedGapsView() }
                         .accessibilityIdentifier("review-unlogged-gaps-link")
                 }
-                if findings.uncoordinatedRows > 0 {
-                    LabeledContent("Without coordinates", value: "\(findings.uncoordinatedRows)")
-                }
             }
             Button("Rescan") { scan() }
                 .disabled(scanning)
                 .accessibilityIdentifier("repair-rescan")
-        }
-        if !findings.unmatchedPlaces.isEmpty {
-            unmatchedPlacesSection(findings)
-        }
-    }
-
-    /// Why the coordinate backfill reaches so few rows, and what would widen it.
-    /// Without this the step reports a number a fraction of the "without
-    /// coordinates" count directly above it, with no way to tell whether that is
-    /// a bug or a limit.
-    @ViewBuilder
-    private func unmatchedPlacesSection(_ findings: ArchiveRepair.Findings) -> some View {
-        Section {
-            ForEach(findings.unmatchedPlaces) { place in
-                LabeledContent(place.name, value: "\(place.visits)")
-                    .accessibilityIdentifier("repair-unmatched-place")
-            }
-        } header: {
-            Text("Places worth saving")
-        } footer: {
-            Text("Coordinates can only be filled in from a Saved Place with the same name. Adding a Saved Place for any of these would put that many more visits on the map the next time you repair.")
         }
     }
 
@@ -184,12 +142,6 @@ struct ArchiveRepairView: View {
             // from two numbers that do not match.
             if findings.runawayStays > findings.runawayStaysClosable {
                 Text("\(findings.runawayStays - findings.runawayStaysClosable) runaway stays have no visit at a different place to close them against. Those are left unchanged for you to edit by hand.")
-            }
-            // Explains why linking may stay small even after this step is
-            // chosen: a name split across duplicate definitions needs the
-            // duplicate merged first, which is a separate step above it.
-            if findings.duplicateDefinitionRows > 0 {
-                Text("\(findings.duplicateDefinitionNames) activity name\(findings.duplicateDefinitionNames == 1 ? "" : "s") in your catalogue currently point at more than one identity, which blocks linking for every visit using that name until the duplicate is merged.")
             }
             // Same shape as the runaway note above: the gap between "found" and
             // "fillable" is a longer-than-a-day cutoff or a live-tracked
@@ -225,13 +177,7 @@ struct ArchiveRepairView: View {
     private func reportSection(_ report: ArchiveRepair.Report) -> some View {
         Section("Repaired") {
             if report.staysClosed > 0 { LabeledContent("Stays closed", value: "\(report.staysClosed)") }
-            if report.duplicatesMerged > 0 { LabeledContent("Duplicates merged", value: "\(report.duplicatesMerged)") }
-            if report.journeysCollapsed > 0 { LabeledContent("Journeys collapsed", value: "\(report.journeysCollapsed)") }
-            if report.coordinatesAdded > 0 { LabeledContent("Coordinates added", value: "\(report.coordinatesAdded)") }
-            if report.sleepPlaceholdersRenamed > 0 { LabeledContent("Sleep entries renamed", value: "\(report.sleepPlaceholdersRenamed)") }
-            if report.walkingPlaceholdersRenamed > 0 { LabeledContent("Walking entries renamed", value: "\(report.walkingPlaceholdersRenamed)") }
             if report.routineGapsFilled > 0 { LabeledContent("Gap visits added", value: "\(report.routineGapsFilled)") }
-            if report.definitionsMerged > 0 { LabeledContent("Duplicate definitions merged", value: "\(report.definitionsMerged)") }
             if report.stillNeedingReview > 0 {
                 LabeledContent("Still need review", value: "\(report.stillNeedingReview)")
                     .accessibilityIdentifier("repair-needs-review")
@@ -293,7 +239,7 @@ struct ArchiveRepairView: View {
                     selection = []
                     applying = false
                     Diagnostics.record(context, subsystem: "Archive repair",
-                                       message: "Closed \(result.staysClosed) runaway stays, merged \(result.duplicatesMerged) duplicates, collapsed \(result.journeysCollapsed) nested journeys, added \(result.coordinatesAdded) coordinates, renamed \(result.sleepPlaceholdersRenamed) sleep and \(result.walkingPlaceholdersRenamed) walking entries, added \(result.routineGapsFilled) gap-fill visits, merged \(result.definitionsMerged) duplicate definitions.",
+                                       message: "Closed \(result.staysClosed) runaway stays, added \(result.routineGapsFilled) gap-fill visits.",
                                        severity: "info", repairCount: result.totalChanges)
                     message = "Repair complete. \(result.totalChanges) records changed. The backup is ready to share."
                 }

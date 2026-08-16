@@ -2,6 +2,16 @@
 
 ## 2026-08-16
 
+### Repair Archive drops six steps that will never find anything again
+
+- Merge duplicate records, Collapse nested journeys, Add coordinates from Saved
+  Places, Name imported sleep/walking entries, and Merge duplicate activity
+  definitions all only ever scanned the one-time CSV import, a pool that can't
+  grow again now that import is done. Confirmed against a fresh export that
+  every one of them finds zero rows, permanently, and removed rather than kept
+  as six always-empty rows on the repair screen. Close runaway stays and Fill
+  evening/overnight gaps remain — both still find real, ongoing work.
+
 ### An overnight stay no longer reports its whole span on today's row
 
 - A Home stay that began yesterday evening and ran into this morning showed its
