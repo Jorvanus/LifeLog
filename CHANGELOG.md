@@ -2,6 +2,12 @@
 
 ## 2026-08-16
 
+### Reuse existing activities in Place History corrections
+
+- Added an **Use an existing activity** menu beside the free-form activity field, populated from activities already recorded at that place.
+
+## 2026-08-16
+
 ### Merge place names from Place History
 
 - Added an archive-wide **Merge into another place** action to each Place History detail screen.

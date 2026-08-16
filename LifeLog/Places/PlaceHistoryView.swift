@@ -152,6 +152,13 @@ struct PlaceHistoryDetail: View {
         matching.filter { band.contains($0.arrival) }
     }
     private var changeableCount: Int { scoped.count - protectedCount }
+    private var availableActivities: [String] {
+        var seen = Set<String>()
+        return matching
+            .map { $0.activity.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
 
     var body: some View {
         Form {
@@ -186,6 +193,16 @@ struct PlaceHistoryDetail: View {
                     ForEach(PlaceTimeBand.allCases) { Text($0.title).tag($0) }
                 }
                 TextField("New activity", text: $replacement)
+                if !availableActivities.isEmpty {
+                    Menu {
+                        ForEach(availableActivities, id: \.self) { activity in
+                            Button(activity) { replacement = activity }
+                        }
+                    } label: {
+                        Label("Use an existing activity", systemImage: "list.bullet")
+                    }
+                    .accessibilityIdentifier("existing-activity-menu")
+                }
                 LabeledContent("Entries that will change", value: "\(changeableCount)")
                 if protectedCount > 0 {
                     LabeledContent("Kept as you set them", value: "\(protectedCount)")
