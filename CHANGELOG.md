@@ -2,6 +2,22 @@
 
 ## 2026-08-16
 
+### Local backup now represents the current schema, not a compatibility snapshot
+
+- The durable `ActivityDefinitionRecord` catalogue — every active activity, plus
+  any deleted one a historical visit or Saved Place still points at — is now
+  backed up field-for-field, including whether it was deliberately deactivated.
+  Before this, only the UserDefaults display-snapshot catalogue was backed up,
+  which has no `isActive` field, so restoring a backup could silently resurrect
+  an activity you had deleted on purpose.
+- Every backup now carries a manifest: app and schema version, a count of every
+  record type, and each section's payload size, so a `.json` backup can be
+  inspected by hand without decoding and counting.
+- A new test suite, `ArchiveModelFieldCoverageTests`, reflects a real instance of
+  every current `@Model` type and fails if a stored property has no matching
+  backup field — a schema field added without wiring it into the backup format
+  can no longer ship unnoticed.
+
 ### Rebuild the code roadmap from the current app
 
 - Replaced the previous TODO list with a fresh repository-wide assessment focused on

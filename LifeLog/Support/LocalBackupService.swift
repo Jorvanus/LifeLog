@@ -2,11 +2,28 @@ import Foundation
 import SwiftData
 
 struct LifeLogBackup: Codable {
-    /// V2 adds a visit's route and HealthKit sample identity, a Saved Place's
-    /// Home/Work role, and a diagnostic's retention category. Every V2 addition
-    /// is an optional field, so a V1 archive — which simply has no key for it —
-    /// still decodes without a custom `init(from:)`.
-    static let currentVersion = 2
+    /// V3 adds the durable `ActivityDefinitionRecord` catalogue
+    /// (`activityDefinitionRecords`) and a `manifest`. Both are optional, so a
+    /// V1/V2 archive — which has no key for either — still decodes without a
+    /// custom `init(from:)`.
+    ///
+    /// `activityDefinitions`, the UserDefaults compatibility snapshot, keeps
+    /// being written in full rather than emptied the way `ignoredVisitKeys` was
+    /// at V2: it is the only place a rename's `legacyNames` aliases live (see
+    /// `ActivityDefinition.legacyNames`), and the durable record has no field to
+    /// hold them, so emptying it here would silently discard real rename
+    /// history with nowhere else to keep it. What changes at V3 is which side
+    /// `restore` trusts for identity: `activityDefinitionRecords`, when
+    /// present, is authoritative for a definition's `isActive` state and
+    /// timestamps. Before V3 those could only be reconstructed from
+    /// `activityDefinitions` via `adoptLegacyDefinitions`, which has no
+    /// `isActive` field to read and so always recreated an adopted definition
+    /// as active — a restore could silently resurrect an activity the person
+    /// had deliberately deleted. A durable row's own `isActive: false` now
+    /// round-trips exactly, including for a definition kept only because a
+    /// historical Visit or Saved Place still points at it — see
+    /// `LocalBackupService.encodeBackup` for the inclusion rule.
+    static let currentVersion = 3
     let version: Int
     let createdAt: Date
     let visits: [VisitRecord]
@@ -26,7 +43,65 @@ struct LifeLogBackup: Codable {
     /// from a row identity SwiftData reassigns on every restore.
     let ignoredVisitKeys: [String]
     let activityDefinitions: [ActivityDefinition]
+    /// V3. Field-for-field snapshot of every `ActivityDefinitionRecord` the
+    /// catalogue is currently active, plus any inactive one a historical
+    /// `Visit` or `SavedPlace` still references — see `encodeBackup` for the
+    /// exact filter. Optional so a V1/V2 backup, made before this existed,
+    /// still decodes and falls back to `activityDefinitions` alone.
+    let activityDefinitionRecords: [ActivityDefinitionRecordEntry]?
     let preferences: [String: String]
+    /// V3. Descriptive only — nothing in `restore` reads it — so a person
+    /// inspecting a `.json` backup by hand, or a future diagnostic, can see
+    /// what produced it without decoding every array and counting.
+    let manifest: Manifest?
+
+    /// Field-for-field snapshot of one `ActivityDefinitionRecord` row. See
+    /// `LifeLog/Model/Models.swift`'s `ActivityDefinitionRecord` for the
+    /// authoritative property list this must keep matching —
+    /// `ArchiveModelFieldCoverageTests` fails if the two drift apart.
+    struct ActivityDefinitionRecordEntry: Codable {
+        let stableID: UUID
+        let name: String
+        let category: String
+        let symbol: String
+        let colorHex: String?
+        let lifeArea: String
+        let isActive: Bool
+        let createdAt: Date
+        let modifiedAt: Date
+    }
+
+    /// What produced this backup, and how big it is. Every count and size is
+    /// computed once at encode time from the exact arrays this document
+    /// carries, so it can never drift from them the way a hand-maintained
+    /// summary could.
+    struct Manifest: Codable {
+        let appVersion: String
+        let schemaVersion: String
+        let recordCounts: RecordCounts
+        /// Byte size of each section's own JSON encoding, plus their sum —
+        /// not the whole file's byte count, which also includes this manifest,
+        /// `preferences`, and the legacy `activityDefinitions` snapshot.
+        let payloadSizes: PayloadSizes
+
+        struct RecordCounts: Codable {
+            let visits: Int
+            let savedPlaces: Int
+            let corrections: Int
+            let diagnostics: Int
+            let locationEvents: Int
+            let activityDefinitionRecords: Int
+        }
+        struct PayloadSizes: Codable {
+            let visits: Int
+            let savedPlaces: Int
+            let corrections: Int
+            let diagnostics: Int
+            let locationEvents: Int
+            let activityDefinitionRecords: Int
+            let total: Int
+        }
+    }
 
     struct VisitRecord: Codable {
         let arrival: Date; let departure: Date?; let latitude: Double; let longitude: Double
@@ -101,6 +176,7 @@ enum BackupValidationError: LocalizedError {
     case duplicateHealthKitSample(UUID)
     case invalidLocationEvent(reason: String)
     case invalidCorrection(reason: String)
+    case duplicateActivityDefinitionID(UUID)
 
     var errorDescription: String? {
         switch self {
@@ -115,6 +191,7 @@ enum BackupValidationError: LocalizedError {
         case .duplicateHealthKitSample(let id): "The HealthKit sample \(id) is attached to more than one visit."
         case .invalidLocationEvent(let reason): "A location callback record is invalid: \(reason)."
         case .invalidCorrection(let reason): "A correction record is invalid: \(reason)."
+        case .duplicateActivityDefinitionID(let id): "Two activity definitions share the same identity (\(id))."
         }
     }
 }
@@ -177,6 +254,10 @@ extension LifeLogBackup {
         for correction in corrections where correction.changedAt < correction.visitArrival {
             throw BackupValidationError.invalidCorrection(reason: "recorded before the visit it corrects")
         }
+        var activityDefinitionIDs = Set<UUID>()
+        for definition in activityDefinitionRecords ?? [] where !activityDefinitionIDs.insert(definition.stableID).inserted {
+            throw BackupValidationError.duplicateActivityDefinitionID(definition.stableID)
+        }
     }
 }
 
@@ -205,25 +286,74 @@ enum LocalBackupService {
         let places = try context.fetch(FetchDescriptor<SavedPlace>())
         let corrections = try context.fetch(FetchDescriptor<VisitCorrection>())
         let locationEvents = try context.fetch(FetchDescriptor<LocationEvent>())
+        let activityDefinitionRecords = try context.fetch(FetchDescriptor<ActivityDefinitionRecord>())
         return try encodeBackup(visits: visits, places: places, corrections: corrections,
-                                diagnostics: diagnostics, locationEvents: locationEvents)
+                                diagnostics: diagnostics, locationEvents: locationEvents,
+                                activityDefinitionRecords: activityDefinitionRecords)
+    }
+
+    /// The app's own version, matching `SettingsView.appVersion`'s format —
+    /// duplicated rather than shared because that one is a `View` property and
+    /// this runs off the main actor inside `BackupExportActor`.
+    private static func appVersionString() -> String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        return build.map { "\(version) (\($0))" } ?? version
+    }
+
+    /// A definition belongs in the backup if it is still offered (`isActive`) or
+    /// if a `Visit` or `SavedPlace` in this same backup still points at it by
+    /// `stableID` — an inactive, unreferenced definition is dead weight nothing
+    /// will ever resolve again. Keeping a referenced-but-inactive one is what
+    /// lets a deleted activity's historical visits keep a resolvable identity
+    /// after a restore, instead of the identity simply vanishing.
+    private static func definitionsToBackUp(_ definitions: [ActivityDefinitionRecord],
+                                             visits: [Visit], places: [SavedPlace]) -> [ActivityDefinitionRecord] {
+        let referenced = Set(visits.compactMap(\.activityDefinitionID)) .union(places.compactMap(\.activityDefinitionID))
+        return definitions.filter { $0.isActive || referenced.contains($0.stableID) }
     }
 
     /// Encoding is shared with `BackupExportActor`; the actor owns the archive
     /// read, while this pure transformation preserves the tested backup format.
     static func encodeBackup(visits: [Visit], places: [SavedPlace], corrections: [VisitCorrection],
-                             diagnostics: [DiagnosticEvent], locationEvents: [LocationEvent]) throws -> Data {
-        let document = LifeLogBackup(version: LifeLogBackup.currentVersion, createdAt: .now,
-            visits: visits.map { .init(arrival: $0.arrival, departure: $0.departure, latitude: $0.latitude, longitude: $0.longitude, placeName: $0.placeName, inferredActivity: $0.inferredActivity, userActivity: $0.userActivity, note: $0.note, source: $0.source, activityDefinitionID: $0.activityDefinitionID, recognitionConfidence: $0.recognitionConfidence, candidateData: $0.candidateData, mapsIdentifier: $0.mapsIdentifier, placeFieldProvenance: $0.placeFieldProvenance, resolutionExplanation: $0.resolutionExplanation, stableID: $0.stableID, resolutionState: $0.resolutionStateRaw, healthKitSampleIDs: $0.healthKitSampleIDs, routeData: $0.routeData) },
-            savedPlaces: places.map { .init(name: $0.name, latitude: $0.latitude, longitude: $0.longitude, radius: $0.radius, defaultActivity: $0.defaultActivity, mapsIdentifier: $0.mapsIdentifier, activityDefinitionID: $0.activityDefinitionID, role: $0.role) },
-            corrections: corrections.map { .init(changedAt: $0.changedAt, visitArrival: $0.visitArrival, latitude: $0.latitude, longitude: $0.longitude, previousPlaceName: $0.previousPlaceName, newPlaceName: $0.newPlaceName, previousActivity: $0.previousActivity, newActivity: $0.newActivity, previousConfidence: $0.previousConfidence, newConfidence: $0.newConfidence, reason: $0.reason) },
-            diagnostics: diagnostics.map { .init(createdAt: $0.createdAt, subsystem: $0.subsystem, severity: $0.severity, message: $0.message, category: $0.category, eventCode: $0.eventCode, durationMs: $0.durationMs, budgetMs: $0.budgetMs, itemCount: $0.itemCount, repairCount: $0.repairCount) },
-            locationEvents: locationEvents.map { .init(recordedAt: $0.recordedAt, callbackType: $0.callbackType,
+                             diagnostics: [DiagnosticEvent], locationEvents: [LocationEvent],
+                             activityDefinitionRecords: [ActivityDefinitionRecord]) throws -> Data {
+        let sizingEncoder = JSONEncoder(); sizingEncoder.dateEncodingStrategy = .iso8601
+        func size<T: Encodable>(_ value: T) -> Int { (try? sizingEncoder.encode(value))?.count ?? 0 }
+
+        let visitRecords = visits.map { LifeLogBackup.VisitRecord(arrival: $0.arrival, departure: $0.departure, latitude: $0.latitude, longitude: $0.longitude, placeName: $0.placeName, inferredActivity: $0.inferredActivity, userActivity: $0.userActivity, note: $0.note, source: $0.source, activityDefinitionID: $0.activityDefinitionID, recognitionConfidence: $0.recognitionConfidence, candidateData: $0.candidateData, mapsIdentifier: $0.mapsIdentifier, placeFieldProvenance: $0.placeFieldProvenance, resolutionExplanation: $0.resolutionExplanation, stableID: $0.stableID, resolutionState: $0.resolutionStateRaw, healthKitSampleIDs: $0.healthKitSampleIDs, routeData: $0.routeData) }
+        let savedPlaceRecords = places.map { LifeLogBackup.SavedPlaceRecord(name: $0.name, latitude: $0.latitude, longitude: $0.longitude, radius: $0.radius, defaultActivity: $0.defaultActivity, mapsIdentifier: $0.mapsIdentifier, activityDefinitionID: $0.activityDefinitionID, role: $0.role) }
+        let correctionRecords = corrections.map { LifeLogBackup.CorrectionRecord(changedAt: $0.changedAt, visitArrival: $0.visitArrival, latitude: $0.latitude, longitude: $0.longitude, previousPlaceName: $0.previousPlaceName, newPlaceName: $0.newPlaceName, previousActivity: $0.previousActivity, newActivity: $0.newActivity, previousConfidence: $0.previousConfidence, newConfidence: $0.newConfidence, reason: $0.reason) }
+        let diagnosticRecords = diagnostics.map { LifeLogBackup.DiagnosticRecord(createdAt: $0.createdAt, subsystem: $0.subsystem, severity: $0.severity, message: $0.message, category: $0.category, eventCode: $0.eventCode, durationMs: $0.durationMs, budgetMs: $0.budgetMs, itemCount: $0.itemCount, repairCount: $0.repairCount) }
+        let locationEventRecords = locationEvents.map { LifeLogBackup.LocationEventRecord(recordedAt: $0.recordedAt, callbackType: $0.callbackType,
                 callbackAt: $0.callbackAt, arrival: $0.arrival, departure: $0.departure,
                 latitude: $0.latitude, longitude: $0.longitude, accuracy: $0.accuracy,
                 distanceFromCurrentVisit: $0.distanceFromCurrentVisit, transition: $0.transition,
-                visitArrival: $0.visitArrival) },
-            ignoredVisitKeys: [], activityDefinitions: ActivityCatalog.load(), preferences: preferences())
+                visitArrival: $0.visitArrival) }
+        let definitionRecords = definitionsToBackUp(activityDefinitionRecords, visits: visits, places: places)
+            .map { LifeLogBackup.ActivityDefinitionRecordEntry(stableID: $0.stableID, name: $0.name, category: $0.category, symbol: $0.symbol, colorHex: $0.colorHex, lifeArea: $0.lifeArea, isActive: $0.isActive, createdAt: $0.createdAt, modifiedAt: $0.modifiedAt) }
+
+        let payloadSizes = LifeLogBackup.Manifest.PayloadSizes(
+            visits: size(visitRecords), savedPlaces: size(savedPlaceRecords), corrections: size(correctionRecords),
+            diagnostics: size(diagnosticRecords), locationEvents: size(locationEventRecords),
+            activityDefinitionRecords: size(definitionRecords),
+            total: size(visitRecords) + size(savedPlaceRecords) + size(correctionRecords)
+                + size(diagnosticRecords) + size(locationEventRecords) + size(definitionRecords)
+        )
+        let manifest = LifeLogBackup.Manifest(
+            appVersion: appVersionString(),
+            schemaVersion: "\(LifeLogMigrationPlan.schemas.last!.versionIdentifier)",
+            recordCounts: .init(visits: visitRecords.count, savedPlaces: savedPlaceRecords.count,
+                                corrections: correctionRecords.count, diagnostics: diagnosticRecords.count,
+                                locationEvents: locationEventRecords.count, activityDefinitionRecords: definitionRecords.count),
+            payloadSizes: payloadSizes
+        )
+
+        let document = LifeLogBackup(version: LifeLogBackup.currentVersion, createdAt: .now,
+            visits: visitRecords, savedPlaces: savedPlaceRecords, corrections: correctionRecords,
+            diagnostics: diagnosticRecords, locationEvents: locationEventRecords,
+            ignoredVisitKeys: [], activityDefinitions: ActivityCatalog.load(),
+            activityDefinitionRecords: definitionRecords, preferences: preferences(), manifest: manifest)
         let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601; encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         return try encoder.encode(document)
     }
@@ -243,8 +373,9 @@ enum LocalBackupService {
         } catch {
             throw CocoaError(.fileReadCorruptFile)
         }
-        // V1 and V2 both restore; only a version this build has never heard of
-        // (from a future build) is rejected, not merely an old one.
+        // Every version from V1 through `currentVersion` restores; only a
+        // version this build has never heard of (from a future build) is
+        // rejected, not merely an old one.
         guard (1...LifeLogBackup.currentVersion).contains(backup.version) else {
             throw CocoaError(.fileReadCorruptFile)
         }
@@ -280,6 +411,22 @@ enum LocalBackupService {
                                              distanceFromCurrentVisit: record.distanceFromCurrentVisit,
                                              transition: record.transition, visitArrival: record.visitArrival))
             }
+            // V3+. Restored directly, by identity: `stableID` carries `.unique`,
+            // and a fresh install already seeds a handful of default definitions
+            // with well-known IDs before any restore runs, so a record already
+            // present is left alone rather than inserted a second time -- the
+            // same "only add what's absent" rule `adoptLegacyDefinitions` below
+            // uses for the same reason.
+            if let definitions = backup.activityDefinitionRecords {
+                let existingIDs = Set(try context.fetch(FetchDescriptor<ActivityDefinitionRecord>()).map(\.stableID))
+                for record in definitions where !existingIDs.contains(record.stableID) {
+                    context.insert(ActivityDefinitionRecord(
+                        stableID: record.stableID, name: record.name, category: record.category,
+                        symbol: record.symbol, colorHex: record.colorHex, lifeArea: record.lifeArea,
+                        isActive: record.isActive, createdAt: record.createdAt, modifiedAt: record.modifiedAt
+                    ))
+                }
+            }
             try context.save()
         } catch {
             context.rollback()
@@ -287,11 +434,17 @@ enum LocalBackupService {
         }
 
         // The core restore -- visits, places, corrections, diagnostics, location
-        // events -- is already committed above and stays committed regardless of
-        // anything below. `IgnoredLocations`/`ActivityCatalog` writes are plain
-        // UserDefaults sets, which cannot throw.
+        // events, and (V3+) activity definition records -- is already committed
+        // above and stays committed regardless of anything below.
+        // `IgnoredLocations`/`ActivityCatalog` writes are plain UserDefaults
+        // sets, which cannot throw.
         IgnoredLocations.importKeys(backup.ignoredVisitKeys)
         ActivityCatalog.save(backup.activityDefinitions)
+        // A V3+ backup already inserted its exact `ActivityDefinitionRecord`
+        // rows above -- `isActive` and all -- so there is nothing left to adopt.
+        // Only a V1/V2 backup, which carries no durable rows at all, still needs
+        // them reconstructed from the legacy snapshot.
+        //
         // Recoverable background work, not required: this adopts the backup's
         // activity UUIDs immediately as a convenience, but it does its own
         // separate `context.save()` (see `adoptLegacyDefinitions`) and is not
@@ -299,10 +452,12 @@ enum LocalBackupService {
         // restore. It is also self-healing: `ActivityCatalog.backfillNextBatch`
         // adopts the same rows in bounded pages on a later launch regardless, so
         // this is only ever an optimization to do it sooner.
-        do {
-            _ = try ActivityIdentityMigration.adoptLegacyDefinitions(context: context)
-        } catch {
-            Diagnostics.record(error, context: context, subsystem: "Store", operation: "backup activity identity adoption")
+        if backup.activityDefinitionRecords == nil {
+            do {
+                _ = try ActivityIdentityMigration.adoptLegacyDefinitions(context: context)
+            } catch {
+                Diagnostics.record(error, context: context, subsystem: "Store", operation: "backup activity identity adoption")
+            }
         }
         for (key, value) in backup.preferences where isPortablePreferenceKey(key) {
             UserDefaults.standard.set(value, forKey: key)
@@ -343,10 +498,12 @@ actor BackupExportActor {
         let corrections = try modelContext.fetch(FetchDescriptor<VisitCorrection>())
         let diagnostics = try modelContext.fetch(FetchDescriptor<DiagnosticEvent>())
         let locationEvents = try modelContext.fetch(FetchDescriptor<LocationEvent>())
+        let activityDefinitionRecords = try modelContext.fetch(FetchDescriptor<ActivityDefinitionRecord>())
         try Task.checkCancellation()
         return try LocalBackupService.encodeBackup(
             visits: visits, places: places, corrections: corrections,
-            diagnostics: diagnostics, locationEvents: locationEvents
+            diagnostics: diagnostics, locationEvents: locationEvents,
+            activityDefinitionRecords: activityDefinitionRecords
         )
     }
 }

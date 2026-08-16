@@ -107,7 +107,8 @@ struct VisitPayloadEnvelopeTests {
                            placeFieldProvenance: nil, resolutionExplanation: nil, stableID: UUID(),
                            resolutionState: nil, healthKitSampleIDs: nil, routeData: corruptRoute)],
             savedPlaces: [], corrections: [], diagnostics: [], locationEvents: [],
-            ignoredVisitKeys: [], activityDefinitions: [], preferences: [:])
+            ignoredVisitKeys: [], activityDefinitions: [], activityDefinitionRecords: nil,
+            preferences: [:], manifest: nil)
 
         try backup.validate()
         #expect(VisitPayloadDecoder.route(from: corruptRoute).status == .corrupt)

@@ -320,7 +320,8 @@ struct LocalBackupTests {
                 .init(arrival: base.addingTimeInterval(3600), departure: nil, latitude: 0, longitude: 0, placeName: "B", inferredActivity: "Visiting", userActivity: nil, note: "", source: "automatic", activityDefinitionID: nil, recognitionConfidence: nil, candidateData: nil, mapsIdentifier: nil, placeFieldProvenance: nil, resolutionExplanation: nil, stableID: shared, resolutionState: nil, healthKitSampleIDs: nil, routeData: nil)
             ],
             savedPlaces: [], corrections: [], diagnostics: [], locationEvents: [],
-            ignoredVisitKeys: [], activityDefinitions: [], preferences: [:])
+            ignoredVisitKeys: [], activityDefinitions: [], activityDefinitionRecords: nil,
+            preferences: [:], manifest: nil)
         let data = try JSONEncoder.lifeLogBackup.encode(backup)
 
         let context = try makeContext()
@@ -339,7 +340,8 @@ struct LocalBackupTests {
                 .init(arrival: base.addingTimeInterval(3600), departure: nil, latitude: 0, longitude: 0, placeName: "B", inferredActivity: "Sleeping", userActivity: nil, note: "", source: "health-sleep", activityDefinitionID: nil, recognitionConfidence: nil, candidateData: nil, mapsIdentifier: nil, placeFieldProvenance: nil, resolutionExplanation: nil, stableID: nil, resolutionState: nil, healthKitSampleIDs: [sharedSample], routeData: nil)
             ],
             savedPlaces: [], corrections: [], diagnostics: [], locationEvents: [],
-            ignoredVisitKeys: [], activityDefinitions: [], preferences: [:])
+            ignoredVisitKeys: [], activityDefinitions: [], activityDefinitionRecords: nil,
+            preferences: [:], manifest: nil)
         let data = try JSONEncoder.lifeLogBackup.encode(backup)
 
         let context = try makeContext()
@@ -358,7 +360,8 @@ struct LocalBackupTests {
                       arrival: base.addingTimeInterval(-1800), departure: base, latitude: 0, longitude: 0,
                       accuracy: -1, distanceFromCurrentVisit: nil, transition: "closed", visitArrival: base.addingTimeInterval(-1800))
             ],
-            ignoredVisitKeys: [], activityDefinitions: [], preferences: [:])
+            ignoredVisitKeys: [], activityDefinitions: [], activityDefinitionRecords: nil,
+            preferences: [:], manifest: nil)
         let data = try JSONEncoder.lifeLogBackup.encode(backup)
 
         let context = try makeContext()
@@ -381,7 +384,8 @@ struct LocalBackupTests {
             ],
             savedPlaces: [.init(name: "Existing preference guard", latitude: 0, longitude: 0, radius: 100, defaultActivity: "", mapsIdentifier: nil, activityDefinitionID: nil, role: nil)],
             corrections: [], diagnostics: [], locationEvents: [],
-            ignoredVisitKeys: [], activityDefinitions: [], preferences: ["LifeLog.Test.marker": "should-not-be-written"])
+            ignoredVisitKeys: [], activityDefinitions: [], activityDefinitionRecords: nil,
+            preferences: ["LifeLog.Test.marker": "should-not-be-written"], manifest: nil)
         let data = try JSONEncoder.lifeLogBackup.encode(backup)
 
         let context = try makeContext()
