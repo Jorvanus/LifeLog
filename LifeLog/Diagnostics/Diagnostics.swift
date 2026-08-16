@@ -85,6 +85,14 @@ enum DiagnosticEventCode: Codable, Sendable, Equatable, Hashable {
     case askLifeLogPlan
     /// Ask LifeLog's local query execution: duration and result category only.
     case askLifeLogQuery
+    /// One gap-suggestion request: latency, context-size bucket, candidate
+    /// count, outcome kind, and confidence band only. Never the gap's place,
+    /// activity, explanation text, or any archive content.
+    case gapSuggestionRequest
+    /// A gap-suggestion lifecycle event with no numeric payload: invalid
+    /// output, cancellation, a stale result, or what a person did with a shown
+    /// suggestion (accepted/edited/rejected/saved).
+    case gapSuggestionEvent
     case unknown(String)
 
     static let legacyMessageRaw = "legacy-message"
@@ -97,6 +105,8 @@ enum DiagnosticEventCode: Codable, Sendable, Equatable, Hashable {
     static let hardwareValidationRaw = "hardware-validation"
     static let askLifeLogPlanRaw = "ask-lifelog-plan"
     static let askLifeLogQueryRaw = "ask-lifelog-query"
+    static let gapSuggestionRequestRaw = "gap-suggestion-request"
+    static let gapSuggestionEventRaw = "gap-suggestion-event"
 
     init(rawValue: String) {
         switch rawValue {
@@ -110,6 +120,8 @@ enum DiagnosticEventCode: Codable, Sendable, Equatable, Hashable {
         case Self.hardwareValidationRaw: self = .hardwareValidation
         case Self.askLifeLogPlanRaw: self = .askLifeLogPlan
         case Self.askLifeLogQueryRaw: self = .askLifeLogQuery
+        case Self.gapSuggestionRequestRaw: self = .gapSuggestionRequest
+        case Self.gapSuggestionEventRaw: self = .gapSuggestionEvent
         default: self = .unknown(rawValue)
         }
     }
@@ -125,6 +137,8 @@ enum DiagnosticEventCode: Codable, Sendable, Equatable, Hashable {
         case .hardwareValidation: Self.hardwareValidationRaw
         case .askLifeLogPlan: Self.askLifeLogPlanRaw
         case .askLifeLogQuery: Self.askLifeLogQueryRaw
+        case .gapSuggestionRequest: Self.gapSuggestionRequestRaw
+        case .gapSuggestionEvent: Self.gapSuggestionEventRaw
         case .unknown(let raw): raw
         }
     }
@@ -137,6 +151,7 @@ enum DiagnosticEventCode: Codable, Sendable, Equatable, Hashable {
 enum DiagnosticSubsystem: Codable, Sendable, Equatable, Hashable {
     case timeline, insights, coreLocation, healthKit, launch, activities, activityImport, store
     case askLifeLog
+    case gapSuggestion
     case unknown(String)
 
     init(rawValue: String) {
@@ -150,6 +165,7 @@ enum DiagnosticSubsystem: Codable, Sendable, Equatable, Hashable {
         case "Activity Import": self = .activityImport
         case "Store": self = .store
         case "Ask LifeLog": self = .askLifeLog
+        case "Gap Suggestion": self = .gapSuggestion
         default: self = .unknown(rawValue)
         }
     }
@@ -164,6 +180,7 @@ enum DiagnosticSubsystem: Codable, Sendable, Equatable, Hashable {
         case .activityImport: "Activity Import"
         case .store: "Store"
         case .askLifeLog: "Ask LifeLog"
+        case .gapSuggestion: "Gap Suggestion"
         case .unknown(let raw): raw
         }
     }
@@ -598,6 +615,29 @@ enum Diagnostics {
         record(context, subsystem: DiagnosticSubsystem.askLifeLog.rawValue,
                message: "query result=\(resultCategory) duration_ms=\(max(0, durationMs))",
                severity: "info", eventCode: .askLifeLogQuery, durationMs: max(0, durationMs))
+    }
+
+    /// One privacy-safe record per gap-suggestion request: how long it took, how
+    /// much context it was built from (bucketed, not the content itself), how
+    /// many deterministic candidates LifeLog offered, and what the validated
+    /// outcome was. Never the gap's place/activity, the explanation text, or
+    /// any archive content.
+    static func gapSuggestionRequest(_ context: ModelContext?, durationMs: Int, contextSizeBucket: String,
+                                     candidateCount: Int, outcomeKind: String, confidence: String) {
+        record(context, subsystem: DiagnosticSubsystem.gapSuggestion.rawValue,
+               message: "request candidates=\(candidateCount) outcome=\(outcomeKind) confidence=\(confidence) " +
+                        "context_size=\(contextSizeBucket) duration_ms=\(max(0, durationMs))",
+               severity: "info", eventCode: .gapSuggestionRequest, durationMs: max(0, durationMs),
+               itemCount: max(0, candidateCount))
+    }
+
+    /// A gap-suggestion lifecycle event with no numeric payload — one of
+    /// "invalid-output", "cancelled", "stale-result", "accepted", "edited",
+    /// "rejected", or "saved". Never the suggestion's own text.
+    static func gapSuggestionEvent(_ context: ModelContext?, event: String) {
+        record(context, subsystem: DiagnosticSubsystem.gapSuggestion.rawValue,
+               message: "event=\(TextSafety.clean(event, maximumLength: 20))",
+               severity: "info", eventCode: .gapSuggestionEvent)
     }
 
     /// Error diagnostics retain only an NSError domain/code pair. This distinguishes

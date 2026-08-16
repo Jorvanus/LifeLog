@@ -65,6 +65,20 @@ struct ManualVisitView: View {
     /// re-searching a place that is sitting right there on screen.
     @State private var beforeVisit: Visit?
     @State private var afterVisit: Visit?
+    @State private var gapSuggestionViewModel: GapSuggestionViewModel
+    /// What the form's fields looked like right after "Use as draft" populated
+    /// them, kept only to tell "saved as suggested" from "edited before saving"
+    /// at save time — `nil` whenever no suggestion has been accepted this
+    /// session, so ordinary hand-typed entries never touch gap-suggestion
+    /// diagnostics at all.
+    @State private var acceptedDraftSnapshot: DraftSnapshot?
+
+    private struct DraftSnapshot: Equatable {
+        let place: String
+        let activity: String
+        let arrival: Date
+        let departure: Date
+    }
 
     /// Scoped to `range` rather than the whole archive, and including every source
     /// — imported-journal too — since `VisitSuggestion` now needs the same picture
@@ -85,6 +99,17 @@ struct ManualVisitView: View {
         // discarded the very range the caller went to the trouble of passing in.
         _arrival = State(initialValue: range.start)
         _departure = State(initialValue: range.end)
+        _gapSuggestionViewModel = State(initialValue: GapSuggestionViewModel(service: Self.gapSuggestionService(for: range)))
+    }
+
+    /// Seeded UI tests switch onto `FakeGapSuggestionService` the same way
+    /// `AskLifeLogView`'s own planner chooser does, rather than depending on
+    /// live Apple Intelligence.
+    private static func gapSuggestionService(for range: DateInterval) -> GapSuggestionRequesting {
+        if ProcessInfo.processInfo.arguments.contains(FakeGapSuggestionService.launchArgument) {
+            return FakeGapSuggestionService.uiTestService(gapStart: range.start)
+        }
+        return FoundationModelsGapSuggestionService()
     }
 
     private var suggestions: [VisitSuggestion] {
@@ -174,6 +199,8 @@ struct ManualVisitView: View {
                         .accessibilityIdentifier("manual-visit-end-picker")
                 }
 
+                GapSuggestionSection(range: range, viewModel: gapSuggestionViewModel, useAsDraft: useSuggestionAsDraft)
+
                 if !suggestions.isEmpty {
                     Section {
                         ForEach(suggestions) { suggestion in
@@ -198,7 +225,12 @@ struct ManualVisitView: View {
             }
             .navigationTitle("Add Visit")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        gapSuggestionViewModel.cancel()
+                        dismiss()
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { attemptSave() }
                         .disabled(!Self.canSave(place: place, arrival: arrival, departure: departure))
@@ -216,7 +248,44 @@ struct ManualVisitView: View {
                 Text("This time overlaps:\n\(overlapSummary)")
             }
             .task { loadBorderingVisits() }
+            // A shown suggestion described a specific picture of the archive;
+            // once a neighbouring visit changes or a Saved Place's Home/Work
+            // role changes underneath this sheet — most likely the background
+            // location resolver running while the sheet is still open — it
+            // must not keep being shown as if it still applied. (Period, date,
+            // scope, and filter live on the screen this sheet is modal over,
+            // so they cannot change while it's open, and a fresh gap always
+            // gets a fresh `ManualVisitView`/`GapSuggestionViewModel` instance.)
+            .onChange(of: visits) { gapSuggestionViewModel.invalidateIfShowingResult() }
+            .onChange(of: savedPlaces) { gapSuggestionViewModel.invalidateIfShowingResult() }
         }
+    }
+
+    /// Applies a candidate's evidence to the manual form's own fields — never
+    /// saves anything itself. A stay candidate reuses `selectPlace(from:)`, the
+    /// same path tapping "Before"/"After" already uses, so a real coordinate is
+    /// carried forward exactly as it would be by hand. A travel candidate is
+    /// deliberately given no coordinate and no Saved Place: its place field is
+    /// the same "A → B" arrow label `VisitSuggestion` already uses for a
+    /// commute, so it reads as transition time rather than a destination.
+    private func useSuggestionAsDraft(_ candidate: GapSuggestionCandidate) {
+        switch candidate.kind {
+        case .continuationOfBeforeStay, .nearbyResolvedPlaceStay:
+            if let beforeVisit { selectPlace(from: beforeVisit) }
+        case .continuationOfAfterStay:
+            if let afterVisit { selectPlace(from: afterVisit) }
+        case .homeWorkTransition:
+            let fromLabel = beforeVisit?.displayPlaceName ?? "Home"
+            let toLabel = afterVisit?.displayPlaceName ?? "Work"
+            place = "\(fromLabel) → \(toLabel)"
+            resolution = .none
+        }
+        if let candidateActivity = candidate.activity {
+            activity = candidateActivity
+        }
+        arrival = range.start
+        departure = range.end
+        acceptedDraftSnapshot = DraftSnapshot(place: place, activity: activity, arrival: arrival, departure: departure)
     }
 
     /// One-shot, not a live `@Query` — this is context to look at while deciding
@@ -278,6 +347,17 @@ struct ManualVisitView: View {
                          coordinate: coordinate, changedCount: 1)
         }
         if result.committed {
+            // Never recorded on a failed save — a gap-suggestion diagnostic
+            // must describe what was actually written, not an attempt that
+            // left the archive unchanged.
+            if let acceptedDraftSnapshot {
+                let edited = acceptedDraftSnapshot.place != safePlace || acceptedDraftSnapshot.activity != safeActivity
+                    || acceptedDraftSnapshot.arrival != arrival || acceptedDraftSnapshot.departure != safeDeparture
+                if edited {
+                    gapSuggestionViewModel.recordUserAction("edited", diagnosticsContext: context)
+                }
+                gapSuggestionViewModel.recordUserAction("saved", diagnosticsContext: context)
+            }
             dismiss()
         } else {
             saveFailed = true

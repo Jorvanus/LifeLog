@@ -86,6 +86,28 @@ enum UITestSeedData {
                                  latitude: -23.38, longitude: 150.51, placeName: "Regional Office",
                                  inferredActivity: "Work", userActivity: "Work", source: "imported-journal"))
         }
+        if ProcessInfo.processInfo.arguments.contains("-ui-test-gap-suggestion") {
+            // A single, isolated gap bordered by a Home-role stay and a
+            // Work-role stay, on a day found nowhere else in the seed, so the
+            // real deterministic candidate generator produces exactly one
+            // `homeWorkTransition` candidate for `FakeGapSuggestionService`'s
+            // `uiTestService(gapStart:)` to pick — the suggestion shown in the
+            // UI test is genuinely built from real resolver/role logic, only
+            // the model's own ranking step is faked.
+            home.homeWorkRole = .home
+            let workPlace = SavedPlace(name: "Regional Office HQ", latitude: -23.40, longitude: 150.49, defaultActivity: "Work")
+            workPlace.homeWorkRole = .work
+            context.insert(workPlace)
+            let gapDay = calendar.date(byAdding: .day, value: -20, to: day)!
+            context.insert(Visit(arrival: gapDay.addingTimeInterval(8 * 3600), departure: gapDay.addingTimeInterval(9 * 3600),
+                                 latitude: home.latitude, longitude: home.longitude, placeName: "Home",
+                                 inferredActivity: "At home", userActivity: "At home", source: "automatic",
+                                 recognitionConfidence: "learned"))
+            context.insert(Visit(arrival: gapDay.addingTimeInterval(10 * 3600), departure: gapDay.addingTimeInterval(17 * 3600),
+                                 latitude: workPlace.latitude, longitude: workPlace.longitude, placeName: "Regional Office HQ",
+                                 inferredActivity: "Work", userActivity: "Work", source: "automatic",
+                                 recognitionConfidence: "learned"))
+        }
         if ProcessInfo.processInfo.arguments.contains("-ui-test-week-travel") {
             // A dedicated long transition makes the Week card's meaningful-travel
             // state deterministic without changing the default seed's small-trip case.

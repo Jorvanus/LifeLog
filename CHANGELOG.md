@@ -2,6 +2,37 @@
 
 ## 2026-08-17
 
+### Added Apple Intelligence help for one unlogged gap
+
+- Unlogged Time → a selected gap → Add Visit now offers a compact "Help me
+  classify this gap" action. It handles exactly the one gap already selected
+  and never silently creates, edits, merges, or deletes a Visit — every result
+  is an editable draft the person reviews and explicitly saves or dismisses.
+- LifeLog first builds a small set of valid, deterministic candidates from its
+  own resolver rules, Saved Place Home/Work roles, and travel logic —
+  continuation of a bordering Home/Work stay, a Home↔Work commute, or the same
+  resolved place on both sides. Apple's on-device Foundation Models framework
+  may only rank or decline one of those candidates by kind; it can never
+  return a free-form place, activity, coordinate, or invented fact, and a
+  local validator rejects any response naming a candidate LifeLog didn't
+  supply.
+- Outcomes stay cautious by design: "Possibly still at Home.", "Possible
+  transition between Home and Regional Office.", or "No reliable suggestion —
+  choose manually." when the evidence, the candidate list, or the model's own
+  output isn't trustworthy — low confidence collapses to the same cautious
+  message rather than showing a shaky "possible" plainly.
+- A travel candidate is presented as transition time (an "A → B" label, no
+  coordinate, no Saved Place), never as a destination; a stay candidate
+  carries a real coordinate forward from the bordering visit, the same way
+  tapping "Before"/"After" already does.
+- A shown suggestion is dropped rather than kept on screen once a
+  neighbouring visit or a Saved Place's Home/Work role changes underneath the
+  open sheet, and a request for a gap that's since been filled or edited
+  resolves to "nothing to suggest" rather than a stale result.
+- Diagnostics record only request duration, a context-size bucket, candidate
+  count, outcome kind, confidence band, and accepted/edited/rejected/saved —
+  never a place, activity, explanation text, or archive content.
+
 ### Added Ask LifeLog
 
 - Insights now has a compact "Ask LifeLog" entry point (the sparkle button in
