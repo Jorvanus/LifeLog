@@ -19,15 +19,6 @@ be changed safely outrank App Store preparation or speculative integrations.
   field-for-field round-trip fixture for every current `@Model` type. A schema field
   added without a corresponding backup field should make that test fail.
 
-- [ ] **Make Restore genuinely atomic and make its contract match the UI.** It is
-  currently described as a complete replacement but appends into any destination;
-  the final full-store audit also runs after the core records have already been
-  saved. Require an empty destination or implement an explicit replace transaction,
-  and complete validation, resolution, activity identity, and portable-preference
-  staging before reporting success. Add tests for a non-empty destination and for a
-  failure in the final audit, proving neither models nor preferences are partially
-  restored.
-
 - [ ] **Request every Health type that Insights already reads.** `healthTypes`
   requests steps, sleep, workouts, routes, and the four heart/breathing signals, but
   omits walking/running distance, active energy, exercise time, and stand time even

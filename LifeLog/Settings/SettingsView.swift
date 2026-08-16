@@ -187,7 +187,7 @@ struct SettingsView: View {
                         ShareLink(item: backupURL) { Label("Share backup", systemImage: "square.and.arrow.up") }
                     }
                     Button { importingBackup = true } label: { Label("Restore backup", systemImage: "arrow.clockwise.icloud") }
-                    Text("Backups include visits, Saved Places, corrections, diagnostics, detailed location callbacks, ignored state, activities, category colours, and LifeLog preferences. Restore into an empty store for a complete replacement.")
+                    Text("Backups include visits, Saved Places, corrections, diagnostics, detailed location callbacks, ignored state, activities, category colours, and LifeLog preferences. Restore is a complete replacement and requires an empty store — use \"Erase all data\" below first.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section {
@@ -230,7 +230,9 @@ struct SettingsView: View {
                         let accessed = url.startAccessingSecurityScopedResource(); defer { if accessed { url.stopAccessingSecurityScopedResource() } }
                         try LocalBackupService.restore(Data(contentsOf: url), into: context)
                         importMessage = "Backup restored. Restart LifeLog to refresh all screens."
-                    } catch { importMessage = "LifeLog couldn’t restore that backup. No changes were applied if validation failed." }
+                    } catch let error as RestoreError {
+                        importMessage = error.errorDescription
+                    } catch { importMessage = "LifeLog couldn’t restore that backup. No changes were applied." }
                 }
                 .alert("Journal import", isPresented: Binding(get: { importMessage != nil }, set: { if !$0 { importMessage = nil } })) {
                     Button("OK", role: .cancel) { importMessage = nil }

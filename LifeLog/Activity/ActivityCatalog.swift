@@ -72,8 +72,16 @@ enum ActivityIdentityMigration {
     /// calls this from its own background `@ModelActor`, and `ActivityCatalog
     /// .load()` (the default parameter) is itself a plain, unisolated read of
     /// UserDefaults, so nothing here actually needs the main actor.
+    ///
+    /// `save` defaults to `true` for every existing caller's own transaction
+    /// boundary. `LocalBackupService.restore` passes `false`: it folds this
+    /// insert into a later, single commit shared with the rest of the restore,
+    /// so a failure anywhere in that commit rolls this back too instead of
+    /// leaving an adopted definition behind a restore that never completed.
+    @discardableResult
     nonisolated static func adoptLegacyDefinitions(context: ModelContext,
-                                                   definitions: [ActivityDefinition] = ActivityCatalog.load()) throws -> Int {
+                                                   definitions: [ActivityDefinition] = ActivityCatalog.load(),
+                                                   save: Bool = true) throws -> Int {
         let existing = try context.fetch(FetchDescriptor<ActivityDefinitionRecord>())
         let existingIDs = Set(existing.map(\.stableID))
         var adopted = 0
@@ -84,7 +92,7 @@ enum ActivityIdentityMigration {
             ))
             adopted += 1
         }
-        if adopted > 0 { try context.save() }
+        if save, adopted > 0 { try context.save() }
         return adopted
     }
 

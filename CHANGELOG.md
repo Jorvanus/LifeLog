@@ -2,6 +2,33 @@
 
 ## 2026-08-16
 
+### Restore is now genuinely atomic and requires an empty store
+
+- `LocalBackupService.restore` was described in Settings as "a complete
+  replacement," but always `insert`ed every backup record unconditionally —
+  restoring into a store that already had data silently duplicated every
+  visit, Saved Place, correction, diagnostic, and location callback instead
+  of replacing them. Restore now checks the destination is empty of those
+  five model types up front and throws a clear error otherwise, directing
+  the person to "Erase all data" first.
+- The full-store audit (`ActivityLocationPolicy.runFullStoreAudit`, via
+  `VisitMutationService.finalize`) used to run *after* the core records were
+  already committed with their own `context.save()`, so an audit failure
+  left the store half-restored despite the function's own doc comment
+  claiming atomicity. Every insert — visits, places, corrections,
+  diagnostics, location events, and (for a V1/V2 archive) the reconstructed
+  legacy activity-identity rows — now stays unsaved until the single commit
+  inside that audit, so a resolver or save failure rolls back the whole
+  restore, not just the audit's own changes.
+- Preferences, the legacy `ActivityCatalog` UserDefaults snapshot, and the
+  legacy ignored-visit keys are now written only after that commit is
+  confirmed, instead of before the audit that could still fail — so a failed
+  restore can no longer leave preferences restored against a store that
+  never actually committed.
+- New tests cover restoring into a non-empty destination (rejected, not
+  appended) and a failure during the final audit (proving neither models nor
+  preferences land partially restored).
+
 ### Health permission request no longer omits four Activity-ring metrics Insights already reads
 
 - `ActivityDataService` asked HealthKit for steps, sleep, workouts, routes, and
