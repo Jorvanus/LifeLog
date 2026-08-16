@@ -107,6 +107,20 @@ struct RootView: View {
                                    message: "Activity identity migration will retry: \(error.localizedDescription)",
                                    severity: "warning")
             }
+            // One-time, off the main actor, so a large backlog cannot delay this
+            // `.task` or the interaction budget that follows it — see
+            // `ActivityLinkingCatchUp`'s own doc comment for why this exists
+            // alongside the paged migration above rather than replacing it.
+            Task {
+                if let linked = try? await ActivityLinkingCatchUp.runIfNeeded(modelContainer: modelContainer),
+                   linked > 0 {
+                    await MainActor.run {
+                        Diagnostics.record(context, subsystem: "Activities",
+                                           message: "Linked \(linked) visits and Saved Places to the catalogue in one pass.",
+                                           severity: "info")
+                    }
+                }
+            }
             // The one place this runs unconditionally at launch. Without it, nothing
             // ever persists the seeded catalogue to UserDefaults until the person
             // happens to visit Settings → Activities, the place-activity picker, or

@@ -359,6 +359,373 @@ struct ArchiveRepairTests {
         #expect(sleeping.placeName == "Sleep")
     }
 
+    // MARK: - Walking placeholder places
+
+    @Test("A walking visit named after the import placeholder is renamed to Walking")
+    func renamesImportedJournalWalkingVisit() throws {
+        let walking = visit(0, 1, place: "Imported journal", activity: "Walking")
+
+        let renamed = ArchiveRepair.renameWalkingPlaceholders(in: [walking])
+
+        #expect(renamed == 1)
+        #expect(walking.placeName == "Walking")
+    }
+
+    @Test("A walking visit recorded at a real place keeps that place")
+    func keepsARealPlaceForAWalkingVisit() throws {
+        let walking = visit(0, 1, place: "Cedric Archer Park", activity: "Walking", source: "automatic")
+
+        #expect(ArchiveRepair.renameWalkingPlaceholders(in: [walking]) == 0)
+        #expect(walking.placeName == "Cedric Archer Park")
+    }
+
+    @Test("A dog walk is a distinct activity and is not folded into Walking")
+    func dogWalkIsNotRenamedToWalking() throws {
+        // "walk" is a substring of "Dog walk" too -- this is the case that rules
+        // out substring matching and requires an exact activity-name match.
+        let dogWalk = visit(0, 1, place: "Imported journal", activity: "Dog walk")
+
+        #expect(ArchiveRepair.renameWalkingPlaceholders(in: [dogWalk]) == 0)
+        #expect(dogWalk.placeName == "Imported journal")
+    }
+
+    @Test("Sleep and walking placeholders are independent")
+    func sleepAndWalkingPlaceholdersDoNotCrossMatch() throws {
+        let sleeping = visit(0, 8, place: "Imported journal", activity: "Sleeping")
+        let walking = visit(9, 1, place: "Imported journal", activity: "Walking")
+
+        #expect(ArchiveRepair.renameWalkingPlaceholders(in: [sleeping, walking]) == 1)
+        #expect(sleeping.placeName == "Imported journal", "the walking pass must not touch a sleep visit")
+        #expect(walking.placeName == "Walking")
+    }
+
+    // MARK: - Routine gap fill
+
+    /// A UTC calendar, fixed regardless of the machine running the tests —
+    /// `templateSegments`' weekday/weekend split must not depend on where the
+    /// test happens to run.
+    private var utc: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        return calendar
+    }
+
+    /// 2024-01-01 00:00 UTC, a Monday. `weekday(offsetDays:)` builds a date at
+    /// a chosen number of whole days from this anchor, so a test can say
+    /// "the following Saturday" without depending on the environment's
+    /// calendar for the arithmetic.
+    private var mondayMidnight: Date { utc.date(from: DateComponents(year: 2024, month: 1, day: 1))! }
+
+    @Test("A gap between two visits with nothing between them is found")
+    func findsAGapBetweenTwoVisits() throws {
+        let first = visit(0, 1, place: "Rockhampton Grammar School", activity: "Eating")
+        let second = visit(3, 1, place: "Imported journal", activity: "Walking")
+
+        let gaps = ArchiveRepair.unloggedGaps(in: [first, second])
+
+        #expect(gaps.count == 1)
+        #expect(gaps.first?.start == first.departure)
+        #expect(gaps.first?.end == second.arrival)
+    }
+
+    @Test("Overlapping or touching visits leave no gap")
+    func overlappingVisitsLeaveNoGap() throws {
+        let first = visit(0, 2, place: "8 Justin St", activity: "At home")
+        let second = visit(1, 2, place: "8 Justin St", activity: "Sleeping")
+
+        #expect(ArchiveRepair.unloggedGaps(in: [first, second]).isEmpty)
+    }
+
+    @Test("A gap shorter than the minimum is not reported")
+    func shortGapIsNotReported() throws {
+        let first = visit(0, 1, place: "Imported journal", activity: "Walking")
+        let second = visit(1 + 0.1, 1, place: "Imported journal", activity: "Eating")
+
+        #expect(ArchiveRepair.unloggedGaps(in: [first, second], minimumHours: 0.5).isEmpty)
+    }
+
+    @Test("A superseded visit does not count as coverage")
+    func supersededVisitDoesNotCoverAGap() throws {
+        let first = visit(0, 1, place: "Imported journal", activity: "Walking")
+        let phantom = Visit(arrival: start.addingTimeInterval(1 * 3600),
+                            departure: start.addingTimeInterval(3 * 3600),
+                            latitude: 0, longitude: 0, placeName: "Identifying…",
+                            inferredActivity: "Visiting", source: "automatic-superseded",
+                            resolutionState: .superseded)
+        let second = visit(3, 1, place: "Imported journal", activity: "Eating")
+
+        let gaps = ArchiveRepair.unloggedGaps(in: [first, phantom, second])
+
+        #expect(gaps.count == 1, "the superseded row must not be treated as covering its own span")
+        #expect(gaps.first?.start == first.departure)
+        #expect(gaps.first?.end == second.arrival)
+    }
+
+    @Test("A gap longer than a day is not fillable")
+    func longGapIsNotFillable() throws {
+        let first = visit(0, 1, place: "Imported journal", activity: "Walking")
+        let second = visit(1 + 30, 1, place: "Imported journal", activity: "Eating")
+
+        #expect(ArchiveRepair.fillableGaps(in: [first, second]).isEmpty)
+        #expect(ArchiveRepair.unloggedGaps(in: [first, second]).count == 1,
+               "still found and reported, just not eligible to fill")
+    }
+
+    @Test("A gap touching a live-tracked visit on either side is not fillable")
+    func liveBorderedGapIsNotFillable() throws {
+        let importedBefore = visit(0, 1, place: "Imported journal", activity: "Walking")
+        let liveAfter = Visit(arrival: start.addingTimeInterval(4 * 3600),
+                              departure: start.addingTimeInterval(5 * 3600),
+                              latitude: 0, longitude: 0, placeName: "Regional Office",
+                              inferredActivity: "Work", source: "automatic")
+
+        #expect(ArchiveRepair.fillableGaps(in: [importedBefore, liveAfter]).isEmpty)
+
+        let liveBefore = Visit(arrival: start, departure: start.addingTimeInterval(3600),
+                               latitude: 0, longitude: 0, placeName: "Regional Office",
+                               inferredActivity: "Work", source: "automatic")
+        let importedAfter = visit(4, 1, place: "Imported journal", activity: "Eating")
+
+        #expect(ArchiveRepair.fillableGaps(in: [liveBefore, importedAfter]).isEmpty)
+    }
+
+    @Test("A short gap entirely within one band produces a single segment")
+    func shortGapWithinOneBandIsOneSegment() throws {
+        // Monday 18:00 -> 19:00: entirely inside the 5pm-midnight "At home" band.
+        let gapStart = mondayMidnight.addingTimeInterval(18 * 3600)
+        let gapEnd = mondayMidnight.addingTimeInterval(19 * 3600)
+        let before = Visit(arrival: gapStart.addingTimeInterval(-3600), departure: gapStart,
+                           latitude: 0, longitude: 0, placeName: "Imported journal",
+                           inferredActivity: "Walking", source: "imported-journal")
+        let after = Visit(arrival: gapEnd, departure: gapEnd.addingTimeInterval(3600),
+                          latitude: 0, longitude: 0, placeName: "Imported journal",
+                          inferredActivity: "Eating", source: "imported-journal")
+        let gap = ArchiveRepair.UnloggedGap(start: gapStart, end: gapEnd, before: before, after: after)
+
+        let segments = ArchiveRepair.templateSegments(for: gap, calendar: utc)
+
+        #expect(segments.count == 1)
+        #expect(segments.first?.activity == "At home")
+        #expect(segments.first?.start == gapStart)
+        #expect(segments.first?.end == gapEnd)
+    }
+
+    @Test("An evening-to-early-morning gap splits into home then sleep")
+    func eveningIntoSleepSplitsCorrectly() throws {
+        let gapStart = mondayMidnight.addingTimeInterval(17 * 3600 + 15 * 60) // Mon 17:15
+        let gapEnd = mondayMidnight.addingTimeInterval(26 * 3600 + 33 * 60)   // Tue 02:33
+        let before = Visit(arrival: gapStart.addingTimeInterval(-3600), departure: gapStart,
+                           latitude: 0, longitude: 0, placeName: "Rockhampton Grammar School",
+                           inferredActivity: "At home", source: "imported-journal")
+        let after = Visit(arrival: gapEnd, departure: gapEnd.addingTimeInterval(3600),
+                          latitude: 0, longitude: 0, placeName: "Rockhampton Grammar School",
+                          inferredActivity: "Sleeping", source: "imported-journal")
+        let gap = ArchiveRepair.UnloggedGap(start: gapStart, end: gapEnd, before: before, after: after)
+
+        let segments = ArchiveRepair.templateSegments(for: gap, calendar: utc)
+
+        #expect(segments.map(\.activity) == ["At home", "Sleeping"])
+        #expect(segments[0].start == gapStart)
+        #expect(segments[0].end == mondayMidnight.addingTimeInterval(24 * 3600))
+        #expect(segments[1].start == mondayMidnight.addingTimeInterval(24 * 3600))
+        #expect(segments[1].end == gapEnd)
+    }
+
+    @Test("9am-5pm is Work on a weekday and At home on a weekend")
+    func nineToFiveDependsOnWeekday() throws {
+        let mondayGap = ArchiveRepair.UnloggedGap(
+            start: mondayMidnight.addingTimeInterval(10 * 3600), end: mondayMidnight.addingTimeInterval(11 * 3600),
+            before: visit(0, 1, place: "Imported journal", activity: "Walking"),
+            after: visit(0, 1, place: "Imported journal", activity: "Walking")
+        )
+        let saturdayMidnight = mondayMidnight.addingTimeInterval(5 * 24 * 3600)
+        let saturdayGap = ArchiveRepair.UnloggedGap(
+            start: saturdayMidnight.addingTimeInterval(10 * 3600), end: saturdayMidnight.addingTimeInterval(11 * 3600),
+            before: visit(0, 1, place: "Imported journal", activity: "Walking"),
+            after: visit(0, 1, place: "Imported journal", activity: "Walking")
+        )
+
+        #expect(ArchiveRepair.templateSegments(for: mondayGap, calendar: utc).map(\.activity) == ["Work"])
+        #expect(ArchiveRepair.templateSegments(for: saturdayGap, calendar: utc).map(\.activity) == ["At home"])
+    }
+
+    @Test("A full-day gap tiles all four bands with no remainder")
+    func fullDayGapTilesEveryBand() throws {
+        let gap = ArchiveRepair.UnloggedGap(
+            start: mondayMidnight, end: mondayMidnight.addingTimeInterval(24 * 3600),
+            before: visit(0, 1, place: "Imported journal", activity: "Walking"),
+            after: visit(0, 1, place: "Imported journal", activity: "Walking")
+        )
+
+        let segments = ArchiveRepair.templateSegments(for: gap, calendar: utc)
+
+        #expect(segments.map(\.activity) == ["Sleeping", "At home", "Work", "At home"])
+        #expect(segments.first?.start == mondayMidnight)
+        #expect(segments.last?.end == mondayMidnight.addingTimeInterval(24 * 3600))
+        // No gap between consecutive segments, and none overlap.
+        for (a, b) in zip(segments, segments.dropFirst()) { #expect(a.end == b.start) }
+    }
+
+    @Test("Created visits are imported-journal, carry the fill note, and link to Saved Place roles")
+    func createdVisitsCarryTheRightFieldsAndCoordinates() throws {
+        let home = SavedPlace(name: "Home", latitude: -23.445, longitude: 150.452, radius: 100,
+                              defaultActivity: "At home")
+        home.role = SavedPlaceRole.home.rawValue
+        // Monday 16:00 -> 18:00: 16:00-17:00 falls in the weekday Work band,
+        // 17:00-18:00 in the At home band, so this one gap guarantees both.
+        let gapStart = mondayMidnight.addingTimeInterval(16 * 3600)
+        let gapEnd = mondayMidnight.addingTimeInterval(18 * 3600)
+        let before = Visit(arrival: gapStart.addingTimeInterval(-3600), departure: gapStart,
+                           latitude: 0, longitude: 0, placeName: "Imported journal",
+                           inferredActivity: "Walking", source: "imported-journal")
+        let after = Visit(arrival: gapEnd, departure: gapEnd.addingTimeInterval(3600),
+                          latitude: 0, longitude: 0, placeName: "Imported journal",
+                          inferredActivity: "Eating", source: "imported-journal")
+
+        let created = ArchiveRepair.routineGapFillVisits(in: [before, after], savedPlaces: [home], calendar: utc)
+
+        #expect(!created.isEmpty)
+        for visit in created {
+            #expect(visit.source == "imported-journal")
+            #expect(visit.note == ArchiveRepair.routineGapFillNote)
+        }
+        let homeSegment = created.first { $0.inferredActivity == "At home" }
+        #expect(homeSegment?.placeName == "Home")
+        #expect(homeSegment?.latitude == home.latitude)
+        #expect(homeSegment?.longitude == home.longitude)
+        let workSegment = created.first { $0.inferredActivity == "Work" }
+        #expect(workSegment?.placeName == "Work", "no Work-role Saved Place exists, so it falls back to a plain label")
+        #expect(workSegment?.latitude == 0)
+    }
+
+    @Test("A Sleeping segment is always named Sleep, matching the sleep-placeholder rename")
+    func sleepingSegmentUsesTheCanonicalSleepName() throws {
+        // Monday 23:00 -> 01:00: crosses straight into the midnight-7am band.
+        let gapStart = mondayMidnight.addingTimeInterval(23 * 3600)
+        let gapEnd = mondayMidnight.addingTimeInterval(25 * 3600)
+        let before = Visit(arrival: gapStart.addingTimeInterval(-3600), departure: gapStart,
+                           latitude: 0, longitude: 0, placeName: "Imported journal",
+                           inferredActivity: "Walking", source: "imported-journal")
+        let after = Visit(arrival: gapEnd, departure: gapEnd.addingTimeInterval(3600),
+                          latitude: 0, longitude: 0, placeName: "Imported journal",
+                          inferredActivity: "Eating", source: "imported-journal")
+
+        let created = ArchiveRepair.routineGapFillVisits(in: [before, after], savedPlaces: [], calendar: utc)
+
+        let sleepSegment = created.first { $0.inferredActivity == "Sleeping" }
+        #expect(sleepSegment?.placeName == ArchiveRepair.sleepPlaceName)
+    }
+
+    @Test("Scan surfaces fillable gaps and applying creates the visits")
+    func scanAndApplyResolveRoutineGaps() async throws {
+        let container = try ModelContainer(
+            for: Visit.self, SavedPlace.self, ActivityDefinitionRecord.self, VisitCorrection.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let context = ModelContext(container)
+        let before = visit(0, 1, place: "Imported journal", activity: "Walking")
+        let after = visit(1 + 9, 1, place: "Imported journal", activity: "Eating")
+        context.insert(before)
+        context.insert(after)
+        try context.save()
+
+        let actor = ArchiveRepairActor(modelContainer: container)
+        let findings = try await actor.scan()
+        #expect(findings.unloggedGapCount == 1)
+        #expect(findings.fillableGapCount == 1)
+        #expect(findings.routineGapFillRows > 0)
+
+        let report = try await actor.apply(steps: [.fillRoutineGaps])
+        #expect(report.routineGapsFilled == findings.routineGapFillRows)
+
+        let allVisits = try ModelContext(container).fetch(FetchDescriptor<Visit>())
+        #expect(allVisits.count == 2 + report.routineGapsFilled)
+
+        let rescanned = try await actor.scan()
+        #expect(rescanned.unloggedGapCount == 0, "the archive is now fully covered")
+    }
+
+    @Test("Gap listings mark eligibility and preview correctly, newest first")
+    func gapListingsReportEligibilityAndOrder() throws {
+        // Two gaps back to back, with no gap between them: older -> olderAfter
+        // (fillable), then liveBefore -> newerAfter (not, since liveBefore is
+        // automatic-sourced). liveBefore starts exactly where olderAfter ends,
+        // so there is no accidental third gap between the two pairs.
+        let older = visit(0, 1, place: "Imported journal", activity: "Walking")
+        let olderAfter = visit(1 + 9, 1, place: "Imported journal", activity: "Eating")
+        let liveBefore = Visit(arrival: olderAfter.departure!, departure: olderAfter.departure!.addingTimeInterval(3600),
+                               latitude: 0, longitude: 0, placeName: "Regional Office",
+                               inferredActivity: "Work", source: "automatic")
+        let newerAfter = Visit(arrival: liveBefore.departure!.addingTimeInterval(3600),
+                               departure: liveBefore.departure!.addingTimeInterval(7200),
+                               latitude: 0, longitude: 0, placeName: "Imported journal",
+                               inferredActivity: "Eating", source: "imported-journal")
+
+        let listings = ArchiveRepair.gapListings(in: [older, olderAfter, liveBefore, newerAfter])
+
+        #expect(listings.count == 2)
+        // Newest first.
+        #expect(listings[0].start > listings[1].start)
+        let fillable = listings.first { $0.beforeActivity == "Walking" }
+        #expect(fillable?.isFillable == true)
+        #expect(fillable?.fillPreview.isEmpty == false)
+        let liveBordered = listings.first { $0.beforeActivity == "Work" }
+        #expect(liveBordered?.isFillable == false)
+        #expect(liveBordered?.fillPreview.isEmpty == true)
+    }
+
+    @Test("Filling a single gap by its start and end creates only that gap's visits")
+    func fillSingleGapCreatesOnlyThatGap() async throws {
+        let container = try ModelContainer(
+            for: Visit.self, SavedPlace.self, ActivityDefinitionRecord.self, VisitCorrection.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let context = ModelContext(container)
+        let firstBefore = visit(0, 1, place: "Imported journal", activity: "Walking")
+        let firstAfter = visit(1 + 9, 1, place: "Imported journal", activity: "Eating")
+        // Starts exactly where `firstAfter` ends, so there is no accidental
+        // third gap between the two pairs this test cares about.
+        let secondBefore = Visit(arrival: firstAfter.departure!, departure: firstAfter.departure!.addingTimeInterval(3600),
+                                 latitude: 0, longitude: 0, placeName: "Imported journal",
+                                 inferredActivity: "Walking", source: "imported-journal")
+        let secondAfter = Visit(arrival: secondBefore.departure!.addingTimeInterval(9 * 3600),
+                                departure: secondBefore.departure!.addingTimeInterval(10 * 3600),
+                                latitude: 0, longitude: 0, placeName: "Imported journal",
+                                inferredActivity: "Eating", source: "imported-journal")
+        [firstBefore, firstAfter, secondBefore, secondAfter].forEach(context.insert)
+        try context.save()
+
+        let actor = ArchiveRepairActor(modelContainer: container)
+        let before = try await actor.listGaps()
+        #expect(before.count == 2)
+        let target = before.first { $0.start == firstBefore.departure }!
+
+        let created = try await actor.fillSingleGap(start: target.start, end: target.end)
+
+        #expect(created > 0)
+        let after = try await actor.listGaps()
+        #expect(after.count == 1, "only the targeted gap was filled")
+        #expect(after.first?.start == secondBefore.departure)
+    }
+
+    @Test("Filling a gap that no longer exists creates nothing and does not throw")
+    func fillingAStaleGapIsANoOp() async throws {
+        let container = try ModelContainer(
+            for: Visit.self, SavedPlace.self, ActivityDefinitionRecord.self, VisitCorrection.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let context = ModelContext(container)
+        context.insert(visit(0, 1, place: "Imported journal", activity: "Walking"))
+        try context.save()
+
+        let actor = ArchiveRepairActor(modelContainer: container)
+        let created = try await actor.fillSingleGap(start: start, end: start.addingTimeInterval(999_999))
+
+        #expect(created == 0)
+        let visits = try ModelContext(container).fetch(FetchDescriptor<Visit>())
+        #expect(visits.count == 1, "no phantom visit was inserted for a gap that was never real")
+    }
+
     // MARK: - Duplicate activity definitions
 
     @Test("Two definitions with the exact same name are grouped, oldest first")
@@ -504,8 +871,6 @@ struct ArchiveRepairTests {
         let outer = visit(700, 1, place: "Imported journal", activity: "Travelling")
         context.insert(outer)
         context.insert(visit(700.25, 0.5, place: "Imported journal", activity: "Travelling"))
-        // A duplicate-definition name blocking linking, so the full apply proves
-        // the merge step actually unblocks the linking step that follows it.
         let older = ActivityDefinitionRecord(stableID: UUID(), name: "Groceries", category: "Shopping",
                                              symbol: "cart.fill", createdAt: start)
         let newer = ActivityDefinitionRecord(stableID: UUID(), name: "Groceries", category: "Shopping",
@@ -521,13 +886,8 @@ struct ArchiveRepairTests {
         #expect(report.journeysCollapsed == 1)
         #expect(report.coordinatesAdded == 1)
         #expect(report.definitionsMerged == 1)
-        // The "Groceries" visit could only link once the duplicate definition
-        // was folded — this is the regression this step exists to fix.
-        #expect(report.activitiesLinked >= 1)
         let remaining = try ModelContext(container).fetch(FetchDescriptor<Visit>())
         #expect(remaining.count == 3)
-        let groceriesVisit = remaining.first { $0.activity == "Groceries" }
-        #expect(groceriesVisit?.activityDefinitionID == older.stableID)
     }
 
     @Test("Scan surfaces duplicate activity definitions and applying merges them")
@@ -579,5 +939,126 @@ struct ArchiveRepairTests {
 
         let rescanned = try await actor.scan()
         #expect(rescanned.sleepPlaceholderRows == 0)
+    }
+
+    @Test("Scan surfaces walking placeholders and applying renames them")
+    func scanAndApplyResolveWalkingPlaceholders() async throws {
+        let container = try ModelContainer(
+            for: Visit.self, SavedPlace.self, ActivityDefinitionRecord.self, VisitCorrection.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let context = ModelContext(container)
+        context.insert(visit(0, 1, place: "Imported journal", activity: "Walking"))
+        try context.save()
+
+        let actor = ArchiveRepairActor(modelContainer: container)
+        let findings = try await actor.scan()
+        #expect(findings.walkingPlaceholderRows == 1)
+
+        let report = try await actor.apply(steps: [.renameWalkingPlaceholders])
+        #expect(report.walkingPlaceholdersRenamed == 1)
+
+        let rescanned = try await actor.scan()
+        #expect(rescanned.walkingPlaceholderRows == 0)
+    }
+
+    // MARK: - Source scoping
+
+    /// Every one of these reproduces a real bug: the first shipped version of
+    /// this file matched and rewrote visits across every source, and on the
+    /// owner's device it deleted nine genuine `health-workout` visits -- each
+    /// carrying its own `healthKitSampleIDs` -- because they happened to share
+    /// an exact timestamp with an unrelated `imported-journal` row for the same
+    /// walk. Two different sources agreeing on one event is corroboration, not
+    /// a duplicate. Every analysis function must treat a live-sourced visit as
+    /// untouchable, full stop, regardless of what it happens to resemble.
+
+    @Test("A live HealthKit workout is never matched as a duplicate of an imported row")
+    func healthWorkoutSurvivesAnIdenticalImportedRow() throws {
+        // The exact shape that was destroyed: same activity, same arrival, same
+        // departure, different source.
+        let imported = visit(0, 0.5, place: "Imported journal", activity: "Walking")
+        let workout = Visit(arrival: imported.arrival, departure: imported.departure!,
+                            latitude: 0, longitude: 0, placeName: "Walking workout",
+                            inferredActivity: "Walking", source: "health-workout",
+                            healthKitSampleIDs: [UUID()])
+
+        let removable = ArchiveRepair.duplicateRows(in: [imported, workout])
+
+        #expect(removable.isEmpty, "neither row may be removed -- a live source can never be a duplicate candidate")
+    }
+
+    @Test("A live automatic journey is never collapsed as nested inside an imported one")
+    func automaticJourneySurvivesNestingInAnImportedOne() throws {
+        let outer = visit(0, 2, place: "Imported journal", activity: "Travelling")
+        let inner = Visit(arrival: start.addingTimeInterval(0.5 * 3600),
+                          departure: start.addingTimeInterval(1 * 3600),
+                          latitude: 0, longitude: 0, placeName: "",
+                          inferredActivity: "Travelling", source: "automatic")
+
+        #expect(ArchiveRepair.nestedJourneyRows(in: [outer, inner]).isEmpty)
+    }
+
+    @Test("A live runaway stay is never closed by this repair")
+    func liveRunawayStayIsNeverClosed() throws {
+        let runaway = Visit(arrival: start, departure: start.addingTimeInterval(500 * 3600),
+                            latitude: 0, longitude: 0, placeName: "8 Justin St",
+                            inferredActivity: "At home", source: "automatic")
+        let boundary = visit(30, 2, place: "Woolworths Gracemere", activity: "Groceries")
+        let originalEnd = runaway.departure
+
+        let result = ArchiveRepair.closeRunawayStays(in: [runaway, boundary])
+
+        #expect(result.closed == 0)
+        #expect(runaway.departure == originalEnd)
+    }
+
+    @Test("A live visit at a Saved Place name still gets no inferred coordinates")
+    func liveVisitIsNeverCoordinateBackfilled() throws {
+        let home = SavedPlace(name: "8 Justin St", latitude: -23.4455, longitude: 150.4523,
+                              radius: 100, defaultActivity: "At home")
+        let liveVisit = Visit(arrival: start, departure: start.addingTimeInterval(3600),
+                              latitude: 0, longitude: 0, placeName: "8 Justin St",
+                              inferredActivity: "At home", source: "manual")
+
+        #expect(ArchiveRepair.backfillCoordinates(in: [liveVisit], savedPlaces: [home]) == 0)
+        #expect(liveVisit.latitude == 0)
+    }
+
+    @Test("A live sleep visit is never renamed even with a placeholder place")
+    func liveSleepVisitIsNeverRenamed() throws {
+        let liveSleep = Visit(arrival: start, departure: start.addingTimeInterval(8 * 3600),
+                              latitude: 0, longitude: 0, placeName: "Identifying…",
+                              inferredActivity: "Sleeping", source: "manual")
+
+        #expect(ArchiveRepair.renameSleepPlaceholders(in: [liveSleep]) == 0)
+        #expect(liveSleep.placeName == "Identifying…")
+    }
+
+    @Test("A live walking visit is never renamed even with a placeholder place")
+    func liveWalkingVisitIsNeverRenamed() throws {
+        let liveWalk = Visit(arrival: start, departure: start.addingTimeInterval(3600),
+                             latitude: 0, longitude: 0, placeName: "Identifying…",
+                             inferredActivity: "Walking", source: "automatic")
+
+        #expect(ArchiveRepair.renameWalkingPlaceholders(in: [liveWalk]) == 0)
+        #expect(liveWalk.placeName == "Identifying…")
+    }
+
+    @Test("A runaway import can still close against a boundary from a live source")
+    func importedRunawayClosesAgainstALiveBoundary() throws {
+        // The one place a live-sourced visit *should* participate: proving an
+        // old imported stay ended. Only the row being closed is restricted to
+        // imported-journal, not the evidence that it ended.
+        let runaway = visit(0, 500, place: "8 Justin St", activity: "At home")
+        let liveBoundary = Visit(arrival: start.addingTimeInterval(30 * 3600),
+                                 departure: start.addingTimeInterval(32 * 3600),
+                                 latitude: 0, longitude: 0, placeName: "Regional Office",
+                                 inferredActivity: "Work", source: "automatic")
+
+        let result = ArchiveRepair.closeRunawayStays(in: [runaway, liveBoundary])
+
+        #expect(result.closed == 1)
+        #expect(runaway.departure == liveBoundary.arrival)
     }
 }

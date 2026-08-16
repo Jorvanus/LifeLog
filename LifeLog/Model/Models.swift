@@ -427,6 +427,23 @@ final class Visit {
     }
     var hasPlaceholderName: Bool { Visit.isPlaceholderName(placeName) }
 
+    /// The Life Cycle CSV import's stand-in for "no place was recorded" — kept
+    /// separate from `isPlaceholderName` rather than folded into it, because
+    /// that name governs live location-resolution behaviour
+    /// (`needsCategorisation`, geofence learning, journey stitching) that is
+    /// scoped to `.automatic`/`.manual` visits throughout the app; widening it
+    /// would touch two dozen call sites that were never meant to reason about
+    /// the imported journal. `isUninformativePlaceName` is the broader "does
+    /// this name mean anything" question a *display* feature should ask
+    /// instead — used by the archive repair pass and by Insights' place-of-year
+    /// grouping to decide whether a name is worth showing as a place at all.
+    static let importedJournalPlaceName = "Imported journal"
+    static func isUninformativePlaceName(_ name: String) -> Bool {
+        isPlaceholderName(name)
+            || name.trimmingCharacters(in: .whitespacesAndNewlines)
+                .caseInsensitiveCompare(importedJournalPlaceName) == .orderedSame
+    }
+
     /// A visit needs review when it was recorded automatically, LifeLog never
     /// resolved a place name for it, and the person has not said what they were
     /// doing. Place name is the signal here — LifeLog no longer models a place type.

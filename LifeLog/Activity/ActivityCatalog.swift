@@ -67,8 +67,13 @@ enum ActivityIdentityMigration {
 
     /// Imports each legacy definition by its pre-existing UUID. IDs, not names, are
     /// the deduplication key: two similar labels remain two activities by design.
-    static func adoptLegacyDefinitions(context: ModelContext,
-                                       definitions: [ActivityDefinition] = ActivityCatalog.load()) throws -> Int {
+    ///
+    /// `nonisolated` for the same reason `linkAll` is: `ActivityLinkingCatchUp`
+    /// calls this from its own background `@ModelActor`, and `ActivityCatalog
+    /// .load()` (the default parameter) is itself a plain, unisolated read of
+    /// UserDefaults, so nothing here actually needs the main actor.
+    nonisolated static func adoptLegacyDefinitions(context: ModelContext,
+                                                   definitions: [ActivityDefinition] = ActivityCatalog.load()) throws -> Int {
         let existing = try context.fetch(FetchDescriptor<ActivityDefinitionRecord>())
         let existingIDs = Set(existing.map(\.stableID))
         var adopted = 0
@@ -115,13 +120,6 @@ enum ActivityIdentityMigration {
 
         func id(for label: String) -> UUID? {
             exact[label] ?? folded[label.lowercased()]
-        }
-
-        /// True when the label only links via the case-only fallback. Reported by
-        /// the repair scan so the owner can see how many rows were unreachable
-        /// for that reason alone.
-        func matchesByCaseOnly(_ label: String) -> Bool {
-            exact[label] == nil && folded[label.lowercased()] != nil
         }
     }
 
@@ -193,14 +191,6 @@ enum ActivityIdentityMigration {
             linked += 1
         }
         return linked
-    }
-
-    /// How many unlinked visits match a definition only by case. Reported by the
-    /// repair scan; read-only.
-    nonisolated static func caseOnlyMatchCount(visits: [Visit],
-                                               definitions: [ActivityDefinitionRecord]) -> Int {
-        let index = LabelIndex(definitions: definitions)
-        return visits.filter { $0.activityDefinitionID == nil && index.matchesByCaseOnly($0.activity) }.count
     }
 
     /// A rename changes one definition. Visit and place snapshots stay untouched so

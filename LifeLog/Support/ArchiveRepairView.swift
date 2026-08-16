@@ -26,6 +26,21 @@ struct ArchiveRepairView: View {
         return selectedStepsWithWork.reduce(0) { $0 + findings.count(for: $1) }
     }
 
+    /// Three distinct things a person can be agreeing to here, and each gets
+    /// its own sentence: removing history, inventing history for time nobody
+    /// recorded, or a plain field-level rewrite. A step can only ever be one
+    /// of these (`deletesRows` and `createsInferredRows` are mutually
+    /// exclusive across `Step`), so this never needs to combine two warnings.
+    private var confirmationMessage: String {
+        if selectedStepsWithWork.contains(where: \.deletesRows) {
+            return "LifeLog will create a complete local backup first. This removes records permanently."
+        }
+        if selectedStepsWithWork.contains(where: \.createsInferredRows) {
+            return "LifeLog will create a complete local backup first. This adds new visits describing time you didn't record, inferred from your routine schedule — it does not change or remove anything that already exists."
+        }
+        return "LifeLog will create a complete local backup first. No records are removed by these steps."
+    }
+
     var body: some View {
         Form {
             if let findings {
@@ -61,9 +76,7 @@ struct ArchiveRepairView: View {
             Button("Create backup and repair \(affectedRows) records", role: .destructive) { apply() }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text(selectedStepsWithWork.contains(where: \.deletesRows)
-                 ? "LifeLog will create a complete local backup first. This removes records permanently."
-                 : "LifeLog will create a complete local backup first. No records are removed by these steps.")
+            Text(confirmationMessage)
         }
         .alert("Archive repair", isPresented: Binding(get: { message != nil },
                                                       set: { if !$0 { message = nil } })) {
@@ -95,12 +108,21 @@ struct ArchiveRepairView: View {
                     LabeledContent("Sleep entries named \"Imported journal\"", value: "\(findings.sleepPlaceholderRows)")
                         .accessibilityIdentifier("repair-sleep-placeholder-count")
                 }
+                if findings.walkingPlaceholderRows > 0 {
+                    LabeledContent("Walking entries named \"Imported journal\"", value: "\(findings.walkingPlaceholderRows)")
+                        .accessibilityIdentifier("repair-walking-placeholder-count")
+                }
                 if findings.duplicateDefinitionRows > 0 {
                     LabeledContent("Duplicate activity definitions", value: "\(findings.duplicateDefinitionRows)")
                         .accessibilityIdentifier("repair-duplicate-definition-count")
                 }
-                if findings.unlinkedActivityRows > 0 {
-                    LabeledContent("Unlinked activities", value: "\(findings.unlinkedActivityRows)")
+                if findings.unloggedGapCount > 0 {
+                    LabeledContent("Unlogged gaps", value: "\(findings.unloggedGapCount)")
+                        .accessibilityIdentifier("repair-unlogged-gap-count")
+                    LabeledContent("Time unaccounted for",
+                                   value: formattedDuration(findings.unloggedGapHours * 3600))
+                    NavigationLink("Review every gap") { UnloggedGapsView() }
+                        .accessibilityIdentifier("review-unlogged-gaps-link")
                 }
                 if findings.uncoordinatedRows > 0 {
                     LabeledContent("Without coordinates", value: "\(findings.uncoordinatedRows)")
@@ -169,6 +191,12 @@ struct ArchiveRepairView: View {
             if findings.duplicateDefinitionRows > 0 {
                 Text("\(findings.duplicateDefinitionNames) activity name\(findings.duplicateDefinitionNames == 1 ? "" : "s") in your catalogue currently point at more than one identity, which blocks linking for every visit using that name until the duplicate is merged.")
             }
+            // Same shape as the runaway note above: the gap between "found" and
+            // "fillable" is a longer-than-a-day cutoff or a live-tracked
+            // boundary, not a bug, so it is stated rather than left to guesswork.
+            if findings.unloggedGapCount > findings.fillableGapCount {
+                Text("\(findings.unloggedGapCount - findings.fillableGapCount) unlogged gaps are either longer than a day or border something live-tracked, so they are left unfilled for you to review by hand.")
+            }
         }
     }
 
@@ -182,7 +210,7 @@ struct ArchiveRepairView: View {
                 }
                 .accessibilityIdentifier("repair-progress")
             } else {
-                Button("Apply repairs", role: selectedStepsWithWork.contains(where: \.deletesRows) ? .destructive : nil) {
+                Button("Apply repairs", role: selectedStepsWithWork.contains(where: { $0.deletesRows || $0.createsInferredRows }) ? .destructive : nil) {
                     confirming = true
                 }
                 .disabled(selectedStepsWithWork.isEmpty)
@@ -201,8 +229,9 @@ struct ArchiveRepairView: View {
             if report.journeysCollapsed > 0 { LabeledContent("Journeys collapsed", value: "\(report.journeysCollapsed)") }
             if report.coordinatesAdded > 0 { LabeledContent("Coordinates added", value: "\(report.coordinatesAdded)") }
             if report.sleepPlaceholdersRenamed > 0 { LabeledContent("Sleep entries renamed", value: "\(report.sleepPlaceholdersRenamed)") }
+            if report.walkingPlaceholdersRenamed > 0 { LabeledContent("Walking entries renamed", value: "\(report.walkingPlaceholdersRenamed)") }
+            if report.routineGapsFilled > 0 { LabeledContent("Gap visits added", value: "\(report.routineGapsFilled)") }
             if report.definitionsMerged > 0 { LabeledContent("Duplicate definitions merged", value: "\(report.definitionsMerged)") }
-            if report.activitiesLinked > 0 { LabeledContent("Activities linked", value: "\(report.activitiesLinked)") }
             if report.stillNeedingReview > 0 {
                 LabeledContent("Still need review", value: "\(report.stillNeedingReview)")
                     .accessibilityIdentifier("repair-needs-review")
@@ -264,7 +293,7 @@ struct ArchiveRepairView: View {
                     selection = []
                     applying = false
                     Diagnostics.record(context, subsystem: "Archive repair",
-                                       message: "Closed \(result.staysClosed) runaway stays, merged \(result.duplicatesMerged) duplicates, collapsed \(result.journeysCollapsed) nested journeys, added \(result.coordinatesAdded) coordinates, renamed \(result.sleepPlaceholdersRenamed) sleep entries, merged \(result.definitionsMerged) duplicate definitions, linked \(result.activitiesLinked) activities.",
+                                       message: "Closed \(result.staysClosed) runaway stays, merged \(result.duplicatesMerged) duplicates, collapsed \(result.journeysCollapsed) nested journeys, added \(result.coordinatesAdded) coordinates, renamed \(result.sleepPlaceholdersRenamed) sleep and \(result.walkingPlaceholdersRenamed) walking entries, added \(result.routineGapsFilled) gap-fill visits, merged \(result.definitionsMerged) duplicate definitions.",
                                        severity: "info", repairCount: result.totalChanges)
                     message = "Repair complete. \(result.totalChanges) records changed. The backup is ready to share."
                 }

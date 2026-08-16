@@ -42,6 +42,25 @@ struct AnnualInsightsTests {
         #expect(result.travel.hours == 6)
     }
 
+    @Test("The imported journal's own placeholder never shows as a place")
+    func importedJournalPlaceholderIsExcludedFromPlaces() {
+        // The real shape: an imported visit's placeName is the literal string
+        // "Imported journal", not nil -- `place: nil` above tests a different,
+        // easier case (`makePlaceTotals`-style visits) that this bug never hit.
+        let start = calendar.date(from: DateComponents(year: 2024, month: 1, day: 1))!
+        let year = calendar.dateInterval(of: .year, for: start)!
+        let placeholder = segment("Travel", start: start, hours: 6, source: "imported-journal",
+                                  place: "Imported journal")
+        let real = segment("Food & Drink", start: start.addingTimeInterval(7 * 3_600), hours: 1,
+                           source: "imported-journal", place: "The Two Professors")
+
+        let result = AnnualInsights.make(current: [placeholder, real], previous: [],
+                                         yearInterval: year, now: year.end)
+
+        #expect(result.currentLoggedHours == 7, "the hours are still counted, only the Places entry is withheld")
+        #expect(result.placesByTime.map(\.name) == ["The Two Professors"])
+    }
+
     @Test("Comparison boundaries require meaningful history in both years")
     func comparisonBoundary() {
         let start = calendar.date(from: DateComponents(year: 2026, month: 1, day: 1))!

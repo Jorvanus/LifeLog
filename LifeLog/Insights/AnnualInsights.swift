@@ -129,6 +129,16 @@ struct AnnualInsights {
             var totals: [String: (category: String, hours: Double, ids: Set<InsightSegmentID>)] = [:]
             for segment in segments {
                 guard let name = segment.placeName, !name.isEmpty else { continue }
+                // "Imported journal" (and any other placeholder) means no place
+                // was recorded, not that "Imported journal" is itself a place —
+                // without this, journeys and other unrecorded-place activity
+                // from the CSV import would show up as if they were real, and
+                // usually as the single largest "place" in the whole year,
+                // since it silently absorbs everything the import couldn't
+                // resolve. `renameSleepPlaceholders`/`renameWalkingPlaceholders`
+                // handle the two activities that do have one genuine canonical
+                // place to merge into instead of being excluded here.
+                guard !Visit.isUninformativePlaceName(name) else { continue }
                 if totals[name] == nil { totals[name] = (segment.category, 0, []) }
                 totals[name, default: (segment.category, 0, [])].hours += segment.hours
                 totals[name, default: (segment.category, 0, [])].ids.insert(segment.id)

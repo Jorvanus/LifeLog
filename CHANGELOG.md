@@ -29,6 +29,76 @@
   only correction found was applied and then discarded. It is counted now, and
   kept.
 
+
+### Scope every archive repair step to imported data only
+
+- The first shipped version of the archive repair matched and rewrote visits
+  across every source. On the owner's device it deleted nine genuine
+  `health-workout` visits -- each carrying its own HealthKit sample IDs --
+  because they happened to share an exact timestamp with an unrelated
+  imported-journal row for the same walk. Two different sources agreeing on
+  one event is corroboration, not a duplicate. Every repair step (runaway
+  closing, duplicate and nested-journey removal, coordinate backfill, and the
+  sleep/walking renames) is now hard-scoped to `imported-journal`, so a
+  live-tracked visit can never be touched again, even one that happens to
+  look identical to an imported one.
+
+## 2026-08-16
+
+### Name imported walking entries "Walking", and stop treating every place name as a place
+
+- Added a second archive repair step alongside the existing sleep-placeholder
+  rename: an imported Walking visit with no real place gets named "Walking",
+  matching how every `health-walking` visit is already named, so an imported
+  walk merges with the rest of your walking history instead of showing up
+  separately as "Imported journal".
+- Insights' "Places that shaped the year" no longer treats an uninformative
+  place name as if it were a real place. Travelling, and the long tail of
+  imported activities that never had a place recorded (Eating, Work,
+  Shopping, and others), were showing up as their own "place" entries --
+  usually the single largest one, since "Imported journal" absorbed anything
+  the CSV import couldn't resolve. The time still counts everywhere else;
+  it's only excluded from a list that is specifically about place.
+
+## 2026-08-16
+
+### Finish linking every visit to the catalogue in one pass, then stop asking
+
+- Removed "Link activities to the catalogue" as a step on the archive repair
+  screen. It never fixed anything the import broke -- it repeated the same
+  job the ongoing per-launch backfill already does automatically, for every
+  visit, regardless of source. Added a one-time, automatic catch-up that
+  finishes the *existing* backlog in a single background pass on the first
+  launch after this update, rather than the roughly fifty cold launches the
+  paged, 500-row-at-a-time migration would otherwise need. That paged
+  migration keeps running afterward, as it always has, for the ordinary
+  trickle of new visits and for any future large import.
+
+## 2026-08-16
+
+### Fill unlogged evening and overnight gaps, and browse every one
+
+- Added **Fill evening and overnight gaps** as a new archive repair step. For
+  a gap bordered by imported-journal history on both sides and no longer than
+  a day, it fills midnight-7am as Sleeping, 7-9am and 5pm-midnight as At home,
+  and 9am-5pm as Work on a weekday or At home on a weekend -- tiling every
+  hour of every day the gap spans, using real coordinates from the owner's
+  Home/Work Saved Places where one exists. A gap longer than a day, or one
+  touching anything live-tracked, is left untouched -- more likely a real
+  absence than an unlogged evening, and never something this repair should
+  quietly paper over.
+- Added **Settings -> Data import -> Repair archive -> Review every gap**: a
+  full, filterable list of every unlogged stretch in the archive, not just the
+  two largest for the currently selected day that Insights' "Needs your
+  attention" card shows. Each row previews what the routine fill would create,
+  or explains why it's left for manual review. Tapping a row opens the same
+  manual-visit editor the rest of the app already uses, pre-scoped to that
+  gap's exact time range; a fillable gap also gets a one-tap "Fill as
+  suggested" swipe action that applies the routine template to just that one
+  gap immediately.
+
+## 2026-08-16
+
 ### Fold imported sleep visits into "Sleep" instead of "Imported journal"
 
 - The owner noticed "Imported journal" showing up in Insights' "Places that
