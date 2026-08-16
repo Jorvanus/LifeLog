@@ -70,6 +70,22 @@ enum UITestSeedData {
             visit(480, 510, "In transit", "Travelling", "motion", "device")
             visit(510, 600, "Gracemere Shopping World", "Shopping")
         }
+        if ProcessInfo.processInfo.arguments.contains("-ui-test-manual-visit-gap") {
+            // A single, isolated, unambiguous gap far from the default fixture's
+            // overlapping visits and its open-ended "Home" stay (which would
+            // otherwise cover straight through to `now` and leave nothing to find).
+            // Named places found nowhere else in the seed, so a test can locate this
+            // exact row without depending on the default fixture's own shape.
+            let farDay = calendar.date(byAdding: .day, value: -10, to: day)!
+            context.insert(Visit(arrival: farDay.addingTimeInterval(9 * 3600),
+                                 departure: farDay.addingTimeInterval(10 * 3600),
+                                 latitude: -23.38, longitude: 150.51, placeName: "Rockhampton Grammar School",
+                                 inferredActivity: "Eating", userActivity: "Eating", source: "imported-journal"))
+            context.insert(Visit(arrival: farDay.addingTimeInterval(12 * 3600),
+                                 departure: farDay.addingTimeInterval(13 * 3600),
+                                 latitude: -23.38, longitude: 150.51, placeName: "Regional Office",
+                                 inferredActivity: "Work", userActivity: "Work", source: "imported-journal"))
+        }
         if ProcessInfo.processInfo.arguments.contains("-ui-test-week-travel") {
             // A dedicated long transition makes the Week card's meaningful-travel
             // state deterministic without changing the default seed's small-trip case.

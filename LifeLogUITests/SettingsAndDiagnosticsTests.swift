@@ -229,6 +229,79 @@ final class SettingsAndDiagnosticsTests: LifeLogUITestCase {
         return target
     }
 
+    /// Opening a gap from the browsing list must start scoped to that exact gap
+    /// — not to "right now", which is what a person saw before this existed —
+    /// and must show what was recorded either side, so a decision can be made
+    /// without leaving the sheet to go check Timeline. Uses its own isolated
+    /// fixture (`-ui-test-manual-visit-gap`): the default seed's open-ended
+    /// "Home" stay covers straight through to `now`, leaving nothing for this
+    /// test to find.
+    func testTappingAnUnloggedGapPrefillsRangeAndOffersBorderingPlaces() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed", "-ui-test-manual-visit-gap",
+                               "-ui-test-open-archive-repair"]
+        app.launch()
+
+        XCTAssertTrue(element("archive-repair-screen").waitForExistence(timeout: 10))
+        let scan = element("repair-scan")
+        XCTAssertTrue(scan.waitForExistence(timeout: 5))
+        scan.tap()
+
+        let reviewLink = scrollToElement("review-unlogged-gaps-link")
+        XCTAssertTrue(reviewLink.exists, "the scan must offer a way to browse every gap")
+        reviewLink.tap()
+
+        XCTAssertTrue(element("unlogged-gaps-screen").waitForExistence(timeout: 10))
+        // Matched on "Rockhampton Grammar School" specifically, not "Regional
+        // Office" — the far-flung placement of this isolated fixture (ten days
+        // before the rest of the seed, deliberately, so nothing else overlaps it)
+        // also produces a second, unrelated gap between the fixture's own
+        // "Regional Office" visit and the default seed's next visit days later.
+        // Both rows contain "Regional Office"; only the intended one also
+        // contains "Rockhampton Grammar School".
+        let targetRow = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS[c] %@", "Rockhampton Grammar School")
+        ).firstMatch
+        var swipes = 0
+        while !(targetRow.exists && targetRow.isHittable) && swipes < 20 {
+            app.swipeUp()
+            swipes += 1
+        }
+        XCTAssertTrue(targetRow.exists, "the seeded gap, bordered by Rockhampton Grammar School and Regional Office, must be listed")
+        targetRow.tap()
+
+        XCTAssertTrue(app.navigationBars["Add Visit"].waitForExistence(timeout: 10))
+        // The bordering context this whole test exists for: what was recorded on
+        // either side, visible without leaving the sheet. Checked as plain text
+        // first (weakest possible signal — did the content render at all) so a
+        // failure here is distinguishable from an identifier that didn't attach.
+        XCTAssertTrue(app.staticTexts["Rockhampton Grammar School"].waitForExistence(timeout: 5),
+                      app.debugDescription)
+        XCTAssertTrue(app.staticTexts["Regional Office"].exists)
+        XCTAssertTrue(element("manual-visit-before-context").exists)
+        XCTAssertTrue(element("manual-visit-after-context").exists)
+
+        // Pre-filled from the gap, not from `Date()` — the exact bug reported.
+        // The seeded gap sits ten days in the past; a DatePicker whose value
+        // mentions today's day-of-month means the range was discarded.
+        let today = Calendar.current.component(.day, from: .now)
+        let startPicker = element("manual-visit-start-picker")
+        XCTAssertTrue(startPicker.waitForExistence(timeout: 5))
+        let startValue = startPicker.value as? String ?? ""
+        XCTAssertFalse(startValue.contains(String(today)),
+                       "Start must show the gap's own day, not today's: \(startValue)")
+
+        // Tapping "Before" carries that place straight into Location — checked
+        // against the link's own label, not a bare `staticTexts` lookup, since
+        // "Rockhampton Grammar School" already exists on screen from the context
+        // row above regardless of whether the tap did anything.
+        element("manual-visit-before-context").tap()
+        let location = element("choose-location-link")
+        XCTAssertTrue(location.waitForExistence(timeout: 5))
+        XCTAssertTrue(location.label.contains("Rockhampton Grammar School"),
+                     "selecting the bordering visit must fill Location with its place, got: \(location.label)")
+    }
+
     func testSettingsBackupFailure() {
         app.terminate()
         app.launchArguments = ["-uiTesting", "-ui-test-fail-backup", "-AppleInterfaceStyle", "Dark"]

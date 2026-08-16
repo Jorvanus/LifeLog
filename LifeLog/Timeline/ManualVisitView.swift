@@ -52,11 +52,19 @@ struct ManualVisitView: View {
     let range: DateInterval
     @State private var place = ""
     @State private var activity = ""
-    @State private var arrival = Date()
-    @State private var departure = Date()
+    @State private var arrival: Date
+    @State private var departure: Date
     @State private var resolution: ManualPlaceResolution = .none
     @State private var saveFailed = false
     @State private var confirmingOverlap = false
+    /// The visits immediately either side of `range`, fetched once when the sheet
+    /// appears — not the same visits `visits` below already holds, which is
+    /// deliberately bounded to *inside* the gap. Shown so a person can see what was
+    /// recorded right before and after before deciding what belongs in between, and
+    /// tap either straight into `place`/`resolution` rather than re-typing or
+    /// re-searching a place that is sitting right there on screen.
+    @State private var beforeVisit: Visit?
+    @State private var afterVisit: Visit?
 
     /// Scoped to `range` rather than the whole archive, and including every source
     /// — imported-journal too — since `VisitSuggestion` now needs the same picture
@@ -72,6 +80,11 @@ struct ManualVisitView: View {
             filter: #Predicate<Visit> { $0.arrival < fetchEnd && ($0.departure == nil || $0.departure! >= fetchStart) },
             sort: \Visit.arrival, order: .reverse
         )
+        // The whole point of opening this sheet from a specific gap: it must start
+        // scoped to that gap, not to "right now" — the previous default silently
+        // discarded the very range the caller went to the trouble of passing in.
+        _arrival = State(initialValue: range.start)
+        _departure = State(initialValue: range.end)
     }
 
     private var suggestions: [VisitSuggestion] {
@@ -107,6 +120,23 @@ struct ManualVisitView: View {
     var body: some View {
         NavigationStack {
             Form {
+                if beforeVisit != nil || afterVisit != nil {
+                    Section {
+                        if let beforeVisit {
+                            BorderingVisitRow(label: "Before", visit: beforeVisit) { selectPlace(from: beforeVisit) }
+                                .accessibilityIdentifier("manual-visit-before-context")
+                        }
+                        if let afterVisit {
+                            BorderingVisitRow(label: "After", visit: afterVisit) { selectPlace(from: afterVisit) }
+                                .accessibilityIdentifier("manual-visit-after-context")
+                        }
+                    } header: {
+                        Text("Recorded either side of this gap")
+                    } footer: {
+                        Text("Tap either to use that place for this visit.")
+                    }
+                }
+
                 Section {
                     NavigationLink {
                         VisitLocationChooser(name: $place, resolution: $resolution)
@@ -131,7 +161,9 @@ struct ManualVisitView: View {
 
                 Section("Time") {
                     DatePicker("Start", selection: $arrival)
+                        .accessibilityIdentifier("manual-visit-start-picker")
                     DatePicker("End", selection: $departure)
+                        .accessibilityIdentifier("manual-visit-end-picker")
                 }
 
                 if !suggestions.isEmpty {
@@ -175,7 +207,40 @@ struct ManualVisitView: View {
             } message: {
                 Text("This time overlaps:\n\(overlapSummary)")
             }
+            .task { loadBorderingVisits() }
         }
+    }
+
+    /// One-shot, not a live `@Query` — this is context to look at while deciding
+    /// what to write, not state the form needs to react to as the store changes
+    /// underneath it while the sheet stays open.
+    private func loadBorderingVisits() {
+        let fetchStart = range.start
+        var beforeDescriptor = FetchDescriptor<Visit>(
+            predicate: #Predicate<Visit> { $0.departure != nil && $0.departure! <= fetchStart },
+            sortBy: [SortDescriptor(\.arrival, order: .reverse)]
+        )
+        beforeDescriptor.fetchLimit = 1
+        beforeVisit = try? context.fetch(beforeDescriptor).first
+
+        let fetchEnd = range.end
+        var afterDescriptor = FetchDescriptor<Visit>(
+            predicate: #Predicate<Visit> { $0.arrival >= fetchEnd },
+            sortBy: [SortDescriptor(\.arrival)]
+        )
+        afterDescriptor.fetchLimit = 1
+        afterVisit = try? context.fetch(afterDescriptor).first
+    }
+
+    /// Only the *place* — coordinate included when the source visit has one, so a
+    /// pick from "Before"/"After" carries a real position forward, not just text.
+    /// The activity is left for the person to choose; a coffee stop before a gap
+    /// does not mean the gap itself was also coffee.
+    private func selectPlace(from visit: Visit) {
+        place = visit.displayPlaceName
+        resolution = (visit.latitude != 0 || visit.longitude != 0)
+            ? .matched(name: visit.displayPlaceName, coordinate: visit.coordinate)
+            : .none
     }
 
     private func attemptSave() {
@@ -209,5 +274,25 @@ struct ManualVisitView: View {
         } else {
             saveFailed = true
         }
+    }
+}
+
+private struct BorderingVisitRow: View {
+    let label: String
+    let visit: Visit
+    let onSelect: () -> Void
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack {
+                Text(label).foregroundStyle(.secondary)
+                Spacer()
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text(visit.displayPlaceName)
+                    Text(visit.activity).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
     }
 }

@@ -19,6 +19,19 @@
   Fixed by making the later pass aware of the other place sitting in the gap it
   was about to paper over.
 
+### Pre-fill the manual visit editor from the gap it was opened for, and show what sat either side
+
+- Adding a visit for an unlogged gap -- from the Day screen's "Needs your
+  attention" card, or from the new "Review every gap" list -- opened the
+  editor with the current date and time, discarding the exact gap the person
+  had just tapped. Start and End now default to that gap's own start and end.
+- The editor now shows what was recorded immediately before and after the
+  gap, so a decision can be made without leaving the sheet to check Timeline.
+  Tapping either carries that place (and its coordinates, when it has any)
+  straight into Location.
+
+## 2026-08-16
+
 ### Choose from all activities in Place History corrections
 
 - Replaced the place-specific activity menu with the shared full activity picker, including every Activity Label and the option to create a new one.
