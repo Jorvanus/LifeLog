@@ -194,7 +194,10 @@ struct LocalBackupTests {
             #expect(restoredCorrections.first?.newPlaceName == "Park")
 
             let restoredDiagnostics = try! restoredContext.fetch(FetchDescriptor<DiagnosticEvent>())
-            #expect(restoredDiagnostics.first?.category == Diagnostics.Category.performance)
+            // Not `.first`: the restore's own full-store audit stages a "Committed
+            // backupRestore" diagnostic in the same commit, and an unsorted fetch
+            // makes no promise about which of the two comes first.
+            #expect(restoredDiagnostics.first { $0.subsystem == "Test" }?.category == Diagnostics.Category.performance)
         }
     }
 
@@ -369,6 +372,48 @@ struct LocalBackupTests {
         let events = try context.fetch(FetchDescriptor<LocationEvent>())
         #expect(events.count == 1)
         #expect(events.first?.accuracy == -1)
+    }
+
+    // MARK: - Restore requires an empty destination
+
+    @Test("Restoring into a store that already has data is rejected, not appended")
+    func restoreIntoNonEmptyDestinationRejected() throws {
+        let sourceContext = try makeContext()
+        sourceContext.insert(Visit(arrival: base, latitude: -27.47, longitude: 153.03, placeName: "Cinema", inferredActivity: "Watching a movie", source: "automatic"))
+        try sourceContext.save()
+        let data = try LocalBackupService.makeBackup(context: sourceContext, diagnostics: [])
+
+        let destinationContext = try makeContext()
+        let existingVisit = Visit(arrival: base.addingTimeInterval(-3600), latitude: 1, longitude: 1, placeName: "Already here", inferredActivity: "Visiting", source: "automatic")
+        destinationContext.insert(existingVisit)
+        try destinationContext.save()
+
+        #expect(throws: RestoreError.self) {
+            try LocalBackupService.restore(data, into: destinationContext)
+        }
+        // Not appended: the pre-existing row is untouched and nothing from the
+        // backup was inserted alongside it.
+        let visits = try destinationContext.fetch(FetchDescriptor<Visit>())
+        #expect(visits.count == 1)
+        #expect(visits.first?.placeName == "Already here")
+    }
+
+    @Test("A non-empty destination is rejected even when only a non-repopulated model type has data")
+    func restoreIntoDestinationWithOnlyPreExistingSavedPlaceRejected() throws {
+        let sourceContext = try makeContext()
+        sourceContext.insert(Visit(arrival: base, latitude: -27.47, longitude: 153.03, placeName: "Cinema", inferredActivity: "Watching a movie", source: "automatic"))
+        try sourceContext.save()
+        let data = try LocalBackupService.makeBackup(context: sourceContext, diagnostics: [])
+
+        let destinationContext = try makeContext()
+        destinationContext.insert(SavedPlace(name: "Existing", latitude: 0, longitude: 0, defaultActivity: "At home"))
+        try destinationContext.save()
+
+        #expect(throws: RestoreError.self) {
+            try LocalBackupService.restore(data, into: destinationContext)
+        }
+        #expect(try destinationContext.fetch(FetchDescriptor<Visit>()).isEmpty)
+        #expect(try destinationContext.fetch(FetchDescriptor<SavedPlace>()).count == 1)
     }
 
     // MARK: - Restore failure without partial data

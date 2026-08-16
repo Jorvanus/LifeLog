@@ -196,6 +196,26 @@ enum BackupValidationError: LocalizedError {
     }
 }
 
+/// Failures that stop a restore before the archive's own content is even
+/// considered — distinct from `BackupValidationError`, which describes an
+/// impossible archive, not an unsuitable destination.
+enum RestoreError: LocalizedError {
+    /// `LocalBackupService.restore` never merges into existing history: the
+    /// destination must be empty of everything it repopulates (Visit,
+    /// SavedPlace, VisitCorrection, DiagnosticEvent, LocationEvent) before it
+    /// will insert a single row. Without this guard, restoring into a store
+    /// that already has data silently duplicated every one of those records
+    /// instead of the "complete replacement" Settings promises.
+    case destinationNotEmpty
+
+    var errorDescription: String? {
+        switch self {
+        case .destinationNotEmpty:
+            "Restore requires an empty store. Use \"Erase all data\" in Settings first, then restore."
+        }
+    }
+}
+
 extension LifeLogBackup {
     /// Every invariant the app itself enforces on this data, checked up front. A
     /// backup that decodes cleanly can still describe a store no code path here
@@ -358,12 +378,19 @@ enum LocalBackupService {
         return try encoder.encode(document)
     }
 
-    /// Decodes and validates the whole archive before touching `context`, then
-    /// restores it in one pass. Any failure in either phase leaves the store and
-    /// preferences exactly as they were: validation runs before the first
-    /// `insert`, and an error from `context.save()` itself rolls back everything
-    /// staged in this call before it propagates, so a caller never sees a store
-    /// left half-restored.
+    /// Decodes and validates the whole archive, requires an empty destination,
+    /// then restores it in one pass. Every insert -- visits, places,
+    /// corrections, diagnostics, location events, activity definition records,
+    /// and (for a V1/V2 archive) the reconstructed legacy identity rows -- stays
+    /// unsaved until the single commit inside `VisitMutationService.finalize`,
+    /// which also runs the mandatory full-store audit before that commit. There
+    /// is no earlier `context.save()` to leave standing: a decode, validation,
+    /// non-empty-destination, insert, activity-identity, or audit/resolver
+    /// failure at any point rolls back everything staged in this call, and
+    /// UserDefaults (`IgnoredLocations`, the legacy `ActivityCatalog` snapshot,
+    /// and portable preferences) is only ever written after that commit is
+    /// confirmed, so a caller never sees a store or a preference set left
+    /// half-restored.
     @MainActor
     static func restore(_ data: Data, into context: ModelContext) throws {
         let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
@@ -380,6 +407,20 @@ enum LocalBackupService {
             throw CocoaError(.fileReadCorruptFile)
         }
         try backup.validate()
+
+        // A restore is a complete replacement, never a merge: appending into an
+        // existing store would silently duplicate every visit, place,
+        // correction, diagnostic, and location callback already there. This
+        // checks exactly the model types `eraseAllData` (Settings) wipes and
+        // `restore` repopulates -- not `ActivityDefinitionRecord`, which a fresh
+        // install already seeds before any restore runs.
+        guard try context.fetchCount(FetchDescriptor<Visit>()) == 0,
+              try context.fetchCount(FetchDescriptor<SavedPlace>()) == 0,
+              try context.fetchCount(FetchDescriptor<VisitCorrection>()) == 0,
+              try context.fetchCount(FetchDescriptor<DiagnosticEvent>()) == 0,
+              try context.fetchCount(FetchDescriptor<LocationEvent>()) == 0 else {
+            throw RestoreError.destinationNotEmpty
+        }
 
         do {
             for record in backup.visits {
@@ -427,44 +468,26 @@ enum LocalBackupService {
                     ))
                 }
             }
-            try context.save()
+            // A V3+ backup already inserted its exact `ActivityDefinitionRecord`
+            // rows above -- `isActive` and all -- so there is nothing left to
+            // adopt. Only a V1/V2 backup, which carries no durable rows at all,
+            // still needs them reconstructed from the legacy snapshot. `save:
+            // false` keeps this insert unsaved along with everything else above,
+            // so it commits or rolls back with the rest of the restore rather
+            // than surviving a later resolver failure on its own.
+            if backup.activityDefinitionRecords == nil {
+                _ = try ActivityIdentityMigration.adoptLegacyDefinitions(context: context, save: false)
+            }
         } catch {
             context.rollback()
             throw error
         }
 
-        // The core restore -- visits, places, corrections, diagnostics, location
-        // events, and (V3+) activity definition records -- is already committed
-        // above and stays committed regardless of anything below.
-        // `IgnoredLocations`/`ActivityCatalog` writes are plain UserDefaults
-        // sets, which cannot throw.
-        IgnoredLocations.importKeys(backup.ignoredVisitKeys)
-        ActivityCatalog.save(backup.activityDefinitions)
-        // A V3+ backup already inserted its exact `ActivityDefinitionRecord`
-        // rows above -- `isActive` and all -- so there is nothing left to adopt.
-        // Only a V1/V2 backup, which carries no durable rows at all, still needs
-        // them reconstructed from the legacy snapshot.
-        //
-        // Recoverable background work, not required: this adopts the backup's
-        // activity UUIDs immediately as a convenience, but it does its own
-        // separate `context.save()` (see `adoptLegacyDefinitions`) and is not
-        // part of the restore's own commit -- a failure here does not undo the
-        // restore. It is also self-healing: `ActivityCatalog.backfillNextBatch`
-        // adopts the same rows in bounded pages on a later launch regardless, so
-        // this is only ever an optimization to do it sooner.
-        if backup.activityDefinitionRecords == nil {
-            do {
-                _ = try ActivityIdentityMigration.adoptLegacyDefinitions(context: context)
-            } catch {
-                Diagnostics.record(error, context: context, subsystem: "Store", operation: "backup activity identity adoption")
-            }
-        }
-        for (key, value) in backup.preferences where isPortablePreferenceKey(key) {
-            UserDefaults.standard.set(value, forKey: key)
-        }
-
-        // A restore is deliberately audited across the full archive before it is
-        // published to Insights; ordinary callbacks never take this path.
+        // Nothing inserted above has been saved yet, so the full-store audit
+        // this runs -- and the one `context.save()` inside it -- is the single
+        // commit point for the entire restore. A resolver or save failure here
+        // rolls back every insert staged above along with it; there is no
+        // earlier commit left partially standing.
         let mutation = VisitMutationService.finalize(
             context: context,
             kind: .backupRestore,
@@ -474,6 +497,18 @@ enum LocalBackupService {
             throw BackupValidationError.invalidCorrection(
                 reason: mutation.failureDescription ?? "Restored history could not be resolved."
             )
+        }
+
+        // Only now that the store is durably committed do preferences and the
+        // legacy catalogue snapshot get written. UserDefaults has no
+        // transaction of its own to roll back, so these must wait until the
+        // one thing that could still fail is already known to have succeeded --
+        // otherwise a resolver failure above would leave preferences restored
+        // against a store that never actually committed.
+        IgnoredLocations.importKeys(backup.ignoredVisitKeys)
+        ActivityCatalog.save(backup.activityDefinitions)
+        for (key, value) in backup.preferences where isPortablePreferenceKey(key) {
+            UserDefaults.standard.set(value, forKey: key)
         }
     }
 

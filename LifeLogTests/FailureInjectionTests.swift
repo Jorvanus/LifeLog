@@ -14,7 +14,7 @@ struct FailureInjectionTests {
 
     private func makeContext() throws -> ModelContext {
         let container = try ModelContainer(
-            for: Visit.self, SavedPlace.self, VisitCorrection.self, DiagnosticEvent.self,
+            for: Visit.self, SavedPlace.self, ActivityDefinitionRecord.self, VisitCorrection.self, DiagnosticEvent.self,
             LocationEvent.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
@@ -33,13 +33,13 @@ struct FailureInjectionTests {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("FailureInjection-\(UUID().uuidString).store")
         _ = try ModelContainer(
-            for: Visit.self, SavedPlace.self, VisitCorrection.self, DiagnosticEvent.self,
+            for: Visit.self, SavedPlace.self, ActivityDefinitionRecord.self, VisitCorrection.self, DiagnosticEvent.self,
             LocationEvent.self,
             configurations: ModelConfiguration(url: url)
         )
         let configuration = ModelConfiguration(url: url, allowsSave: false)
         let container = try ModelContainer(
-            for: Visit.self, SavedPlace.self, VisitCorrection.self, DiagnosticEvent.self,
+            for: Visit.self, SavedPlace.self, ActivityDefinitionRecord.self, VisitCorrection.self, DiagnosticEvent.self,
             LocationEvent.self,
             configurations: configuration
         )
@@ -98,6 +98,60 @@ struct FailureInjectionTests {
             try LocalBackupService.restore(data, into: protectedContext)
         }
         #expect(try protectedContext.fetch(FetchDescriptor<Visit>()).isEmpty)
+    }
+
+    /// A protected destination fails at the exact point that used to be the
+    /// *last* step of restore -- the full-store audit's own `context.save()`
+    /// inside `VisitMutationService.finalize`. Everything before it in this
+    /// call (visit insert, activity identity adoption, and every UserDefaults
+    /// write) must be provably undone or unwritten, not merely the store row
+    /// the earlier, narrower test already checks.
+    @Test("A failure in the final audit leaves neither models nor preferences partially restored")
+    func backupRestoreLeavesNoPartialModelsOrPreferencesOnAuditFailure() throws {
+        let defaults = UserDefaults.standard
+        let markerKey = "LifeLog.Test.auditFailureMarker.\(UUID().uuidString)"
+        defaults.removeObject(forKey: markerKey)
+        let previousIgnoredKeys = IgnoredLocations.storedKeys()
+        let previousCatalogue = ActivityCatalog.load()
+        defer {
+            defaults.removeObject(forKey: markerKey)
+            IgnoredLocations.importKeys(Array(previousIgnoredKeys))
+        }
+
+        let stableID = UUID()
+        let backup = LifeLogBackup(
+            version: LifeLogBackup.currentVersion, createdAt: .now,
+            visits: [
+                .init(arrival: base, departure: nil, latitude: -23.4, longitude: 150.5,
+                      placeName: "Cafe", inferredActivity: "Coffee", userActivity: nil, note: "",
+                      source: "automatic", activityDefinitionID: nil, recognitionConfidence: nil,
+                      candidateData: nil, mapsIdentifier: nil, placeFieldProvenance: nil,
+                      resolutionExplanation: nil, stableID: stableID, resolutionState: nil,
+                      healthKitSampleIDs: nil, routeData: nil)
+            ],
+            savedPlaces: [], corrections: [], diagnostics: [], locationEvents: [],
+            ignoredVisitKeys: ["persistent:<x-coredata://store/Visit/p1>"],
+            activityDefinitions: [ActivityDefinition(name: "Should not land", category: "Other", symbol: "circle.fill")],
+            activityDefinitionRecords: nil,
+            preferences: [markerKey: "should-not-be-written"], manifest: nil
+        )
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(backup)
+
+        let protectedContext = try makeProtectedContext()
+        #expect(throws: (any Error).self) {
+            try LocalBackupService.restore(data, into: protectedContext)
+        }
+
+        // Models: the audit's failed save rolled back the visit insert too.
+        #expect(try protectedContext.fetch(FetchDescriptor<Visit>()).isEmpty)
+        #expect(try protectedContext.fetch(FetchDescriptor<ActivityDefinitionRecord>()).isEmpty)
+
+        // Preferences: staged, never actually written, because the SwiftData
+        // commit they were waiting on never succeeded.
+        #expect(defaults.string(forKey: markerKey) == nil)
+        #expect(IgnoredLocations.storedKeys() == previousIgnoredKeys)
+        #expect(ActivityCatalog.load().map(\.name) == previousCatalogue.map(\.name))
     }
 
     // MARK: - Corrupt UserDefaults JSON
