@@ -2,6 +2,12 @@
 
 ## 2026-08-16
 
+### Choose from all activities in Place History corrections
+
+- Replaced the place-specific activity menu with the shared full activity picker, including every Activity Label and the option to create a new one.
+
+## 2026-08-16
+
 ### Reuse existing activities in Place History corrections
 
 - Added an **Use an existing activity** menu beside the free-form activity field, populated from activities already recorded at that place.
