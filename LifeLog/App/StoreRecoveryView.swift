@@ -120,6 +120,15 @@ struct StoreRecoveryView: View {
 }
 
 enum StoreRecoverySupport {
+    /// Derived from `LifeLogMigrationPlan` -- the same source of truth
+    /// `LocalBackupService` reads for its own manifest -- so a recovery report
+    /// never drifts from the schema `LifeLogApp` actually opens, the way the
+    /// hard-coded "LifeLogSchemaV4" text once did across seven version bumps.
+    static var currentSchemaDescription: String {
+        let current = LifeLogMigrationPlan.schemas.last!
+        return "\(current) (\(current.versionIdentifier))"
+    }
+
     static func makeDiagnosticReport(failure: StoreOpenError?) throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("LifeLog-Recovery-\(UUID().uuidString)", isDirectory: true)
@@ -127,7 +136,7 @@ enum StoreRecoverySupport {
         let report = """
         LifeLog protected store recovery report
         Created: \((failure?.occurredAt ?? .now).ISO8601Format())
-        Schema: LifeLogSchemaV4 (4.0.0)
+        Schema: \(currentSchemaDescription)
         Error: \(failure?.summary ?? "Unknown store-opening failure")
         Store copy attempted: no
 
@@ -151,9 +160,13 @@ enum StoreRecoverySupport {
             copied = true
         }
         guard copied else { throw CocoaError(.fileNoSuchFile) }
+        // Match the protection the live store carries -- see `StoreProtection`
+        // -- so a copy exported while the device is locked doesn't ship with
+        // weaker guarantees than the original it was copied from.
+        StoreProtection.prepareForBackgroundAccess(storeURL: directory.appendingPathComponent(storeURL.lastPathComponent))
         let manifest = """
         LifeLog protected store recovery copy
-        Schema: LifeLogSchemaV4 (4.0.0)
+        Schema: \(currentSchemaDescription)
         Opening diagnostic: \(failure.summary)
         Original store was copied without deletion or modification.
         """

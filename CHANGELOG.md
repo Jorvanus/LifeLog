@@ -2,6 +2,23 @@
 
 ## 2026-08-17
 
+### Protected-store recovery now names the live schema and protects its exports
+
+- The store-recovery screen's diagnostic report and protected-store copy
+  manifest quoted a hard-coded "LifeLogSchemaV4", stale since the schema
+  moved on through seven later versions. Both now read the live schema
+  identity off `LifeLogMigrationPlan` directly, the same source of truth
+  `LocalBackupService` already used, so the text can't drift from what
+  `LifeLogApp` actually opens again.
+- A protected-store copy exported for recovery now carries the same file
+  protection as the original (`.completeUntilFirstUserAuthentication`),
+  matching what `StoreProtection` applies to the live store, instead of
+  shipping with the filesystem's default protection.
+- Added coverage for the `-shm` file in the recovery copy, for a missing
+  `-shm` file (non-destructive, partial export still succeeds), for a
+  missing store entirely (throws without touching anything), and for the
+  copy's file-protection attributes.
+
 ### Added Apple Intelligence help for one unlogged gap
 
 - Unlogged Time → a selected gap → Add Visit now offers a compact "Help me

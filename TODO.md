@@ -26,12 +26,6 @@ be changed safely outrank App Store preparation or speculative integrations.
   set, observer set, and summary-query set behind one source of truth and test that
   they cannot drift apart.
 
-- [ ] **Finish the protected-store recovery path.** Recovery reports and copied-store
-  manifests still identify the schema as V4 while the live migration plan is V11.
-  Derive the schema/build identity rather than hard-coding it, apply protection to
-  recovery exports, test all three SQLite files (`store`, `-wal`, `-shm`), and keep
-  retry/export behavior non-destructive when one file is unavailable.
-
 ## Remove repaired-archive lifecycle debt
 
 - [ ] **Run one explicit audit of the cleaned archive, then retire four historical

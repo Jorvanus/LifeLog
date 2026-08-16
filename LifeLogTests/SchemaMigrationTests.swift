@@ -21,6 +21,7 @@ struct SchemaMigrationTests {
         let storeURL = directory.appendingPathComponent("LifeLog.store")
         try Data("fixture".utf8).write(to: storeURL)
         try Data("wal".utf8).write(to: URL(fileURLWithPath: storeURL.path + "-wal"))
+        try Data("shm".utf8).write(to: URL(fileURLWithPath: storeURL.path + "-shm"))
         let failure = StoreOpenError(
             error: NSError(domain: "SwiftData", code: 11), storeURL: storeURL
         )
@@ -29,8 +30,112 @@ struct SchemaMigrationTests {
         defer { try? FileManager.default.removeItem(at: copy) }
 
         #expect(FileManager.default.fileExists(atPath: storeURL.path))
+        #expect(FileManager.default.fileExists(atPath: URL(fileURLWithPath: storeURL.path + "-wal").path))
+        #expect(FileManager.default.fileExists(atPath: URL(fileURLWithPath: storeURL.path + "-shm").path))
         #expect(FileManager.default.fileExists(atPath: copy.appendingPathComponent("LifeLog.store").path))
         #expect(FileManager.default.fileExists(atPath: copy.appendingPathComponent("LifeLog.store-wal").path))
+        #expect(FileManager.default.fileExists(atPath: copy.appendingPathComponent("LifeLog.store-shm").path))
+    }
+
+    @Test("Store recovery copy carries the same file protection as the live store")
+    func recoveryCopyMatchesLiveStoreProtection() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LifeLog-recovery-protection-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let storeURL = directory.appendingPathComponent("LifeLog.store")
+        try Data("fixture".utf8).write(to: storeURL)
+        try Data("wal".utf8).write(to: URL(fileURLWithPath: storeURL.path + "-wal"))
+        try Data("shm".utf8).write(to: URL(fileURLWithPath: storeURL.path + "-shm"))
+        // Mirrors what `LifeLogApp.openContainer` does on a real launch, so the
+        // source carries whatever protection this environment actually applies
+        // -- the simulator's own Data Protection support (or lack of it) varies
+        // by host, so this compares the copy against its own source rather than
+        // asserting a literal `FileProtectionType` that a test host may not honor.
+        StoreProtection.prepareForBackgroundAccess(storeURL: storeURL)
+        let failure = StoreOpenError(
+            error: NSError(domain: "SwiftData", code: 11), storeURL: storeURL
+        )
+
+        let copy = try StoreRecoverySupport.makeStoreCopy(from: storeURL, failure: failure)
+        defer { try? FileManager.default.removeItem(at: copy) }
+
+        for suffix in ["", "-wal", "-shm"] {
+            let sourceAttributes = try FileManager.default.attributesOfItem(atPath: storeURL.path + suffix)
+            let copyAttributes = try FileManager.default.attributesOfItem(
+                atPath: copy.appendingPathComponent("LifeLog.store" + suffix).path
+            )
+            let sourceProtection = sourceAttributes[.protectionKey] as? FileProtectionType
+            let copyProtection = copyAttributes[.protectionKey] as? FileProtectionType
+            #expect(copyProtection == sourceProtection)
+        }
+    }
+
+    @Test("Store recovery copy still succeeds and stays non-destructive when the -shm file is missing")
+    func exportsRecoveryCopyWithoutShmFile() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LifeLog-recovery-noshm-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let storeURL = directory.appendingPathComponent("LifeLog.store")
+        try Data("fixture".utf8).write(to: storeURL)
+        try Data("wal".utf8).write(to: URL(fileURLWithPath: storeURL.path + "-wal"))
+        // No -shm file -- SQLite does not always keep one on disk.
+        let failure = StoreOpenError(
+            error: NSError(domain: "SwiftData", code: 11), storeURL: storeURL
+        )
+
+        let copy = try StoreRecoverySupport.makeStoreCopy(from: storeURL, failure: failure)
+        defer { try? FileManager.default.removeItem(at: copy) }
+
+        #expect(FileManager.default.fileExists(atPath: storeURL.path))
+        #expect(FileManager.default.fileExists(atPath: URL(fileURLWithPath: storeURL.path + "-wal").path))
+        #expect(!FileManager.default.fileExists(atPath: URL(fileURLWithPath: storeURL.path + "-shm").path))
+        #expect(FileManager.default.fileExists(atPath: copy.appendingPathComponent("LifeLog.store").path))
+        #expect(FileManager.default.fileExists(atPath: copy.appendingPathComponent("LifeLog.store-wal").path))
+        #expect(!FileManager.default.fileExists(atPath: copy.appendingPathComponent("LifeLog.store-shm").path))
+    }
+
+    @Test("Store recovery copy fails without touching anything when no store file exists")
+    func makeStoreCopyThrowsWhenNothingExists() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LifeLog-recovery-missing-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let storeURL = directory.appendingPathComponent("LifeLog.store")
+        let failure = StoreOpenError(
+            error: NSError(domain: "SwiftData", code: 11), storeURL: storeURL
+        )
+
+        #expect(throws: (any Error).self) {
+            try StoreRecoverySupport.makeStoreCopy(from: storeURL, failure: failure)
+        }
+        #expect(!FileManager.default.fileExists(atPath: storeURL.path))
+    }
+
+    @Test("The recovery report and store copy manifest name the live schema, not a stale version")
+    func recoveryTextNamesLiveSchema() throws {
+        #expect(StoreRecoverySupport.currentSchemaDescription.contains("LifeLogSchemaV11"))
+        #expect(StoreRecoverySupport.currentSchemaDescription == "LifeLogSchemaV11 (\(LifeLogSchemaV11.versionIdentifier))")
+
+        let report = try StoreRecoverySupport.makeDiagnosticReport(failure: nil)
+        defer { try? FileManager.default.removeItem(at: report.deletingLastPathComponent()) }
+        let reportText = try String(contentsOf: report, encoding: .utf8)
+        #expect(reportText.contains("LifeLogSchemaV11"))
+        #expect(!reportText.contains("LifeLogSchemaV4"))
+
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LifeLog-recovery-schema-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let storeURL = directory.appendingPathComponent("LifeLog.store")
+        try Data("fixture".utf8).write(to: storeURL)
+        let failure = StoreOpenError(error: NSError(domain: "SwiftData", code: 11), storeURL: storeURL)
+        let copy = try StoreRecoverySupport.makeStoreCopy(from: storeURL, failure: failure)
+        defer { try? FileManager.default.removeItem(at: copy) }
+        let manifestText = try String(contentsOf: copy.appendingPathComponent("README.txt"), encoding: .utf8)
+        #expect(manifestText.contains("LifeLogSchemaV11"))
+        #expect(!manifestText.contains("LifeLogSchemaV4"))
     }
 
     @Test("A current store opens through V1 without data loss")
