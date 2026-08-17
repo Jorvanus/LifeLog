@@ -71,13 +71,22 @@ enum GapSuggestionCandidateGenerator {
                 rationale: "The stay immediately after the gap was at \(after.displayPlaceName), a \(roleLabel) saved place."
             ))
         }
-        if let beforeRole, let afterRole, Set([beforeRole, afterRole]) == [.home, .work] {
-            let fromLabel = beforeRole == .home ? "Home" : "Work"
+        // A commute only needs a Home/Work destination — the same rule
+        // `CommuteDetection` itself applies, so a gap ending at Home from an
+        // unroled place (the gym, an errand) offers this candidate too, not
+        // only a direct Home<->Work pair. `beforeRole != afterRole` still
+        // excludes a same-role gap (Home to Home) — that is a continuation,
+        // never a commute.
+        if let afterRole, afterRole == .home || afterRole == .work, beforeRole != afterRole {
             let toLabel = afterRole == .home ? "Home" : "Work"
+            let fromLabel = beforeRole == .home ? "Home" : (beforeRole == .work ? "Work" : nil)
+            let rationale = fromLabel.map {
+                "The gap sits between a \($0) stay and a \(toLabel) stay — LifeLog's own travel logic already recognises this pattern as a commute."
+            } ?? "The gap ends at a \(toLabel) saved place — LifeLog's own travel logic already recognises arriving at Home or Work as a commute, wherever the journey started."
             results.append(GapSuggestionCandidate(
                 id: "home-work-transition", kind: .homeWorkTransition,
                 placeName: nil, activity: CommuteDetection.activityName, homeWorkRole: nil,
-                rationale: "The gap sits between a \(fromLabel) stay and a \(toLabel) stay — LifeLog's own travel logic already recognises this pattern as a commute."
+                rationale: rationale
             ))
         }
         // Home/Work pairs are excluded — that evidence already produced

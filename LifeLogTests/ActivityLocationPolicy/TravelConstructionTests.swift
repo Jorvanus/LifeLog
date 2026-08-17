@@ -319,25 +319,31 @@ struct TravelConstructionTests {
         #expect(commutes.first?.end == base.addingTimeInterval(81 * 60))
     }
 
-    @Test("Only home and work make a commute")
+    @Test("Only a Home/Work destination makes a commute — the origin can be anything real")
     func commutesRequireBothEnds() {
         let now = base.addingTimeInterval(600 * 60)
         let home = ActivityLocationPolicyFixtures.stay("Home", from: 0, to: 60, latitude: -23.37, longitude: 150.51)
         let work = ActivityLocationPolicyFixtures.stay("Work", from: 90, to: 400, latitude: -23.42, longitude: 150.55)
         #expect(CommuteDetection.commutes(in: [home, work], savedPlaces: homeWorkPlaces, now: now).first?.direction == .toWork)
 
-        // The gym to work is a journey, but it is not a commute.
+        // The gym to work is still a commute — only the destination needs a role.
         let gym = ActivityLocationPolicyFixtures.stay("Gracemere Gym", from: 0, to: 60, latitude: -23.44, longitude: 150.46)
-        #expect(CommuteDetection.commutes(in: [gym, work], savedPlaces: homeWorkPlaces, now: now).isEmpty)
+        let gymToWork = CommuteDetection.commutes(in: [gym, work], savedPlaces: homeWorkPlaces, now: now)
+        #expect(gymToWork.count == 1)
+        #expect(gymToWork.first?.direction == .toWork)
 
-        // Leaving home and coming back to it is not a commute either.
+        // Leaving home and coming back to it is not a commute — same role both ends.
         let homeAgain = ActivityLocationPolicyFixtures.stay("Home", from: 90, to: 200, latitude: -23.37, longitude: 150.51)
         #expect(CommuteDetection.commutes(in: [home, homeAgain], savedPlaces: homeWorkPlaces, now: now).isEmpty)
 
-        // A real errand between the two ends breaks the journey in half.
+        // A real errand between the two ends still ends at Work, so it is still a
+        // commute — just from the shops rather than from home.
         let shops = ActivityLocationPolicyFixtures.stay("Gracemere Shopping World", from: 65, to: 85,
                          latitude: -23.44, longitude: 150.46)
-        #expect(CommuteDetection.commutes(in: [home, shops, work], savedPlaces: homeWorkPlaces, now: now).isEmpty)
+        let shopsToWork = CommuteDetection.commutes(in: [home, shops, work], savedPlaces: homeWorkPlaces, now: now)
+        #expect(shopsToWork.count == 1)
+        #expect(shopsToWork.first?.start == shops.departure)
+        #expect(shopsToWork.first?.direction == .toWork)
     }
 
     @Test("Only home and work make a commute, by role rather than name")

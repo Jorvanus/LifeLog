@@ -1,11 +1,8 @@
 import Foundation
 
-/// The journey between home and work, and only that journey.
-///
-/// A commute is defined by both of its ends. The existing travel labelling looks only
-/// at where a journey finished, so a drive to work from the gym reads as the same
-/// thing as the drive from home — which is why "Travelling to Work" could never be
-/// totalled as a commute.
+/// A journey that ends at Home or Work — a drive to work from the gym counts just
+/// as much as the drive from home does. Only the destination is required to be a
+/// Saved Place role; the origin can be any real stay, or none at all.
 ///
 /// Nothing here is written to the store. A commute is the interval between two real
 /// arrivals, recomputed whenever the timeline is read, so it corrects itself when the
@@ -54,33 +51,37 @@ enum CommuteDetection {
             .sorted { $0.arrival < $1.arrival }
 
         var commutes: [Commute] = []
-        for (index, origin) in stays.enumerated() {
-            guard let kind = endpoint(origin, savedPlaces: savedPlaces), let departure = origin.departure else { continue }
-            // Everything between the two ends must be brief enough to be a stop on the
-            // way rather than a destination of its own.
-            var cursor = index + 1
-            while cursor < stays.count {
-                let candidate = stays[cursor]
-                if let candidateKind = endpoint(candidate, savedPlaces: savedPlaces) {
-                    // Home to home, or work to work, is not a commute — the person
-                    // returned to where they started.
-                    guard candidateKind != kind else { break }
+        // The departure of the most recent real (non-brief) stay, and its Home/Work
+        // role if it has one. This is where a commute would start from if the next
+        // recognised endpoint it reaches has a role of its own — the origin need
+        // not be Home or Work itself, only a real stay (the gym, an errand). A
+        // brief pass-through stop never becomes this and never resets it either.
+        var origin: (departure: Date, kind: Endpoint?)?
+
+        for stay in stays {
+            if let kind = endpoint(stay, savedPlaces: savedPlaces) {
+                if let origin, origin.kind != kind {
                     // `stays` is sorted by arrival, not departure, so a manually
                     // added or otherwise overlapping visit can have an arrival
-                    // earlier than `departure` here. `DateInterval.init` traps on
-                    // end < start, so duration is computed by hand rather than
-                    // trusting the sort to guarantee that ordering (crashed
+                    // earlier than `origin.departure` here. `DateInterval.init`
+                    // traps on end < start, so duration is computed by hand rather
+                    // than trusting the sort to guarantee that ordering (crashed
                     // on-device 2026-08-10 adding a backfilled Work visit that
                     // overlapped the stay before it).
-                    let commuteDuration = candidate.arrival.timeIntervalSince(departure)
-                    guard commuteDuration > 0, commuteDuration <= longestPlausible else { break }
-                    commutes.append(Commute(start: departure, end: candidate.arrival,
-                                            direction: kind == .home ? .toWork : .toHome))
-                    break
+                    let commuteDuration = stay.arrival.timeIntervalSince(origin.departure)
+                    if commuteDuration > 0, commuteDuration <= longestPlausible {
+                        commutes.append(Commute(start: origin.departure, end: stay.arrival,
+                                                direction: kind == .work ? .toWork : .toHome))
+                    }
                 }
-                guard duration(of: candidate, now: now) <= stopTolerance else { break }
-                cursor += 1
+                // A still-open endpoint stay has no departure yet, so it cannot
+                // seed the next leg — there is nothing after it to reach anyway.
+                origin = stay.departure.map { (departure: $0, kind: kind) }
+            } else if duration(of: stay, now: now) > stopTolerance, let departure = stay.departure {
+                origin = (departure, nil)
             }
+            // A brief pass-through stop, or a still-open non-endpoint stay, leaves
+            // `origin` exactly as it was — it's still in transit either way.
         }
         return commutes
     }

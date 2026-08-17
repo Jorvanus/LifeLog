@@ -2,6 +2,26 @@
 
 ## 2026-08-17
 
+### A commute now only needs a Home or Work destination, not a Home<->Work pair
+
+- Commute detection required *both* ends of a journey to be a Saved Place role
+  — a drive to work from the gym read as ordinary unlogged/Travel time,
+  because the trip didn't start at Home. It now only requires the
+  destination: work, an errand, or the gym followed by an arrival at Home or
+  Work all count as a commute, the same way arriving there directly from Home
+  or Work always did. The Insights "Commute" total, the Week Commute card,
+  and existing-travel detection all pick this up automatically since none of
+  them store a commute record — they recompute it from Visits and Saved
+  Place roles every time.
+- Gap suggestions ("Add Visit" for an unlogged stretch) offer the same
+  commute candidate whenever the gap ends at a Home/Work saved place, not
+  only when it also started at the other one — a gap between the gym and
+  Home now offers "commute home" alongside the existing "still at the gym"
+  continuation, instead of only the latter.
+- This only takes effect once a Work Saved Place actually has its Role set
+  to Work in Places — the role is a fact you state, not a guess from the
+  place's name, and was previously only set on Home.
+
 ### Known gap patterns now fill in immediately
 
 - Add Visit now opens already filled for a single, established Home, Work,

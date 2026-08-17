@@ -45,7 +45,7 @@ struct GapSuggestionCandidateGeneratorTests {
         #expect(candidates.first?.homeWorkRole == .home)
     }
 
-    @Test("A gap before a Home stay offers continuation of that stay")
+    @Test("A gap before a Home stay offers both continuation and a commute candidate")
     func destinationToHomeOffersContinuation() {
         let homePlace = home()
         let before = visit(0, 1, place: "Coffee Society", activity: "Eating")
@@ -53,8 +53,12 @@ struct GapSuggestionCandidateGeneratorTests {
 
         let candidates = GapSuggestionCandidateGenerator.candidates(before: before, after: after, savedPlaces: [homePlace])
 
-        #expect(candidates.map(\.kind) == [.continuationOfAfterStay])
-        #expect(candidates.first?.placeName == "Home")
+        // The gap could be more Coffee Society (continuation) or the trip home
+        // (commute) — a place with no role never rules out the destination
+        // ending at Home the way `CommuteDetection` itself would count it.
+        #expect(Set(candidates.map(\.kind)) == [.continuationOfAfterStay, .homeWorkTransition])
+        #expect(candidates.first { $0.kind == .continuationOfAfterStay }?.placeName == "Home")
+        #expect(candidates.first { $0.kind == .homeWorkTransition }?.activity == CommuteDetection.activityName)
     }
 
     @Test("A gap between Home and Work offers a commute candidate in both directions")

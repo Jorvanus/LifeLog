@@ -70,17 +70,43 @@ struct CommuteDetectionTests {
         #expect(commutes.first?.direction == .toWork)
     }
 
-    @Test("A place merely named for home or work, with no role set, is not a commute endpoint")
+    @Test("A place merely named for home or work, with no role set, is not a commute destination")
     func unroledPlaceIsNotACommuteEndpoint() {
         let start = Date(timeIntervalSince1970: 1_800_000_000)
-        // "Homeward Bound Café" would have matched the old keyword substring test.
-        let cafe = Visit(arrival: start, departure: start.addingTimeInterval(60 * 60),
-                         latitude: 0, longitude: 0, placeName: "Homeward Bound Café",
-                         inferredActivity: "Eating", source: "automatic", mapsIdentifier: "cafe-id")
-        let work = Visit(arrival: start.addingTimeInterval(90 * 60), departure: start.addingTimeInterval(9 * 60 * 60),
+        let work = Visit(arrival: start, departure: start.addingTimeInterval(60 * 60),
                          latitude: 0, longitude: 0, placeName: "Work",
                          inferredActivity: "Working", source: "automatic", mapsIdentifier: "work-id")
-        let commutes = CommuteDetection.commutes(in: [cafe, work], savedPlaces: [workPlace])
+        // "Homeward Bound Café" would have matched the old keyword substring test.
+        // No role is set on it, so — even leaving from a real endpoint — it must
+        // never be treated as a Home arrival.
+        let cafe = Visit(arrival: start.addingTimeInterval(90 * 60), departure: start.addingTimeInterval(2 * 60 * 60),
+                         latitude: 0, longitude: 0, placeName: "Homeward Bound Café",
+                         inferredActivity: "Eating", source: "automatic", mapsIdentifier: "cafe-id")
+        let commutes = CommuteDetection.commutes(in: [work, cafe], savedPlaces: [workPlace])
         #expect(commutes.isEmpty)
+    }
+
+    @Test("A commute only needs a Home/Work destination — the origin can be any real stay")
+    func commuteDestinationAloneIsEnough() {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        // Work, a real stay at the gym (no role), then Home — the classic
+        // "not every trip home starts from work" case. Neither end of this
+        // three-stay day is a Home<->Work pair, but the final leg still ends
+        // at Home and should still count as a commute home.
+        let work = Visit(arrival: start, departure: start.addingTimeInterval(9 * 60 * 60),
+                         latitude: 0, longitude: 0, placeName: "Work",
+                         inferredActivity: "Working", source: "automatic", mapsIdentifier: "work-id")
+        let gym = Visit(arrival: start.addingTimeInterval((9 * 60 + 20) * 60),
+                        departure: start.addingTimeInterval((9 * 60 + 80) * 60),
+                        latitude: 0, longitude: 0, placeName: "Gym",
+                        inferredActivity: "Fitness", source: "automatic")
+        let home = Visit(arrival: start.addingTimeInterval((9 * 60 + 95) * 60), departure: nil,
+                         latitude: 0, longitude: 0, placeName: "Home",
+                         inferredActivity: "At home", source: "automatic", mapsIdentifier: "home-id")
+        let commutes = CommuteDetection.commutes(in: [work, gym, home], savedPlaces: roledPlaces)
+        #expect(commutes.count == 1)
+        #expect(commutes.first?.direction == .toHome)
+        #expect(commutes.first?.start == gym.departure)
+        #expect(commutes.first?.end == home.arrival)
     }
 }
