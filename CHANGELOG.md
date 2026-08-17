@@ -2,6 +2,19 @@
 
 ## 2026-08-17
 
+### Confirming one visit no longer silently redefines a whole Saved Place
+
+- Confirming or correcting a single visit at an existing Saved Place —
+  Home, most often — used to overwrite that place's own default activity
+  with whatever that one visit happened to be labelled, even when the
+  place's name never changed. Resolving one Health "Walking" fragment to
+  Home, for instance, quietly turned Home's default activity into
+  "Walking," which then relabelled every other automatic visit nearby the
+  next time the place was touched. A place's default activity now only
+  updates from a visit when the place is genuinely being renamed, or had no
+  default activity at all yet — confirming an ordinary visit updates the
+  geofence's name/radius as before but leaves an established default alone.
+
 ### A Health walking blip between two Home (or other) stays no longer splits it
 
 - Apple Health routinely delivers a "Walking"/"In transit" sample with no

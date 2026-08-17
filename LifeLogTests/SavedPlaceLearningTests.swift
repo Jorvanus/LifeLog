@@ -195,6 +195,59 @@ struct SavedPlaceLearningTests {
         #expect(places.first?.defaultActivity == "Collaborating")
     }
 
+    @Test("Confirming a visit at an existing, unrenamed place never redefines its default activity")
+    func confirmingAVisitDoesNotOverwriteAnEstablishedDefaultActivity() throws {
+        let context = try makeContext()
+        let saved = SavedPlace(
+            name: "Home", latitude: -27.4698, longitude: 153.0251, radius: 100,
+            defaultActivity: "At home", mapsIdentifier: "home-id"
+        )
+        saved.homeWorkRole = .home
+        context.insert(saved)
+        try context.save()
+
+        // A Health "Walking" fragment resolved to Home — the same name, same
+        // place, but its own activity is incidental rather than a statement
+        // about what Home is for.
+        let visit = Visit(
+            arrival: .now, latitude: -27.4698, longitude: 153.0251,
+            placeName: "Home", inferredActivity: "Walking", userActivity: "Walking",
+            source: "automatic", mapsIdentifier: "home-id"
+        )
+        context.insert(visit)
+
+        let result = try SavedPlaceLearning.upsert(
+            from: visit, previousPlaceName: "Home", context: context
+        )
+        let places = try context.fetch(FetchDescriptor<SavedPlace>())
+
+        #expect(result?.change == .updated)
+        #expect(places.count == 1)
+        #expect(places.first?.defaultActivity == "At home",
+                "one passing visit's own activity must never redefine an already-named place's default")
+    }
+
+    @Test("An existing place with no default activity yet still learns one")
+    func fillsInAnEmptyDefaultActivity() throws {
+        let context = try makeContext()
+        let saved = SavedPlace(name: "Home", latitude: -27.4698, longitude: 153.0251,
+                               radius: 100, defaultActivity: "", mapsIdentifier: "home-id")
+        context.insert(saved)
+        try context.save()
+
+        let visit = Visit(
+            arrival: .now, latitude: -27.4698, longitude: 153.0251,
+            placeName: "Home", inferredActivity: "At home", userActivity: "At home",
+            source: "automatic", mapsIdentifier: "home-id"
+        )
+        context.insert(visit)
+
+        _ = try SavedPlaceLearning.upsert(from: visit, previousPlaceName: "Home", context: context)
+        let places = try context.fetch(FetchDescriptor<SavedPlace>())
+
+        #expect(places.first?.defaultActivity == "At home", "nothing established was there to protect")
+    }
+
     @Test("Editing a saved place updates matching location history")
     func appliesSavedPlaceToHistory() throws {
         let context = try makeContext()

@@ -185,8 +185,19 @@ enum SavedPlaceLearning {
         let place: SavedPlace
         let change: Change
         if let existing {
+            // A visit's own activity is evidence about that one visit, not a
+            // restatement of what an already-named place is *for* — confirming a
+            // single passing visit (a Health "Walking" fragment resolved to Home,
+            // say) must never redefine what every other visit there defaults to.
+            // A genuine rename is different: changing the place's own name is a
+            // deliberate "this is now something else," so its default activity
+            // moves with it. An empty default is filled in either way — there was
+            // nothing established to protect.
+            let isRename = existing.name != name
             existing.name = name
-            existing.defaultActivity = activity
+            if isRename || existing.defaultActivity.isEmpty {
+                existing.defaultActivity = activity
+            }
             existing.radius = min(max(max(existing.radius, radius), 25), 500)
             place = existing
             change = .updated
