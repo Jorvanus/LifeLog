@@ -2,6 +2,14 @@ import SwiftUI
 import SwiftData
 import Charts
 
+/// How `ActivitiesTabView` orders its rows within each section.
+enum ActivitiesSortOrder: String, CaseIterable, Identifiable {
+    case mostUsed, alphabetical
+
+    var id: String { rawValue }
+    var title: String { self == .mostUsed ? "Most used" : "A–Z" }
+}
+
 /// The activities screen: every label you use, with the shape of the last week beside
 /// it, and a page of detail behind each one.
 ///
@@ -15,6 +23,11 @@ struct ActivitiesTabView: View {
     @State private var rows: [Row] = []
     @State private var searchText = ""
     @State private var showingUnused = false
+    /// Persisted like other standing view preferences — set once, stays set. Most
+    /// used first is the default: the point of this screen is "what about this
+    /// thing," and that question is asked most about the things done most.
+    @AppStorage("activities-tab-sort-order") private var sortRawValue = ActivitiesSortOrder.mostUsed.rawValue
+    private var sortOrder: ActivitiesSortOrder { ActivitiesSortOrder(rawValue: sortRawValue) ?? .mostUsed }
 
     private func reload() async {
         let startedAt = Date.now
@@ -117,6 +130,26 @@ struct ActivitiesTabView: View {
             }
             .navigationTitle("Activities")
             .accessibilityIdentifier("activities-tab-screen")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    // Same checkmark-list Menu shape as `InsightsScopeMenu`, so a
+                    // sort control reads the same way wherever it appears.
+                    Menu {
+                        ForEach(ActivitiesSortOrder.allCases) { order in
+                            Button {
+                                sortRawValue = order.rawValue
+                            } label: {
+                                Label(order.title, systemImage: order == sortOrder ? "checkmark" : "circle")
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "arrow.up.arrow.down")
+                    }
+                    .accessibilityLabel("Sort activities, \(sortOrder.title)")
+                    .accessibilityHint("Choose how the list is ordered")
+                    .accessibilityIdentifier("activities-sort-menu")
+                }
+            }
             .searchable(text: $searchText, prompt: "Search activities")
             .task { await reload() }
             .onReceive(NotificationCenter.default.publisher(for: InsightsInvalidation.notification)) { _ in
@@ -159,16 +192,38 @@ struct ActivitiesTabView: View {
         return source.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
     }
 
+    /// "Most used" ranks by occasions first — the number the row itself leads
+    /// with — falling back to total time and then name so the order is never
+    /// arbitrary for two activities used equally often.
+    private func sorted(_ source: [Row]) -> [Row] {
+        switch sortOrder {
+        case .alphabetical:
+            return source.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        case .mostUsed:
+            return source.sorted { lhs, rhs in
+                if lhs.statistics.occasions != rhs.statistics.occasions {
+                    return lhs.statistics.occasions > rhs.statistics.occasions
+                }
+                if lhs.statistics.totalTime != rhs.statistics.totalTime {
+                    return lhs.statistics.totalTime > rhs.statistics.totalTime
+                }
+                return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+            }
+        }
+    }
+
     private var recentRows: [Row] {
-        filtered(rows.filter { $0.isAdopted && !$0.statistics.isEmpty })
+        sorted(filtered(rows.filter { $0.isAdopted && !$0.statistics.isEmpty }))
     }
 
     private var historyRows: [Row] {
-        filtered(rows.filter { !$0.isAdopted && !$0.statistics.isEmpty })
+        sorted(filtered(rows.filter { !$0.isAdopted && !$0.statistics.isEmpty }))
     }
 
     private var unusedRows: [Row] {
-        filtered(rows.filter { $0.isAdopted && $0.statistics.isEmpty })
+        // Every row here is unused by definition (`occasions == 0`), so "most
+        // used" ties on the same fallback A-Z order either way.
+        sorted(filtered(rows.filter { $0.isAdopted && $0.statistics.isEmpty }))
     }
 
     private func activityIcon(for row: Row) -> some View {

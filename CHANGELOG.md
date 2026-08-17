@@ -2,6 +2,15 @@
 
 ## 2026-08-17
 
+### The Activities tab sorts by most used, with an A–Z option
+
+- Every section (Recently used, From your history, Not used yet) was
+  alphabetical only. Most used — ranked by occasions, then total time — is
+  now the default, since the point of this screen is what about this one
+  thing, asked most about the things done most. A new toolbar sort menu
+  switches to A–Z, matching Insights' existing scope-menu shape (checkmark
+  against the current choice), and the choice is remembered.
+
 ### A Today button on Insights returns from a past day, week, month, or year
 
 - The only way back to the present period was tapping "next" repeatedly, or

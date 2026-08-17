@@ -133,6 +133,42 @@ final class TimelineAndActivitiesTests: LifeLogUITestCase {
         XCTAssertTrue(app.staticTexts["Top locations"].exists)
     }
 
+    /// Most used is the default order, and the toolbar menu switches to A–Z —
+    /// checked against two seeded rows tied on occasions (one each) so the two
+    /// orders are genuinely opposite rather than coincidentally the same:
+    /// Sleeping's single ~6.5 hour overnight session outranks Shopping's single
+    /// ~70 minute stop on total time, while alphabetically Shopping comes first.
+    func testActivitiesTabSortOrderTogglesToAlphabetical() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+
+        app.tabBars.buttons["Activities"].tap()
+        XCTAssertTrue(element("activities-tab-screen").waitForExistence(timeout: 10))
+
+        let sortMenu = element("activities-sort-menu")
+        XCTAssertTrue(sortMenu.waitForExistence(timeout: 5))
+        XCTAssertTrue(sortMenu.label.contains("Most used"), "most used is the default")
+
+        let shopping = app.staticTexts["Shopping"]
+        let sleeping = app.staticTexts["Sleeping"]
+        XCTAssertTrue(shopping.waitForExistence(timeout: 5))
+        XCTAssertTrue(sleeping.waitForExistence(timeout: 5))
+        XCTAssertLessThan(sleeping.frame.minY, shopping.frame.minY,
+                          "most used ranks the longer single occasion first")
+
+        sortMenu.tap()
+        XCTAssertTrue(app.buttons["A–Z"].waitForExistence(timeout: 5))
+        app.buttons["A–Z"].tap()
+
+        XCTAssertTrue(sortMenu.waitForExistence(timeout: 5))
+        XCTAssertTrue(sortMenu.label.contains("A–Z"))
+        XCTAssertTrue(shopping.waitForExistence(timeout: 5))
+        XCTAssertTrue(sleeping.waitForExistence(timeout: 5))
+        XCTAssertLessThan(shopping.frame.minY, sleeping.frame.minY,
+                          "alphabetical order puts Shopping before Sleeping")
+    }
+
     /// Merging two catalogue activities end to end: picking a target, confirming,
     /// and landing back on the Activities tab with the source gone. This is the
     /// replacement for the old (dead) rename-into-an-existing-name trick — the
