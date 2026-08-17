@@ -2,6 +2,27 @@
 
 ## 2026-08-17
 
+### InsightsView split into four narrow, testable models
+
+- No user-facing change. The 1,381-line `InsightsView` coordinator
+  interleaved Health loading, archive-scale retrospectives, period
+  preparation, and Day/Week/Month/Year presentation building with
+  navigation and the selected period. Extracted into
+  `InsightsPeriodLoader` (the bounded Visit fetch and snapshot cache,
+  unchanged in shape — see TODO.md), `InsightsHealthState` (steps,
+  sleep, Health summary, Year's monthly figures), and
+  `InsightsArchiveRetrospectives` (place history, year-over-year,
+  Year's historical places), and `InsightsPresentationState`
+  (highlights, the rolling weekly baseline, Year's derived story, and
+  the metric/attention rows built from all three). `InsightsView` now
+  only owns navigation, the selected period, and deciding when each
+  model reloads — none of the four hold a `View` or SwiftUI state, so
+  each is constructible and callable directly in a test. Verified
+  against the existing Insights UI suites (InsightsDayTests,
+  InsightsPeriodTests, InsightsVisualRegressionTests): the 17
+  failures seen are identical, test-for-test, on unmodified `main` —
+  pre-existing, not introduced by this change.
+
 ### Reconciliation fixes wider than a day now survive the next Health import
 
 - `walkingRecords` has no anchored-query equivalent, and after any gap in
