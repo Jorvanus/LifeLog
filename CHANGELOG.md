@@ -2,6 +2,25 @@
 
 ## 2026-08-17
 
+### Reconciliation fixes wider than a day now survive the next Health import
+
+- `walkingRecords` has no anchored-query equivalent, and after any gap in
+  successful Health imports the next one can replay up to 30 days of
+  walking history (`healthImportWindowDays`) — wider than the flat 24
+  hours the existing "reapply after import" correction covered.
+  `ActivityImportActor` snapshots the whole archive once per import
+  session and saves back over whatever it's holding, so a correction
+  applied to a row inside that replay window but outside the last 24
+  hours could be silently reverted the next time Health or Motion synced,
+  indefinitely — confirmed directly against the real archive, where the
+  same set of rows kept reappearing as "unreconciled" across several
+  fresh backups taken after a successful reconciliation run.
+  `reapplyRecentJourneyTiming`/`MovementAbsorption`/`OpenStayAbsorption`
+  now take an explicit `lookback`, and the import path calls them again
+  after each Health/Motion import with the actual width it just read,
+  so nothing between a day and 30 days is left to wait on the one-time
+  archive-wide pass that runs only once per app version.
+
 ### The Activities tab sorts by most used, with an A–Z option
 
 - Every section (Recently used, From your history, Not used yet) was

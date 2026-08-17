@@ -51,7 +51,11 @@ extension ActivityLocationPolicy {
     }
 
 
-    /// Re-applies the journey timing rules to the last day, every time, cheaply.
+    /// Default lookback for all three `reapplyRecent*` passes below — a day, cheap
+    /// enough to run on every appearance and every invalidation regardless of cause.
+    static let defaultReapplyLookback: TimeInterval = 24 * 60 * 60
+
+    /// Re-applies the journey timing rules to the recent past, every time, cheaply.
     ///
     /// The one-shot repair cannot be relied on. `ActivityImportActor` is a `@ModelActor`
     /// with its own `ModelContext`, and it runs on every launch — so it holds copies of
@@ -61,11 +65,21 @@ extension ActivityLocationPolicy {
     ///
     /// Rather than sequence two writers, the correction is simply re-applied. It is
     /// idempotent — a stay already ending at the journey it left is left alone — and
-    /// scoped to a day, so it costs a filter over recent records rather than a pass over
-    /// the archive. Losing a race then costs a moment instead of a release.
+    /// scoped to `lookback`, so it costs a filter over recent records rather than a pass
+    /// over the archive. Losing a race then costs a moment instead of a release.
+    ///
+    /// `lookback` defaults to a day for the routine appearance/invalidation callers, but
+    /// a caller that knows it just replayed a wider window — `ActivityDataService`,
+    /// after a Health/Motion import whose own `healthDays`/`motionDays` reached back
+    /// further than a day — passes that same width, so the correction covers everywhere
+    /// the import's stale snapshot could have just overwritten. A day was never a
+    /// property of the race; it was only ever a guess at how wide the import's replay
+    /// window usually was, and `walkingRecords`' unanchored re-scan can reach back up
+    /// to 30 days after any gap in successful imports (see `healthImportWindowDays`).
     @discardableResult
-    static func reapplyRecentJourneyTiming(context: ModelContext, now: Date = .now) throws -> Bool {
-        let since = now.addingTimeInterval(-24 * 60 * 60)
+    static func reapplyRecentJourneyTiming(context: ModelContext, now: Date = .now,
+                                           lookback: TimeInterval = defaultReapplyLookback) throws -> Bool {
+        let since = now.addingTimeInterval(-lookback)
         let visits = try fetchRecentPolicyVisits(context: context, since: since)
         let recent = visits.filter { isMovementActivity($0) && ($0.departure ?? now) >= since }
         guard !recent.isEmpty else { return false }
@@ -77,15 +91,17 @@ extension ActivityLocationPolicy {
         return changed
     }
 
-    /// Re-applies workout-vs-movement absorption to the last day, every time, cheaply —
-    /// the same shape as `reapplyRecentJourneyTiming`, for the same reason. A health-
-    /// walking or motion record for a walk is routinely imported in an earlier batch
-    /// than the workout that explains it — different HealthKit queries, different
-    /// delivery timing — so catching this once, at the moment either side is written,
-    /// misses the ordinary case rather than the rare one.
+    /// Re-applies workout-vs-movement absorption to the recent past, every time,
+    /// cheaply — the same shape as `reapplyRecentJourneyTiming`, for the same reason
+    /// and the same `lookback` (see its doc comment). A health-walking or motion
+    /// record for a walk is routinely imported in an earlier batch than the workout
+    /// that explains it — different HealthKit queries, different delivery timing —
+    /// so catching this once, at the moment either side is written, misses the
+    /// ordinary case rather than the rare one.
     @discardableResult
-    static func reapplyRecentMovementAbsorption(context: ModelContext, now: Date = .now) throws -> Bool {
-        let since = now.addingTimeInterval(-24 * 60 * 60)
+    static func reapplyRecentMovementAbsorption(context: ModelContext, now: Date = .now,
+                                                lookback: TimeInterval = defaultReapplyLookback) throws -> Bool {
+        let since = now.addingTimeInterval(-lookback)
         let visits = try fetchRecentPolicyVisits(context: context, since: since)
         let recent = visits.filter { isMovementActivity($0) && ($0.departure ?? now) >= since }
         guard !recent.isEmpty else { return false }
@@ -96,8 +112,9 @@ extension ActivityLocationPolicy {
         return changed > 0
     }
 
-    /// Re-applies stay-vs-activity absorption to the last day, every time, cheaply — the
-    /// same shape as the two reapplies above, for a gap neither covers.
+    /// Re-applies stay-vs-activity absorption to the recent past, every time, cheaply
+    /// — the same shape as the two reapplies above, for a gap neither covers, and the
+    /// same `lookback` (see `reapplyRecentJourneyTiming`'s doc comment).
     ///
     /// HealthKit's walking/motion queries are not anchored — they re-scan a rolling
     /// window on every import rather than reading only what's new. If a burst is first
@@ -112,11 +129,12 @@ extension ActivityLocationPolicy {
     /// `reconcile(locationVisit:)` would catch this — it runs the same underlying
     /// absorption — but only fires from a live Core Location callback, and a stay left
     /// open all day with nothing else happening never gets a further one. This calls the
-    /// same general absorption `reconcileAll` runs once at launch, scoped to a day so it
-    /// costs a filter over recent records rather than a pass over the archive.
+    /// same general absorption `reconcileAll` runs once at launch, scoped to `lookback`
+    /// so it costs a filter over recent records rather than a pass over the archive.
     @discardableResult
-    static func reapplyRecentOpenStayAbsorption(context: ModelContext, now: Date = .now) throws -> Bool {
-        let since = now.addingTimeInterval(-24 * 60 * 60)
+    static func reapplyRecentOpenStayAbsorption(context: ModelContext, now: Date = .now,
+                                                lookback: TimeInterval = defaultReapplyLookback) throws -> Bool {
+        let since = now.addingTimeInterval(-lookback)
         let visits = try fetchRecentPolicyVisits(context: context, since: since)
         let recent = visits.filter { isMovementActivity($0) && ($0.departure ?? now) >= since }
         guard !recent.isEmpty else { return false }
@@ -124,7 +142,7 @@ extension ActivityLocationPolicy {
         try reconcile(activities: recent, against: live, context: context, now: now)
         // Same reasoning as `reconcileAll`'s own last step, scoped the same way as
         // the rest of this function: catches a coordinate-less fragment sitting
-        // between two same-place stays within the last day, without waiting for the
+        // between two same-place stays within `lookback`, without waiting for the
         // next full archive pass.
         coalesceStaysAcrossUnlocatedMovement(in: visits, context: context, now: now)
         let changed = context.hasChanges

@@ -354,6 +354,43 @@ struct ImportedHistoryInteractionTests {
         #expect(remaining.contains { $0.placeName == "Home" && $0.departure == nil })
     }
 
+    /// `walkingRecords` has no anchored-query equivalent, and `healthImportWindowDays`
+    /// can size a Health/Motion import's own replay window up to 30 days after a gap
+    /// in successful imports — wider than the flat 24h these three passes default to.
+    /// `ActivityDataService` passes its own actual window as `lookback` after such an
+    /// import so a burst outside the last day still gets caught rather than sitting
+    /// reverted until the next (once-ever) archive-wide pass.
+    @Test("A wider lookback reaches an orphaned burst outside the default 24h window")
+    func reappliesOpenStayAbsorptionWithAWiderLookback() throws {
+        let context = try ActivityLocationPolicyFixtures.makeContext()
+        let tenDaysAgo = base.addingTimeInterval(-10 * 24 * 60 * 60)
+        let home = Visit(arrival: tenDaysAgo.addingTimeInterval(-2 * 60 * 60), departure: nil,
+                         latitude: -23.37, longitude: 150.51,
+                         placeName: "Home", inferredActivity: "At home", source: "automatic",
+                         recognitionConfidence: "learned")
+        let orphanedBurst = Visit(arrival: tenDaysAgo.addingTimeInterval(-60 * 60),
+                                  departure: tenDaysAgo.addingTimeInterval(-55 * 60),
+                                  latitude: 0, longitude: 0, placeName: "Walking",
+                                  inferredActivity: "Walking", userActivity: "Walking",
+                                  source: "health-walking")
+        [home, orphanedBurst].forEach(context.insert)
+        try context.save()
+
+        // The default 24h lookback, measured from `now` (today), never reaches a
+        // burst ten days old.
+        let unchanged = try ActivityLocationPolicy.reapplyRecentOpenStayAbsorption(context: context, now: base)
+        #expect(unchanged == false)
+        #expect(try context.fetch(FetchDescriptor<Visit>()).filter { $0.source == "health-walking" }.count == 1)
+
+        // A caller that knows it just replayed a wider window reaches it.
+        let changed = try ActivityLocationPolicy.reapplyRecentOpenStayAbsorption(
+            context: context, now: base, lookback: 14 * 24 * 60 * 60)
+        #expect(changed == true)
+        let remaining = try context.fetch(FetchDescriptor<Visit>())
+        #expect(remaining.filter { $0.source == "health-walking" }.isEmpty)
+        #expect(remaining.contains { $0.placeName == "Home" && $0.departure == nil })
+    }
+
     @Test("Steps taken at home before starting a workout stay at home, and the workout is the whole walk")
     func stepsBeforeAWorkoutStayAtHome() throws {
         let context = try ActivityLocationPolicyFixtures.makeContext()

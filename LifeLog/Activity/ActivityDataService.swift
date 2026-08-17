@@ -853,6 +853,34 @@ final class ActivityDataService {
                     HardwareValidation.recordFirst(.motionHistory, context: context,
                         message: "Core Motion returned \(motionSegmentsRead) segment(s) and the automatic import finished.")
                 }
+                // TimelineView's own `.onReceive(InsightsInvalidation.notification)`
+                // already re-applies these three at a flat 24h lookback for every
+                // invalidation, whatever its cause — cheap, and correct for a manual
+                // edit. But `walkingRecords` has no anchored-query equivalent and
+                // `healthImportWindowDays` can size this import's own replay window up
+                // to 30 days after any gap in successful imports, so a 24h correction
+                // is not wide enough to reach everything this import's stale
+                // `ActivityImportActor` snapshot (see its own doc comment) could have
+                // just overwritten. Re-apply once more here, scoped to the width this
+                // import actually read, so nothing between 24h and that width is left
+                // silently reverted until the next launch — or forever, since the
+                // archive-wide `reconcileAll` pass this would otherwise wait for only
+                // ever runs once per app version.
+                let importedDays = max(healthDays ?? 0, motionDays ?? 0)
+                if importedDays > 0, let context {
+                    let lookback = TimeInterval(importedDays) * 24 * 60 * 60
+                    do {
+                        _ = try ActivityLocationPolicy.reapplyRecentMovementAbsorption(
+                            context: context, lookback: lookback)
+                        _ = try ActivityLocationPolicy.reapplyRecentJourneyTiming(
+                            context: context, lookback: lookback)
+                        _ = try ActivityLocationPolicy.reapplyRecentOpenStayAbsorption(
+                            context: context, lookback: lookback)
+                    } catch {
+                        // Retried on the next import — TimelineView's own 24h pass
+                        // still covers the last day regardless.
+                    }
+                }
                 InsightsInvalidation.invalidate(reason: "HealthKit or Motion import", context: context)
                 if continueQueuedHealthObserverImportIfNeeded() { return }
                 if healthDays != nil { finishHealthObserverDeliveries() }
