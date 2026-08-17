@@ -66,6 +66,9 @@ struct ManualVisitView: View {
     @State private var beforeVisit: Visit?
     @State private var afterVisit: Visit?
     @State private var gapSuggestionViewModel: GapSuggestionViewModel
+    /// A deterministic resolver rule may safely prepare the blank form, but it
+    /// never saves or prevents a person changing either field.
+    @State private var automaticDraftMessage: String?
     /// What the form's fields looked like right after "Use as draft" populated
     /// them, kept only to tell "saved as suggested" from "edited before saving"
     /// at save time — `nil` whenever no suggestion has been accepted this
@@ -190,6 +193,11 @@ struct ManualVisitView: View {
                         }
                     }
                     .accessibilityIdentifier("choose-activity-link")
+                } footer: {
+                    if let automaticDraftMessage {
+                        Label(automaticDraftMessage, systemImage: "wand.and.stars")
+                            .accessibilityIdentifier("manual-visit-automatic-draft-note")
+                    }
                 }
 
                 Section("Time") {
@@ -247,7 +255,10 @@ struct ManualVisitView: View {
             } message: {
                 Text("This time overlaps:\n\(overlapSummary)")
             }
-            .task { loadBorderingVisits() }
+            .task {
+                loadBorderingVisits()
+                applyKnownRuleDraftIfAvailable()
+            }
             // A shown suggestion described a specific picture of the archive;
             // once a neighbouring visit changes or a Saved Place's Home/Work
             // role changes underneath this sheet — most likely the background
@@ -256,9 +267,34 @@ struct ManualVisitView: View {
             // scope, and filter live on the screen this sheet is modal over,
             // so they cannot change while it's open, and a fresh gap always
             // gets a fresh `ManualVisitView`/`GapSuggestionViewModel` instance.)
-            .onChange(of: visits) { gapSuggestionViewModel.invalidateIfShowingResult() }
-            .onChange(of: savedPlaces) { gapSuggestionViewModel.invalidateIfShowingResult() }
+            .onChange(of: visits) {
+                gapSuggestionViewModel.invalidateIfShowingResult()
+                applyKnownRuleDraftIfAvailable()
+            }
+            .onChange(of: savedPlaces) {
+                gapSuggestionViewModel.invalidateIfShowingResult()
+                applyKnownRuleDraftIfAvailable()
+            }
         }
+    }
+
+    /// The form should not make someone request AI help for a conclusion the
+    /// local resolver already has. Only an untouched form is prefilled, so a
+    /// later Saved Place refresh can never overwrite a person's own edit.
+    private func applyKnownRuleDraftIfAvailable() {
+        guard place.isEmpty, activity.isEmpty,
+              let beforeVisit, let afterVisit,
+              let candidate = GapSuggestionCandidateGenerator.candidates(
+                before: beforeVisit,
+                after: afterVisit,
+                savedPlaces: savedPlaces,
+                gapStart: range.start,
+                gapEnd: range.end
+              ).first(where: { $0.kind == .resolverRuleStay })
+        else { return }
+
+        populateDraft(from: candidate)
+        automaticDraftMessage = "LifeLog filled this from your recorded pattern. You can change it before saving."
     }
 
     /// Applies a candidate's evidence to the manual form's own fields — never
@@ -269,6 +305,14 @@ struct ManualVisitView: View {
     /// the same "A → B" arrow label `VisitSuggestion` already uses for a
     /// commute, so it reads as transition time rather than a destination.
     private func useSuggestionAsDraft(_ candidate: GapSuggestionCandidate) {
+        populateDraft(from: candidate)
+        acceptedDraftSnapshot = DraftSnapshot(place: place, activity: activity, arrival: arrival, departure: departure)
+    }
+
+    /// Shared by an explicit suggestion and a local, deterministic rule. This
+    /// only fills the editable controls; recording suggestion feedback remains
+    /// exclusive to the explicit "Use as draft" path.
+    private func populateDraft(from candidate: GapSuggestionCandidate) {
         switch candidate.kind {
         case .continuationOfBeforeStay, .nearbyResolvedPlaceStay:
             if let beforeVisit { selectPlace(from: beforeVisit) }
@@ -293,7 +337,6 @@ struct ManualVisitView: View {
         }
         arrival = range.start
         departure = range.end
-        acceptedDraftSnapshot = DraftSnapshot(place: place, activity: activity, arrival: arrival, departure: departure)
     }
 
     /// One-shot, not a live `@Query` — this is context to look at while deciding

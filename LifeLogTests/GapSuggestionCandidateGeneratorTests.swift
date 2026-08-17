@@ -140,6 +140,24 @@ struct GapSuggestionCandidateGeneratorTests {
         #expect(travelCandidate.first?.activity == "At home")
     }
 
+    @Test("A short gap beside Sleep and a walking workout offers Home as a reviewable draft")
+    func sleepWalkingWorkoutOffersHomeDraft() {
+        let homePlace = home()
+        let gapStart = start.addingTimeInterval(8 * 3600)
+        let gapEnd = gapStart.addingTimeInterval(17 * 60)
+        let sleep = Visit(arrival: start, departure: gapStart, latitude: 0, longitude: 0,
+                          placeName: "Sleep", inferredActivity: "Sleeping", source: "health-sleep")
+        let workout = Visit(arrival: gapEnd, departure: gapEnd.addingTimeInterval(30 * 60), latitude: 0, longitude: 0,
+                            placeName: "Walking workout", inferredActivity: "Walking", source: "health-workout")
+
+        let candidates = GapSuggestionCandidateGenerator.candidates(
+            before: sleep, after: workout, savedPlaces: [homePlace], gapStart: gapStart, gapEnd: gapEnd)
+
+        #expect(candidates.map(\.id) == ["sleep-walking-workout-home"])
+        #expect(candidates.first?.placeName == "Home")
+        #expect(candidates.first?.activity == "At home")
+    }
+
     @Test("Two unrelated neighbouring businesses with no Home/Work role offer nothing")
     func neighbouringBusinessesOfferNoCandidate() {
         let before = visit(0, 1, place: "Coffee Society", activity: "Eating")

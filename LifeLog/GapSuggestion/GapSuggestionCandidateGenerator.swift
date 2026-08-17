@@ -11,6 +11,12 @@ import SwiftData
 /// *kind* rather than an ID and still be unambiguous.
 enum GapSuggestionCandidateGenerator {
     static let maximumCandidates = 4
+    /// A deliberate workout is not automatically treated as a passive walking
+    /// fragment. A short gap directly against recorded sleep is the narrow
+    /// exception: it is useful to offer the configured Home as an editable
+    /// transition draft, but never to assert that the workout itself happened
+    /// there.
+    static let maximumSleepWalkingWorkoutTransition: TimeInterval = 2 * 60 * 60
 
     /// The Home/Work role a bordering visit contributes, or `nil`. A
     /// placeholder-named visit is never treated as a Home/Work endpoint even if
@@ -90,8 +96,24 @@ enum GapSuggestionCandidateGenerator {
     private static func resolverRuleCandidate(before: Visit, after: Visit, savedPlaces: [SavedPlace],
                                               gapStart: Date, gapEnd: Date, calendar: Calendar) -> GapSuggestionCandidate? {
         let gap = ArchiveRepair.UnloggedGap(start: gapStart, end: gapEnd, before: before, after: after)
-        guard let segment = ArchiveRepair.singleSegmentSuggestion(for: gap, calendar: calendar) else { return nil }
+        if let segment = ArchiveRepair.singleSegmentSuggestion(for: gap, calendar: calendar) {
+            return makeResolverRuleCandidate(segment: segment, savedPlaces: savedPlaces)
+        }
 
+        guard gapEnd.timeIntervalSince(gapStart) <= maximumSleepWalkingWorkoutTransition,
+              (ArchiveRepair.isSleepFragment(before) && isWalkingWorkout(after)
+                || ArchiveRepair.isSleepFragment(after) && isWalkingWorkout(before))
+        else { return nil }
+        let homeName = savedPlaces.first(where: { $0.homeWorkRole == .home })?.name ?? "At home"
+        return GapSuggestionCandidate(
+            id: "sleep-walking-workout-home", kind: .resolverRuleStay,
+            placeName: homeName, activity: "At home", homeWorkRole: .home,
+            rationale: "A short gap joins recorded sleep and a walking workout, so LifeLog suggests your configured Home for the time around that transition."
+        )
+    }
+
+    private static func makeResolverRuleCandidate(segment: ArchiveRepair.GapFillSegment,
+                                                  savedPlaces: [SavedPlace]) -> GapSuggestionCandidate? {
         let role: SavedPlaceRole?
         let placeName: String
         switch segment.activity {
@@ -113,6 +135,10 @@ enum GapSuggestionCandidateGenerator {
             placeName: placeName, activity: segment.activity, homeWorkRole: role,
             rationale: "LifeLog's existing Home, Work, sleep, travel, and walking repair rules resolve this whole gap as \(segment.activity)."
         )
+    }
+
+    private static func isWalkingWorkout(_ visit: Visit) -> Bool {
+        visit.visitSource == .healthWorkout && ActivityLocationPolicy.isWalkingActivity(visit)
     }
 }
 

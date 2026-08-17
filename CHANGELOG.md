@@ -2,12 +2,12 @@
 
 ## 2026-08-17
 
-### Gap help now uses LifeLog's own known patterns first
+### Known gap patterns now fill in immediately
 
-- Add Visit can now turn a single, established Home, Work, sleep, travel, or
-  Health-walking gap pattern into an editable draft immediately. For example,
-  the existing sleep↔walking rule now offers the configured Home and "At home"
-  rather than making you type it again or asking Apple Intelligence to guess.
+- Add Visit now opens already filled for a single, established Home, Work,
+  sleep, travel, or Health-walking gap pattern. For example, sleep↔walking and
+  short sleep↔walking-workout transitions now prefill the configured Home and
+  "At home" rather than making you request help or type it again.
   Multi-part routine fills remain in Archive Repair, where every inferred part
   can still be reviewed separately.
 

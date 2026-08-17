@@ -77,6 +77,37 @@ struct GapSuggestionViewModelTests {
         #expect(viewModel.candidate(for: outcome)?.activity == "At home")
     }
 
+    @Test("A short Sleep-to-walking-workout gap offers Home without requiring Apple Intelligence")
+    func sleepWalkingWorkoutOffersHomeWithoutAppleIntelligence() async throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+        let home = SavedPlace(name: "Home", latitude: -23.378, longitude: 150.511, defaultActivity: "At home")
+        home.homeWorkRole = .home
+        context.insert(home)
+        let gapStart = start.addingTimeInterval(8 * 3600)
+        let gapEnd = gapStart.addingTimeInterval(17 * 60)
+        context.insert(Visit(arrival: start, departure: gapStart, latitude: 0, longitude: 0,
+                             placeName: "Sleep", inferredActivity: "Sleeping", source: "health-sleep"))
+        context.insert(Visit(arrival: gapEnd, departure: gapEnd.addingTimeInterval(30 * 60), latitude: 0, longitude: 0,
+                             placeName: "Walking workout", inferredActivity: "Walking", source: "health-workout"))
+        try context.save()
+
+        let viewModel = GapSuggestionViewModel(
+            service: FakeGapSuggestionService.unavailable(.appleIntelligenceNotEnabled))
+        viewModel.requestSuggestion(gapStart: gapStart, gapEnd: gapEnd,
+                                    repairActor: ArchiveRepairActor(modelContainer: container), diagnosticsContext: nil)
+        await viewModel.waitForCompletion()
+
+        guard case .result(let outcome) = viewModel.state else {
+            Issue.record("Expected a Home draft, got \(viewModel.state)")
+            return
+        }
+        #expect(viewModel.resultSource == .resolverRule)
+        #expect(outcome.confidence == .medium)
+        #expect(viewModel.candidate(for: outcome)?.placeName == "Home")
+        #expect(viewModel.candidate(for: outcome)?.activity == "At home")
+    }
+
     @Test("Apple Intelligence unavailable is surfaced without ever building a suggestion")
     func unavailableSurfacedDirectly() async throws {
         let container = try makeContainer()

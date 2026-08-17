@@ -114,8 +114,9 @@ final class GapSuggestionViewModel {
             }
 
             if let resolverCandidate = context.candidates.first(where: { $0.kind == .resolverRuleStay }) {
+                let confidence: GapSuggestionConfidence = resolverCandidate.id == "sleep-walking-workout-home" ? .medium : .high
                 let result = GapSuggestionOutcome(
-                    kind: .possibleStay, candidateID: resolverCandidate.id, confidence: .high,
+                    kind: .possibleStay, candidateID: resolverCandidate.id, confidence: confidence,
                     explanation: resolverCandidate.rationale, uncertaintyNote: nil)
                 lastContext = context
                 resultSource = .resolverRule
