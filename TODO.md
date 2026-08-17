@@ -84,13 +84,6 @@ be changed safely outrank App Store preparation or speculative integrations.
 
 ## Insights logic and architecture
 
-- [ ] **Add a recording-quality insight before another decorative chart.** Show
-  logged coverage by week/month, longest and total gaps, provisional rows, and days
-  below a useful coverage threshold. Every result already has a correction path; link
-  gaps to Add Visit and provisional rows to the existing editor/review queue. This is
-  the most actionable new use of the archive because it distinguishes “nothing
-  happened” from “LifeLog has no evidence.”
-
 - [ ] **Add routine stability using existing data.** Start with weekday arrival and
   departure ranges for explicit Home/Work roles, regularity of sleep start/end, and
   commute median plus variability. Require enough distinct days, show the sample

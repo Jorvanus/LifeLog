@@ -423,6 +423,7 @@ struct InsightsView: View {
     /// commute summary when there's a real one to show. The donut stays
     /// reachable but demoted, same as Day.
     @ViewBuilder private var weekLayout: some View {
+        recordingQualitySection
         WeekInsightsView(
             weekDays: periodLoader.weekDays, now: now, selectedDate: anchorDate,
             yourWeekMetrics: presentationState.weeklyYourWeekMetrics(
@@ -442,7 +443,6 @@ struct InsightsView: View {
             onSelectDay: { date in anchorDate = date; window = .day }
         )
         donutSection
-        unloggedTimeReviewLink
         healthSetupSection
     }
 
@@ -451,6 +451,7 @@ struct InsightsView: View {
     /// current/previous segments as the donut.
     @ViewBuilder private var monthLayout: some View {
         let insights = presentationState.monthlyInsights(snapshot: periodLoader.snapshot, window: window, now: now)
+        recordingQualitySection
         MonthInsightsView(
             insights: insights, comparisonSubtitle: insights.comparisonSubtitle,
             heroMetrics: presentationState.monthlyHeroMetrics(
@@ -565,6 +566,28 @@ struct InsightsView: View {
         )
     }
 
+    /// Coverage, gaps, provisional rows, and low-coverage days for the selected
+    /// Week/Month period -- see `InsightsRecordingQuality`'s own doc comment for
+    /// why this reads only the already-fetched period data.
+    private var recordingQuality: InsightsRecordingQuality.Presentation {
+        InsightsRecordingQuality.make(segments: periodLoader.snapshot.segments, visits: periodLoader.visits,
+                                      interval: periodLoader.snapshot.analysisInterval, now: now)
+    }
+
+    /// Placed first in Week/Month, ahead of their own decorative charts -- see
+    /// TODO.md's "recording-quality insight before another decorative chart."
+    @ViewBuilder private var recordingQualitySection: some View {
+        let quality = recordingQuality
+        if quality.hasSignal {
+            InsightRecordingQualityCard(
+                quality: quality, periodTitle: periodTitle,
+                onOpenGaps: { path.append(InsightsRoute.unloggedTime) },
+                onOpenProvisional: { path.append(InsightsRoute.provisionalRows) },
+                onOpenDay: { date in anchorDate = date; window = .day }
+            )
+        }
+    }
+
     /// This is intentionally period- and scope-bounded. The archive-repair
     /// browser remains the place to inspect every historical gap, whereas this
     /// link answers the question raised by the selected Insights breakdown.
@@ -669,6 +692,9 @@ struct InsightsView: View {
         case .unloggedTime:
             InsightUnloggedTimeList(gaps: unloggedSegments, periodTitle: periodTitle,
                                     onVisitSaved: { reloadInsights() })
+        case .provisionalRows:
+            InsightProvisionalRowsList(rows: recordingQuality.provisionalRows, periodTitle: periodTitle,
+                                       interval: periodLoader.snapshot.analysisInterval)
         case let .visit(stableID):
             InsightVisitDestination(stableID: stableID)
         }

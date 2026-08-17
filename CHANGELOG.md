@@ -2,6 +2,25 @@
 
 ## 2026-08-18
 
+### Recording quality: a new Week/Month insight distinguishing a gap from a quiet day
+
+- New "Recording quality" card, shown ahead of Week and Month's own decorative
+  charts, reports what fraction of the selected period actually has a record
+  behind it: logged coverage, total and longest unlogged gaps, provisional
+  rows still awaiting confirmation, and which individual days fell below 50%
+  coverage.
+- Every number reuses existing resolved data -- `InsightSegment`s and
+  `Visit.resolutionState` -- so it can never disagree with the donut,
+  Timeline, or Review Queue. New `InsightsRecordingQuality` is the pure,
+  synchronous model; `InsightRecordingQualityCard` is the view.
+- Every result already has a correction path: tapping the gaps row opens the
+  same "Unlogged time" list Add Visit already uses, tapping provisional rows
+  opens a new list that pushes straight into the existing `VisitEditor`, and
+  tapping a low-coverage day opens Day Insights for that date.
+- Week's card replaces its previous separate "Unlogged time" link (now folded
+  into Recording Quality's own gaps row); Month gains gap review for the
+  first time.
+
 ### One shared policy for how a period compares against a previous one
 
 - `InsightWindow.previousComparisonInterval` already existed as the correct

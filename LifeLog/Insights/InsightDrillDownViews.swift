@@ -37,6 +37,7 @@ enum InsightsRoute: Hashable {
     case place(name: String)
     case comparison(name: String, hours: Double, previousHours: Double, delta: Double)
     case unloggedTime
+    case provisionalRows
     case visit(stableID: UUID)
 }
 
@@ -132,6 +133,44 @@ private struct InsightUnloggedGapRow: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Unlogged time from \(gap.start.formatted(date: .abbreviated, time: .shortened)) to \(gap.end.formatted(date: .abbreviated, time: .shortened)), \(formatHours(gap.hours))")
+    }
+}
+
+/// The provisional visits contributing to the selected Insights period's
+/// Recording Quality card -- the same `.provisional` visits
+/// `InsightsSnapshot.provisionalCount` already counts. Each row opens the same
+/// `VisitEditor`, via `InsightsRoute.visit`, that the Review Queue's own entries
+/// already use, rather than a second correction flow.
+struct InsightProvisionalRowsList: View {
+    let rows: [InsightsRecordingQuality.ProvisionalRow]
+    let periodTitle: String
+    let interval: DateInterval
+
+    var body: some View {
+        List {
+            Section {
+                LabeledContent("Period", value: periodTitle)
+                LabeledContent("Provisional", value: "\(rows.count)")
+            }
+            Section("Needs review") {
+                if rows.isEmpty {
+                    ContentUnavailableView("Nothing to review", systemImage: "checkmark.circle",
+                                           description: Text("Every visit in this period has been confirmed."))
+                } else {
+                    ForEach(rows) { row in
+                        NavigationLink(value: InsightsRoute.visit(stableID: row.stableID)) {
+                            InsightRowLabel(title: row.placeName.isEmpty ? row.activity : row.placeName,
+                                           detail: row.start.formatted(date: .abbreviated, time: .shortened))
+                        }
+                        .accessibilityIdentifier("insight-provisional-row")
+                    }
+                }
+            }
+        }
+        .navigationTitle("Provisional")
+        .navigationBarTitleDisplayMode(.inline)
+        .safeAreaInset(edge: .top) { PeriodBanner(title: periodTitle, interval: interval) }
+        .accessibilityIdentifier("insight-provisional-rows-list")
     }
 }
 
