@@ -35,6 +35,14 @@ be changed safely outrank App Store preparation or speculative integrations.
   `location-policy-reconciled-v13`, together with their `@AppStorage` flags, verbose
   appearance diagnostics, and archive-wide work in `TimelineView`. These exist to
   repair old output; current arrivals/imports already have bounded reconciliation.
+  **Run against the real archive 2026-08-17: not clean.**
+  `deduplicateAutomaticLocations` and `WorkoutJourneys.repairSplitWorkouts` found
+  nothing, but `rejoinStaysSplitByMovement` still rejoined 14 real "Home, walking,
+  Home" splits, and `reconcileAll` still changed 10 rows and added 14 — identically,
+  across three fresh backups taken after a confirmed successful reconciliation run.
+  Root cause found and fixed separately (see the widened-lookback item below); once
+  that fix has had a few days of normal on-device use, re-run this same audit before
+  trying the retirement again.
 
 - [ ] **Do not delete the live race safeguards; move them to the writer that needs
   them.** `reapplyRecentMovementAbsorption`, `reapplyRecentJourneyTiming`, and
@@ -42,6 +50,25 @@ be changed safely outrank App Store preparation or speculative integrations.
   actor finishing with a different `ModelContext`. Make import completion one
   coordinated mutation/save/publication boundary, then remove both the Timeline
   appearance repairs and their duplicate invalidation observer.
+  **Partial mitigation shipped 2026-08-17**, not the fix this item asks for: the
+  three passes now take an explicit `lookback` (still 24h for the routine
+  appearance/invalidation callers), and `ActivityDataService` re-applies them once
+  more after each Health/Motion import at the width it actually just replayed —
+  `walkingRecords`' unanchored re-scan can reach up to 30 days after a gap in
+  successful imports, confirmed as the actual mechanism reverting reconciliation
+  fixes silently on every launch. This closes the gap without the architectural
+  change; the coordinated-boundary rewrite is still the real fix.
+
+- [ ] **Merge adjacent same-place `.automatic` stays with nothing recorded between
+  them at all.** `coalesceStaysAcrossUnlocatedMovement` (shipped 2026-08-17) only
+  folds away a fragment that carries no coordinates; `mergeOverlappingStays` only
+  merges stays that overlap in time. Neither reaches two touching-but-not-overlapping
+  `.automatic` stays at the same place with a real gap and nothing recorded in it —
+  the shape a multi-parking-spot Work commute produces (confirmed against the real
+  archive 2026-08-17: a 4-minute manual "walk from the car" row between an arrival
+  and the main Work stay). Deliberately not started: needs a decision on how far a
+  gap can stretch before two stays are no longer "the same visit," and must never
+  touch a `manual`-source row someone entered by hand.
 
 - [ ] **Find and eliminate the source of recurring duplicate sleep before removing
   `SleepSessionRepair`.** It has found duplicates after the original arrival-window
@@ -56,12 +83,6 @@ be changed safely outrank App Store preparation or speculative integrations.
   Screens may show status; opening a tab must not be what repairs the database.
 
 ## Insights logic and architecture
-
-- [ ] **Extract the 1,366-line `InsightsView` coordinator.** Keep navigation and the
-  selected period in the view, but move Health loading, archive retrospectives,
-  period preparation, and Day/Week/Month/Year presentation state behind narrow,
-  testable models. Preserve the existing bounded Visit fetch and snapshot cache; do
-  not replace them with an archive-wide `@Query`.
 
 - [ ] **Define one period-comparison policy and use it everywhere.** Day, Week, Month,
   Year, highlights, hero metrics, Health summaries, and export should agree on partial
