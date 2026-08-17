@@ -56,8 +56,11 @@ struct MonthlyInsights {
     }
 
     static let minimumLoggedHours = 8.0
-    static let minimumAbsoluteChange = 1.0
-    static let minimumPercentageChange = 0.20
+    /// The values themselves live on `InsightsPeriodComparison` now — the one
+    /// shared threshold every hours-based comparison across Insights agrees
+    /// on — aliased here so every call site below keeps reading naturally.
+    static let minimumAbsoluteChange = InsightsPeriodComparison.minimumAbsoluteHours
+    static let minimumPercentageChange = InsightsPeriodComparison.minimumFraction
     static let minimumNewCategoryHours = 2.0
 
     let headline: String?

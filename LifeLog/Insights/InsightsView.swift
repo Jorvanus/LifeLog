@@ -438,7 +438,7 @@ struct InsightsView: View {
                 visits: periodLoader.visits, savedPlaces: savedPlaces, now: now, interval: interval,
                 homePlace: homePlace, workPlace: workPlace
             ),
-            routineChanges: presentationState.weekRoutineChanges(interval: interval, snapshot: periodLoader.snapshot),
+            routineChanges: presentationState.weekRoutineChanges(interval: interval, snapshot: periodLoader.snapshot, now: now),
             onSelectDay: { date in anchorDate = date; window = .day }
         )
         donutSection

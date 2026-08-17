@@ -86,18 +86,16 @@ struct InsightsSnapshot {
 
     static func make(visits: [Visit], window: InsightWindow, anchorDate: Date, now: Date,
                      home: HomePlace? = nil, savedPlaces: [SavedPlace] = []) -> InsightsSnapshot {
-        let interval = window.interval(containing: anchorDate)
-        // Current periods end “now”; otherwise future time would dominate the donut as unlogged.
-        let analysisInterval = interval.contains(now)
-            ? DateInterval(start: interval.start, end: min(interval.end, now))
-            : interval
         // Every window compares like-for-like elapsed spans: a month three days in
         // is measured against the same first three days of the previous month, not
         // the whole of it. Comparing partial current against a complete previous
         // period made "more/less than last month" structurally misleading — early
         // in a month, everything reads as a huge drop purely because less time has
-        // elapsed, regardless of what actually happened.
-        let previousInterval = window.previousComparisonInterval(for: analysisInterval)
+        // elapsed, regardless of what actually happened. `InsightsPeriodComparison`
+        // is the one place this pairing is built, so every other comparison across
+        // Insights (Health summaries, year-over-year) agrees with it.
+        let (analysisInterval, previousInterval) = InsightsPeriodComparison.comparisonIntervals(
+            for: window, anchorDate: anchorDate, now: now)
 
         // Location visits are prepared once and reused by both periods. This avoids an
         // all-history scan for each individual walking or travel record.

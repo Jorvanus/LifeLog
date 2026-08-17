@@ -1,6 +1,34 @@
 # Change log
 
-## 2026-08-17
+## 2026-08-18
+
+### One shared policy for how a period compares against a previous one
+
+- `InsightWindow.previousComparisonInterval` already existed as the correct
+  way to pair a period with its comparison period, but not every caller used
+  it on an already-clamped interval. `InsightsHealthState.reloadHealthSummary`
+  compared a partial current month's Health figures against a *complete*
+  previous month; `ArchiveRetrospectives`' year-over-year highlight compared
+  a partial current period's logged hours against a full year-ago period.
+  Both silently produced a real-looking percentage for a comparison that
+  wasn't actually comparing like with like.
+- New `InsightsPeriodComparison` is the one place `current`/`previous`
+  interval pairs, and year-over-year pairs, are built now — `InsightsSnapshot`
+  (already correct) and both fixed call sites all go through it. It also
+  carries the one hours-based "is this change worth mentioning" threshold
+  (1 hour and 20%) that Month's hero metrics, Week's routine changes, and
+  year-over-year now agree on, rather than each holding its own separately
+  tuned constant.
+- Week's own routine-changes card had a related bug: it fed
+  `InsightsTrends.series` a partial in-progress week as "the latest week,"
+  a contract that function documents as always complete — so two elapsed
+  days routinely read as "less [category] than usual," every Monday and
+  Tuesday, regardless of what had actually happened. It now waits until
+  most of the week (5 of 7 days) has elapsed before comparing at all.
+- Added table-driven fixtures (`InsightsPeriodComparisonTests`) for the six
+  cases named in the roadmap item this closes: a DST transition, an open
+  multi-day stay, overlapping visits, ignored/superseded rows, a changed
+  Home radius, and sparse Health samples.
 
 ### InsightsView split into four narrow, testable models
 

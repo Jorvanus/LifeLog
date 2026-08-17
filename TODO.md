@@ -84,12 +84,6 @@ be changed safely outrank App Store preparation or speculative integrations.
 
 ## Insights logic and architecture
 
-- [ ] **Define one period-comparison policy and use it everywhere.** Day, Week, Month,
-  Year, highlights, hero metrics, Health summaries, and export should agree on partial
-  periods, future time, scope filtering, and comparison labels. Add table-driven
-  fixtures for DST, open multi-day stays, overlaps, ignored/superseded rows, a changed
-  Home radius, and sparse Health samples.
-
 - [ ] **Add a recording-quality insight before another decorative chart.** Show
   logged coverage by week/month, longest and total gaps, provisional rows, and days
   below a useful coverage threshold. Every result already has a correction path; link

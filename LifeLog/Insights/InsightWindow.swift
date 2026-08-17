@@ -6,8 +6,10 @@ enum InsightWindow: String, CaseIterable, Identifiable, Hashable {
     var id: Self { self }
     var title: String { rawValue.capitalized }
 
-    func interval(containing date: Date) -> DateInterval {
-        let calendar = Calendar.current
+    /// `calendar` is injectable (defaulting to `.current`, so every existing
+    /// caller is unaffected) so a DST transition can be tested deterministically
+    /// against a fixed timezone rather than whatever the test happens to run in.
+    func interval(containing date: Date, calendar: Calendar = .current) -> DateInterval {
         switch self {
         case .day:
             let start = calendar.startOfDay(for: date)
@@ -18,22 +20,24 @@ enum InsightWindow: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
-    func move(_ date: Date, by value: Int) -> Date {
+    func move(_ date: Date, by value: Int, calendar: Calendar = .current) -> Date {
         let component: Calendar.Component = switch self { case .day: .day; case .week: .weekOfYear; case .month: .month; case .year: .year }
-        return Calendar.current.date(byAdding: component, value: value, to: date) ?? date
+        return calendar.date(byAdding: component, value: value, to: date) ?? date
     }
 
     /// The comparable preceding calendar period. Subtracting a duration makes May
     /// compare with a 31-day slice beginning in March; calendar arithmetic keeps a
     /// month against April and a leap year against the preceding calendar year.
-    func previousComparisonInterval(for interval: DateInterval) -> DateInterval {
+    /// Across a DST transition the previous period's wall-clock duration can
+    /// differ from the current one's by an hour — real, not a bug: "this week"
+    /// and "last week" are not always the same number of elapsed seconds apart.
+    func previousComparisonInterval(for interval: DateInterval, calendar: Calendar = .current) -> DateInterval {
         let component: Calendar.Component = switch self {
         case .day: .day
         case .week: .weekOfYear
         case .month: .month
         case .year: .year
         }
-        let calendar = Calendar.current
         let start = calendar.date(byAdding: component, value: -1, to: interval.start) ?? interval.start
         let end = calendar.date(byAdding: component, value: -1, to: interval.end) ?? interval.end
         return DateInterval(start: start, end: end)

@@ -15,6 +15,17 @@ extension WeekRoutineChange {
     /// rather than adaptive, so the comparison basis stated in the section
     /// subtitle is always literally true.
     static let baselineWeekCount = 8
+    /// `InsightsTrends.series` documents its own `latest` as "the most recent
+    /// *complete* week" — true for the trend lines, which only ever hand it
+    /// complete weeks (`InsightsTrends.range` ends before the in-progress
+    /// one). This function is the one caller that hands it a partial week
+    /// instead, so it has to honour that contract itself: comparing two
+    /// elapsed days against a baseline built from full seven-day weeks made
+    /// every Monday and Tuesday read as a collapse in whatever was compared,
+    /// regardless of what actually happened. Nothing is claimed until most of
+    /// the week has actually happened — nearly complete, not complete,
+    /// because Sunday itself would otherwise report nothing at all.
+    static let minimumElapsedDaysToCompare = 5
     /// Sleep already has its own scorecard row; Home is deliberately *not*
     /// excluded here even though `InsightsTrends.habitExclusions` excludes it
     /// from the habits card — that exclusion is about presence never being
@@ -29,8 +40,11 @@ extension WeekRoutineChange {
     /// without it showing up as a real change either.
     @MainActor
     static func changes(currentWeekStart: Date, currentSegments: [InsightSegment],
-                        baselineTotals: [WeeklyTotals]) -> [WeekRoutineChange] {
+                        baselineTotals: [WeeklyTotals], now: Date,
+                        calendar: Calendar = .current) -> [WeekRoutineChange] {
         guard !baselineTotals.isEmpty else { return [] }
+        let elapsedDays = calendar.dateComponents([.day], from: currentWeekStart, to: now).day ?? 0
+        guard elapsedDays >= minimumElapsedDaysToCompare else { return [] }
         let thisWeek = WeeklyTotals(weekStart: currentWeekStart, hours: InsightsSnapshot.categoryHours(in: currentSegments))
         let combined = Array(baselineTotals.suffix(baselineWeekCount)) + [thisWeek]
         guard combined.count > 1 else { return [] }
@@ -38,9 +52,9 @@ extension WeekRoutineChange {
         let changes = categories.compactMap { category -> WeekRoutineChange? in
             let series = InsightsTrends.series(for: category, title: category,
                                                symbol: insightSymbol(for: category), weeks: combined)
-            guard series.baseline > 0 else { return nil }
-            let change = abs(series.latest - series.baseline) / series.baseline
-            guard change >= InsightsTrends.noticeableChange else { return nil }
+            guard series.baseline > 0,
+                  InsightsPeriodComparison.isMeaningfulHoursChange(current: series.latest, previous: series.baseline)
+            else { return nil }
             return WeekRoutineChange(category: category, latest: series.latest, baseline: series.baseline)
         }
         return Array(changes.sorted { abs($0.delta) > abs($1.delta) }.prefix(3))

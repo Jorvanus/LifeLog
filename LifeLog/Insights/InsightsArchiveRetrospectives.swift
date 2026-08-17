@@ -46,8 +46,13 @@ final class InsightsArchiveRetrospectives {
     /// actor so it never blocks the interaction path even so.
     func yearOverYearHighlight(anchorDate: Date, window: InsightWindow, loggedHours: Double,
                                scope: InsightsScope, now: Date, context: ModelContext) async -> DayHighlight? {
-        guard let yearAgoAnchor = Calendar.current.date(byAdding: .year, value: -1, to: anchorDate) else { return nil }
-        let yearAgoInterval = window.interval(containing: yearAgoAnchor)
+        // `loggedHours` (== `snapshot.loggedHours`) is already clamped to `now`
+        // for a partial current period — the year-ago interval has to be
+        // clamped to the exact same elapsed span, or an early-month "less
+        // logged than a year ago" is comparing five elapsed days against a
+        // complete month a year back.
+        let current = InsightsPeriodComparison.clamped(window.interval(containing: anchorDate), now: now)
+        guard let yearAgoInterval = InsightsPeriodComparison.yearAgo(current) else { return nil }
         do {
             let yearAgoHours = try await archive(context: context).loggedHours(in: yearAgoInterval, scope: scope, now: now)
             return ArchiveRetrospectives.yearOverYear(loggedHours: loggedHours,

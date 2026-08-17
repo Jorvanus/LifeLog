@@ -153,9 +153,9 @@ final class InsightsPresentationState {
     /// through `InsightsTrends.series` — see `WeekRoutineChange.changes` for the
     /// math, kept beside its type in `WeekInsightsView.swift` and unit-tested
     /// there. Needs `weeklyBaselineTotals`, which only `reloadTrends` populates.
-    func weekRoutineChanges(interval: DateInterval, snapshot: InsightsSnapshot) -> [WeekRoutineChange] {
+    func weekRoutineChanges(interval: DateInterval, snapshot: InsightsSnapshot, now: Date) -> [WeekRoutineChange] {
         WeekRoutineChange.changes(currentWeekStart: interval.start, currentSegments: snapshot.segments,
-                                  baselineTotals: weeklyBaselineTotals)
+                                  baselineTotals: weeklyBaselineTotals, now: now)
     }
 
     /// `nil` whenever there isn't a real commute to summarise: no Home/Work

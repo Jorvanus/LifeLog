@@ -64,11 +64,17 @@ enum ArchiveRetrospectives {
     /// One restrained sentence comparing this period's logged time with the same
     /// period a year ago — not a trend line, not a breakdown by category, just
     /// whether there was noticeably more or less of the archive itself that year.
+    /// Uses `InsightsPeriodComparison`'s shared hours threshold, the same one
+    /// Month's hero metrics and Week's routine changes agree on — this and
+    /// those are all "hours of something, this period versus another," unlike
+    /// `DayHighlights`' own steps/sleep comparisons against a personal daily
+    /// baseline, which stay on their own more sensitive threshold.
     static func yearOverYear(loggedHours: Double, yearAgoHours: Double,
                              window: InsightWindow) -> DayHighlight? {
-        guard yearAgoHours > 0 else { return nil }
+        guard yearAgoHours > 0,
+              InsightsPeriodComparison.isMeaningfulHoursChange(current: loggedHours, previous: yearAgoHours)
+        else { return nil }
         let change = (loggedHours - yearAgoHours) / yearAgoHours
-        guard abs(change) >= DayHighlights.noticeableChange else { return nil }
         let percent = DayHighlights.percentage(loggedHours, against: yearAgoHours)
         let more = change > 0
         return DayHighlight(

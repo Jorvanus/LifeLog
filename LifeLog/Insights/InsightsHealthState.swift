@@ -79,13 +79,15 @@ final class InsightsHealthState {
             previousHealthSummary = nil
             return
         }
-        let end = interval.contains(now) ? now : interval.end
-        let current = DateInterval(start: interval.start, end: max(interval.start, end))
+        let current = InsightsPeriodComparison.clamped(interval, now: now)
         let summary = await activityData.healthSummary(for: current)
         guard !Task.isCancelled, isStillCurrent() else { return }
         healthSummary = summary
         if window == .month {
-            let previous = window.previousComparisonInterval(for: interval)
+            // `current`, not the raw `interval` — comparing a partial current
+            // month's Health figures against a *complete* previous month
+            // silently made every early-month Health comparison meaningless.
+            let previous = window.previousComparisonInterval(for: current)
             let previousSummary = await activityData.healthSummary(for: previous)
             guard !Task.isCancelled, isStillCurrent() else { return }
             previousHealthSummary = previousSummary

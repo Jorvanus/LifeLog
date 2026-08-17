@@ -85,6 +85,7 @@
 		527470E2B1A2B41A1D08F76D /* InsightWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2817B87DCA67AEF98B64AC98 /* InsightWindow.swift */; };
 		52DDF3448CA51151556BF5B7 /* DayHighlightTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2EE2F1A8070E6A7635DA313 /* DayHighlightTests.swift */; };
 		5323F09292A60A5AA75A0E7C /* SavedPlaceRoleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FE081C5C84B688BEAE359D9 /* SavedPlaceRoleTests.swift */; };
+		5B94D555FC6D87453A8211BE /* InsightsPeriodComparison.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEEFF10C60E9FBF585874A0 /* InsightsPeriodComparison.swift */; };
 		5BD13D3B4ED3CE31271C8A6E /* CatalogueAndGroupingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFBA71B5847C298256A9BFE5 /* CatalogueAndGroupingTests.swift */; };
 		5BFA162F969F14E202B54892 /* StaleResultHandlingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4CFF4EB70DAEBBBF8B25C5F /* StaleResultHandlingTests.swift */; };
 		5D8568D1511806DE576FAB9A /* ActivityImportActorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 346E0ECB4A8D7AA9F0DC7BE2 /* ActivityImportActorTests.swift */; };
@@ -175,6 +176,7 @@
 		B3210B38B33812DE49390A06 /* HealthTrendsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2AD932407C1E26E6683F452 /* HealthTrendsView.swift */; };
 		B4897766D5ACE00AB67DF290 /* InsightsPeriodLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53E004E8ACE76FF0EB73C417 /* InsightsPeriodLoader.swift */; };
 		B597386600DED82EEBED55CA /* StoreProtection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08F1DD65EB83F6301A1FEA40 /* StoreProtection.swift */; };
+		B78BAC2F7AE338E1FE19D0A9 /* InsightsPeriodComparisonTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABE24645FC4DF949A3D9EBA4 /* InsightsPeriodComparisonTests.swift */; };
 		BABAB8965DF1B16BBB1202DC /* ArchiveModelFieldCoverageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A518617571AA845CC30BF84C /* ArchiveModelFieldCoverageTests.swift */; };
 		BABCAA42DCE84E1454FD6316 /* AskLifeLogPlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 671C10ED2E70BF5D39D6AE76 /* AskLifeLogPlanTests.swift */; };
 		BAE9D34C5E695D013C90F634 /* LocationJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB6F8A7FCDAB1A97B8DE34B0 /* LocationJournal.swift */; };
@@ -406,6 +408,7 @@
 		AB2ED3DB389DF4AB007C68A3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		AB4629526B6F96DB1A875096 /* ActivityLocationPolicy+Stays.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ActivityLocationPolicy+Stays.swift"; sourceTree = "<group>"; };
 		AB89B4E129C2C5194E32D929 /* PlaceScoringAndEvidenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceScoringAndEvidenceTests.swift; sourceTree = "<group>"; };
+		ABE24645FC4DF949A3D9EBA4 /* InsightsPeriodComparisonTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsPeriodComparisonTests.swift; sourceTree = "<group>"; };
 		ABEBF070FF82910C02D486CC /* AskLifeLogQueryExecutorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AskLifeLogQueryExecutorTests.swift; sourceTree = "<group>"; };
 		ACCDC56F8A25332C3739126A /* SchemaFingerprint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemaFingerprint.swift; sourceTree = "<group>"; };
 		ADF8FA29A0E7B230DDAB05B2 /* UITestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITestSupport.swift; sourceTree = "<group>"; };
@@ -485,6 +488,7 @@
 		FB833AF7C4BDBEA633EB2EE3 /* LifeLogSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeLogSchema.swift; sourceTree = "<group>"; };
 		FCC725C5DFA1D7B8D907C50B /* InsightsHabitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsHabitTests.swift; sourceTree = "<group>"; };
 		FDC3CFB17358EC4640548924 /* GapSuggestionCandidateGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GapSuggestionCandidateGenerator.swift; sourceTree = "<group>"; };
+		FEEEFF10C60E9FBF585874A0 /* InsightsPeriodComparison.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsPeriodComparison.swift; sourceTree = "<group>"; };
 		FFFB14511A4D3F972641891B /* InsightsPeriodControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsPeriodControls.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -534,6 +538,7 @@
 				D31DA6EE7697B72E6A9B0C41 /* InferenceEngineTests.swift */,
 				137F55B9323163125B4E1158 /* InsightsDonutChartTests.swift */,
 				6D7E2E5F979BAD5391832541 /* InsightSliceRowsTests.swift */,
+				ABE24645FC4DF949A3D9EBA4 /* InsightsPeriodComparisonTests.swift */,
 				D5BDF71C55367DB88E16362C /* InsightsScopeTests.swift */,
 				42FA1BEB104759808C00B661 /* InsightsTrendAggregatorTests.swift */,
 				FB4F2E5842369D8B6F3E81FF /* InsightsWeekBaselineTests.swift */,
@@ -868,6 +873,7 @@
 				69B4B98007D7C7BB21196EFC /* InsightsDonutChart.swift */,
 				6D0CFF4DF58B62B4FA7CDE4F /* InsightsHealthState.swift */,
 				7CBEC83460C1DC986F43F32E /* InsightSliceEditor.swift */,
+				FEEEFF10C60E9FBF585874A0 /* InsightsPeriodComparison.swift */,
 				FFFB14511A4D3F972641891B /* InsightsPeriodControls.swift */,
 				53E004E8ACE76FF0EB73C417 /* InsightsPeriodLoader.swift */,
 				4996AA8F6730915A611EF2F2 /* InsightsPresentation.swift */,
@@ -1091,6 +1097,7 @@
 				401D93AF45CC8E2978129722 /* InsightsArchiveRetrospectives.swift in Sources */,
 				9902D18FB2777E2A12158069 /* InsightsDonutChart.swift in Sources */,
 				728B8ABF2B5E0768462D8E9F /* InsightsHealthState.swift in Sources */,
+				5B94D555FC6D87453A8211BE /* InsightsPeriodComparison.swift in Sources */,
 				30C631012D5C66A2D3D7CBE9 /* InsightsPeriodControls.swift in Sources */,
 				B4897766D5ACE00AB67DF290 /* InsightsPeriodLoader.swift in Sources */,
 				2A18F634C8951E70703917CE /* InsightsPresentation.swift in Sources */,
@@ -1212,6 +1219,7 @@
 				9B2AF043151BB40590172F35 /* InsightsDonutChartTests.swift in Sources */,
 				CEADBC65EAFAD6988FBFCD9F /* InsightsFixtureBuilders.swift in Sources */,
 				7F5F3B76E6769CF201D6E504 /* InsightsHabitTests.swift in Sources */,
+				B78BAC2F7AE338E1FE19D0A9 /* InsightsPeriodComparisonTests.swift in Sources */,
 				6FBCB365AD445699F98236EE /* InsightsScopeTests.swift in Sources */,
 				4395865BD17A4A1F4943A25B /* InsightsTrendAggregatorTests.swift in Sources */,
 				395B25B3C6F3CAFE71DC82E1 /* InsightsTrendSeriesTests.swift in Sources */,
@@ -1393,7 +1401,7 @@
 				CODE_SIGN_ENTITLEMENTS = LifeLog/LifeLog.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 201;
+				CURRENT_PROJECT_VERSION = 202;
 				DEVELOPMENT_TEAM = 337KNRL5L8;
 				INFOPLIST_FILE = LifeLog/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
@@ -1401,7 +1409,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.15.0;
+				MARKETING_VERSION = 2.16.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aaronbaxter.LifeLog;
 				SDKROOT = iphoneos;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -1513,7 +1521,7 @@
 				CODE_SIGN_ENTITLEMENTS = LifeLog/LifeLog.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 201;
+				CURRENT_PROJECT_VERSION = 202;
 				DEVELOPMENT_TEAM = 337KNRL5L8;
 				INFOPLIST_FILE = LifeLog/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
@@ -1521,7 +1529,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.15.0;
+				MARKETING_VERSION = 2.16.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aaronbaxter.LifeLog;
 				SDKROOT = iphoneos;
 				SWIFT_EMIT_LOC_STRINGS = YES;

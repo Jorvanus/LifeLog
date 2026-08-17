@@ -120,8 +120,11 @@ struct InsightsWeekBaselineTests {
             makeSegment(category: "Reading", hours: 3.1)
         ]
 
+        // Six of seven days elapsed -- past `minimumElapsedDaysToCompare`, so
+        // the comparison actually runs.
+        let now = calendar.date(byAdding: .day, value: 6, to: currentWeekStart)!
         let changes = WeekRoutineChange.changes(currentWeekStart: currentWeekStart, currentSegments: currentSegments,
-                                                baselineTotals: baseline)
+                                                baselineTotals: baseline, now: now, calendar: calendar)
 
         #expect(!changes.contains { $0.category == "Sleep" }, "Sleep already has its own scorecard row")
         #expect(!changes.contains { $0.category == "Reading" }, "a change under the noticeable threshold is excluded")
@@ -133,8 +136,38 @@ struct InsightsWeekBaselineTests {
     @Test("WeekRoutineChange returns nothing with no baseline history, or only one combined week")
     func weekRoutineChangeNeedsRealHistory() {
         let currentSegments: [InsightSegment] = [makeSegment(category: "Work", hours: 20)]
-        #expect(WeekRoutineChange.changes(currentWeekStart: start, currentSegments: currentSegments, baselineTotals: []).isEmpty,
+        #expect(WeekRoutineChange.changes(currentWeekStart: start, currentSegments: currentSegments, baselineTotals: [], now: start).isEmpty,
                 "no baseline at all means nothing to compare against")
+    }
+
+    /// The bug this guards against: `InsightsTrends.series` documents its own
+    /// `latest` as always a *complete* week, but `WeekRoutineChange.changes`
+    /// is the one caller that hands it a partial one — so a real two-day
+    /// swing, hours short of a full week's worth, used to report as "less
+    /// Work than usual" every Monday and Tuesday regardless of what actually
+    /// happened that week.
+    @Test("A partial week reports nothing yet, even with hours far below the baseline")
+    func partialWeekReportsNothingBeforeMostOfItHasElapsed() {
+        let baselineHours: [String: Double] = ["Work": 40]
+        let baseline: [WeeklyTotals] = (0..<4).map { index in
+            WeeklyTotals(weekStart: calendar.date(byAdding: .weekOfYear, value: index, to: start)!, hours: baselineHours)
+        }
+        let currentWeekStart = calendar.date(byAdding: .weekOfYear, value: 4, to: start)!
+        // Two elapsed days, 8h logged against a 40h/week baseline -- an 80%
+        // "drop" if compared naively, but only because a fifth of the week
+        // has happened so far.
+        let currentSegments: [InsightSegment] = [makeSegment(category: "Work", hours: 8)]
+
+        let tuesday = calendar.date(byAdding: .day, value: 2, to: currentWeekStart)!
+        #expect(WeekRoutineChange.changes(currentWeekStart: currentWeekStart, currentSegments: currentSegments,
+                                          baselineTotals: baseline, now: tuesday, calendar: calendar).isEmpty,
+                "two elapsed days is not enough of the week to compare honestly")
+
+        let saturday = calendar.date(byAdding: .day, value: 5, to: currentWeekStart)!
+        let changes = WeekRoutineChange.changes(currentWeekStart: currentWeekStart, currentSegments: currentSegments,
+                                                baselineTotals: baseline, now: saturday, calendar: calendar)
+        #expect(changes.contains { $0.category == "Work" },
+                "once most of the week has elapsed, a real gap is reported")
     }
 
     private func makeSegment(category: String, hours: Double) -> InsightSegment {
