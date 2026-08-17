@@ -107,6 +107,14 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     private var liveLocationBurstTimeoutTask: Task<Void, Never>?
     private var locationConfirmation: ArrivalConfirmationEngine?
     private var pendingArrival: PendingArrival?
+    /// Resumed whenever a live location confirmation cycle ends, by
+    /// `cancelLocationConfirmation()` — the one place every ending path
+    /// (normal finish, disabled logging, a CLVisit preempting an in-flight
+    /// check) already passes through. `refreshCurrentLocation(awaiting:)`
+    /// appends here instead of polling `locationConfirmation`, so a caller
+    /// (Timeline's pull-to-refresh) can show a spinner for exactly as long as
+    /// the GPS burst actually runs rather than guessing a fixed delay.
+    private var locationConfirmationContinuations: [CheckedContinuation<Void, Never>] = []
     var authorization: CLAuthorizationStatus = .notDetermined
     /// Whether iOS is fuzzing this app's location fixes to city-block scale (the
     /// user-controlled "Precise Location" toggle). Read once at init and refreshed
@@ -165,6 +173,27 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             return
         }
         beginLocationConfirmation()
+    }
+
+    /// Same request as `refreshCurrentLocation()`, but awaits the GPS burst
+    /// finishing instead of firing and forgetting — for a caller like
+    /// Timeline's pull-to-refresh that wants its spinner to track the real
+    /// check rather than dismiss immediately or guess a fixed delay.
+    ///
+    /// If a confirmation is already in flight (e.g. a CLVisit arrival began
+    /// one just before this was called), this joins that cycle rather than
+    /// starting a second one — `beginLocationConfirmation()` is already a
+    /// no-op when one is running, and the waiter list isn't tied to which
+    /// cycle resumes it.
+    func refreshCurrentLocation() async {
+        guard authorization == .authorizedAlways || authorization == .authorizedWhenInUse else {
+            if authorization == .notDetermined { requestPermission() }
+            return
+        }
+        beginLocationConfirmation()
+        await withCheckedContinuation { continuation in
+            locationConfirmationContinuations.append(continuation)
+        }
     }
 
     func disableBackgroundLogging() {
@@ -517,6 +546,9 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         liveLocationBurstTimeoutTask = nil
         locationConfirmation = nil
         pendingArrival = nil
+        let waiters = locationConfirmationContinuations
+        locationConfirmationContinuations = []
+        for waiter in waiters { waiter.resume() }
     }
 
     private func createVisit(at coordinate: CLLocationCoordinate2D, arrival: Date,

@@ -215,6 +215,12 @@ struct TimelineView: View {
                     .padding(.horizontal, 18)
                     .padding(.bottom, 36)
                 }
+                // Timeline's own list is already live off `@Query` — there is
+                // nothing to re-fetch. What pulling down actually does is the
+                // same on-demand GPS check as Settings' "Refresh current
+                // location": useful right after arriving somewhere, before
+                // the passive location callbacks have caught up.
+                .refreshable { await recorder.refreshCurrentLocation() }
             }
             .accessibilityIdentifier("timeline-screen")
             .toolbar(.hidden, for: .navigationBar)

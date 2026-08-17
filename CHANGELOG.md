@@ -2,6 +2,16 @@
 
 ## 2026-08-17
 
+### Pull to refresh on Timeline checks your current location
+
+- Timeline's list was already live (it reads straight off the store), so
+  pulling down does the one thing that wasn't already automatic: the same
+  on-demand GPS check as Settings' "Refresh current location" — useful right
+  after arriving somewhere, before the passive location callbacks have
+  caught up. `LocationRecorder` gained an awaitable version of that check so
+  the pull-refresh spinner tracks the real GPS burst instead of dismissing
+  immediately or guessing a fixed delay.
+
 ### A commute now only needs a Home or Work destination, not a Home<->Work pair
 
 - Commute detection required *both* ends of a journey to be a Saved Place role
