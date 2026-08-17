@@ -63,7 +63,13 @@ struct TimelineView: View {
     // old rule needs this pass to run again, not just the recent-day re-apply.
     // v12: Core Motion can briefly stop calling an ongoing drive automotive. Rejoin
     // those short gaps once so old trips do not remain as several fragments.
-    @AppStorage("location-policy-reconciled-v12") private var locationPolicyReconciled = false
+    // v13: a coordinate-less Health "Walking"/"In transit" sample sitting in the gap
+    // between two visits at the same place (Core Location logging Home as several
+    // short arrivals rather than one continuous stay is the ordinary cause) now
+    // merges into that place instead of showing as its own Travel fragment. The
+    // rolling 24h re-apply catches this going forward, but existing history needs
+    // this one more full pass — see `coalesceStaysAcrossUnlocatedMovement`.
+    @AppStorage("location-policy-reconciled-v13") private var locationPolicyReconciled = false
     // Undoes the stays v3 split in two before reconciliation runs again.
     @AppStorage("stay-splits-rejoined-v1") private var staySplitsRejoined = false
     // Puts back together the workouts the import path used to cut up at stay boundaries.

@@ -122,6 +122,11 @@ extension ActivityLocationPolicy {
         guard !recent.isEmpty else { return false }
         let live = visits.filter { isLocationVisit($0) && !isSupersededLocation($0) }
         try reconcile(activities: recent, against: live, context: context, now: now)
+        // Same reasoning as `reconcileAll`'s own last step, scoped the same way as
+        // the rest of this function: catches a coordinate-less fragment sitting
+        // between two same-place stays within the last day, without waiting for the
+        // next full archive pass.
+        coalesceStaysAcrossUnlocatedMovement(in: visits, context: context, now: now)
         let changed = context.hasChanges
         if changed { try context.save() }
         return changed
@@ -153,6 +158,95 @@ extension ActivityLocationPolicy {
             context: context,
             now: now
         )
+        // Last, and re-fetched: everything above trims a fragment against the one
+        // stay it directly overlaps. What's left over is only the fragments sitting
+        // in a genuine gap *between* two stays — exactly what this needs to see to
+        // decide whether both sides are the same place.
+        let afterReconcile = try fetchPolicyVisits(context: context)
+        coalesceStaysAcrossUnlocatedMovement(in: afterReconcile, context: context, now: now)
+    }
+
+    /// Merges a stay Apple Health split with a "Walking"/"In transit" fragment that
+    /// carries no coordinates at all.
+    ///
+    /// `reconcile(activities:against:)` above only ever subtracts a movement record
+    /// against a stay whose own recorded window already covers it — it has no way to
+    /// notice that two *separate* stays either side of the gap are the same resolved
+    /// place. That's the ordinary shape of this problem: Core Location logs Home as
+    /// several short arrivals rather than one continuous stay, and a location-less
+    /// Health sample lands in each gap between them. The fragment has no coordinate
+    /// to check against a geofence — there is nothing to check — but the same resolved
+    /// place recorded on both sides is exactly the evidence
+    /// `GapSuggestionCandidateGenerator`'s `nearbyResolvedPlaceStay` candidate already
+    /// trusts for an unlogged gap, reused here to fold the fragment away rather than
+    /// merely suggest it.
+    ///
+    /// Deliberately conservative: every record strictly between the two stays must be
+    /// a movement record with no coordinates, or nothing merges — a real visit, or a
+    /// fragment that does have a coordinate elsewhere, still blocks it exactly the way
+    /// `coalesceFragmentedTravel`'s own destination check does below.
+    static func coalesceStaysAcrossUnlocatedMovement(in visits: [Visit], context: ModelContext,
+                                                      now: Date = .now) {
+        var locations = visits
+            .filter { isLocationVisit($0) && !isSupersededLocation($0) && !$0.isIgnored }
+            .sorted { $0.arrival < $1.arrival }
+        guard locations.count > 1 else { return }
+
+        var index = 0
+        while index < locations.count - 1 {
+            let current = locations[index]
+            let next = locations[index + 1]
+            guard let currentDeparture = current.departure, next.arrival >= currentDeparture,
+                  // A cap, not load-bearing evidence: everything between is already
+                  // required to be a coordinate-less movement fragment below, which
+                  // does the real work. This only guards against folding together two
+                  // same-named stays separated by an implausibly long, otherwise
+                  // fragment-only stretch — the same role `CommuteDetection.longestPlausible`
+                  // plays for a journey rather than a stay.
+                  next.arrival.timeIntervalSince(currentDeparture) <= 4 * 60 * 60,
+                  sameResolvedPlace(current, next) else {
+                index += 1
+                continue
+            }
+            let between = visits.filter {
+                $0.arrival >= currentDeparture && $0.arrival < next.arrival && $0 !== current && $0 !== next
+            }
+            guard !between.isEmpty,
+                  // A workout's own `latitude`/`longitude` are always the same 0,0
+                  // placeholder as a passive movement sample — real evidence of a
+                  // departure lives in its `route`, not those fields — so it must be
+                  // excluded by kind, not just by coordinate. "Someone pressing Start"
+                  // is a first-hand statement `isDeclaredJourney`'s own doc comment
+                  // already refuses to silently absorb; folding it away here on a
+                  // false "no location" reading would be exactly that.
+                  between.allSatisfy({ isMovementActivity($0) && !isWorkoutSession($0) && hasNoCoordinate($0) }) else {
+                index += 1
+                continue
+            }
+            for fragment in between { context.delete(fragment) }
+            current.departure = next.departure
+            context.delete(next)
+            locations.remove(at: index + 1)
+            // Re-check the merged `current` against whatever is now next — a chain of
+            // several fragments between more than two same-place stays collapses in
+            // one pass instead of needing the whole function to run again.
+        }
+    }
+
+    /// Whichever it lacks, this fragment has nothing to place it anywhere on its own —
+    /// the exact shape of an Apple Health movement sample with no route or GPS fix.
+    private static func hasNoCoordinate(_ visit: Visit) -> Bool {
+        visit.latitude == 0 && visit.longitude == 0
+    }
+
+    /// The same resolved place, recorded on both sides — by Apple Maps identifier when
+    /// both sides have one (two visits only share it by being the same physical place),
+    /// falling back to a punctuation/case-insensitive name match. Never true for a
+    /// placeholder name: "Identifying…" on both sides is not evidence they agree.
+    private static func sameResolvedPlace(_ a: Visit, _ b: Visit) -> Bool {
+        guard !a.hasPlaceholderName, !b.hasPlaceholderName else { return false }
+        if let idA = a.mapsIdentifier, let idB = b.mapsIdentifier { return idA == idB }
+        return NameKey.matching(a.placeName) == NameKey.matching(b.placeName)
     }
 
     /// Repairs older rolling-motion imports that split a car trip whenever Core Motion

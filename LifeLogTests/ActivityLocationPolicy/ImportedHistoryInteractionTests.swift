@@ -638,4 +638,88 @@ struct ImportedHistoryInteractionTests {
         #expect(try context.fetch(FetchDescriptor<Visit>()).filter { $0.source == "motion" }.count == 2,
                 "a recorded destination keeps separate drives separate")
     }
+
+    @Test("A coordinate-less Health walking fragment between two Home stays merges into one")
+    func coalescesUnlocatedWalkingBetweenSamePlaceStays() throws {
+        let context = try ActivityLocationPolicyFixtures.makeContext()
+        let firstHome = ActivityLocationPolicyFixtures.stay("Home", from: 0, to: 60, latitude: -23.44, longitude: 150.45, base: base)
+        let walk = Visit(arrival: base.addingTimeInterval(60 * 60), departure: base.addingTimeInterval(69 * 60),
+                         latitude: 0, longitude: 0, placeName: "Walking",
+                         inferredActivity: "Walking", userActivity: "Walking", source: "health-walking")
+        let secondHome = ActivityLocationPolicyFixtures.stay("Home", from: 69, to: 130, latitude: -23.44, longitude: 150.45, base: base)
+        [firstHome, walk, secondHome].forEach(context.insert)
+        try context.save()
+
+        ActivityLocationPolicy.coalesceStaysAcrossUnlocatedMovement(
+            in: [firstHome, walk, secondHome], context: context, now: base.addingTimeInterval(3 * 60 * 60))
+        try context.save()
+
+        let remaining = try context.fetch(FetchDescriptor<Visit>())
+        #expect(remaining.count == 1, "the fragment is folded away and the two stays become one")
+        #expect(remaining.first?.arrival == firstHome.arrival)
+        #expect(remaining.first?.departure == secondHome.departure)
+        #expect(try context.fetch(FetchDescriptor<Visit>()).filter { $0.source == "health-walking" }.isEmpty)
+    }
+
+    @Test("A real visit or a located fragment between two same-place stays blocks the merge")
+    func doesNotCoalesceAcrossARealVisitOrALocatedFragment() throws {
+        let context = try ActivityLocationPolicyFixtures.makeContext()
+        let firstHome = ActivityLocationPolicyFixtures.stay("Home", from: 0, to: 60, latitude: -23.44, longitude: 150.45, base: base)
+        let shop = ActivityLocationPolicyFixtures.stay("Shops", from: 65, to: 75, latitude: -23.40, longitude: 150.50, base: base)
+        let secondHome = ActivityLocationPolicyFixtures.stay("Home", from: 75, to: 130, latitude: -23.44, longitude: 150.45, base: base)
+        [firstHome, shop, secondHome].forEach(context.insert)
+        try context.save()
+
+        ActivityLocationPolicy.coalesceStaysAcrossUnlocatedMovement(
+            in: [firstHome, shop, secondHome], context: context, now: base.addingTimeInterval(3 * 60 * 60))
+        try context.save()
+
+        #expect(try context.fetch(FetchDescriptor<Visit>()).count == 3, "a real destination in between is never folded away")
+
+        // A walking fragment that does carry a coordinate is real evidence too, not
+        // an absence of it — the same "nothing to place it anywhere" reasoning that
+        // makes a coordinate-less fragment safe to fold away does not apply.
+        let locatedWalk = Visit(arrival: base.addingTimeInterval(63 * 60), departure: base.addingTimeInterval(68 * 60),
+                                latitude: -23.41, longitude: 150.49, placeName: "Walking",
+                                inferredActivity: "Walking", userActivity: "Walking", source: "health-walking")
+        context.delete(shop)
+        context.insert(locatedWalk)
+        try context.save()
+        let secondHomeAlone = ActivityLocationPolicyFixtures.stay("Home", from: 75, to: 130, latitude: -23.44, longitude: 150.45, base: base)
+        context.delete(secondHome)
+        context.insert(secondHomeAlone)
+        try context.save()
+
+        ActivityLocationPolicy.coalesceStaysAcrossUnlocatedMovement(
+            in: [firstHome, locatedWalk, secondHomeAlone], context: context, now: base.addingTimeInterval(3 * 60 * 60))
+        try context.save()
+        #expect(try context.fetch(FetchDescriptor<Visit>()).filter { $0.source == "health-walking" }.count == 1,
+                "a located fragment is left alone even though both sides are Home")
+    }
+
+    @Test("Several fragments strung between the same place all collapse in one pass")
+    func coalescesAChainOfFragmentsInOnePass() throws {
+        let context = try ActivityLocationPolicyFixtures.makeContext()
+        let first = ActivityLocationPolicyFixtures.stay("Home", from: 0, to: 30, latitude: -23.44, longitude: 150.45, base: base)
+        let second = ActivityLocationPolicyFixtures.stay("Home", from: 34, to: 60, latitude: -23.44, longitude: 150.45, base: base)
+        let third = ActivityLocationPolicyFixtures.stay("Home", from: 64, to: 90, latitude: -23.44, longitude: 150.45, base: base)
+        func fragment(from startMinutes: Double, to endMinutes: Double) -> Visit {
+            Visit(arrival: base.addingTimeInterval(startMinutes * 60), departure: base.addingTimeInterval(endMinutes * 60),
+                 latitude: 0, longitude: 0, placeName: "Walking",
+                 inferredActivity: "Walking", userActivity: "Walking", source: "health-walking")
+        }
+        let gapOne = fragment(from: 30, to: 34)
+        let gapTwo = fragment(from: 60, to: 64)
+        [first, gapOne, second, gapTwo, third].forEach(context.insert)
+        try context.save()
+
+        ActivityLocationPolicy.coalesceStaysAcrossUnlocatedMovement(
+            in: [first, gapOne, second, gapTwo, third], context: context, now: base.addingTimeInterval(3 * 60 * 60))
+        try context.save()
+
+        let remaining = try context.fetch(FetchDescriptor<Visit>())
+        #expect(remaining.count == 1)
+        #expect(remaining.first?.arrival == first.arrival)
+        #expect(remaining.first?.departure == third.departure)
+    }
 }

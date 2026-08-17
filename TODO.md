@@ -32,7 +32,7 @@ be changed safely outrank App Store preparation or speculative integrations.
   Timeline passes.** Once the audit reports clean, delete
   `automatic-location-deduplicated-v3`, `stay-splits-rejoined-v1`,
   `WorkoutJourneys.splitWorkoutRepairKey`, and
-  `location-policy-reconciled-v12`, together with their `@AppStorage` flags, verbose
+  `location-policy-reconciled-v13`, together with their `@AppStorage` flags, verbose
   appearance diagnostics, and archive-wide work in `TimelineView`. These exist to
   repair old output; current arrivals/imports already have bounded reconciliation.
 

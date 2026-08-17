@@ -2,6 +2,24 @@
 
 ## 2026-08-17
 
+### A Health walking blip between two Home (or other) stays no longer splits it
+
+- Apple Health routinely delivers a "Walking"/"In transit" sample with no
+  coordinates at all, and Core Location often logs a long stay at one place
+  as several shorter arrivals rather than one continuous visit. The result
+  was a real stay — Home, most often — chopped into pieces by a location-less
+  fragment sitting in the gap, each one showing on the day timeline bar and
+  in Insights as its own Travel entry, even though the same place is
+  recorded on both sides. Those fragments now merge into the surrounding
+  stay, the same way a Core Motion classifier blip already gets rejoined
+  mid-drive. A fragment that does carry a coordinate, or a real visit
+  somewhere else, still keeps the stays separate — only a record with
+  nothing to place it anywhere is folded away, and a workout with a route
+  is never touched by this even though its own coordinate fields are blank
+  too.
+- This runs going forward automatically, and once more over existing history
+  now that the archive-wide reconciliation pass has been bumped to run again.
+
 ### Pull to refresh on Timeline checks your current location
 
 - Timeline's list was already live (it reads straight off the store), so
