@@ -740,7 +740,8 @@ struct InsightsView: View {
             onChooseDate: {
                 draftAnchorDate = anchorDate
                 choosingDate = true
-            }
+            },
+            onToday: { anchorDate = .now }
         )
     }
 

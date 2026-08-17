@@ -2,6 +2,13 @@
 
 ## 2026-08-17
 
+### A Today button on Insights returns from a past day, week, month, or year
+
+- The only way back to the present period was tapping "next" repeatedly, or
+  opening the date picker. A Today button now appears next to it — only once
+  you've actually navigated away from the current period, matching the
+  existing disabled-next-arrow behaviour — and jumps straight back.
+
 ### Confirming one visit no longer silently redefines a whole Saved Place
 
 - Confirming or correcting a single visit at an existing Saved Place —

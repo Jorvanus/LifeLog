@@ -207,6 +207,30 @@ final class InsightsDayTests: LifeLogUITestCase {
         XCTAssertFalse(app.navigationBars["Choose Date"].exists)
     }
 
+    /// A Today button appears only once the person has navigated away from the
+    /// current day, and tapping it returns Day straight to today rather than
+    /// requiring several taps back through "Previous day".
+    func testInsightsTodayButtonReturnsFromAPastDay() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+        app.tabBars.buttons["Insights"].tap()
+        let datePicker = element("insights-period-picker")
+        XCTAssertTrue(datePicker.waitForExistence(timeout: 10))
+        XCTAssertFalse(element("insights-today-button").exists,
+                       "the button has nowhere to go while already on today")
+
+        app.buttons["Previous day"].tap()
+        let today = element("insights-today-button")
+        XCTAssertTrue(today.waitForExistence(timeout: 5))
+        let pastLabel = datePicker.label
+        today.tap()
+
+        XCTAssertFalse(element("insights-today-button").waitForExistence(timeout: 3),
+                       "back on today, the button has nothing left to do")
+        XCTAssertNotEqual(datePicker.label, pastLabel)
+    }
+
     func testInsightsScopePickerPersistsAndShowsScopedEmptyState() {
         app.terminate()
         app.launchArguments = ["-uiTesting", "-ui-test-seed"]

@@ -14,6 +14,7 @@ struct InsightsPeriodControls: View {
     @Binding var selectedWindow: InsightWindow
     let onMove: (Int) -> Void
     let onChooseDate: () -> Void
+    let onToday: () -> Void
 
     var body: some View {
         VStack(spacing: 16) {
@@ -47,6 +48,21 @@ struct InsightsPeriodControls: View {
                 }
                 .disabled(isCurrentWindow)
                 .accessibilityLabel("Next \(window.title.lowercased())")
+                // Chevron-right only ever reaches the current period one step at a
+                // time. Looking at a day, week, month, or year from long ago needs a
+                // direct way back rather than tapping next repeatedly — hidden once
+                // already there, matching chevron-right's own disabled state.
+                if !isCurrentWindow {
+                    // Matches the wording `periodTitle` itself already uses for the
+                    // current period ("Today" for Day, "This Week"/"Month"/"Year"
+                    // otherwise) so the button reads as a description of where it
+                    // goes, not a fixed label that stops matching the window.
+                    Button(window == .day ? "Today" : "This \(window.title)", action: onToday)
+                        .font(.subheadline.weight(.semibold))
+                        .frame(minHeight: 44)
+                        .accessibilityLabel("Back to today")
+                        .accessibilityIdentifier("insights-today-button")
+                }
             }
             InsightsScopeMenu(rawValue: $scopeRawValue, recordedHours: recordedHours)
             if let emptyState {
