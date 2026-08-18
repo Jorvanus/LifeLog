@@ -367,7 +367,6 @@ private struct DestinationStateSummary: View {
 }
 
 struct DataRecoverySettingsView: View {
-    @Binding var importingJournal: Bool
     @Binding var importingBackup: Bool
     @Binding var backupURL: URL?
     @Binding var backupSummary: BackupPresentation?
@@ -385,7 +384,6 @@ struct DataRecoverySettingsView: View {
     var body: some View {
         Form {
             Section {
-                Button { importingJournal = true } label: { Label("Import Journal CSV", systemImage: "square.and.arrow.down") }
                 NavigationLink { JournalCompactionView() } label: {
                     SettingsHubRow(title: "Manage imported journal storage", detail: "Compact or remove imported CSV history", symbol: "arrow.triangle.2.circlepath")
                 }
@@ -395,9 +393,9 @@ struct DataRecoverySettingsView: View {
                 }
                     .accessibilityIdentifier("archive-repair-link")
             } header: {
-                Text("Import and repair")
+                Text("Archive maintenance")
             } footer: {
-                Text("What happens here? Import adds new Journal rows; compaction and repair always preview their changes first.")
+                Text("What happens here? Compaction and repair preview their changes before updating existing archive rows.")
             }
             Section {
                 Button { createBackup() } label: { Label("Create backup", systemImage: "externaldrive.badge.timemachine") }

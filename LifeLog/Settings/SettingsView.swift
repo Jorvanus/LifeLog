@@ -5,7 +5,6 @@ import UniformTypeIdentifiers
 struct SettingsView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \SavedPlace.name) private var savedPlaces: [SavedPlace]
-    @State private var importingJournal = false
     @State private var importingBackup = false
     @State private var backupURL: URL?
     @State private var backupSummary: BackupPresentation?
@@ -41,7 +40,7 @@ struct SettingsView: View {
                     .accessibilityIdentifier("places-activities-settings-link")
 
                     NavigationLink {
-                        DataRecoverySettingsView(importingJournal: $importingJournal, importingBackup: $importingBackup,
+                        DataRecoverySettingsView(importingBackup: $importingBackup,
                                                  backupURL: $backupURL, backupSummary: $backupSummary, creatingBackup: creatingBackup,
                                                  erasingData: erasingData, createBackup: createBackup,
                                                  cancelBackup: { backupTask?.cancel() }, eraseAllData: { confirmingErase = true },
@@ -64,11 +63,6 @@ struct SettingsView: View {
             }
             .navigationTitle("Settings")
             .accessibilityIdentifier("settings-screen")
-                .fileImporter(isPresented: $importingJournal,
-                              allowedContentTypes: [.commaSeparatedText, .text],
-                              allowsMultipleSelection: false) { result in
-                    importJournal(result)
-                }
                 .fileImporter(isPresented: $importingBackup, allowedContentTypes: [.json], allowsMultipleSelection: false) { result in
                     do {
                         guard let url = try result.get().first else { return }
@@ -153,16 +147,4 @@ struct SettingsView: View {
         return build.map { "\(version) (\($0))" } ?? version
     }
 
-    private func importJournal(_ result: Result<[URL], Error>) {
-        do {
-            guard let url = try result.get().first else { return }
-            let accessed = url.startAccessingSecurityScopedResource()
-            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-            let data = try Data(contentsOf: url)
-            let summary = try JournalCSVImporter.importData(data, into: context)
-            importMessage = "Imported \(summary.inserted) of \(summary.rows) journal entries. \(summary.skipped) duplicates skipped and \(summary.malformed) malformed rows ignored."
-        } catch {
-            importMessage = "LifeLog couldn’t import that file. Choose a Life Cycle CSV export and try again."
-        }
-    }
 }

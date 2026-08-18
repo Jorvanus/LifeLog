@@ -6,8 +6,7 @@ import Testing
 
 /// Edge-case fixtures that stress the boundaries of what a Visit or an
 /// external file can contain: malformed samples, a full year of history, a
-/// handful of unusual time zones, and the two directions data crosses the
-/// app boundary — trend exports and Life Cycle journal imports.
+/// handful of unusual time zones, and trend exports.
 @MainActor
 struct MalformedFixturesAndImportExportTests {
     private let base = TimelineFixtureBuilders.referenceDate()
@@ -91,19 +90,4 @@ struct MalformedFixturesAndImportExportTests {
         #expect(jsonText.contains("Confirmed"))
     }
 
-    @Test("Life Cycle journal CSV maps activities and tolerates malformed rows")
-    func journalImportParsing() {
-        let csv = """
-        START DATE(UTC), END DATE(UTC), START TIME(LOCAL), END TIME(LOCAL), DURATION, NAME, LOCATION, NOTE
-        2026-08-01 00:00:00, 2026-08-01 01:00:00, 2026-08-01 10:00:00 AEST, 2026-08-01 11:00:00 AEST, 3600, Sleep, Home, Rested
-        malformed,row
-        2026-08-01 02:00:00, 2026-08-01 02:30:00, 2026-08-01 12:00:00 AEST, 2026-08-01 12:30:00 AEST, 1800, Transport, ,
-        """.data(using: .utf8)!
-
-        let parsed = JournalCSVImporter.parse(csv)
-        #expect(parsed.rows.count == 2)
-        #expect(parsed.malformed == 1)
-        #expect(parsed.rows[0].name == "Sleep")
-        #expect(parsed.rows[1].name == "Transport")
-    }
 }

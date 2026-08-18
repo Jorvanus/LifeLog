@@ -1,5 +1,11 @@
 # Change log
 
+## 2026-08-18 — 2.19.7 (213)
+
+### Retired Life Cycle CSV importer
+
+- Removed the completed one-time Life Cycle CSV import path from Settings and deleted its parser and malformed-import test. Existing `imported-journal` visits, filtering, insights, diagnostics, archive repair, and journal compaction remain supported.
+
 ## 2026-08-18 — 2.19.6 (212)
 
 ### Backup staging safety
