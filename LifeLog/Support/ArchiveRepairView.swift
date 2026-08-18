@@ -10,11 +10,13 @@ struct ArchiveRepairView: View {
     @State private var findings: ArchiveRepair.Findings?
     @State private var selection: Set<ArchiveRepair.Step> = []
     @State private var scanning = false
+    @State private var creatingBackup = false
     @State private var applying = false
     @State private var confirming = false
     @State private var backupURL: URL?
     @State private var report: ArchiveRepair.Report?
     @State private var message: String?
+    @State private var applyTask: Task<Void, Never>?
 
     private var selectedStepsWithWork: [ArchiveRepair.Step] {
         guard let findings else { return [] }
@@ -155,7 +157,15 @@ struct ArchiveRepairView: View {
     @ViewBuilder
     private var applySection: some View {
         Section {
-            if applying {
+            if creatingBackup {
+                HStack {
+                    ProgressView()
+                    Text("Creating backup…").foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Cancel") { applyTask?.cancel() }
+                }
+                .accessibilityIdentifier("repair-progress")
+            } else if applying {
                 HStack {
                     ProgressView()
                     Text("Repairing…").foregroundStyle(.secondary)
@@ -209,25 +219,38 @@ struct ArchiveRepairView: View {
     }
 
     private func apply() {
-        applying = true
+        creatingBackup = true
         let steps = Set(selectedStepsWithWork)
         let container = context.container
-        Task {
-            // The backup is taken on the main context before the actor touches
-            // anything, so a failure here stops the repair rather than leaving
+        applyTask?.cancel()
+        applyTask = Task {
+            // The backup is read off the UI actor through `BackupExportActor` and
+            // written before the repair actor touches anything, so a failure —
+            // or a cancellation — here stops the repair rather than leaving
             // changes with no way back.
+            let url: URL
             do {
-                let data = try LocalBackupService.makeBackup(context: context, diagnostics: [])
-                let url = FileManager.default.temporaryDirectory
+                let data = try await BackupExportActor(modelContainer: container).makeBackup()
+                try Task.checkCancellation()
+                let candidateURL = FileManager.default.temporaryDirectory
                     .appendingPathComponent("LifeLog-Repair-Backup-\(Int(Date.now.timeIntervalSince1970)).json")
-                try data.write(to: url, options: .atomic)
-                await MainActor.run { backupURL = url }
+                try data.write(to: candidateURL, options: .atomic)
+                try Task.checkCancellation()
+                url = candidateURL
+            } catch is CancellationError {
+                await MainActor.run { creatingBackup = false }
+                return
             } catch {
                 await MainActor.run {
                     message = "The backup could not be created, so nothing was repaired."
-                    applying = false
+                    creatingBackup = false
                 }
                 return
+            }
+            await MainActor.run {
+                backupURL = url
+                creatingBackup = false
+                applying = true
             }
             let actor = ArchiveRepairActor(modelContainer: container)
             do {

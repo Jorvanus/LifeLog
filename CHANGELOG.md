@@ -1,5 +1,11 @@
 # Change log
 
+## 2026-08-18 — 2.19.4 (210)
+
+### Attended repair and compaction backups now run off the main actor
+
+- Journal Compaction and Archive Repair's required preflight backup now reads the whole store through `BackupExportActor` instead of blocking the UI actor. Both screens publish a "Creating backup…" state with a Cancel button, and a cancelled or failed backup now stops before any compaction or repair mutation begins.
+
 ## 2026-08-18 — 2.19.3 (209)
 
 ### Settings is now a status-led hub

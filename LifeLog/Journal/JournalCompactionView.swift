@@ -9,6 +9,8 @@ struct JournalCompactionView: View {
     @State private var confirming = false
     @State private var backupURL: URL?
     @State private var message: String?
+    @State private var creatingBackup = false
+    @State private var backupTask: Task<Void, Never>?
 
     private var removable: [Visit] {
         guard option != .all else { return [] }
@@ -39,7 +41,21 @@ struct JournalCompactionView: View {
                 LabeledContent("Records removed", value: "\(removable.count)")
                 LabeledContent("Estimated savings", value: ByteCountFormatter.string(fromByteCount: Int64(removable.reduce(0) { $0 + $1.note.count }), countStyle: .file))
             }
-            Section { Button("Apply cleanup", role: .destructive) { confirming = true }.disabled(removable.isEmpty).accessibilityIdentifier("apply-journal-cleanup") } footer: { Text("Keeping all data makes no changes. Cleanup is reversible only through the backup created immediately beforehand.") }
+            Section {
+                if creatingBackup {
+                    HStack {
+                        ProgressView()
+                        Text("Creating backup…").foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Cancel") { backupTask?.cancel() }
+                    }
+                    .accessibilityIdentifier("journal-cleanup-progress")
+                } else {
+                    Button("Apply cleanup", role: .destructive) { confirming = true }
+                        .disabled(removable.isEmpty)
+                        .accessibilityIdentifier("apply-journal-cleanup")
+                }
+            } footer: { Text("Keeping all data makes no changes. Cleanup is reversible only through the backup created immediately beforehand.") }
             if let backupURL { Section("Backup created") { ShareLink(item: backupURL) { Label("Share backup", systemImage: "square.and.arrow.up") } } }
         }
         .navigationTitle("Journal Storage")
@@ -52,11 +68,41 @@ struct JournalCompactionView: View {
     }
 
     private func apply() {
-        do {
-            let data = try LocalBackupService.makeBackup(context: context, diagnostics: [])
-            let url = FileManager.default.temporaryDirectory.appendingPathComponent("LifeLog-Journal-Backup-\(Int(Date.now.timeIntervalSince1970)).json")
-            try data.write(to: url, options: .atomic); backupURL = url
-            removable.forEach(context.delete); try context.save(); message = "Cleanup complete. The backup is ready to share."
-        } catch { message = "Cleanup was not applied. The backup could not be created, so your data was left unchanged." }
+        creatingBackup = true
+        let toRemove = removable
+        let container = context.container
+        backupTask?.cancel()
+        backupTask = Task {
+            let url: URL
+            do {
+                let data = try await BackupExportActor(modelContainer: container).makeBackup()
+                try Task.checkCancellation()
+                let candidateURL = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("LifeLog-Journal-Backup-\(Int(Date.now.timeIntervalSince1970)).json")
+                try data.write(to: candidateURL, options: .atomic)
+                try Task.checkCancellation()
+                url = candidateURL
+            } catch is CancellationError {
+                await MainActor.run { creatingBackup = false }
+                return
+            } catch {
+                await MainActor.run {
+                    message = "Cleanup was not applied. The backup could not be created, so your data was left unchanged."
+                    creatingBackup = false
+                }
+                return
+            }
+            await MainActor.run {
+                backupURL = url
+                creatingBackup = false
+                toRemove.forEach(context.delete)
+                do {
+                    try context.save()
+                    message = "Cleanup complete. The backup is ready to share."
+                } catch {
+                    message = "Cleanup was not applied due to an error while saving."
+                }
+            }
+        }
     }
 }
