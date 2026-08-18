@@ -84,7 +84,7 @@ struct ActivitiesTabView: View {
     /// the person is already looking at the label and can see how much of their time
     /// it accounts for.
     private func adopt(_ row: Row) {
-        guard ActivityCatalog.adoptFromHistory(row.name) else { return }
+        guard (try? ActivityCatalog.adoptFromHistory(row.name, context: context)) == true else { return }
         // Grouping is computed rather than stored, so adopting a label re-buckets every
         // visit already carrying it. Insights has to be told.
         InsightsInvalidation.invalidate(reason: "Activity adopted from history", context: context)

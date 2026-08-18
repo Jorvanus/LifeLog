@@ -80,10 +80,10 @@ struct LocalBackupTests {
         #expect(callbacks.first?.callbackType == "geofence-entry")
     }
 
-    // MARK: - V1 compatibility
+    // MARK: - Compatibility window
 
-    @Test("A V1 backup, with none of the V2 fields, still restores")
-    func v1BackupStillRestores() throws {
+    @Test("A backup older than the immediately previous format is rejected without changing the destination")
+    func v1BackupIsRejected() throws {
         let v1JSON = """
         {
           "version": 1,
@@ -114,28 +114,17 @@ struct LocalBackupTests {
         }
         """
         let context = try makeContext()
-        try LocalBackupService.restore(Data(v1JSON.utf8), into: context)
-
-        let visits = try context.fetch(FetchDescriptor<Visit>())
-        #expect(visits.count == 1)
-        #expect(visits.first?.placeName == "Old Cafe")
-        #expect(visits.first?.routeData == nil)
-        #expect(visits.first?.healthKitSampleIDs == nil)
-        // No stableID/resolutionState in the archive: `restore` mints a fresh
-        // identity and derives a state, rather than leaving either unset.
-        #expect(visits.first?.stableID != nil)
-
-        let places = try context.fetch(FetchDescriptor<SavedPlace>())
-        #expect(places.first?.role == nil)
-
-        let diagnostics = try context.fetch(FetchDescriptor<DiagnosticEvent>())
-        #expect(diagnostics.first?.category == Diagnostics.Category.general)
+        #expect(throws: (any Error).self) {
+            try LocalBackupService.restore(Data(v1JSON.utf8), into: context)
+        }
+        #expect(try context.fetchCount(FetchDescriptor<Visit>()) == 0)
+        #expect(try context.fetchCount(FetchDescriptor<SavedPlace>()) == 0)
     }
 
-    // MARK: - Full V2 round trip
+    // MARK: - Full backup round trip
 
-    @Test("Every V2 field round-trips: route, HealthKit IDs, roles, corrections, ignored state, diagnostics, activities")
-    func fullV2RoundTrip() throws {
+    @Test("Every current backup field round-trips: route, HealthKit IDs, roles, corrections, ignored state, diagnostics, activities")
+    func fullCurrentBackupRoundTrip() throws {
         let sourceContext = try makeContext()
         let stableID = UUID()
         let sampleIDs = [UUID(), UUID()]
@@ -173,8 +162,8 @@ struct LocalBackupTests {
             #expect(decoded.visits.first?.resolutionState == VisitResolutionState.resolved.rawValue)
             #expect(decoded.savedPlaces.first?.role == "home")
             #expect(decoded.diagnostics.first?.category == Diagnostics.Category.performance)
-            // Ignored state now travels per-visit; a V2 archive carries none of the
-            // legacy persistentModelID-text keys.
+            // Ignored state travels per-visit; the backup retains no retired
+            // persistent-model-ID keys.
             #expect(decoded.ignoredVisitKeys.isEmpty)
 
             let restoredContext = try! makeContext()
@@ -512,8 +501,10 @@ struct LocalBackupTests {
             try context.save()
             #expect(ActivityCatalog.adoptFromHistory("Cafe!") == true)
             #expect(ActivityCatalog.load().count == 3)
+            _ = try ActivityIdentityMigration.adoptLegacyDefinitions(context: context,
+                                                                       definitions: ActivityCatalog.load())
             let progress = try ActivityIdentityMigration.backfillNextBatch(context: context)
-            #expect(progress.adoptedDefinitions == 3)
+            #expect(progress.adoptedDefinitions == 0)
         }
         let definitions = try context.fetch(FetchDescriptor<ActivityDefinitionRecord>())
         #expect(definitions.count == 3)
@@ -541,6 +532,8 @@ struct LocalBackupTests {
         let upper = ActivityDefinition(name: "Gym", category: "Fitness", symbol: "dumbbell.fill")
         try ActivityCatalog.withStorage(defaults) {
             ActivityCatalog.save([lower, upper])
+            _ = try ActivityIdentityMigration.adoptLegacyDefinitions(context: context,
+                                                                       definitions: ActivityCatalog.load())
             context.insert(Visit(arrival: base, latitude: 0, longitude: 0, placeName: "A", inferredActivity: "GYM"))
             try context.save()
             _ = try ActivityIdentityMigration.backfillNextBatch(context: context)
@@ -558,6 +551,8 @@ struct LocalBackupTests {
         let work = ActivityDefinition(name: "Work", category: "Work", symbol: "briefcase.fill")
         try ActivityCatalog.withStorage(defaults) {
             ActivityCatalog.save([work])
+            _ = try ActivityIdentityMigration.adoptLegacyDefinitions(context: context,
+                                                                       definitions: ActivityCatalog.load())
             for index in 0..<32_000 {
                 context.insert(Visit(arrival: base.addingTimeInterval(Double(index)), latitude: 0, longitude: 0,
                                      placeName: "Office", inferredActivity: "Work"))
@@ -575,11 +570,39 @@ struct LocalBackupTests {
 
     // MARK: - Restoring into a real, migration-plan-backed container
 
+    @Test("A V4 backup round-trips durable activity aliases and inactive state")
+    func durableActivityDefinitionsRoundTripWithoutLegacySnapshot() throws {
+        let source = try makeContext()
+        let activityID = UUID()
+        source.insert(ActivityDefinitionRecord(stableID: activityID, name: "Breakfast",
+                                               category: "Food & Drink", symbol: "sunrise.fill",
+                                               legacyNames: ["Morning meal"], isActive: false,
+                                               createdAt: base, modifiedAt: base))
+        source.insert(Visit(arrival: base, latitude: -23.38, longitude: 150.51,
+                            placeName: "Home", inferredActivity: "Breakfast",
+                            activityDefinitionID: activityID, source: "manual"))
+        try source.save()
+
+        let data = try LocalBackupService.makeBackup(context: source, diagnostics: [])
+        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        let document = try decoder.decode(LifeLogBackup.self, from: data)
+        #expect(document.version == 4)
+        #expect(document.activityDefinitions.isEmpty)
+        #expect(document.activityDefinitionRecords?.first?.legacyNames == ["Morning meal"])
+
+        let destination = try makeContext()
+        try LocalBackupService.restore(data, into: destination)
+        let restored = try #require(destination.fetch(FetchDescriptor<ActivityDefinitionRecord>()).first)
+        #expect(restored.stableID == activityID)
+        #expect(restored.legacyNames == ["Morning meal"])
+        #expect(restored.isActive == false)
+    }
+
     /// Every other test in this file restores into a plain live-model container,
     /// which is deliberate -- see the type's doc comment. This one instead opens a
     /// container the same way `LifeLogApp` does, through `LifeLogMigrationPlan`
     /// against an on-disk store, to confirm restore has no hidden dependency on
-    /// bypassing that path. The store is freshly created at V11 (nothing to
+    /// bypassing that path. The store is freshly created at V12 (nothing to
     /// migrate from), so this is not a migration test and duplicates none of
     /// `SchemaMigrationTests`' frozen-version fixtures; it only proves the two
     /// subsystems compose.
@@ -615,7 +638,7 @@ struct LocalBackupTests {
     }
 
     private func makeVersionedContext(at url: URL) throws -> ModelContext {
-        let schema = Schema(versionedSchema: LifeLogSchemaV11.self)
+        let schema = Schema(versionedSchema: LifeLogSchemaV12.self)
         let configuration = ModelConfiguration(
             "LifeLogBackupFixture", schema: schema, url: url,
             allowsSave: true, cloudKitDatabase: .none

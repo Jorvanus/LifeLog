@@ -2,55 +2,38 @@ import Foundation
 import SwiftData
 
 struct LifeLogBackup: Codable {
-    /// V3 adds the durable `ActivityDefinitionRecord` catalogue
-    /// (`activityDefinitionRecords`) and a `manifest`. Both are optional, so a
-    /// V1/V2 archive — which has no key for either — still decodes without a
-    /// custom `init(from:)`.
+    /// V3 added durable `ActivityDefinitionRecord` rows and a manifest; both stay
+    /// optional so the immediately previous V3 JSON decodes. V4 makes those durable
+    /// rows the only activity payload written by new backups, including aliases.
     ///
-    /// `activityDefinitions`, the UserDefaults compatibility snapshot, keeps
-    /// being written in full rather than emptied the way `ignoredVisitKeys` was
-    /// at V2: it is the only place a rename's `legacyNames` aliases live (see
-    /// `ActivityDefinition.legacyNames`), and the durable record has no field to
-    /// hold them, so emptying it here would silently discard real rename
-    /// history with nowhere else to keep it. What changes at V3 is which side
-    /// `restore` trusts for identity: `activityDefinitionRecords`, when
-    /// present, is authoritative for a definition's `isActive` state and
-    /// timestamps. Before V3 those could only be reconstructed from
-    /// `activityDefinitions` via `adoptLegacyDefinitions`, which has no
-    /// `isActive` field to read and so always recreated an adopted definition
-    /// as active — a restore could silently resurrect an activity the person
-    /// had deliberately deleted. A durable row's own `isActive: false` now
-    /// round-trips exactly, including for a definition kept only because a
-    /// historical Visit or Saved Place still points at it — see
-    /// `LocalBackupService.encodeBackup` for the inclusion rule.
-    static let currentVersion = 3
+    /// `activityDefinitions` remains required for V3 decoding, but V4 writes it
+    /// empty. Its former aliases are now `ActivityDefinitionRecordEntry.legacyNames`.
+    static let currentVersion = 4
     let version: Int
     let createdAt: Date
     let visits: [VisitRecord]
     let savedPlaces: [SavedPlaceRecord]
     let corrections: [CorrectionRecord]
     let diagnostics: [DiagnosticRecord]
-    /// Optional so backups made before the detailed callback journal existed still
-    /// restore cleanly. It intentionally carries coordinates: the local backup
-    /// already carries the timeline's coordinates, and this is the evidence needed
-    /// to explain how those visits were created.
+    /// Optional to preserve the immediately previous V3 document shape. It
+    /// intentionally carries coordinates: the local backup already carries the
+    /// timeline's coordinates, and this is the evidence needed to explain how
+    /// those visits were created.
     let locationEvents: [LocationEventRecord]?
-    /// Retained only so a V1 backup's legacy persistentModelID-text keys still
-    /// decode and can still be converted by `VisitResolutionMigration` on the
-    /// next store open. A V2 backup writes this empty: every visit's own
-    /// `resolutionState` already carries `.ignored` keyed by its `stableID`,
-    /// which is the durable identity a restore round-trips, unlike a key built
-    /// from a row identity SwiftData reassigns on every restore.
+    /// Retained in V3/V4 for a stable document shape. New backups write it empty:
+    /// every visit's own `resolutionState` carries `.ignored` keyed by its
+    /// `stableID`, unlike a key built from a row identity SwiftData reassigns on
+    /// every restore.
     let ignoredVisitKeys: [String]
     let activityDefinitions: [ActivityDefinition]
-    /// V3. Field-for-field snapshot of every `ActivityDefinitionRecord` the
+    /// Field-for-field snapshot of every `ActivityDefinitionRecord` the
     /// catalogue is currently active, plus any inactive one a historical
     /// `Visit` or `SavedPlace` still references — see `encodeBackup` for the
-    /// exact filter. Optional so a V1/V2 backup, made before this existed,
-    /// still decodes and falls back to `activityDefinitions` alone.
+    /// exact filter. Optional only because V3 did not include aliases; V3 still
+    /// carries durable record rows, while V4 writes aliases alongside them.
     let activityDefinitionRecords: [ActivityDefinitionRecordEntry]?
     let preferences: [String: String]
-    /// V3. Descriptive only — nothing in `restore` reads it — so a person
+    /// Descriptive only — nothing in `restore` reads it — so a person
     /// inspecting a `.json` backup by hand, or a future diagnostic, can see
     /// what produced it without decoding every array and counting.
     let manifest: Manifest?
@@ -65,10 +48,28 @@ struct LifeLogBackup: Codable {
         let category: String
         let symbol: String
         let colorHex: String?
+        // V3 backups may omit this field; keep the decode default while allowing
+        // the explicit encoder initializer to supply aliases for V4 records.
+        var legacyNames: [String]? = nil
         let lifeArea: String
         let isActive: Bool
         let createdAt: Date
         let modifiedAt: Date
+
+        init(stableID: UUID, name: String, category: String, symbol: String,
+             colorHex: String?, legacyNames: [String]? = nil, lifeArea: String,
+             isActive: Bool, createdAt: Date, modifiedAt: Date) {
+            self.stableID = stableID
+            self.name = name
+            self.category = category
+            self.symbol = symbol
+            self.colorHex = colorHex
+            self.legacyNames = legacyNames
+            self.lifeArea = lifeArea
+            self.isActive = isActive
+            self.createdAt = createdAt
+            self.modifiedAt = modifiedAt
+        }
     }
 
     /// What produced this backup, and how big it is. Every count and size is
@@ -80,8 +81,8 @@ struct LifeLogBackup: Codable {
         let schemaVersion: String
         let recordCounts: RecordCounts
         /// Byte size of each section's own JSON encoding, plus their sum —
-        /// not the whole file's byte count, which also includes this manifest,
-        /// `preferences`, and the legacy `activityDefinitions` snapshot.
+        /// not the whole file's byte count, which also includes this manifest and
+        /// portable preferences.
         let payloadSizes: PayloadSizes
 
         struct RecordCounts: Codable {
@@ -107,45 +108,41 @@ struct LifeLogBackup: Codable {
         let arrival: Date; let departure: Date?; let latitude: Double; let longitude: Double
         let placeName: String; let inferredActivity: String
         let userActivity: String?; let note: String; let source: String
-        /// Optional because V1/V2 backups store only their display snapshots.
+        /// Optional because V3's visit snapshot can predate activity linking.
         let activityDefinitionID: UUID?
         let recognitionConfidence: String?; let candidateData: Data?
-        /// Optional so V1 backups remain valid after visits gained Maps identity.
+        /// Optional when a V3 visit had no Maps identity.
         let mapsIdentifier: String?; let placeFieldProvenance: String?
-        /// Optional so older local backups restore without manufacturing an answer.
+        /// Optional so the previous backup format restores without manufacturing an answer.
         let resolutionExplanation: String?
-        /// Optional so backups made before the V9 migration still restore. Present,
+        /// Optional where the previous format has no durable identity. Present,
         /// these round-trip a visit's durable identity and resolution state exactly
         /// — including `.ignored` — instead of leaving `Visit.init` to regenerate a
         /// fresh identity and re-derive a state with no ignore of its own to go on.
         let stableID: UUID?
         let resolutionState: String?
-        /// V2. Optional so a V1 backup — recorded before either field existed —
-        /// still decodes; a restored visit simply has no route or HealthKit
-        /// identity, exactly as it had none when that backup was made.
+        /// Optional so V3 records with neither field remain an honest absence.
         let healthKitSampleIDs: [UUID]?
         let routeData: Data?
     }
     // `placeCategory`/`category` were dropped when LifeLog stopped modelling a
-    // place type. Older backups still restore: JSON keys with no matching
-    // property are ignored on decode, so the format version is unchanged.
+    // place type. The supported V3/V4 documents have no such keys; unknown JSON
+    // keys remain ignored by Codable as a normal forward-compatibility safeguard.
     struct SavedPlaceRecord: Codable {
         let name: String; let latitude: Double; let longitude: Double; let radius: Double
         let defaultActivity: String; let mapsIdentifier: String?
         let activityDefinitionID: UUID?
-        /// V2. Optional so a V1 backup, recorded before Home/Work roles existed,
-        /// still decodes.
+        /// Optional where a V3 Saved Place had no explicit Home/Work role.
         let role: String?
     }
     struct CorrectionRecord: Codable { let changedAt: Date; let visitArrival: Date; let latitude: Double; let longitude: Double; let previousPlaceName: String; let newPlaceName: String; let previousActivity: String; let newActivity: String; let previousConfidence: String; let newConfidence: String; let reason: String }
     struct DiagnosticRecord: Codable {
         let createdAt: Date; let subsystem: String; let severity: String; let message: String
-        /// V2. Optional so a V1 backup still decodes; restored as `.general` to
-        /// match what a pre-category row already defaults to on this model.
+        /// Optional where a V3 diagnostic has no explicit category; it restores as
+        /// `.general`, the model's ordinary default.
         let category: String?
-        /// Optional so a backup made before typed diagnostic events existed still
-        /// decodes; a restored event simply has no typed fields, exactly as it had
-        /// none when that backup was made, and reads through `message` alone.
+        /// Optional where the previous format has an untyped diagnostic. It remains
+        /// readable through `message` without inventing typed values.
         let eventCode: String?
         let durationMs: Int?
         let budgetMs: Int?
@@ -367,7 +364,7 @@ enum LocalBackupService {
                 distanceFromCurrentVisit: $0.distanceFromCurrentVisit, transition: $0.transition,
                 visitArrival: $0.visitArrival) }
         let definitionRecords = definitionsToBackUp(activityDefinitionRecords, visits: visits, places: places)
-            .map { LifeLogBackup.ActivityDefinitionRecordEntry(stableID: $0.stableID, name: $0.name, category: $0.category, symbol: $0.symbol, colorHex: $0.colorHex, lifeArea: $0.lifeArea, isActive: $0.isActive, createdAt: $0.createdAt, modifiedAt: $0.modifiedAt) }
+            .map { LifeLogBackup.ActivityDefinitionRecordEntry(stableID: $0.stableID, name: $0.name, category: $0.category, symbol: $0.symbol, colorHex: $0.colorHex, legacyNames: $0.legacyNames, lifeArea: $0.lifeArea, isActive: $0.isActive, createdAt: $0.createdAt, modifiedAt: $0.modifiedAt) }
 
         let payloadSizes = LifeLogBackup.Manifest.PayloadSizes(
             visits: size(visitRecords), savedPlaces: size(savedPlaceRecords), corrections: size(correctionRecords),
@@ -388,7 +385,7 @@ enum LocalBackupService {
         let document = LifeLogBackup(version: LifeLogBackup.currentVersion, createdAt: .now,
             visits: visitRecords, savedPlaces: savedPlaceRecords, corrections: correctionRecords,
             diagnostics: diagnosticRecords, locationEvents: locationEventRecords,
-            ignoredVisitKeys: [], activityDefinitions: ActivityCatalog.load(),
+            ignoredVisitKeys: [], activityDefinitions: [],
             activityDefinitionRecords: definitionRecords, preferences: preferences(), manifest: manifest)
         let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601; encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         return try encoder.encode(document)
@@ -396,9 +393,8 @@ enum LocalBackupService {
 
     /// Decodes and validates the whole archive, requires an empty destination,
     /// then restores it in one pass. Every insert -- visits, places,
-    /// corrections, diagnostics, location events, activity definition records,
-    /// and (for a V1/V2 archive) the reconstructed legacy identity rows -- stays
-    /// unsaved until the single commit inside `VisitMutationService.finalize`,
+    /// corrections, diagnostics, location events, and activity definition records
+    /// stays unsaved until the single commit inside `VisitMutationService.finalize`,
     /// which also runs the mandatory full-store audit before that commit. There
     /// is no earlier `context.save()` to leave standing: a decode, validation,
     /// non-empty-destination, insert, activity-identity, or audit/resolver
@@ -416,20 +412,25 @@ enum LocalBackupService {
         } catch {
             throw CocoaError(.fileReadCorruptFile)
         }
-        // Every version from V1 through `currentVersion` restores; only a
-        // version this build has never heard of (from a future build) is
-        // rejected, not merely an old one.
-        guard (1...LifeLogBackup.currentVersion).contains(backup.version) else {
+        // The owner updates LifeLog with each release, so imports intentionally
+        // accept only the immediately previous document format and the current one.
+        // This keeps restore semantics small, tested, and aligned with the one-step
+        // on-device schema migration policy.
+        guard ((LifeLogBackup.currentVersion - 1)...LifeLogBackup.currentVersion).contains(backup.version) else {
             throw CocoaError(.fileReadCorruptFile)
         }
         try backup.validate()
+        guard let definitions = backup.activityDefinitionRecords else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
 
         // A restore is a complete replacement, never a merge: appending into an
         // existing store would silently duplicate every visit, place,
         // correction, diagnostic, and location callback already there. This
         // checks exactly the model types `eraseAllData` (Settings) wipes and
-        // `restore` repopulates -- not `ActivityDefinitionRecord`, which a fresh
-        // install already seeds before any restore runs.
+        // `restore` repopulates. `ActivityDefinitionRecord` is deliberately not a
+        // blocker: a fresh install seeds it before any restore runs, and the restore
+        // replaces that small catalogue transactionally with the backup's records.
         guard try context.fetchCount(FetchDescriptor<Visit>()) == 0,
               try context.fetchCount(FetchDescriptor<SavedPlace>()) == 0,
               try context.fetchCount(FetchDescriptor<VisitCorrection>()) == 0,
@@ -468,31 +469,51 @@ enum LocalBackupService {
                                              distanceFromCurrentVisit: record.distanceFromCurrentVisit,
                                              transition: record.transition, visitArrival: record.visitArrival))
             }
-            // V3+. Restored directly, by identity: `stableID` carries `.unique`,
-            // and a fresh install already seeds a handful of default definitions
-            // with well-known IDs before any restore runs, so a record already
-            // present is left alone rather than inserted a second time -- the
-            // same "only add what's absent" rule `adoptLegacyDefinitions` below
-            // uses for the same reason.
-            if let definitions = backup.activityDefinitionRecords {
-                let existingIDs = Set(try context.fetch(FetchDescriptor<ActivityDefinitionRecord>()).map(\.stableID))
-                for record in definitions where !existingIDs.contains(record.stableID) {
+            // A restore replaces the catalogue as well as the visible archive. A
+            // fresh destination may already contain first-launch definitions; keeping
+            // those alongside the backup would leave duplicate labels and make the
+            // restored active/inactive state non-deterministic. Match by stable ID to
+            // update a same-device restore in place, insert genuinely new rows, then
+            // remove destination-only definitions before the shared commit below.
+            let existing = try context.fetch(FetchDescriptor<ActivityDefinitionRecord>())
+            let byID = Dictionary(uniqueKeysWithValues: existing.map { ($0.stableID, $0) })
+            let restoredIDs = Set(definitions.map(\.stableID))
+            for record in definitions {
+                if let definition = byID[record.stableID] {
+                    definition.name = record.name
+                    definition.category = record.category
+                    definition.symbol = record.symbol
+                    definition.colorHex = record.colorHex
+                    definition.legacyNames = record.legacyNames ?? []
+                    definition.lifeArea = record.lifeArea
+                    definition.isActive = record.isActive
+                    definition.createdAt = record.createdAt
+                    definition.modifiedAt = record.modifiedAt
+                } else {
                     context.insert(ActivityDefinitionRecord(
                         stableID: record.stableID, name: record.name, category: record.category,
-                        symbol: record.symbol, colorHex: record.colorHex, lifeArea: record.lifeArea,
+                        symbol: record.symbol, colorHex: record.colorHex,
+                        legacyNames: record.legacyNames ?? [], lifeArea: record.lifeArea,
                         isActive: record.isActive, createdAt: record.createdAt, modifiedAt: record.modifiedAt
                     ))
                 }
             }
-            // A V3+ backup already inserted its exact `ActivityDefinitionRecord`
-            // rows above -- `isActive` and all -- so there is nothing left to
-            // adopt. Only a V1/V2 backup, which carries no durable rows at all,
-            // still needs them reconstructed from the legacy snapshot. `save:
-            // false` keeps this insert unsaved along with everything else above,
-            // so it commits or rolls back with the rest of the restore rather
-            // than surviving a later resolver failure on its own.
-            if backup.activityDefinitionRecords == nil {
-                _ = try ActivityIdentityMigration.adoptLegacyDefinitions(context: context, save: false)
+            for definition in existing where !restoredIDs.contains(definition.stableID) {
+                context.delete(definition)
+            }
+            // V3 stored aliases in its retired display snapshot. Keep those aliases
+            // additively without allowing its older snapshot to override a durable
+            // name, category, or active state.
+            if backup.version == LifeLogBackup.currentVersion - 1 {
+                let records = try context.fetch(FetchDescriptor<ActivityDefinitionRecord>())
+                for legacy in backup.activityDefinitions {
+                    guard let record = records.first(where: { $0.stableID == legacy.id }) else { continue }
+                    for alias in legacy.legacyNames where
+                        alias.caseInsensitiveCompare(record.name) != .orderedSame &&
+                        !record.legacyNames.contains(where: { $0.caseInsensitiveCompare(alias) == .orderedSame }) {
+                        record.legacyNames.append(alias)
+                    }
+                }
             }
         } catch {
             context.rollback()
@@ -515,14 +536,13 @@ enum LocalBackupService {
             )
         }
 
-        // Only now that the store is durably committed do preferences and the
-        // legacy catalogue snapshot get written. UserDefaults has no
+        // Only now that the store is durably committed do preferences get written. UserDefaults has no
         // transaction of its own to roll back, so these must wait until the
         // one thing that could still fail is already known to have succeeded --
         // otherwise a resolver failure above would leave preferences restored
         // against a store that never actually committed.
         IgnoredLocations.importKeys(backup.ignoredVisitKeys)
-        ActivityCatalog.save(backup.activityDefinitions)
+        try? ActivityCatalog.refresh(context: context)
         for (key, value) in backup.preferences where isPortablePreferenceKey(key) {
             UserDefaults.standard.set(value, forKey: key)
         }

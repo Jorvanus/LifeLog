@@ -111,8 +111,12 @@ struct ActivitiesView: View {
             NavigationStack {
                 ActivityEditor { newActivity in
                     activities.append(newActivity)
-                    ActivityCatalog.save(activities)
-                    try? ActivityIdentityMigration.upsert(newActivity, context: context)
+                    do {
+                        try ActivityCatalog.save(activities, context: context)
+                    } catch {
+                        activities = ActivityCatalog.load()
+                        return
+                    }
                     refreshUsage()
                 }
             }
@@ -120,10 +124,13 @@ struct ActivitiesView: View {
     }
 
     private func delete(_ offsets: IndexSet) {
-        let deleted = offsets.map { activities[$0].id }
         activities.remove(atOffsets: offsets)
-        ActivityCatalog.save(activities)
-        for id in deleted { try? ActivityIdentityMigration.deactivate(id: id, context: context) }
+        do {
+            try ActivityCatalog.save(activities, context: context)
+        } catch {
+            activities = ActivityCatalog.load()
+            return
+        }
         InsightsInvalidation.invalidate(reason: "Activity deleted", context: context)
     }
 
@@ -196,7 +203,6 @@ struct ActivityEditor: View {
         let cleanName = TextSafety.clean(name, maximumLength: 80)
         let cleanCategory = TextSafety.clean(category, maximumLength: 40)
         let cleanSymbol = TextSafety.clean(symbol, maximumLength: 60)
-        saveActivityColor(categoryColorValue, forActivity: cleanName)
         var definition = ActivityDefinition(id: UUID(), name: cleanName,
                                   category: cleanCategory.isEmpty ? "Other" : cleanCategory,
                                   symbol: cleanSymbol.isEmpty ? "circle.fill" : cleanSymbol)

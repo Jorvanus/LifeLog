@@ -50,7 +50,6 @@ actor ActivityLinkingCatchUp {
     }
 
     private func run() throws -> Int {
-        _ = try ActivityIdentityMigration.adoptLegacyDefinitions(context: modelContext)
         let linked = try ActivityIdentityMigration.linkAll(context: modelContext)
         if modelContext.hasChanges { try modelContext.save() }
         return linked

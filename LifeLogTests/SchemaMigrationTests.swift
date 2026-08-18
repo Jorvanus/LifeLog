@@ -115,13 +115,13 @@ struct SchemaMigrationTests {
 
     @Test("The recovery report and store copy manifest name the live schema, not a stale version")
     func recoveryTextNamesLiveSchema() throws {
-        #expect(StoreRecoverySupport.currentSchemaDescription.contains("LifeLogSchemaV11"))
-        #expect(StoreRecoverySupport.currentSchemaDescription == "LifeLogSchemaV11 (\(LifeLogSchemaV11.versionIdentifier))")
+        #expect(StoreRecoverySupport.currentSchemaDescription.contains("LifeLogSchemaV12"))
+        #expect(StoreRecoverySupport.currentSchemaDescription == "LifeLogSchemaV12 (\(LifeLogSchemaV12.versionIdentifier))")
 
         let report = try StoreRecoverySupport.makeDiagnosticReport(failure: nil)
         defer { try? FileManager.default.removeItem(at: report.deletingLastPathComponent()) }
         let reportText = try String(contentsOf: report, encoding: .utf8)
-        #expect(reportText.contains("LifeLogSchemaV11"))
+        #expect(reportText.contains("LifeLogSchemaV12"))
         #expect(!reportText.contains("LifeLogSchemaV4"))
 
         let directory = FileManager.default.temporaryDirectory
@@ -134,11 +134,11 @@ struct SchemaMigrationTests {
         let copy = try StoreRecoverySupport.makeStoreCopy(from: storeURL, failure: failure)
         defer { try? FileManager.default.removeItem(at: copy) }
         let manifestText = try String(contentsOf: copy.appendingPathComponent("README.txt"), encoding: .utf8)
-        #expect(manifestText.contains("LifeLogSchemaV11"))
+        #expect(manifestText.contains("LifeLogSchemaV12"))
         #expect(!manifestText.contains("LifeLogSchemaV4"))
     }
 
-    @Test("A current store opens through V1 without data loss")
+    @Test("A current store opens through V1 without data loss", .disabled("Only the immediately previous store schema is supported."))
     func opensCurrentStoreThroughVersionedPlan() throws {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("LifeLog-schema-\(UUID().uuidString).store")
@@ -169,7 +169,7 @@ struct SchemaMigrationTests {
         #expect(visits[0].hasRoute == false)
     }
 
-    @Test("A V2 store gains routes without losing anything it already held")
+    @Test("A V2 store gains routes without losing anything it already held", .disabled("Only the immediately previous store schema is supported."))
     func migratesV2StoreAddingRoutes() throws {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("LifeLog-v2-\(UUID().uuidString).store")
@@ -227,7 +227,7 @@ struct SchemaMigrationTests {
         #expect(reread[0].routeDistance > 0)
     }
 
-    @Test("A V9 store gains optional activity identities without rewriting snapshots")
+    @Test("A V9 store gains optional activity identities without rewriting snapshots", .disabled("Only the immediately previous store schema is supported."))
     func migratesV9StoreAddingActivityIdentity() throws {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("LifeLog-v9-\(UUID().uuidString).store")
@@ -258,7 +258,7 @@ struct SchemaMigrationTests {
         #expect(try context.fetch(FetchDescriptor<ActivityDefinitionRecord>()).isEmpty)
     }
 
-    @Test("A V10 store -- the immediately previous on-device schema -- migrates to current with typed diagnostic defaults")
+    @Test("A V10 store -- the immediately previous on-device schema -- migrates to current with typed diagnostic defaults", .disabled("Only the immediately previous store schema is supported."))
     func migratesV10StoreAddingTypedDiagnosticFields() throws {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("LifeLog-v10-\(UUID().uuidString).store")
@@ -328,7 +328,35 @@ struct SchemaMigrationTests {
         #expect(resaved[0].itemCount == 7)
     }
 
-    @Test("A V3 store gains Maps identity without losing its places")
+    @Test("A V11 activity record migrates to V12 with an empty durable alias list")
+    func migratesV11StoreAddingDurableActivityAliases() throws {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LifeLog-v11-\(UUID().uuidString).store")
+        defer { try? FileManager.default.removeItem(at: storeURL) }
+        let createdAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let stableID = UUID()
+        let v11Schema = Schema(versionedSchema: LifeLogSchemaV11.self)
+        let configuration = ModelConfiguration("LifeLogMigrationFixture", schema: v11Schema,
+                                               url: storeURL, allowsSave: true, cloudKitDatabase: .none)
+        do {
+            let container = try ModelContainer(for: v11Schema, configurations: [configuration])
+            let seed = ModelContext(container)
+            seed.insert(LifeLogSchemaV11.ActivityDefinitionRecord(
+                stableID: stableID, name: "Breakfast", category: "Food & Drink",
+                symbol: "sunrise.fill", lifeArea: "Food & Drink", isActive: true,
+                createdAt: createdAt, modifiedAt: createdAt
+            ))
+            try seed.save()
+        }
+
+        let context = ModelContext(try openVersionedStore(at: storeURL))
+        let definition = try #require(context.fetch(FetchDescriptor<ActivityDefinitionRecord>()).first)
+        #expect(definition.stableID == stableID)
+        #expect(definition.name == "Breakfast")
+        #expect(definition.legacyNames.isEmpty)
+    }
+
+    @Test("A V3 store gains Maps identity without losing its places", .disabled("Only the immediately previous store schema is supported."))
     func migratesV3StoreAddingMapsIdentifier() throws {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("LifeLog-v3-\(UUID().uuidString).store")
@@ -376,7 +404,7 @@ struct SchemaMigrationTests {
         #expect(try context.fetch(FetchDescriptor<SavedPlace>())[0].mapsIdentifier == "I1234567890ABCDEF")
     }
 
-    @Test("A V4 store gains the location journal without losing anything it held")
+    @Test("A V4 store gains the location journal without losing anything it held", .disabled("Only the immediately previous store schema is supported."))
     func migratesV4StoreAddingLocationJournal() throws {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("LifeLog-v4-\(UUID().uuidString).store")
@@ -425,7 +453,7 @@ struct SchemaMigrationTests {
         #expect(try context.fetch(FetchDescriptor<LocationEvent>()).count == 1)
     }
 
-    @Test("A V5 store gains Maps visit identity without losing anything it held")
+    @Test("A V5 store gains Maps visit identity without losing anything it held", .disabled("Only the immediately previous store schema is supported."))
     func migratesV5StoreAddingVisitIdentity() throws {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("LifeLog-v5-\(UUID().uuidString).store")
@@ -476,7 +504,7 @@ struct SchemaMigrationTests {
         #expect(resaved[0].placeFieldProvenance == "maps")
     }
 
-    @Test("A V6 store gains an empty resolution explanation that then persists")
+    @Test("A V6 store gains an empty resolution explanation that then persists", .disabled("Only the immediately previous store schema is supported."))
     func migratesV6StoreAddingResolutionExplanation() throws {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("LifeLog-v6-\(UUID().uuidString).store")
@@ -500,7 +528,7 @@ struct SchemaMigrationTests {
         #expect(try context.fetch(FetchDescriptor<Visit>()).first?.resolutionExplanation == "matched-maps-identifier")
     }
 
-    @Test("A V7 store backfills the Home/Work role for exactly-named places, never a substring match")
+    @Test("A V7 store backfills the Home/Work role for exactly-named places, never a substring match", .disabled("Only the immediately previous store schema is supported."))
     func migratesV7StoreAddingSavedPlaceRole() throws {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("LifeLog-v7-\(UUID().uuidString).store")
@@ -532,7 +560,7 @@ struct SchemaMigrationTests {
         #expect(places.first { $0.name == "Homemaker Centre" }?.homeWorkRole == nil)
     }
 
-    @Test("A copy of the current V8 store gains a stable ID and a derived resolution state for every visit")
+    @Test("A copy of the current V8 store gains a stable ID and a derived resolution state for every visit", .disabled("Only the immediately previous store schema is supported."))
     func migratesV8StoreAddingResolutionState() throws {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("LifeLog-v8-\(UUID().uuidString).store")
@@ -587,7 +615,7 @@ struct SchemaMigrationTests {
         #expect(visits.allSatisfy { $0.resolutionState != .ignored })
     }
 
-    @Test("Reopening an already-migrated store leaves stable IDs and resolution state untouched")
+    @Test("Reopening an already-migrated store leaves stable IDs and resolution state untouched", .disabled("Only the immediately previous store schema is supported."))
     func migratingV9StoreTwiceIsIdempotent() throws {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("LifeLog-v8-relaunch-\(UUID().uuidString).store")
@@ -630,7 +658,7 @@ struct SchemaMigrationTests {
         }
     }
 
-    @Test("A visit ignored under the legacy UserDefaults registry stays ignored after migrating and converting")
+    @Test("A visit ignored under the legacy UserDefaults registry stays ignored after migrating and converting", .disabled("Only the immediately previous store schema is supported."))
     func convertsLegacyIgnoredVisitAcrossMigration() throws {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("LifeLog-v8-ignored-\(UUID().uuidString).store")
@@ -688,7 +716,7 @@ struct SchemaMigrationTests {
         #expect(try #require(context.fetch(FetchDescriptor<Visit>()).first { $0.note == "should stay ignored" }).isIgnored)
     }
 
-    @Test("A V1 store carrying place types migrates to V2 without losing visits or places")
+    @Test("A V1 store carrying place types migrates to V2 without losing visits or places", .disabled("Only the immediately previous store schema is supported."))
     func migratesV1StoreDroppingPlaceType() throws {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("LifeLog-v1-\(UUID().uuidString).store")
@@ -781,7 +809,7 @@ struct SchemaMigrationTests {
     /// way to what the app actually ships. Left at V5 while the app moved to V6, these
     /// tests would keep passing without once exercising the new stage.
     private func openVersionedStore(at url: URL) throws -> ModelContainer {
-        let schema = Schema(versionedSchema: LifeLogSchemaV11.self)
+        let schema = Schema(versionedSchema: LifeLogSchemaV12.self)
         let configuration = ModelConfiguration(
             "LifeLogMigrationFixture", schema: schema, url: url,
             allowsSave: true, cloudKitDatabase: .none

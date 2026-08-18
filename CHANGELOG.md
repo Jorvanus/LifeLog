@@ -1,10 +1,18 @@
 # Change log
 
-## 2026-08-18 — 2.19.4 (210)
+## 2026-08-18 — 2.19.5 (211)
 
 ### Attended repair and compaction backups now run off the main actor
 
 - Journal Compaction and Archive Repair's required preflight backup now reads the whole store through `BackupExportActor` instead of blocking the UI actor. Both screens publish a "Creating backup…" state with a Cancel button, and a cancelled or failed backup now stops before any compaction or repair mutation begins.
+
+### Durable activity catalogue
+
+- Activities now keep their names, aliases, active state, grouping, icon, and colour in the local database. LifeLog now supports only the immediately previous on-device schema and backup format, avoiding long-retired import and migration paths while new backups restore the same durable definitions without reviving a second catalogue.
+- Backup activity records now use an explicit initializer, preserving aliases during encoding without relying on compiler-synthesized argument behavior.
+- The optional alias field keeps its missing-key default while accepting explicit values during backup creation.
+- Archive field-coverage fixtures now rely on that default when constructing an empty backup entry, keeping the test independent of alias initializer labels.
+- Activity definition initialization now computes the cleaned name before alias filtering, avoiding a partially initialized SwiftData model.
 
 ## 2026-08-18 — 2.19.3 (209)
 

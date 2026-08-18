@@ -256,10 +256,12 @@ final class SavedPlace {
 
 /// The durable source of truth for an activity's presentation and Insights grouping.
 ///
-/// The UserDefaults `ActivityDefinition` value remains a compatibility snapshot for
-/// V1/V2 backups while `ActivityDefinitionRecord` gives Visits and Saved Places a
-/// stable identity. Deleted definitions are retained so historical activity IDs do
-/// not get silently reassigned to another, similarly named activity.
+/// The UserDefaults `ActivityDefinition` value is only decoded when adopting an
+/// older backup or an existing pre-V12 installation. `ActivityDefinitionRecord`
+/// owns the editable name, aliases and active state thereafter, so every current
+/// surface agrees about what an activity means. Deleted definitions are retained so
+/// historical activity IDs do not get silently reassigned to another, similarly
+/// named activity.
 @Model
 final class ActivityDefinitionRecord {
     @Attribute(.unique) var stableID: UUID
@@ -267,6 +269,10 @@ final class ActivityDefinitionRecord {
     var category: String
     var symbol: String
     var colorHex: String?
+    /// Prior names remain matchable for existing visit and saved-place snapshots.
+    /// Keeping them with the record, rather than in a separate settings snapshot,
+    /// makes rename behaviour survive backup, restore and a fresh app launch.
+    var legacyNames: [String] = []
     /// Legacy column. It held a second, fixed grouping ("life area") that Insights
     /// counted some screens by while counting the rest by `category`; groups are now
     /// the only vocabulary, so nothing reads this. Kept, mirroring `category`, purely
@@ -279,11 +285,13 @@ final class ActivityDefinitionRecord {
 
     init(stableID: UUID = UUID(), name: String, category: String = "Other",
          symbol: String = "circle.fill", colorHex: String? = nil,
+         legacyNames: [String] = [],
          lifeArea: String? = nil, isActive: Bool = true,
          createdAt: Date = .now, modifiedAt: Date = .now) {
         let cleanCategory = TextSafety.clean(category, maximumLength: 40)
+        let cleanName = TextSafety.clean(name, maximumLength: 80)
         self.stableID = stableID
-        self.name = TextSafety.clean(name, maximumLength: 80)
+        self.name = cleanName
         self.category = cleanCategory
         self.symbol = TextSafety.clean(symbol, maximumLength: 60)
         self.colorHex = colorHex
@@ -291,6 +299,13 @@ final class ActivityDefinitionRecord {
         self.isActive = isActive
         self.createdAt = createdAt
         self.modifiedAt = modifiedAt
+        var cleanedAliases: [String] = []
+        for alias in legacyNames.map({ TextSafety.clean($0, maximumLength: 80) }) where
+            !alias.isEmpty && alias.caseInsensitiveCompare(cleanName) != .orderedSame &&
+            !cleanedAliases.contains(where: { $0.caseInsensitiveCompare(alias) == .orderedSame }) {
+            cleanedAliases.append(alias)
+        }
+        self.legacyNames = cleanedAliases
     }
 }
 

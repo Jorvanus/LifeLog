@@ -1,9 +1,11 @@
 import SwiftUI
+import SwiftData
 
 /// Full-screen activity picker used by Saved Places. Keeping this as a page
 /// makes the same editable activity vocabulary available without a cramped menu.
 struct PlaceActivitySelection: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
     @Binding var selection: String
     @State private var activities = ActivityCatalog.load()
     @State private var adding = false
@@ -35,7 +37,10 @@ struct PlaceActivitySelection: View {
         .sheet(isPresented: $adding) {
             ActivityEditor { newActivity in
                 activities.append(newActivity)
-                ActivityCatalog.save(activities)
+                guard (try? ActivityCatalog.save(activities, context: context)) != nil else {
+                    activities = ActivityCatalog.load()
+                    return
+                }
                 selection = newActivity.name
                 adding = false
             }

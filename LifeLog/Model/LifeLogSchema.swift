@@ -3,12 +3,12 @@ import SwiftData
 
 // MARK: - Frozen schema declarations: read before editing anything below
 
-// `LifeLogSchemaV1` through `LifeLogSchemaV10` are frozen snapshots. Each one
-// defines its own copies of `Visit`, `SavedPlace`, `VisitCorrection`,
-// `DiagnosticEvent`, and (from V5 on) `LocationEvent` / `ActivityDefinitionRecord`
-// exactly as they shipped. Only `LifeLogSchemaV11` -- the newest version -- may
-// point at the live model types in `LifeLog/Model/Models.swift` and
-// `LifeLog/Diagnostics/Diagnostics.swift`; see V11's own doc comment for why that
+// `LifeLogSchemaV1` through `LifeLogSchemaV11` are frozen snapshots. V11 is the
+// only predecessor in the executable migration plan; older declarations remain
+// historical references and must not be re-added without explicitly widening the
+// supported compatibility window. Only `LifeLogSchemaV12` -- the newest version --
+// may point at the live model types in `LifeLog/Model/Models.swift` and
+// `LifeLog/Diagnostics/Diagnostics.swift`; see V12's own doc comment for why that
 // is safe going forward but was not safe applied retroactively to V10.
 //
 // Do not rewrite, reformat, rename, or split a frozen version's declarations.
@@ -19,26 +19,19 @@ import SwiftData
 // declaration across lines differently -- does not change that fingerprint and is
 // safe, but a change to the properties themselves does, and can strand an
 // already-migrated device store outside the plan's graph with "Cannot use staged
-// migration with an unknown model version." `SchemaFingerprintTests` pins each
-// frozen version's structural fingerprint precisely to catch that class of
-// accident; a failure there means a frozen version's shape changed, not that the
-// test fixture is stale.
+// migration with an unknown model version." `SchemaFingerprintTests` pins V11's
+// structural fingerprint because it is the one frozen shape that can still reach
+// this release through the supported plan.
 //
 // To add a new persisted property or model: freeze the *current* live version
-// (V11 today) with a copy of exactly what it shipped, add a new
-// `LifeLogSchemaVN` pointing at the live types, and extend the migration plan --
-// see `SCHEMA_MIGRATIONS.md` for the full checklist. Never edit a version already
-// frozen, and never add a migration by editing V1 through V10 in place, even if
-// the edit seems tests will still pass -- see `SchemaMigrationTests` and
-// `SchemaFingerprintTests` for why "tests still pass" is not sufficient proof: a
-// frozen version can drift from what a real installed store contains without
-// breaking any fixture built after the drift.
+// (V12 today) with a copy of exactly what it shipped, add a new
+// `LifeLogSchemaVN` pointing at the live types, and replace the migration plan's
+// one predecessor with the newly frozen version -- see `SCHEMA_MIGRATIONS.md` for
+// the full checklist. Never edit a version already frozen: V11's fingerprint must
+// stay able to identify a store written by the preceding app release.
 
 /// The shape shipped before LifeLog stopped modelling a place type. These
-/// definitions are a frozen snapshot and are never used by app code — they exist
-/// so the migration plan has a distinct V1 to migrate *from*. Pointing V1 at the
-/// live model types instead makes both versions hash identically and SwiftData
-/// rejects the plan with "Duplicate version checksums detected."
+/// definitions are a frozen historical snapshot and are never used by app code.
 enum LifeLogSchemaV1: VersionedSchema {
     static let versionIdentifier = Schema.Version(1, 0, 0)
 
@@ -817,13 +810,84 @@ enum LifeLogSchemaV10: VersionedSchema {
 /// V11 adds the typed diagnostic event fields (`eventCode`, `durationMs`,
 /// `budgetMs`, `itemCount`, `repairCount`) to `DiagnosticEvent`, replacing a
 /// performance report's reliance on regex-parsing `message` for a duration or
-/// item count. This is the version that now points directly at the live model
-/// types — see V10's comment for why that reasoning is fine going forward
-/// (nothing later mutates these types without also freezing V11 in turn and
-/// adding a V12) but was not fine retroactively applied to an already-shipped
-/// version.
+/// item count. It is frozen before V12 adds durable activity aliases: an older
+/// store must continue to identify the exact V11 shape it was created with.
 enum LifeLogSchemaV11: VersionedSchema {
     static let versionIdentifier = Schema.Version(11, 0, 0)
+    static var models: [any PersistentModel.Type] {
+        [Visit.self, SavedPlace.self, ActivityDefinitionRecord.self,
+         VisitCorrection.self, DiagnosticEvent.self, LocationEvent.self]
+    }
+    @Model final class Visit {
+        var arrival: Date; var departure: Date?; var latitude: Double; var longitude: Double
+        var placeName: String; var inferredActivity: String; var userActivity: String?
+        var activityDefinitionID: UUID?
+        var note: String; var source: String; var recognitionConfidence: String?
+        var mapsIdentifier: String?; var placeFieldProvenance: String?; var resolutionExplanation: String?
+        var candidateData: Data?; var healthKitSampleIDs: [UUID]?; var routeData: Data?
+        var stableID: UUID = UUID(); var resolutionStateRaw: String = VisitResolutionState.provisional.rawValue
+        init(arrival: Date, latitude: Double, longitude: Double, placeName: String,
+             inferredActivity: String, note: String, source: String) {
+            self.arrival = arrival; self.latitude = latitude; self.longitude = longitude
+            self.placeName = placeName; self.inferredActivity = inferredActivity
+            self.note = note; self.source = source
+        }
+    }
+    @Model final class SavedPlace {
+        var name: String; var latitude: Double; var longitude: Double; var radius: Double
+        var defaultActivity: String; var activityDefinitionID: UUID?
+        var mapsIdentifier: String?; var role: String?
+        init(name: String, latitude: Double, longitude: Double, radius: Double, defaultActivity: String) {
+            self.name = name; self.latitude = latitude; self.longitude = longitude
+            self.radius = radius; self.defaultActivity = defaultActivity
+        }
+    }
+    @Model final class ActivityDefinitionRecord {
+        @Attribute(.unique) var stableID: UUID
+        var name: String; var category: String; var symbol: String; var colorHex: String?
+        var lifeArea: String; var isActive: Bool; var createdAt: Date; var modifiedAt: Date
+        init(stableID: UUID, name: String, category: String, symbol: String, lifeArea: String,
+             isActive: Bool, createdAt: Date, modifiedAt: Date) {
+            self.stableID = stableID; self.name = name; self.category = category
+            self.symbol = symbol; self.lifeArea = lifeArea; self.isActive = isActive
+            self.createdAt = createdAt; self.modifiedAt = modifiedAt
+        }
+    }
+    @Model final class VisitCorrection {
+        var changedAt: Date; var visitArrival: Date; var latitude: Double; var longitude: Double
+        var previousPlaceName: String; var newPlaceName: String; var previousActivity: String; var newActivity: String
+        var previousConfidence: String; var newConfidence: String; var reason: String
+        init(changedAt: Date, visitArrival: Date, latitude: Double, longitude: Double, previousPlaceName: String,
+             newPlaceName: String, previousActivity: String, newActivity: String, previousConfidence: String,
+             newConfidence: String, reason: String) {
+            self.changedAt = changedAt; self.visitArrival = visitArrival; self.latitude = latitude; self.longitude = longitude
+            self.previousPlaceName = previousPlaceName; self.newPlaceName = newPlaceName; self.previousActivity = previousActivity
+            self.newActivity = newActivity; self.previousConfidence = previousConfidence; self.newConfidence = newConfidence; self.reason = reason
+        }
+    }
+    @Model final class DiagnosticEvent {
+        var createdAt: Date; var subsystem: String; var severity: String; var message: String; var category: String = "general"
+        var eventCode: String = "legacy-message"; var durationMs: Int?; var budgetMs: Int?; var itemCount: Int?; var repairCount: Int?
+        init(createdAt: Date, subsystem: String, severity: String, message: String, category: String) {
+            self.createdAt = createdAt; self.subsystem = subsystem; self.severity = severity; self.message = message; self.category = category
+        }
+    }
+    @Model final class LocationEvent {
+        var recordedAt: Date; var callbackType: String; var callbackAt: Date; var arrival: Date?; var departure: Date?
+        var latitude: Double; var longitude: Double; var accuracy: Double; var distanceFromCurrentVisit: Double?
+        var transition: String; var visitArrival: Date?
+        init(recordedAt: Date, callbackType: String, callbackAt: Date, latitude: Double, longitude: Double, accuracy: Double, transition: String) {
+            self.recordedAt = recordedAt; self.callbackType = callbackType; self.callbackAt = callbackAt
+            self.latitude = latitude; self.longitude = longitude; self.accuracy = accuracy; self.transition = transition
+        }
+    }
+}
+
+/// V12 puts an activity's aliases beside its durable identity. The new array has an
+/// empty default so a V11 record keeps its current name and becomes alias-free until
+/// the post-open compatibility bridge imports any prior local snapshot aliases.
+enum LifeLogSchemaV12: VersionedSchema {
+    static let versionIdentifier = Schema.Version(12, 0, 0)
     static var models: [any PersistentModel.Type] {
         [LifeLog.Visit.self, LifeLog.SavedPlace.self, LifeLog.ActivityDefinitionRecord.self,
          LifeLog.VisitCorrection.self, LifeLog.DiagnosticEvent.self, LifeLog.LocationEvent.self]
@@ -831,89 +895,19 @@ enum LifeLogSchemaV11: VersionedSchema {
 }
 
 enum LifeLogMigrationPlan: SchemaMigrationPlan {
+    /// LifeLog is a single-owner app updated with each release, so its on-device
+    /// compatibility window is deliberately one schema wide. Older declarations
+    /// remain as historical references only; including them here would turn them
+    /// back into a supported migration path and keep launch doing needless work.
     static var schemas: [any VersionedSchema.Type] {
-        [LifeLogSchemaV1.self, LifeLogSchemaV2.self, LifeLogSchemaV3.self,
-         LifeLogSchemaV4.self, LifeLogSchemaV5.self, LifeLogSchemaV6.self,
-         LifeLogSchemaV7.self, LifeLogSchemaV8.self, LifeLogSchemaV9.self,
-         LifeLogSchemaV10.self, LifeLogSchemaV11.self]
+        [LifeLogSchemaV11.self, LifeLogSchemaV12.self]
     }
 
-    /// Dropping a property, adding an optional one and adding a whole model are all
-    /// lightweight, so SwiftData rewrites the store without a custom handler. Every
-    /// existing visit keeps its fields and arrives at V3 with no route, which is
-    /// correct: nothing recorded before this version has a path to restore.
+    /// V12 adds only the optional alias array, so the immediately previous store
+    /// migrates structurally without a custom data-rewrite pass.
     static var stages: [MigrationStage] {
         [
-            .lightweight(fromVersion: LifeLogSchemaV1.self, toVersion: LifeLogSchemaV2.self),
-            .lightweight(fromVersion: LifeLogSchemaV2.self, toVersion: LifeLogSchemaV3.self),
-            .lightweight(fromVersion: LifeLogSchemaV3.self, toVersion: LifeLogSchemaV4.self),
-            .lightweight(fromVersion: LifeLogSchemaV4.self, toVersion: LifeLogSchemaV5.self),
-            .lightweight(fromVersion: LifeLogSchemaV5.self, toVersion: LifeLogSchemaV6.self),
-            .lightweight(fromVersion: LifeLogSchemaV6.self, toVersion: LifeLogSchemaV7.self),
-            // Custom, not lightweight: an existing place literally named "Home" or
-            // "Work" (case-insensitively, exact match — never a substring, so a real
-            // "Homemaker Centre" is left alone) needs its role backfilled, or every
-            // installed store would silently lose commute detection until the owner
-            // re-set it by hand. The name itself is never touched.
-            // `didMigrate` runs against V8's own model, not the live one — this stage
-            // predates V8 being frozen, when V8 still pointed at `LifeLog.SavedPlace`
-            // directly and that fetch was correct. Now that V9 is the version pointing
-            // at live models, this must fetch `LifeLogSchemaV8.SavedPlace` instead, and
-            // write its raw `role` string directly: `homeWorkRole` is a convenience
-            // only the live type has.
-            .custom(
-                fromVersion: LifeLogSchemaV7.self,
-                toVersion: LifeLogSchemaV8.self,
-                willMigrate: nil,
-                didMigrate: { context in
-                    let places = try context.fetch(FetchDescriptor<LifeLogSchemaV8.SavedPlace>())
-                    for place in places {
-                        if place.name.caseInsensitiveCompare("Home") == .orderedSame {
-                            place.role = SavedPlaceRole.home.rawValue
-                        } else if place.name.caseInsensitiveCompare("Work") == .orderedSame {
-                            place.role = SavedPlaceRole.work.rawValue
-                        }
-                    }
-                    try context.save()
-                }
-            ),
-            // Custom, not lightweight: `stableID` is non-optional, so the structural
-            // step ahead of `didMigrate` fills it with a single default value shared
-            // by every existing row — the same UUID for all of them until this
-            // overwrites each one individually. `resolutionStateRaw` gets a uniform
-            // "provisional" default the same way; this replaces it with what each
-            // visit's own fields actually derive. Ignored state is deliberately not
-            // touched here — see `VisitResolutionMigration` for why that is a
-            // separate, post-open step rather than part of this stage.
-            //
-            // Fetches `LifeLogSchemaV9.Visit`, not `LifeLog.Visit` — this stage's own
-            // target model, not the live type. It briefly fetched the live type
-            // instead, back when V9 pointed directly at live models itself and the
-            // two were identical; now that V9 is frozen (to make room for what V10,
-            // and now V11, each needed), fetching the live type creates two
-            // classes named "Visit" in the same staged-migration process and crashes
-            // deep inside SwiftData with "Failed to cast model LifeLog.Visit ... to
-            // Visit" — confirmed on-device 2026-08-14. The primitive-only overload of
-            // `derivedAutomaticResolutionState` avoids needing a live `Visit` here at
-            // all.
-            .custom(
-                fromVersion: LifeLogSchemaV8.self,
-                toVersion: LifeLogSchemaV9.self,
-                willMigrate: nil,
-                didMigrate: { context in
-                    let visits = try context.fetch(FetchDescriptor<LifeLogSchemaV9.Visit>())
-                    for visit in visits {
-                        visit.stableID = UUID()
-                        visit.resolutionStateRaw = ActivityLocationPolicy.derivedAutomaticResolutionState(
-                            source: visit.source, placeName: visit.placeName,
-                            recognitionConfidence: visit.recognitionConfidence
-                        ).rawValue
-                    }
-                    try context.save()
-                }
-            ),
-            .lightweight(fromVersion: LifeLogSchemaV9.self, toVersion: LifeLogSchemaV10.self),
-            .lightweight(fromVersion: LifeLogSchemaV10.self, toVersion: LifeLogSchemaV11.self)
+            .lightweight(fromVersion: LifeLogSchemaV11.self, toVersion: LifeLogSchemaV12.self)
         ]
     }
 }

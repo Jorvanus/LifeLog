@@ -115,7 +115,7 @@ struct ActivityGroupsView: View {
             Button("Rename") {
                 guard let request = renaming else { return }
                 renaming = nil
-                ActivityCatalog.renameCategory(from: request.previous, to: request.updated)
+                try? ActivityCatalog.renameCategory(from: request.previous, to: request.updated, context: context)
                 reload()
                 InsightsInvalidation.invalidate(reason: "Activity group renamed", context: context)
             }
@@ -140,7 +140,7 @@ struct ActivityGroupsView: View {
             Button("Delete group", role: .destructive) {
                 guard let group = pendingDeletion else { return }
                 pendingDeletion = nil
-                ActivityCatalog.deleteCategory(group)
+                try? ActivityCatalog.deleteCategory(group, context: context)
                 reload()
                 InsightsInvalidation.invalidate(reason: "Activity group deleted", context: context)
             }

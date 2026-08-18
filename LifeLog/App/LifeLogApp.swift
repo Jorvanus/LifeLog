@@ -17,7 +17,7 @@ struct LifeLogApp: App {
     private let storeConfiguration: ModelConfiguration
 
     init() {
-        let schema = Schema(versionedSchema: LifeLogSchemaV11.self)
+        let schema = Schema(versionedSchema: LifeLogSchemaV12.self)
         storeConfiguration = ModelConfiguration(
             "LifeLog",
             schema: schema,
@@ -95,7 +95,7 @@ struct LifeLogApp: App {
 
     private func retryStoreOpening() {
         do {
-            let schema = Schema(versionedSchema: LifeLogSchemaV11.self)
+            let schema = Schema(versionedSchema: LifeLogSchemaV12.self)
             modelContainer = try Self.openContainer(configuration: storeConfiguration, schema: schema)
             storeOpenError = nil
         } catch {

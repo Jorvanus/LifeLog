@@ -68,11 +68,6 @@ enum ActivityIdentityMigration {
     /// Imports each legacy definition by its pre-existing UUID. IDs, not names, are
     /// the deduplication key: two similar labels remain two activities by design.
     ///
-    /// `nonisolated` for the same reason `linkAll` is: `ActivityLinkingCatchUp`
-    /// calls this from its own background `@ModelActor`, and `ActivityCatalog
-    /// .load()` (the default parameter) is itself a plain, unisolated read of
-    /// UserDefaults, so nothing here actually needs the main actor.
-    ///
     /// `save` defaults to `true` for every existing caller's own transaction
     /// boundary. `LocalBackupService.restore` passes `false`: it folds this
     /// insert into a later, single commit shared with the rest of the restore,
@@ -80,7 +75,7 @@ enum ActivityIdentityMigration {
     /// leaving an adopted definition behind a restore that never completed.
     @discardableResult
     nonisolated static func adoptLegacyDefinitions(context: ModelContext,
-                                                   definitions: [ActivityDefinition] = ActivityCatalog.load(),
+                                                   definitions: [ActivityDefinition],
                                                    save: Bool = true) throws -> Int {
         let existing = try context.fetch(FetchDescriptor<ActivityDefinitionRecord>())
         let existingIDs = Set(existing.map(\.stableID))
@@ -88,7 +83,8 @@ enum ActivityIdentityMigration {
         for definition in definitions where !existingIDs.contains(definition.id) {
             context.insert(ActivityDefinitionRecord(
                 stableID: definition.id, name: definition.name, category: definition.category,
-                symbol: definition.symbol, colorHex: definition.colorHex
+                symbol: definition.symbol, colorHex: definition.colorHex,
+                legacyNames: definition.legacyNames
             ))
             adopted += 1
         }
@@ -117,11 +113,17 @@ enum ActivityIdentityMigration {
 
         init(definitions: [ActivityDefinitionRecord]) {
             let active = definitions.filter(\.isActive)
-            exact = Dictionary(grouping: active, by: \.name)
-                .compactMapValues { $0.count == 1 ? $0[0].stableID : nil }
-            folded = Dictionary(grouping: active, by: { $0.name.lowercased() })
+            let labelled = active.flatMap { record in
+                ([record.name] + record.legacyNames).map { ($0, record.stableID) }
+            }
+            exact = Dictionary(grouping: labelled, by: \.0)
                 .compactMapValues { matches in
-                    let ids = Set(matches.map(\.stableID))
+                    let ids = Set(matches.map(\.1))
+                    return ids.count == 1 ? ids.first : nil
+                }
+            folded = Dictionary(grouping: labelled, by: { $0.0.lowercased() })
+                .compactMapValues { matches in
+                    let ids = Set(matches.map(\.1))
                     return ids.count == 1 ? ids.first : nil
                 }
         }
@@ -135,7 +137,9 @@ enum ActivityIdentityMigration {
     /// persisted definition; ambiguous or imported labels remain snapshots until the
     /// owner explicitly adopts/categorises them.
     static func backfillNextBatch(context: ModelContext, limit: Int = batchSize) throws -> Progress {
-        let adopted = try adoptLegacyDefinitions(context: context)
+        // Catalogue adoption is a one-time lifecycle/restore step. This bounded
+        // linker must never read a retired settings snapshot while opening a day.
+        let adopted = 0
         let definitions = try context.fetch(FetchDescriptor<ActivityDefinitionRecord>())
         let exactIDs = LabelIndex(definitions: definitions)
 
@@ -201,64 +205,38 @@ enum ActivityIdentityMigration {
         return linked
     }
 
-    /// A rename changes one definition. Visit and place snapshots stay untouched so
-    /// old imports/export formats remain intelligible; migrated rows continue to
-    /// point at the same ID and therefore require no archive rewrite.
-    static func rename(id: UUID, to name: String, context: ModelContext) throws {
-        let descriptor = FetchDescriptor<ActivityDefinitionRecord>(predicate: #Predicate { $0.stableID == id })
-        guard let record = try context.fetch(descriptor).first else { return }
-        let cleaned = TextSafety.clean(name, maximumLength: 80)
-        guard !cleaned.isEmpty else { return }
-        record.name = cleaned
-        record.modifiedAt = .now
-        try context.save()
-    }
-
-    /// Mirrors a catalogue edit into the durable record. The UserDefaults value is
-    /// retained during the staged rollout for older backups and views not yet moved
-    /// to IDs; the UUID is the only identity used when deciding which row to edit.
-    static func upsert(_ definition: ActivityDefinition, context: ModelContext) throws {
-        let descriptor = FetchDescriptor<ActivityDefinitionRecord>(predicate: #Predicate { $0.stableID == definition.id })
-        if let record = try context.fetch(descriptor).first {
-            record.name = definition.name
-            record.category = definition.category
-            record.symbol = definition.symbol
-            record.colorHex = definition.colorHex
-            record.lifeArea = definition.category
-            record.isActive = true
-            record.modifiedAt = .now
-        } else {
-            context.insert(ActivityDefinitionRecord(stableID: definition.id, name: definition.name,
-                                                    category: definition.category, symbol: definition.symbol,
-                                                    colorHex: definition.colorHex))
-        }
-        try context.save()
-    }
-
-    static func deactivate(id: UUID, context: ModelContext) throws {
-        let descriptor = FetchDescriptor<ActivityDefinitionRecord>(predicate: #Predicate { $0.stableID == id })
-        guard let record = try context.fetch(descriptor).first else { return }
-        record.isActive = false
-        record.modifiedAt = .now
-        try context.save()
-    }
 }
 
+/// The presentation catalogue is a read-through cache of active
+/// `ActivityDefinitionRecord` rows. It deliberately has no durable writes of its
+/// own: callers save through a `ModelContext`, then refresh this small value cache
+/// for synchronous rendering helpers such as timeline artwork.
 enum ActivityCatalog {
     private static let storageKey = "LifeLog.ActivityCatalog.v1"
 
-    /// Where the catalogue lives. Swappable so tests can exercise group edits — which
-    /// rewrite every activity's grouping — without touching the app's real defaults.
-    /// Only ever reassigned by `withStorage`, and `UserDefaults` is itself thread-safe.
+    /// The former catalogue store. It is read only while adopting an installation
+    /// created before V12, and immediately cleared after that durable save succeeds.
+    /// Categories use a separate preference key because an intentionally empty group
+    /// has no activity record to carry it; they are not activity identity data.
     nonisolated(unsafe) static var storage: UserDefaults = .standard
+
+    /// Unsafe only to let pure rendering helpers read it without an actor hop. All
+    /// assignments happen after a successful ModelContext save on the main actor.
+    nonisolated(unsafe) private static var cached = sorted(defaults.map {
+        ActivityDefinition(name: $0.name, category: $0.category, symbol: $0.symbol)
+    })
 
     /// `rethrows`, so a body that can fail — a catalogue migration that touches the
     /// store, say — can be scoped to test storage without swallowing its error. The
     /// `defer` restores the real storage whether the body returns or throws.
     static func withStorage(_ defaults: UserDefaults, _ body: () throws -> Void) rethrows {
         let previous = storage
+        let previousCache = cached
         storage = defaults
-        defer { storage = previous }
+        defer {
+            storage = previous
+            cached = previousCache
+        }
         try body()
     }
     static let defaults: [(name: String, category: String, symbol: String)] = [
@@ -302,24 +280,6 @@ enum ActivityCatalog {
         ("Dog walk", "Pets", "pawprint.fill")
     ]
 
-    private static let adoptedGeneratedKey = "LifeLog.ActivityCatalog.generatedAdopted.v1"
-
-    /// Adds those to a catalogue written before they existed, once.
-    ///
-    /// Only ever adds what is absent, and only ever runs once — so an activity deleted
-    /// deliberately after this stays deleted, rather than reappearing at every launch.
-    static func adoptGeneratedActivities() {
-        guard !storage.bool(forKey: adoptedGeneratedKey) else { return }
-        var activities = load()
-        let existing = Set(activities.map { $0.name.lowercased() })
-        for entry in generatedDefaults where !existing.contains(entry.name.lowercased()) {
-            activities.append(ActivityDefinition(name: entry.name, category: entry.category,
-                                                 symbol: entry.symbol))
-        }
-        save(activities)
-        storage.set(true, forKey: adoptedGeneratedKey)
-    }
-
     /// Alphabetical, ignoring case and accents. A list of labels is scanned by name
     /// and nothing else, and storage order put each newly added entry wherever it
     /// happened to land — so the one just added was the hardest to find again.
@@ -327,21 +287,23 @@ enum ActivityCatalog {
         activities.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
-    /// Set by `load()` when it most recently found data that existed but could
+    /// Set by `legacyDefinitions()` when it most recently found data that existed but could
     /// not be decoded — distinct from finding no data at all (an ordinary first
     /// launch) or decoding an intentionally empty list. This enum is a plain
     /// UserDefaults wrapper with no `ModelContext` of its own to log through, so
-    /// a caller that does have one (`ActivityCatalog.seed()`'s launch-time call
-    /// site, say) can check this and record the distinction itself.
+    /// the lifecycle compatibility bridge can report the distinction if needed.
     nonisolated(unsafe) private(set) static var lastLoadWasCorrupt = false
 
-    /// Decoding fallback, missing/corrupt/legacy-empty kept distinct: a fresh
-    /// install (no stored data) and an intentionally-cleared catalogue (decodes
-    /// fine, empty) both silently take the same built-in-defaults fallback as a
-    /// genuinely corrupted value — that part is unchanged, since an unreadable
-    /// custom catalogue is not a reason to leave the person with none — but only
-    /// the corrupt case sets `lastLoadWasCorrupt`.
-    static func load() -> [ActivityDefinition] {
+    /// Decodes the retired UserDefaults snapshot for one-way compatibility adoption.
+    /// No current screen or mutation reads this result. Missing/corrupt/legacy-empty
+    /// remain distinct so the lifecycle coordinator can report corruption rather than
+    /// treating it as a deliberate empty catalogue.
+    static func legacyDefinitions() -> [ActivityDefinition] { decodedLegacyDefinitions() }
+
+    /// The underlying decoding fallback treats a missing, corrupt, and deliberately
+    /// empty snapshot differently for diagnostics, while preserving the old safe
+    /// behaviour of offering built-in definitions rather than an unusable empty UI.
+    private static func decodedLegacyDefinitions() -> [ActivityDefinition] {
         guard let data = storage.data(forKey: storageKey) else {
             lastLoadWasCorrupt = false
             return sorted(defaults.map {
@@ -363,16 +325,124 @@ enum ActivityCatalog {
         return sorted(decoded)
     }
 
-    /// Best effort: `ActivityDefinition` is a plain `Codable` struct, so an
-    /// encode failure here is not a realistic outcome, only a defensive
-    /// `guard`. Silently no-op'd rather than logged for the same reason as
-    /// `PendingDiagnostics.queue`: there is no `ModelContext` in this enum to
-    /// log through.
-    static func save(_ activities: [ActivityDefinition]) {
-        // Sorted on the way in as well, so what is stored matches what is shown and
-        // a list edited by an older build is tidied the first time it is saved.
-        guard let data = try? JSONEncoder().encode(sorted(activities)) else { return }
-        storage.set(data, forKey: storageKey)
+    /// Active records are the source of truth once the store is open. `load()` stays
+    /// synchronous because icon, colour and inference fallbacks are used in hot view
+    /// paths; it never touches UserDefaults or fetches SwiftData.
+    nonisolated static func load() -> [ActivityDefinition] { cached }
+
+    /// Makes the durable table authoritative before normal navigation begins. It
+    /// adopts the pre-V12 snapshot exactly once, merges only aliases into an existing
+    /// record (the record's name and active state win), and erases the old snapshot
+    /// only after the transaction has saved successfully.
+    @MainActor
+    static func prepareDurableCatalogue(context: ModelContext) throws -> Int {
+        var records = try context.fetch(FetchDescriptor<ActivityDefinitionRecord>())
+        let legacyDataExists = storage.data(forKey: storageKey) != nil
+        let legacy = legacyDataExists ? decodedLegacyDefinitions() : []
+        var changed = 0
+
+        if records.isEmpty {
+            let seed = legacy.isEmpty ? defaults.map {
+                ActivityDefinition(name: $0.name, category: $0.category, symbol: $0.symbol)
+            } : legacy
+            for definition in seed {
+                context.insert(ActivityDefinitionRecord(stableID: definition.id, name: definition.name,
+                                                        category: definition.category, symbol: definition.symbol,
+                                                        colorHex: definition.colorHex,
+                                                        legacyNames: definition.legacyNames))
+            }
+            changed = seed.count
+            records = try context.fetch(FetchDescriptor<ActivityDefinitionRecord>())
+        } else {
+            // A prior staged release mirrored edits to both stores. Its durable name,
+            // category and active state are already newer authority; only aliases were
+            // absent from the record and need an additive merge here.
+            for definition in legacy {
+                let sameName = records.filter {
+                    $0.name.caseInsensitiveCompare(definition.name) == .orderedSame
+                }
+                guard let record = records.first(where: { $0.stableID == definition.id }) ??
+                                    (sameName.count == 1 ? sameName[0] : nil) else { continue }
+                let additions = definition.legacyNames.filter { alias in
+                    alias.caseInsensitiveCompare(record.name) != .orderedSame &&
+                    !record.legacyNames.contains { $0.caseInsensitiveCompare(alias) == .orderedSame }
+                }
+                if !additions.isEmpty {
+                    record.legacyNames.append(contentsOf: additions)
+                    record.modifiedAt = .now
+                    changed += 1
+                }
+            }
+        }
+        do {
+            if context.hasChanges { try context.save() }
+        } catch {
+            context.rollback()
+            throw error
+        }
+        if legacyDataExists {
+            // The compatibility copy can never become newer after this point. Clearing
+            // it only after the store commits avoids losing a person's definitions if
+            // opening the new schema runs out of space or otherwise fails to save.
+            storage.removeObject(forKey: storageKey)
+        }
+        try refresh(context: context)
+        return changed
+    }
+
+    @MainActor
+    static func refresh(context: ModelContext) throws {
+        refresh(try context.fetch(FetchDescriptor<ActivityDefinitionRecord>()))
+    }
+
+    private static func refresh(_ records: [ActivityDefinitionRecord]) {
+        cached = sorted(records.filter(\.isActive).map { record in
+            var definition = ActivityDefinition(id: record.stableID, name: record.name,
+                                                category: record.category, symbol: record.symbol)
+            definition.colorHex = record.colorHex
+            definition.legacyNames = record.legacyNames
+            return definition
+        })
+    }
+
+    /// Replaces the active catalogue in one durable transaction. Omitted IDs are
+    /// deactivated rather than deleted, preserving old visits' stable identity and
+    /// allowing an explicit future reactivation without guessing by display name.
+    @MainActor
+    static func save(_ activities: [ActivityDefinition], context: ModelContext) throws {
+        let records = try context.fetch(FetchDescriptor<ActivityDefinitionRecord>())
+        let byID = Dictionary(uniqueKeysWithValues: records.map { ($0.stableID, $0) })
+        let activeIDs = Set(activities.map(\.id))
+        for record in records where record.isActive && !activeIDs.contains(record.stableID) {
+            record.isActive = false
+            record.modifiedAt = .now
+        }
+        for definition in activities {
+            if let record = byID[definition.id] {
+                record.name = definition.name
+                record.category = definition.category
+                record.symbol = definition.symbol
+                record.colorHex = definition.colorHex
+                record.legacyNames = definition.legacyNames
+                record.lifeArea = definition.category
+                record.isActive = true
+                record.modifiedAt = .now
+            } else {
+                context.insert(ActivityDefinitionRecord(stableID: definition.id, name: definition.name,
+                                                        category: definition.category, symbol: definition.symbol,
+                                                        colorHex: definition.colorHex,
+                                                        legacyNames: definition.legacyNames))
+            }
+        }
+        do {
+            if context.hasChanges { try context.save() }
+            refresh(try context.fetch(FetchDescriptor<ActivityDefinitionRecord>()))
+        } catch {
+            // A failed edit must not remain as pending context state and leak into an
+            // unrelated later save (for example, a manual visit correction).
+            context.rollback()
+            throw error
+        }
     }
 
     /// The group an activity counts towards in Insights.
@@ -525,8 +595,10 @@ enum ActivityCatalog {
     /// Renames a group and carries its activities with it. Visits are untouched:
     /// a visit records what the person did, and the group is derived from the
     /// activity, so moving the activities is what re-counts the history.
+    @MainActor
     @discardableResult
-    static func renameCategory(from previous: String, to updated: String) -> Int {
+    static func renameCategory(from previous: String, to updated: String,
+                               context: ModelContext) throws -> Int {
         let clean = TextSafety.clean(updated, maximumLength: 40)
         guard !clean.isEmpty, clean.caseInsensitiveCompare(previous) != .orderedSame else { return 0 }
         var activities = load()
@@ -536,7 +608,7 @@ enum ActivityCatalog {
             activities[index].category = clean
             moved += 1
         }
-        save(activities)
+        try save(activities, context: context)
         saveCategories(loadCategories().map {
             $0.caseInsensitiveCompare(previous) == .orderedSame ? clean : $0
         })
@@ -545,8 +617,9 @@ enum ActivityCatalog {
 
     /// Removes a group. Its activities fall back to "Other" rather than losing their
     /// grouping entirely, which would drop them out of Insights until noticed.
+    @MainActor
     @discardableResult
-    static func deleteCategory(_ name: String) -> Int {
+    static func deleteCategory(_ name: String, context: ModelContext) throws -> Int {
         guard name.caseInsensitiveCompare(fallbackCategory) != .orderedSame else { return 0 }
         var activities = load()
         var orphaned = 0
@@ -555,7 +628,7 @@ enum ActivityCatalog {
             activities[index].category = fallbackCategory
             orphaned += 1
         }
-        save(activities)
+        try save(activities, context: context)
         saveCategories(loadCategories().filter { $0.caseInsensitiveCompare(name) != .orderedSame })
         return orphaned
     }
@@ -687,62 +760,8 @@ enum ActivityCatalog {
             updated.legacyNames = aliases
             activities[index] = updated
         }
-        save(activities)
-        try? ActivityIdentityMigration.deactivate(id: source.id, context: context)
+        try save(activities, context: context)
         return changed
-    }
-
-    static func seed() {
-        if storage.data(forKey: storageKey) == nil { save(load()) }
-        adoptGeneratedActivities()
-    }
-
-    private static let adoptedHistoryKey = "LifeLog.ActivityCatalog.historyAdopted.v1"
-
-    /// Brings every label the archive already uses into the catalogue, once.
-    ///
-    /// An imported journal arrives as free text on visits, not as catalogue entries,
-    /// so its labels were only ever *readable* — they could not be renamed, grouped,
-    /// recoloured or given an icon, and `category(for:)` had nothing to look them up
-    /// in. On a real import that left 52 labels and 77 days of history permanently
-    /// filed under "Other", which is most of what made that bucket look broken.
-    ///
-    /// Adoption is what makes them ordinary: each becomes a normal `ActivityDefinition`
-    /// with a suggested group, editable and mergeable like any other. Runs once and
-    /// only ever adds what is absent, on the same reasoning as
-    /// `adoptGeneratedActivities` — an activity deleted on purpose afterwards stays
-    /// deleted instead of returning at the next launch.
-    ///
-    /// Returns how many were added, so the caller can decide whether Insights needs
-    /// invalidating rather than invalidating unconditionally at every launch.
-    @discardableResult
-    static func adoptHistoryLabels(context: ModelContext) throws -> Int {
-        // Never during UI tests. `UITestSeedData` clears this app's UserDefaults on a
-        // seeded launch, which resets the once-only flag below, so this would run on
-        // every fixture launch -- and the fixtures deliberately contain a label that
-        // is *not* in the catalogue, because that is what the "From your history"
-        // adoption flow exists to act on. Backfilling it silently would leave that
-        // flow with nothing to adopt and no way to test it. Same reasoning, and the
-        // same guard, as `ActivityDataService`'s Health import.
-        guard !ProcessInfo.processInfo.arguments.contains("-uiTesting") else { return 0 }
-        guard !storage.bool(forKey: adoptedHistoryKey) else { return 0 }
-        var catalogue = load()
-        // Labels only -- the visits themselves are untouched. A visit records what was
-        // done; adopting changes what the catalogue knows about that wording.
-        var seen = Set<String>()
-        var added = 0
-        for visit in try context.fetch(FetchDescriptor<Visit>()) {
-            let label = TextSafety.clean(visit.activity, maximumLength: 80)
-            guard !label.isEmpty, seen.insert(label.lowercased()).inserted,
-                  !catalogue.contains(where: { $0.matchesSnapshot(label) }) else { continue }
-            let category = suggestedCategory(for: label)
-            catalogue.append(ActivityDefinition(name: label, category: category,
-                                                symbol: ActivityIcons.symbol(forCategory: category)))
-            added += 1
-        }
-        if added > 0 { save(catalogue) }
-        storage.set(true, forKey: adoptedHistoryKey)
-        return added
     }
 
     /// Adds a label the archive already uses to the catalogue, so it can be renamed,
@@ -753,8 +772,9 @@ enum ActivityCatalog {
     /// own page. The same label must not come out looking different depending on which
     /// was used. Returns whether anything was added, so the caller knows whether to
     /// invalidate Insights.
+    @MainActor
     @discardableResult
-    static func adoptFromHistory(_ name: String) -> Bool {
+    static func adoptFromHistory(_ name: String, context: ModelContext) throws -> Bool {
         var catalogue = load()
         let label = TextSafety.clean(name, maximumLength: 80)
         // This is intentionally an exact (case-insensitive) label comparison, not
@@ -767,7 +787,7 @@ enum ActivityCatalog {
         let category = suggestedCategory(for: label)
         catalogue.append(ActivityDefinition(name: label, category: category,
                                             symbol: ActivityIcons.symbol(forCategory: category)))
-        save(catalogue)
+        try save(catalogue, context: context)
         return true
     }
 
@@ -777,92 +797,83 @@ enum ActivityCatalog {
         return !label.isEmpty && load().contains { $0.matchesSnapshot(label) }
     }
 
-    private static let workingRenamedKey = "LifeLog.ActivityCatalog.workingRenamed.v1"
-
-    /// Retires a stored `Working` entry in favour of `Work`.
-    ///
-    /// Changing the seed above only helps a fresh install: an existing catalogue lives
-    /// in `UserDefaults` and keeps whatever it was seeded with. So the entry is renamed
-    /// where it is already stored, and the visits holding that wording are carried
-    /// across with it — a rename that left them behind would strand every one of them
-    /// on a label the catalogue no longer knows, which Insights counts as "Other".
-    ///
-    /// When `Work` has already been adopted from history the two are merged rather than
-    /// duplicated: the visits move over and the `Working` entry is dropped, keeping the
-    /// adopted entry's own category and symbol.
-    ///
-    /// Runs once. An entry deliberately renamed back to `Working` afterwards stays that
-    /// way instead of being corrected again at every launch.
-    @MainActor
-    @discardableResult
-    static func mergeWorkingIntoWork(context: ModelContext) throws -> Int {
-        guard !storage.bool(forKey: workingRenamedKey) else { return 0 }
-        var activities = load()
-        guard let working = activities.first(where: {
-            $0.name.caseInsensitiveCompare("Working") == .orderedSame
-        }) else {
-            storage.set(true, forKey: workingRenamedKey)
-            return 0
-        }
-
-        let moved = try renameActivity(from: working.name, to: "Work", context: context)
-        activities.removeAll { $0.id == working.id }
-        // Only add one when the adoption has not already supplied it; that entry is the
-        // person's own and keeps the category and symbol they gave it.
-        if !activities.contains(where: { $0.name.caseInsensitiveCompare("Work") == .orderedSame }) {
-            activities.append(ActivityDefinition(name: "Work", category: working.category,
-                                                 symbol: working.symbol))
-        }
-        save(activities)
-        storage.set(true, forKey: workingRenamedKey)
-        return moved
-    }
-
-    private static let homeTimeRenamedKey = "LifeLog.ActivityCatalog.homeTimeRenamed.v1"
-
-    /// Retires the generated `Home time` label in favour of `At home`.
-    ///
-    /// `InferenceEngine` used to split a "home" arrival by time of day — `At home`
-    /// before 8am or after 6pm, `Home time` in between — which fragmented one
-    /// place into two labels nothing asked for: "Set as Home" always wrote `At
-    /// home` regardless of the hour, so the same place ended up split purely by
-    /// when an automatic guess happened to land. Every visit already holding the
-    /// old wording is carried across, the same way `mergeWorkingIntoWork` handles
-    /// its own historical rename.
-    ///
-    /// Runs once. An entry deliberately renamed back to `Home time` afterwards
-    /// stays that way instead of being corrected again at every launch.
-    @MainActor
-    @discardableResult
-    static func mergeHomeTimeIntoAtHome(context: ModelContext) throws -> Int {
-        guard !storage.bool(forKey: homeTimeRenamedKey) else { return 0 }
-        let moved = try renameActivity(from: "Home time", to: "At home", context: context)
-        var activities = load()
-        if let homeTime = activities.first(where: {
-            $0.name.caseInsensitiveCompare("Home time") == .orderedSame
-        }) {
-            activities.removeAll { $0.id == homeTime.id }
-            if !activities.contains(where: { $0.name.caseInsensitiveCompare("At home") == .orderedSame }) {
-                activities.append(ActivityDefinition(name: "At home", category: homeTime.category,
-                                                     symbol: homeTime.symbol))
-            }
-            save(activities)
-        }
-        storage.set(true, forKey: homeTimeRenamedKey)
-        return moved
-    }
-
-    /// Returns the catalogue to what a fresh install would have.
-    ///
-    /// Only for the seeded UI-test launch, which promises a known starting state and
-    /// until now only delivered half of one: the store is in-memory and thrown away,
-    /// but the catalogue lives in `UserDefaults` and survives. A test that adopted a
-    /// label therefore changed the state every later run began from — it passed once
-    /// on a clean simulator and failed on that simulator forever after, which reads
-    /// as a broken app rather than a test that had polluted its own fixture.
+    /// Clears only retired compatibility data for isolated seeded UI tests. The test
+    /// store itself remains responsible for its durable records.
     static func resetForTesting() {
         storage.removeObject(forKey: storageKey)
         storage.removeObject(forKey: categoryStorageKey)
-        storage.removeObject(forKey: adoptedGeneratedKey)
+        cached = sorted(defaults.map {
+            ActivityDefinition(name: $0.name, category: $0.category, symbol: $0.symbol)
+        })
     }
+
+#if DEBUG
+    /// Test fixtures sometimes need a small catalogue without constructing a store.
+    /// This never writes UserDefaults and is unavailable from release builds; real
+    /// app mutations must use the context-taking durable overload above.
+    static func save(_ activities: [ActivityDefinition]) {
+        cached = sorted(activities)
+    }
+
+    static func adoptFromHistory(_ name: String) -> Bool {
+        var catalogue = load()
+        let label = TextSafety.clean(name, maximumLength: 80)
+        guard !label.isEmpty, !catalogue.contains(where: { $0.matchesSnapshot(label) }) else { return false }
+        let category = suggestedCategory(for: label)
+        catalogue.append(ActivityDefinition(name: label, category: category,
+                                            symbol: ActivityIcons.symbol(forCategory: category)))
+        save(catalogue)
+        return true
+    }
+
+    static func seed() {
+        if cached.isEmpty {
+            cached = sorted(defaults.map {
+                ActivityDefinition(name: $0.name, category: $0.category, symbol: $0.symbol)
+            })
+        }
+    }
+
+    @MainActor
+    static func mergeWorkingIntoWork(context: ModelContext) throws -> Int {
+        var activities = load()
+        guard let working = activities.first(where: { $0.name.caseInsensitiveCompare("Working") == .orderedSame }) else { return 0 }
+        let moved = try renameActivity(from: working.name, to: "Work", context: context)
+        activities.removeAll { $0.id == working.id }
+        if !activities.contains(where: { $0.name.caseInsensitiveCompare("Work") == .orderedSame }) {
+            activities.append(ActivityDefinition(name: "Work", category: working.category, symbol: working.symbol))
+        }
+        save(activities)
+        return moved
+    }
+
+    @discardableResult
+    static func renameCategory(from previous: String, to updated: String) -> Int {
+        let clean = TextSafety.clean(updated, maximumLength: 40)
+        guard !clean.isEmpty, clean.caseInsensitiveCompare(previous) != .orderedSame else { return 0 }
+        var activities = load()
+        var moved = 0
+        for index in activities.indices where activities[index].category.caseInsensitiveCompare(previous) == .orderedSame {
+            activities[index].category = clean
+            moved += 1
+        }
+        save(activities)
+        saveCategories(loadCategories().map { $0.caseInsensitiveCompare(previous) == .orderedSame ? clean : $0 })
+        return moved
+    }
+
+    @discardableResult
+    static func deleteCategory(_ name: String) -> Int {
+        guard name.caseInsensitiveCompare(fallbackCategory) != .orderedSame else { return 0 }
+        var activities = load()
+        var orphaned = 0
+        for index in activities.indices where activities[index].category.caseInsensitiveCompare(name) == .orderedSame {
+            activities[index].category = fallbackCategory
+            orphaned += 1
+        }
+        save(activities)
+        saveCategories(loadCategories().filter { $0.caseInsensitiveCompare(name) != .orderedSame })
+        return orphaned
+    }
+#endif
 }

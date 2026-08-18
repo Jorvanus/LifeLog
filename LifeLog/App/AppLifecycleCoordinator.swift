@@ -65,12 +65,25 @@ final class AppLifecycleCoordinator {
     }
 
     private func prepareActivityCatalogue(context: ModelContext, modelContainer: ModelContainer) {
+        do {
+            let changed = try ActivityCatalog.prepareDurableCatalogue(context: context)
+            if changed > 0 {
+                Diagnostics.record(context, subsystem: "Activities",
+                                   message: "Moved (changed) activity definitions and aliases into the durable catalogue.",
+                                   severity: "info")
+            }
+        } catch {
+            Diagnostics.record(context, subsystem: "Activities",
+                               message: "Could not prepare the durable activity catalogue: \(error.localizedDescription)",
+                               severity: "warning")
+            return
+        }
         // This bounded page retains the migration's gradual, launch-safe behaviour.
         do {
             let migration = try ActivityIdentityMigration.backfillNextBatch(context: context)
-            if migration.adoptedDefinitions > 0 || migration.linkedVisits > 0 || migration.linkedPlaces > 0 {
+            if migration.linkedVisits > 0 || migration.linkedPlaces > 0 {
                 Diagnostics.record(context, subsystem: "Activities",
-                                   message: "Adopted \(migration.adoptedDefinitions) activity definitions; linked \(migration.linkedVisits) visits and \(migration.linkedPlaces) Saved Places\(migration.hasMore ? "; more history remains." : ".")",
+                                   message: "Linked \(migration.linkedVisits) visits and \(migration.linkedPlaces) Saved Places to durable activity definitions\(migration.hasMore ? "; more history remains." : ".")",
                                    severity: "info")
             }
         } catch {
@@ -87,16 +100,6 @@ final class AppLifecycleCoordinator {
                                    message: "Linked \(linked) visits and Saved Places to the catalogue in one pass.",
                                    severity: "info")
             }
-        }
-
-        ActivityCatalog.seed()
-        if let moved = try? ActivityCatalog.mergeWorkingIntoWork(context: context), moved > 0 {
-            Diagnostics.record(context, subsystem: "Activities",
-                               message: "Renamed the seeded Working label to Work across \(moved) visits.", severity: "info")
-        }
-        if let moved = try? ActivityCatalog.mergeHomeTimeIntoAtHome(context: context), moved > 0 {
-            Diagnostics.record(context, subsystem: "Activities",
-                               message: "Renamed the seeded Home time label to At home across \(moved) visits.", severity: "info")
         }
     }
 

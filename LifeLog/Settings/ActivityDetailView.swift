@@ -166,7 +166,7 @@ struct ActivityDetailView: View {
     private var adoption: some View {
         Section {
             Button {
-                guard ActivityCatalog.adoptFromHistory(activityName) else { return }
+                guard (try? ActivityCatalog.adoptFromHistory(activityName, context: context)) == true else { return }
                 // Grouping is computed rather than stored, so adopting re-buckets every
                 // visit already carrying this label. Insights has to be told.
                 InsightsInvalidation.invalidate(reason: "Activity adopted from history", context: context)
@@ -389,7 +389,6 @@ struct ActivityDetailView: View {
             }
             definition.legacyNames = aliases
         }
-        saveActivityColor(categoryColorValue, forActivity: cleanName)
         commit(definition)
     }
 
@@ -400,8 +399,7 @@ struct ActivityDetailView: View {
         } else {
             activities.append(definition)
         }
-        ActivityCatalog.save(activities)
-        try? ActivityIdentityMigration.upsert(definition, context: context)
+        guard (try? ActivityCatalog.save(activities, context: context)) != nil else { return }
         InsightsInvalidation.invalidate(reason: "Activity definition changed", context: context)
         dismiss()
     }
@@ -433,8 +431,7 @@ struct ActivityDetailView: View {
     private func delete() {
         var activities = ActivityCatalog.load()
         activities.removeAll { $0.id == existingID }
-        ActivityCatalog.save(activities)
-        if let existingID { try? ActivityIdentityMigration.deactivate(id: existingID, context: context) }
+        guard (try? ActivityCatalog.save(activities, context: context)) != nil else { return }
         InsightsInvalidation.invalidate(reason: "Activity deleted", context: context)
         dismiss()
     }

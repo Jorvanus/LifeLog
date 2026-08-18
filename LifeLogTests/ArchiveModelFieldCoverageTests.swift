@@ -95,7 +95,7 @@ struct ArchiveModelFieldCoverageTests {
     @Test("Every ActivityDefinitionRecord field has a matching backup entry field")
     func activityDefinitionRecordFieldsAreBackedUp() throws {
         let definition = ActivityDefinitionRecord(stableID: UUID(), name: "N", category: "C", symbol: "s",
-                                                   colorHex: "#fff", lifeArea: "L", isActive: false,
+                                                   colorHex: "#fff", legacyNames: ["Old N"], lifeArea: "L", isActive: false,
                                                    createdAt: base, modifiedAt: base)
         let entry = LifeLogBackup.ActivityDefinitionRecordEntry(stableID: UUID(), name: "", category: "",
             symbol: "", colorHex: nil, lifeArea: "", isActive: true, createdAt: base, modifiedAt: base)

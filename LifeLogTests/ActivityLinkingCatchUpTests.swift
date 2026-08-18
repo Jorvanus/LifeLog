@@ -65,29 +65,26 @@ struct ActivityLinkingCatchUpTests {
         #expect(remaining.isEmpty)
     }
 
-    @Test("Adopts legacy definitions itself, so it works even before any launch migration has run")
-    func adoptsLegacyDefinitionsBeforeLinking() async throws {
+    @Test("Links from the durable catalogue without reopening a legacy settings snapshot")
+    func linksFromDurableDefinitionsOnly() async throws {
         let container = try makeContainer()
         let context = ModelContext(container)
         context.insert(Visit(arrival: start, departure: start.addingTimeInterval(3600),
                              latitude: 0, longitude: 0, placeName: "Imported journal",
                              inferredActivity: "Work", source: "imported-journal"))
         try context.save()
-        let workDefinition = ActivityDefinition(name: "Work", category: "Work", symbol: "briefcase.fill")
-
-        // Deliberately no prior call to `adoptLegacyDefinitions` or
-        // `backfillNextBatch` — the catch-up must not depend on either having
-        // already run this session.
-        let linked = try await withIsolatedCatalog(seeding: [workDefinition]) {
-            let defaultsSuite = "ActivityLinkingCatchUp.flag.\(UUID().uuidString)"
-            let flagDefaults = UserDefaults(suiteName: defaultsSuite)!
-            defer { flagDefaults.removePersistentDomain(forName: defaultsSuite) }
-            return try await ActivityLinkingCatchUp.runIfNeeded(modelContainer: container, defaults: flagDefaults)
-        }
+        let workID = UUID()
+        context.insert(ActivityDefinitionRecord(stableID: workID, name: "Work",
+                                                 category: "Work", symbol: "briefcase.fill"))
+        try context.save()
+        let defaultsSuite = "ActivityLinkingCatchUp.flag.\(UUID().uuidString)"
+        let flagDefaults = UserDefaults(suiteName: defaultsSuite)!
+        defer { flagDefaults.removePersistentDomain(forName: defaultsSuite) }
+        let linked = try await ActivityLinkingCatchUp.runIfNeeded(modelContainer: container, defaults: flagDefaults)
 
         #expect(linked == 1)
         let visits = try ModelContext(container).fetch(FetchDescriptor<Visit>())
-        #expect(visits.first?.activityDefinitionID == workDefinition.id)
+        #expect(visits.first?.activityDefinitionID == workID)
     }
 
     @Test("Never runs a second time, even if new unlinked visits appear afterwards")
