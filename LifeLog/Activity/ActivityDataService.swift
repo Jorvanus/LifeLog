@@ -77,6 +77,7 @@ final class ActivityDataService {
     /// result makes every caller `await` the same in-flight construction, so there is
     /// only ever one writer regardless of how many callers race to ask for it.
     private var importWriterTask: Task<ActivityImportActor, Never>?
+    private let importWriteCoordinator = HealthImportWriteCoordinator()
     private var importTask: Task<Void, Never>?
     private var stepCache: [String: Double] = [:]
     private var healthObserverQueries: [HKQuery] = []
@@ -408,6 +409,17 @@ final class ActivityDataService {
         startImport(healthDays: 30, motionDays: nil)
     }
 
+    /// Quiesces Health writes while Settings replaces or erases the store. Cancelling
+    /// alone is insufficient because an async import may still be between two SwiftData
+    /// saves; the same write coordinator used by live Health sync makes the boundary
+    /// explicit and prevents a stale import from repopulating erased/restored rows.
+    func withStoreReplacement<T>(_ operation: () throws -> T) async rethrows -> T {
+        importTask?.cancel()
+        await importWriteCoordinator.acquire()
+        defer { Task { await importWriteCoordinator.release() } }
+        return try operation()
+    }
+
     /// Core Motion has no separate authorization API. Its first history query is the
     /// request, so keep that tiny query behind the explicit Settings action rather
     /// than making a person wait for the next automatic import.
@@ -644,6 +656,12 @@ final class ActivityDataService {
         do {
             let records = try await sampleReader.sleepRecords(in: interval)
             guard !records.isEmpty else { return false }
+            await importWriteCoordinator.acquire()
+            defer { Task { await importWriteCoordinator.release() } }
+            // A foreground import may have started while HealthKit was being read.
+            // Let that serialized full import own the archive write instead of using
+            // a stale snapshot to insert the same sleep session beside it.
+            guard !isImporting else { return false }
             let imported = try await importWriter.importStandalone(records) > 0
             if imported { InsightsInvalidation.invalidate(reason: "HealthKit sleep update", context: context) }
             return imported
@@ -724,7 +742,10 @@ final class ActivityDataService {
                 if healthDays != nil { finishHealthObserverDeliveries() }
                 return
             }
+            await importWriteCoordinator.acquire()
+            defer { Task { await importWriteCoordinator.release() } }
             do {
+                try Task.checkCancellation()
                 try await importWriter.prepare()
                 var records: [ActivityImportRecord] = []
                 var rebuiltSleepRecords: [ActivityImportRecord] = []

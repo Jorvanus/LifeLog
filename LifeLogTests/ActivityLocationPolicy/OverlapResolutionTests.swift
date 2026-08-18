@@ -127,6 +127,55 @@ struct OverlapResolutionTests {
         #expect(later.arrival == base.addingTimeInterval(102))
     }
 
+    @Test("Short silent gaps between automatic stays at one place are joined")
+    func coalescesShortSilentSamePlaceGap() throws {
+        let context = try ActivityLocationPolicyFixtures.makeContext()
+        let first = ActivityLocationPolicyFixtures.stay("Work", from: 0, to: 60,
+                                                          latitude: -23.37, longitude: 150.51, base: base)
+        let second = ActivityLocationPolicyFixtures.stay("Work", from: 64, to: 180,
+                                                          latitude: -23.37, longitude: 150.51, base: base)
+        [first, second].forEach(context.insert)
+        try context.save()
+
+        ActivityLocationPolicy.coalesceAdjacentAutomaticStays(in: [first, second], context: context,
+                                                               now: base.addingTimeInterval(4 * 60 * 60))
+        try context.save()
+
+        let remaining = try context.fetch(FetchDescriptor<Visit>())
+        #expect(remaining.count == 1)
+        #expect(remaining.first?.departure == second.departure)
+    }
+
+    @Test("Manual records and long silent gaps block same-place coalescing")
+    func doesNotCoalesceAcrossManualOrLongGap() throws {
+        let context = try ActivityLocationPolicyFixtures.makeContext()
+        let first = ActivityLocationPolicyFixtures.stay("Work", from: 0, to: 60,
+                                                          latitude: -23.37, longitude: 150.51, base: base)
+        let manual = Visit(arrival: base.addingTimeInterval(61 * 60),
+                           departure: base.addingTimeInterval(63 * 60),
+                           latitude: -23.37, longitude: 150.51,
+                           placeName: "Work", inferredActivity: "Walking from the car",
+                           source: "manual")
+        let second = ActivityLocationPolicyFixtures.stay("Work", from: 64, to: 180,
+                                                          latitude: -23.37, longitude: 150.51, base: base)
+        [first, manual, second].forEach(context.insert)
+        try context.save()
+
+        ActivityLocationPolicy.coalesceAdjacentAutomaticStays(in: [first, manual, second], context: context,
+                                                               now: base.addingTimeInterval(4 * 60 * 60))
+        #expect(try context.fetch(FetchDescriptor<Visit>()).count == 3)
+
+        let longFirst = ActivityLocationPolicyFixtures.stay("Work", from: 0, to: 60,
+                                                              latitude: -23.37, longitude: 150.51, base: base)
+        let longSecond = ActivityLocationPolicyFixtures.stay("Work", from: 80, to: 180,
+                                                               latitude: -23.37, longitude: 150.51, base: base)
+        [longFirst, longSecond].forEach(context.insert)
+        try context.save()
+        ActivityLocationPolicy.coalesceAdjacentAutomaticStays(in: [longFirst, longSecond], context: context,
+                                                               now: base.addingTimeInterval(4 * 60 * 60))
+        #expect(try context.fetch(FetchDescriptor<Visit>()).filter { $0 === longFirst || $0 === longSecond }.count == 2)
+    }
+
     @Test("Returning to a place later is not merged into the earlier stay")
     func doesNotMergeASeparateReturn() throws {
         let context = try ActivityLocationPolicyFixtures.makeContext()

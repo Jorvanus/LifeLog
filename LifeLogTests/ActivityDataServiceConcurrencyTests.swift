@@ -12,6 +12,58 @@ import Testing
 /// run that SwiftUI had only cooperatively cancelled.
 @MainActor
 struct ActivityDataServiceConcurrencyTests {
+    @Test("Overlapping Health write sessions are serialized")
+    func overlappingWritesNeverRunTogether() async {
+        let coordinator = HealthImportWriteCoordinator()
+        let state = WriteProbe()
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<2 {
+                group.addTask {
+                    await coordinator.acquire()
+                    await state.enter()
+                    try? await Task.sleep(for: .milliseconds(1))
+                    await state.leave()
+                    await coordinator.release()
+                }
+            }
+        }
+        let maximum = await state.maximum
+        #expect(maximum == 1,
+                "a cancelled/replaced Health import must not overlap a second sleep writer")
+    }
+
+    @Test("Serialized sleep sessions keep one Health sample as one visit")
+    func concurrentSleepSessionsRemainIdempotent() async throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: Visit.self, SavedPlace.self, VisitCorrection.self,
+                                           configurations: configuration)
+        let writer = ActivityImportActor(modelContainer: container)
+        let gate = HealthImportWriteCoordinator()
+        let sampleID = UUID()
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let record = ActivityImportRecord(name: "Sleep", activity: "Sleeping",
+                                          source: SleepEvidence.measuredSource,
+                                          start: start, end: start.addingTimeInterval(8 * 60 * 60),
+                                          healthKitSampleIDs: [sampleID])
+
+        func writeOneSession() async throws {
+            await gate.acquire()
+            defer { Task { await gate.release() } }
+            try await writer.prepare()
+            _ = try await writer.insertBatch([record])
+            try await writer.finish()
+        }
+        async let first = writeOneSession()
+        async let second = writeOneSession()
+        try await first
+        try await second
+
+        let visits = try ModelContext(container).fetch(FetchDescriptor<Visit>())
+            .filter { $0.source == SleepEvidence.measuredSource }
+        #expect(visits.count == 1)
+        #expect(Set(visits.first?.healthKitSampleIDs ?? []) == [sampleID])
+    }
+
     @Test("Two overlapping callers of backgroundWriter() converge on the same actor instance")
     func concurrentCallersShareOneWriter() async throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
@@ -57,4 +109,16 @@ struct ActivityDataServiceConcurrencyTests {
             #expect(try #require(writer) === first)
         }
     }
+}
+
+private actor WriteProbe {
+    private var active = 0
+    private(set) var maximum = 0
+
+    func enter() {
+        active += 1
+        maximum = max(maximum, active)
+    }
+
+    func leave() { active -= 1 }
 }

@@ -64,16 +64,20 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .accessibilityIdentifier("settings-screen")
                 .fileImporter(isPresented: $importingBackup, allowedContentTypes: [.json], allowsMultipleSelection: false) { result in
-                    do {
-                        guard let url = try result.get().first else { return }
-                        let accessed = url.startAccessingSecurityScopedResource(); defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-                        try LocalBackupService.restore(Data(contentsOf: url), into: context)
-                        importMessage = "Backup restored. Restart LifeLog to refresh all screens."
-                    } catch let error as RestoreError {
-                        importMessage = error.errorDescription
-                    } catch { importMessage = "LifeLog couldn’t restore that backup. No changes were applied." }
+                    Task {
+                        do {
+                            guard let url = try result.get().first else { return }
+                            let accessed = url.startAccessingSecurityScopedResource(); defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+                            try await activityData.withStoreReplacement {
+                                try LocalBackupService.restore(Data(contentsOf: url), into: context)
+                            }
+                            importMessage = "Backup restored. Restart LifeLog to refresh all screens."
+                        } catch let error as RestoreError {
+                            importMessage = error.errorDescription
+                        } catch { importMessage = "LifeLog couldn’t restore that backup. No changes were applied." }
+                    }
                 }
-                .alert("Journal import", isPresented: Binding(get: { importMessage != nil }, set: { if !$0 { importMessage = nil } })) {
+                .alert("Data & Recovery", isPresented: Binding(get: { importMessage != nil }, set: { if !$0 { importMessage = nil } })) {
                     Button("OK", role: .cancel) { importMessage = nil }
                 } message: {
                     Text(importMessage ?? "")
@@ -125,12 +129,14 @@ struct SettingsView: View {
         Task {
             defer { erasingData = false }
             do {
-                try context.delete(model: Visit.self)
-                try context.delete(model: SavedPlace.self)
-                try context.delete(model: VisitCorrection.self)
-                try context.delete(model: DiagnosticEvent.self)
-                try context.delete(model: LocationEvent.self)
-                try context.save()
+                try await activityData.withStoreReplacement {
+                    try context.delete(model: Visit.self)
+                    try context.delete(model: SavedPlace.self)
+                    try context.delete(model: VisitCorrection.self)
+                    try context.delete(model: DiagnosticEvent.self)
+                    try context.delete(model: LocationEvent.self)
+                    try context.save()
+                }
                 InsightsInvalidation.invalidate(reason: "All data erased", context: context)
                 dataRecoveryGeneration += 1
                 importMessage = "All data erased. Restart LifeLog to refresh all screens."

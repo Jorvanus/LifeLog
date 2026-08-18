@@ -53,7 +53,16 @@ enum SleepSessionRepair {
             context.delete(candidate)
             merged += 1
         }
-        if merged > 0, save { try context.save() }
+        if merged > 0 {
+            // This repair is also called from the non-main import/maintenance path,
+            // so record the measured count directly instead of hopping through the
+            // UI-isolated Diagnostics facade. The surrounding save owns both rows.
+            context.insert(DiagnosticEvent(subsystem: "HealthKit", severity: "warning",
+                                           message: "Sleep duplicate safety net merged \(merged) visit(s).",
+                                           category: "general", eventCode: "generic",
+                                           repairCount: merged))
+            if save { try context.save() }
+        }
         return merged
     }
 }

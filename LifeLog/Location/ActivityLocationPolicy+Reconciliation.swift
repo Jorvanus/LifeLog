@@ -151,6 +151,8 @@ extension ActivityLocationPolicy {
         // between two same-place stays within `lookback`, without waiting for the
         // next full archive pass.
         coalesceStaysAcrossUnlocatedMovement(in: visits, context: context, now: now)
+        let afterMovement = try fetchRecentPolicyVisits(context: context, since: since)
+        coalesceAdjacentAutomaticStays(in: afterMovement, context: context, now: now)
         let changed = context.hasChanges
         if changed { try context.save() }
         return changed
@@ -188,6 +190,8 @@ extension ActivityLocationPolicy {
         // decide whether both sides are the same place.
         let afterReconcile = try fetchPolicyVisits(context: context)
         coalesceStaysAcrossUnlocatedMovement(in: afterReconcile, context: context, now: now)
+        let afterMovement = try fetchPolicyVisits(context: context)
+        coalesceAdjacentAutomaticStays(in: afterMovement, context: context, now: now)
     }
 
     /// Merges a stay Apple Health split with a "Walking"/"In transit" fragment that
@@ -212,7 +216,7 @@ extension ActivityLocationPolicy {
     static func coalesceStaysAcrossUnlocatedMovement(in visits: [Visit], context: ModelContext,
                                                       now: Date = .now) {
         var locations = visits
-            .filter { isLocationVisit($0) && !isSupersededLocation($0) && !$0.isIgnored }
+            .filter { $0.visitSource == .automatic && !$0.isIgnored }
             .sorted { $0.arrival < $1.arrival }
         guard locations.count > 1 else { return }
 
@@ -254,6 +258,51 @@ extension ActivityLocationPolicy {
             // Re-check the merged `current` against whatever is now next — a chain of
             // several fragments between more than two same-place stays collapses in
             // one pass instead of needing the whole function to run again.
+        }
+    }
+
+    /// Joins two automatic stays at the same resolved place when the only space
+    /// between them is a short, completely silent gap. Core Location can close one
+    /// parking-spot arrival and open another after the phone moves across a large
+    /// site, even though no meaningful departure occurred.
+    ///
+    /// Fifteen minutes is deliberately a ceiling rather than an inference of travel:
+    /// a longer pause is allowed to remain unlogged, and can be corrected explicitly.
+    /// Every record overlapping the gap blocks the join, especially a manual row. The
+    /// endpoints are restricted to `.automatic`, so this repair never rewrites or
+    /// deletes a hand-entered visit.
+    static let maximumSilentSamePlaceGap: TimeInterval = 15 * 60
+
+    static func coalesceAdjacentAutomaticStays(in visits: [Visit], context: ModelContext,
+                                                now: Date = .now) {
+        var stays = visits
+            .filter { $0.visitSource == .automatic && !$0.isIgnored }
+            .sorted { $0.arrival < $1.arrival }
+        guard stays.count > 1 else { return }
+
+        var index = 0
+        while index < stays.count - 1 {
+            let first = stays[index]
+            let second = stays[index + 1]
+            guard let firstDeparture = first.departure,
+                  second.arrival > firstDeparture,
+                  second.arrival.timeIntervalSince(firstDeparture) <= maximumSilentSamePlaceGap,
+                  sameResolvedPlace(first, second) else {
+                index += 1
+                continue
+            }
+            let gapContainsRecord = visits.contains { candidate in
+                guard candidate !== first, candidate !== second else { return false }
+                let candidateEnd = candidate.departure ?? now
+                return candidate.arrival < second.arrival && candidateEnd > firstDeparture
+            }
+            guard !gapContainsRecord else {
+                index += 1
+                continue
+            }
+            first.departure = second.departure
+            context.delete(second)
+            stays.remove(at: index + 1)
         }
     }
 

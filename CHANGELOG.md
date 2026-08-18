@@ -1,5 +1,23 @@
 # Change log
 
+## 2026-08-18 — 2.19.10 (216)
+
+### Maintenance diagnostic isolation
+
+- Sleep duplicate safety-net diagnostics now write within the caller’s transaction, keeping maintenance and import paths independent of the main-actor diagnostics facade.
+
+## 2026-08-18 — 2.19.9 (215)
+
+### Serialized Health sleep writes
+
+- Health imports, Insights sleep refreshes, and erase/restore now share one write boundary so a cancelled or stale sync cannot repopulate the store beside a replacement. The sleep duplicate repair remains as a measured warning safety net until real-device counts stay at zero.
+
+## 2026-08-18 — 2.19.8 (214)
+
+### Same-place automatic stay coalescing
+
+- Short silent gaps between adjacent automatic stays at the same resolved place now coalesce, covering multi-parking-spot arrivals without rewriting manual visits. Gaps longer than 15 minutes or containing any recorded row remain separate.
+
 ## 2026-08-18 — 2.19.7 (213)
 
 ### Retired Life Cycle CSV importer

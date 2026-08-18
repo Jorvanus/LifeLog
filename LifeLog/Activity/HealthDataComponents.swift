@@ -61,6 +61,35 @@ final class HealthObserverDeliveryCoordinator {
     }
 }
 
+/// Serializes every Health-backed archive write, including the small sleep refresh
+/// used by Insights. SwiftUI cancellation is cooperative: an older import can still
+/// be saving when a newer observer or foreground import starts, so sharing one
+/// `ActivityImportActor` is not enough unless its prepare/read/write sessions are
+/// also kept from overlapping.
+actor HealthImportWriteCoordinator {
+    private var held = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func acquire() async {
+        guard held else {
+            held = true
+            return
+        }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func release() {
+        guard let next = waiters.first else {
+            held = false
+            return
+        }
+        waiters.removeFirst()
+        next.resume()
+    }
+}
+
 /// Prevents cancellation or an older async import from publishing progress,
 /// invalidation, or errors after a later import superseded it.
 struct IncrementalImportCoordinator: Sendable {
