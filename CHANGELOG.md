@@ -1,5 +1,11 @@
 # Change log
 
+## 2026-08-19 — 2.20.2 (220)
+
+### New-person readiness pass
+
+- Expanded the TestFlight/App Store roadmap with a focused first-run, no-data, presentation, terminology, permission, and small-beta testing pass for people who do not already understand LifeLog’s archive.
+
 ## 2026-08-19 — 2.20.1 (219)
 
 ### TestFlight and App Store planning

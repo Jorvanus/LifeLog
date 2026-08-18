@@ -421,6 +421,150 @@ Create one release record per uploaded build containing:
 - tester group, known limitations, reviewer notes, screenshots, and privacy answers;
 - rollback decision and the next supported migration/backup scheme.
 
+## 12. New-person usefulness and presentation pass
+
+This is the most important product pass before asking anyone else to try LifeLog.
+The owner already knows what a visit, saved place, inferred activity, Health import,
+and unlogged gap mean. A new person does not. The first-run experience should make
+one useful thing obvious within a few minutes without introducing a second product
+or a large setup wizard.
+
+### The first ten minutes
+
+- [ ] Start from a genuinely empty store and write down what a new person can do
+  without reading documentation. The minimum useful path should be:
+  1. understand what LifeLog records and what it cannot know;
+  2. add one manual visit immediately;
+  3. see that visit in Timeline and Insights;
+  4. optionally enable Location for automatic visits;
+  5. optionally connect Apple Health for the named Health overview.
+- [ ] Add a small first-run “Start here” treatment, not a mandatory multi-screen
+  tour. It can be a dismissible card or setup checklist that links to Location,
+  Apple Health, Add Visit, and the privacy explanation.
+- [ ] Make the order progressive: explain the product first, request Location only
+  when the person chooses automatic recording, and request Health only when they
+  open or enable the Health overview. Do not present five permission sheets before
+  the person has seen any value.
+- [ ] Give the person an honest expectation of timing: automatic visits depend on
+  iOS delivery and may appear after arrival; Health imports may arrive later; a
+  missing sample is not a zero measurement.
+- [ ] Make “Add visit” the reliable fallback in every no-data state. A new person
+  should not need to wait for a background callback to understand the product.
+
+### Empty states that teach without pretending
+
+- [ ] Timeline empty state should answer: what will be recorded, when it may appear,
+  and what can I do now? Include Add Visit and Recording Status actions.
+- [ ] Insights empty state should explain that it needs recorded time, show the
+  kinds of questions it will answer once data exists, and link back to Timeline or
+  Add Visit. Do not fill the real archive with fake sample rows just to make a chart.
+- [ ] Places empty state should distinguish “no saved places” from “no visits.”
+  Explain that a person can name a place during a visit or add one explicitly.
+- [ ] Activities empty state should distinguish the built-in catalogue from labels
+  found in visits. Avoid making a new person understand “adopted,” “alias,” or
+  “durable catalogue” before they need to edit an activity.
+- [ ] Apple Health empty state should distinguish unavailable HealthKit, denied
+  access, not-yet-requested access, no samples, and a successful import with no
+  data in the selected period. Each state needs one next action and no invented
+  zeros.
+- [ ] Settings empty state should still show Recording status first, with clear
+  plain-language values such as “Location: needs permission,” “Apple Health: not
+  connected,” and “No visits yet.” Move implementation terms like “maintenance,”
+  “archive repair,” and “resolver” behind Diagnostics/Data & Recovery.
+- [ ] Backup/restore empty state should explain that there is nothing to back up,
+  what a backup contains, and that restore replaces the destination data. Do not
+  show destructive controls as the first useful action on a new install.
+
+### Presentation and language tidy-up
+
+- [ ] Read the first-run screens as a non-technical person. Replace unexplained
+  terms (“resolver,” “reconcile,” “source tag,” “archive-wide,” “schema marker”)
+  with user language in ordinary screens; keep technical wording in Diagnostics.
+- [ ] Make each screen answer one question:
+  - Timeline: “What did I do today?”
+  - Insights: “How did my time add up?”
+  - Activities: “What labels do I use?”
+  - Places: “Where do I spend time?”
+  - Apple Health: “What Health data is available?”
+  - Data & Recovery: “How do I protect or recover my archive?”
+  - Diagnostics: “What is malfunctioning?”
+- [ ] Keep one primary action per empty or setup state. Secondary explanations can
+  be expandable or moved to the child screen; do not make a new person choose
+  among several equally prominent repairs, imports, and permissions.
+- [ ] Use consistent nouns and sentence-case actions: “Add visit,” “Connect Apple
+  Health,” “Allow background location,” “Save backup,” “Restore backup,” and
+  “Erase all data.” Reserve red for destructive erase actions.
+- [ ] Ensure the top of every screen makes its state visible without requiring a
+  tab switch. An active import, denied permission, stale backup, or store recovery
+  problem should be a status, not a surprise after tapping a row.
+- [ ] Review the visual hierarchy at the owner’s normal iPhone size and at large
+  Dynamic Type. A first-time person should see the current state, the next action,
+  and the explanation in that order.
+- [ ] Keep charts observational and source-labelled. A person should be able to
+  tell “recorded by LifeLog,” “from Apple Health,” and “unlogged” apart without
+  assuming that a physiological value is a medical conclusion.
+- [ ] Use representative but synthetic screenshots and fixtures to assess the
+  presentation. Never use the owner’s real places, dates, Health values, or
+  diagnostic export in a public test build or product page.
+
+### Small, non-drastic product improvements to consider
+
+- [ ] Add a compact setup summary to the existing status-led Settings hub rather
+  than building a separate onboarding subsystem.
+- [ ] Add a “Try it now” manual-visit affordance to the empty Timeline and let the
+  resulting visit demonstrate the day bar, activity label, place, and Insights
+  total. Keep the record real and editable; do not create hidden demo data.
+- [ ] Add a single “Why this helps” sentence to each permission screen, tailored to
+  the feature being enabled. Keep detailed privacy text one tap away.
+- [ ] Add a “What LifeLog can’t know” note near automatic recording: it cannot
+  reliably identify transport mode from a short gap, cannot recover denied Health
+  samples, and cannot infer medical meaning from physiological values.
+- [ ] Add a stable “Getting started” destination in About or Recording so a tester
+  can revisit the explanation after dismissing it. Do not make onboarding a one-way
+  gate.
+- [ ] Add a visible “No data yet” state to the Activities tab rather than a blank
+  list or a catalogue that looks like recorded history.
+- [ ] Consider a first-week hint only if it is local, dismissible, and based on a
+  real state (for example, “No automatic visits yet; check Location access”). Avoid
+  notification campaigns, accounts, cloud sync, or social features at this stage.
+
+### New-person TestFlight scenarios
+
+- [ ] Fresh install with every permission denied: add a manual visit, browse the
+  tabs, open Settings, and understand what remains useful.
+- [ ] Location-only tester: grant background Location but not Health; leave the app
+  closed for a day and report timing, battery, duplicate rows, and travel gaps.
+- [ ] Health-only tester: deny Location, grant selected Health types, and verify
+  that Insights explains what was and was not returned without treating missing as
+  zero.
+- [ ] Mixed-permission tester: grant Location, deny Motion, partially authorize
+  Health, then revoke one permission in system Settings and return to the app.
+- [ ] Recovery tester: create a backup, delete/reinstall or erase the destination,
+  restore it, cancel once, and verify the resulting state and counts.
+- [ ] Accessibility tester: use VoiceOver and large Dynamic Type from the empty
+  state through Add Visit, permission setup, Timeline, Insights, and Settings.
+- [ ] Ask each tester three concrete questions: “What did you think would happen?”
+  “What did you expect this value to mean?” and “What would you try next?” Record
+  terminology and hierarchy problems separately from actual recording bugs.
+- [ ] Do not interpret a tester’s lack of recorded data as an automatic bug. Capture
+  permission state, device, OS, battery mode, time elapsed, and whether iOS delivered
+  a callback before deciding that recording failed.
+
+### Readiness gate for inviting others
+
+- [ ] A person with no data can reach a useful screen in under five minutes without
+  contacting the owner.
+- [ ] Every requested permission has a benefit, a denied state, and a route to
+  system settings.
+- [ ] A manual visit demonstrates the core value even when Location and Health are
+  unavailable.
+- [ ] The app never presents fake data as the tester’s history and never makes a
+  missing sample look like zero.
+- [ ] The tester can explain what is local, what may be sent to Apple Maps, what a
+  backup contains, and how to erase their archive.
+- [ ] The owner can distinguish a presentation/wording problem from a physical
+  device delivery problem using the support evidence the app exports.
+
 ### Suggested order
 
 1. Decide scope (iPhone-only vs universal, TestFlight vs App Store, minimum OS).
