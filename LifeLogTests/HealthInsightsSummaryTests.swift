@@ -16,6 +16,16 @@ struct HealthInsightsSummaryTests {
         #expect(HealthTrendMetric.respiratoryRate.unit.unitString == expected)
     }
 
+    @Test("Additional Health Trends types have their documented display units")
+    func additionalTrendUnits() {
+        #expect(HealthTrendMetric.heartRateVariability.unit.unitString == HKUnit.secondUnit(with: .milli).unitString)
+        #expect(HealthTrendMetric.cardioFitness.unit.unitString == HKUnit.literUnit(with: .milli)
+            .unitDivided(by: .gramUnit(with: .kilo))
+            .unitDivided(by: .minute()).unitString)
+        #expect(HealthTrendMetric.walkingSpeed.unit.unitString == HKUnit.meter().unitDivided(by: .second()).unitString)
+        #expect(HealthTrendMetric.walkingStepLength.unit.unitString == HKUnit.meterUnit(with: .centi).unitString)
+    }
+
     @Test("No Health data produces an explicit empty summary")
     func noData() {
         let summary = HealthInsightsAggregation.summary(steps: [], walkingRunningMeters: [],

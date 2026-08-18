@@ -29,6 +29,7 @@ struct HealthKitTypeCatalogTests {
         .appleExerciseTime, .appleStandTime,
         .restingHeartRate, .walkingHeartRateAverage,
         .heartRateRecoveryOneMinute, .respiratoryRate,
+        .heartRateVariabilitySDNN, .vo2Max, .walkingSpeed, .walkingStepLength,
     ]
     private static let summaryCategoryIdentifiers: Set<HKCategoryTypeIdentifier> = [.sleepAnalysis]
 

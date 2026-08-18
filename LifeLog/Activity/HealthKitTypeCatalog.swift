@@ -16,8 +16,8 @@ import HealthKit
 /// app actually prompted for.
 enum HealthKitTypeCatalog {
     /// Every quantity type `ActivitySampleReader` queries: steps and the four
-    /// Activity-ring metrics read by `healthInsightsFixtures`, plus the four
-    /// heart/breathing trend metrics read by `healthTrendFixtures` — see
+    /// Activity-ring metrics read by `healthInsightsFixtures`, plus the
+    /// physiological and mobility trend metrics read by `healthTrendFixtures` — see
     /// `HealthTrendMetric.allCases`.
     static let quantityIdentifiers: [HKQuantityTypeIdentifier] =
         [.stepCount, .distanceWalkingRunning, .activeEnergyBurned, .appleExerciseTime, .appleStandTime]

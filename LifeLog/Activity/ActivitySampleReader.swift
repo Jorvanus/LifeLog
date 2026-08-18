@@ -67,6 +67,10 @@ enum HealthTrendMetric: String, CaseIterable, Identifiable, Sendable {
     case walkingHeartRate
     case heartRateRecovery
     case respiratoryRate
+    case heartRateVariability
+    case cardioFitness
+    case walkingSpeed
+    case walkingStepLength
 
     var id: Self { self }
 
@@ -76,13 +80,19 @@ enum HealthTrendMetric: String, CaseIterable, Identifiable, Sendable {
         case .walkingHeartRate: "Walking heart rate"
         case .heartRateRecovery: "One-minute heart-rate recovery"
         case .respiratoryRate: "Respiratory rate"
+        case .heartRateVariability: "Heart-rate variability"
+        case .cardioFitness: "Cardio fitness"
+        case .walkingSpeed: "Walking speed"
+        case .walkingStepLength: "Walking step length"
         }
     }
 
     var symbol: String {
         switch self {
-        case .restingHeartRate, .walkingHeartRate, .heartRateRecovery: "heart.fill"
+        case .restingHeartRate, .walkingHeartRate, .heartRateRecovery, .heartRateVariability: "heart.fill"
         case .respiratoryRate: "wind"
+        case .cardioFitness: "figure.run"
+        case .walkingSpeed, .walkingStepLength: "figure.walk"
         }
     }
 
@@ -91,6 +101,10 @@ enum HealthTrendMetric: String, CaseIterable, Identifiable, Sendable {
         case .restingHeartRate, .walkingHeartRate: "bpm"
         case .heartRateRecovery: "bpm recovered"
         case .respiratoryRate: "breaths/min"
+        case .heartRateVariability: "ms"
+        case .cardioFitness: "mL/kg/min"
+        case .walkingSpeed: "m/s"
+        case .walkingStepLength: "cm"
         }
     }
 
@@ -100,6 +114,10 @@ enum HealthTrendMetric: String, CaseIterable, Identifiable, Sendable {
         case .walkingHeartRate: .walkingHeartRateAverage
         case .heartRateRecovery: .heartRateRecoveryOneMinute
         case .respiratoryRate: .respiratoryRate
+        case .heartRateVariability: .heartRateVariabilitySDNN
+        case .cardioFitness: .vo2Max
+        case .walkingSpeed: .walkingSpeed
+        case .walkingStepLength: .walkingStepLength
         }
     }
 
@@ -110,6 +128,16 @@ enum HealthTrendMetric: String, CaseIterable, Identifiable, Sendable {
         // Objective-C exception that Swift cannot catch.
         case .restingHeartRate, .walkingHeartRate, .heartRateRecovery, .respiratoryRate:
             .heartRateUnit()
+        case .heartRateVariability:
+            .secondUnit(with: .milli)
+        case .cardioFitness:
+            .literUnit(with: .milli)
+                .unitDivided(by: .gramUnit(with: .kilo))
+                .unitDivided(by: .minute())
+        case .walkingSpeed:
+            .meter().unitDivided(by: .second())
+        case .walkingStepLength:
+            .meterUnit(with: .centi)
         }
     }
 }

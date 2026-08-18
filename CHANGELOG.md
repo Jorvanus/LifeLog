@@ -1,6 +1,14 @@
 # Change log
 
-## 2026-08-18
+## 2026-08-18 — 2.19.0 (206)
+
+### Broader, still-focused Apple Health trends
+
+- Health Trends now offers separate Apple Health drill-downs for heart-rate variability, cardio fitness, walking speed, and walking step length alongside the existing heart and breathing signals. Each type loads only when opened, labels its source and unit, and treats an unavailable sample as unknown—not zero—while explaining that Apple does not disclose read denial to LifeLog.
+
+### Centralized archive maintenance
+
+- LifeLog now runs versioned archive maintenance from one coordinator after the store opens and after a successful restore, rather than making Timeline appearance repair the database. The coordinator publishes progress, saves all archive-wide prerequisites as one maintenance transaction, and only records completion after that save succeeds.
 
 ### More dependable travel recovery and clearer gap repair
 

@@ -11,11 +11,6 @@ import CoreLocation
 /// together. Nothing in the policy reaches back into it.
 @MainActor
 enum WorkoutJourneys {
-    /// Marks `repairSplitWorkouts` as done, so it runs once rather than on every
-    /// appearance. Cleared by a Health re-import, which restores the routes the repair
-    /// needs to judge the stays it could not decide the first time.
-    static let splitWorkoutRepairKey = "workout-splits-repaired-v1"
-
 
     /// Puts back together the workouts an earlier build cut up as it imported them.
     ///

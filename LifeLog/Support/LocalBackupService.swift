@@ -510,6 +510,7 @@ enum LocalBackupService {
         for (key, value) in backup.preferences where isPortablePreferenceKey(key) {
             UserDefaults.standard.set(value, forKey: key)
         }
+        MaintenanceCoordinator.shared.runAfterRestore(context: context)
     }
 
     static func preferences() -> [String: String] {

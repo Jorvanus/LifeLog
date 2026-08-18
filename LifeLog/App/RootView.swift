@@ -14,6 +14,7 @@ struct RootView: View {
     let modelContainer: ModelContainer
     @State private var recorder = LocationRecorder()
     @State private var activityData = ActivityDataService()
+    @State private var maintenance = MaintenanceCoordinator.shared
     /// Set at tab selection, not when Timeline disappeared: the latter measures how
     /// long the person was reading Settings rather than how long Timeline took back.
     @State private var timelineReturnStartedAt: Date?
@@ -154,6 +155,7 @@ struct RootView: View {
             let startedAt = Date.now
             recorder.connect(context)
             activityData.connect(context, container: modelContainer)
+            await maintenance.runIfNeeded(context: context)
             // Core Motion discards history about a week old, so it is collected
             // whenever LifeLog runs rather than only when Settings is visited.
             activityData.refreshAutomatically()

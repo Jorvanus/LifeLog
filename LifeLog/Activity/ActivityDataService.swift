@@ -404,10 +404,6 @@ final class ActivityDataService {
         UserDefaults.standard.removeObject(forKey: sleepAnchorKey)
         UserDefaults.standard.removeObject(forKey: workoutAnchorKey)
         UserDefaults.standard.removeObject(forKey: healthRefreshKey)
-        // A re-import restores the routes that were clipped away when a workout was
-        // split, so let the repair pass run once more — this time with a complete path
-        // to judge by, which decides the stays it had to leave alone without one.
-        UserDefaults.standard.removeObject(forKey: WorkoutJourneys.splitWorkoutRepairKey)
         guard HKHealthStore.isHealthDataAvailable() else { return }
         startImport(healthDays: 30, motionDays: nil)
     }
@@ -873,15 +869,10 @@ final class ActivityDataService {
                 if importedDays > 0, let context {
                     let lookback = TimeInterval(importedDays) * 24 * 60 * 60
                     do {
-                        _ = try ActivityLocationPolicy.reapplyRecentMovementAbsorption(
-                            context: context, lookback: lookback)
-                        _ = try ActivityLocationPolicy.reapplyRecentJourneyTiming(
-                            context: context, lookback: lookback)
-                        _ = try ActivityLocationPolicy.reapplyRecentOpenStayAbsorption(
-                            context: context, lookback: lookback)
+                        try MaintenanceCoordinator.shared.reconcileRecentImport(context: context, lookback: lookback)
                     } catch {
-                        // Retried on the next import — TimelineView's own 24h pass
-                        // still covers the last day regardless.
+                        // Retried on the next import; the coordinator owns every
+                        // post-import repair instead of relying on a visible tab.
                     }
                 }
                 InsightsInvalidation.invalidate(reason: "HealthKit or Motion import", context: context)

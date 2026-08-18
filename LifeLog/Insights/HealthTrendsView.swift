@@ -21,7 +21,7 @@ struct HealthTrendsView: View {
             LazyVStack(alignment: .leading, spacing: 18) {
                 HealthTrendsIntro(periodTitle: periodTitle)
                 if let trendInterval {
-                    Text("Choose a metric to load up to 90 days of daily samples. Loading one at a time keeps Insights responsive if Apple Health is slow or a type has no data.")
+                    Text("Choose a metric to load up to 90 days of daily samples. Each card is sourced from Apple Health; loading one at a time keeps Insights responsive if a type has no recorded samples or read access is unavailable.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     ForEach(HealthTrendMetric.allCases) { metric in
@@ -85,7 +85,7 @@ private struct HealthTrendMetricSection: View {
                 }
             }
             if didLoad, points.isEmpty {
-                Text("No samples were returned for this period.")
+                Text("No Apple Health samples were returned for this period. This can mean no samples were recorded, or that Apple Health read access is off; LifeLog does not treat it as zero.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } else if !points.isEmpty {

@@ -16,7 +16,10 @@ enum SleepSessionRepair {
     /// `ActivityLocationPolicy.deduplicateAutomaticLocations` already uses for
     /// duplicate location callbacks.
     @discardableResult
-    static func mergeDuplicates(context: ModelContext) throws -> Int {
+    /// `MaintenanceCoordinator` supplies `false` so this repair participates in its
+    /// single save-before-completion transaction; direct callers retain the legacy
+    /// immediate-save behavior by default.
+    static func mergeDuplicates(context: ModelContext, save: Bool = true) throws -> Int {
         let visits = try context.fetch(FetchDescriptor<Visit>(
             predicate: #Predicate { $0.source == "health-sleep" },
             sortBy: [SortDescriptor(\.arrival)]
@@ -50,7 +53,7 @@ enum SleepSessionRepair {
             context.delete(candidate)
             merged += 1
         }
-        if merged > 0 { try context.save() }
+        if merged > 0, save { try context.save() }
         return merged
     }
 }
