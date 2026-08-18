@@ -1,5 +1,11 @@
 # Change log
 
+## 2026-08-19 — 2.20.1 (219)
+
+### TestFlight and App Store planning
+
+- Expanded `APP_STORE_TODO.md` into a staged, LifeLog-specific release plan covering privacy, HealthKit and background location review, protected local storage, TestFlight operations, reviewer reproducibility, device/accessibility coverage, and rollback gates.
+
 ## 2026-08-19 — 2.20.0 (218)
 
 ### Timeline day orientation
