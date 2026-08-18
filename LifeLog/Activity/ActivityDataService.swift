@@ -367,7 +367,6 @@ final class ActivityDataService {
             ? Self.healthImportWindowDays(since: lastHealth, now: now) : nil
 
         guard motionDays != nil || healthDays != nil else { return }
-        if motionDays != nil { UserDefaults.standard.set(now, forKey: motionRefreshKey) }
         if healthDays != nil { UserDefaults.standard.set(now, forKey: healthRefreshKey) }
         startImport(healthDays: healthDays, motionDays: motionDays)
     }
@@ -449,7 +448,6 @@ final class ActivityDataService {
             requestMotionAccess()
             return
         }
-        UserDefaults.standard.set(Date.now, forKey: motionRefreshKey)
         startImport(healthDays: nil, motionDays: 7)
     }
 
@@ -824,6 +822,11 @@ final class ActivityDataService {
                     UserDefaults.standard.set(sleepResultAnchor, forKey: sleepAnchorKey)
                     UserDefaults.standard.set(workoutResultAnchor, forKey: workoutAnchorKey)
                 }
+                // A Health observer can replace this combined task before it reaches
+                // the Core Motion query. Advance the throttle only after the entire
+                // motion read and write completed, otherwise a cancelled attempt
+                // falsely suppresses car-trip recovery for the next six hours.
+                if motionDays != nil { UserDefaults.standard.set(Date.now, forKey: motionRefreshKey) }
                 healthStatus = healthDays == nil ? healthStatus : "Connected"
                 refreshMotionStatus()
                 lastImport = .now

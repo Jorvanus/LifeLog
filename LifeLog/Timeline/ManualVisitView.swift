@@ -65,6 +65,7 @@ struct ManualVisitView: View {
     /// re-searching a place that is sitting right there on screen.
     @State private var beforeVisit: Visit?
     @State private var afterVisit: Visit?
+    @State private var travelEndpoints: TravelGapEndpointResolver.Endpoints?
     @State private var gapSuggestionViewModel: GapSuggestionViewModel
     /// A deterministic resolver rule may safely prepare the blank form, but it
     /// never saves or prevents a person changing either field.
@@ -166,12 +167,11 @@ struct ManualVisitView: View {
                             BorderingVisitRow(label: "After", visit: afterVisit) { selectPlace(from: afterVisit) }
                                 .accessibilityIdentifier("manual-visit-after-context")
                         }
-                        if let beforeVisit, let afterVisit,
-                           beforeVisit.displayPlaceName.caseInsensitiveCompare(afterVisit.displayPlaceName) != .orderedSame {
+                        if let travelEndpoints {
                             Button {
-                                markAsTravel(from: beforeVisit, to: afterVisit)
+                                markAsTravel(from: travelEndpoints.before, to: travelEndpoints.after)
                             } label: {
-                                Label("Mark as travel: \(beforeVisit.displayPlaceName) → \(afterVisit.displayPlaceName)",
+                                Label("Review likely travel: \(travelEndpoints.before.displayPlaceName) → \(travelEndpoints.after.displayPlaceName)",
                                       systemImage: "car.fill")
                             }
                             .accessibilityIdentifier("manual-visit-mark-as-travel")
@@ -179,7 +179,7 @@ struct ManualVisitView: View {
                     } header: {
                         Text("Recorded either side of this gap")
                     } footer: {
-                        Text("Tap Before or After to use that place for this visit, or Mark as travel to record this gap as the journey between them — no location needed, the same way LifeLog already treats a Home/Work commute.")
+                        Text("Tap Before or After to use that place for this visit. When nearby records bound a short gap between different places, Review likely travel prepares an editable journey — it does not claim to know your transport mode.")
                     }
                 }
 
@@ -368,6 +368,19 @@ struct ManualVisitView: View {
         )
         afterDescriptor.fetchLimit = 1
         afterVisit = try? context.fetch(afterDescriptor).first
+
+        let endpointLookback = fetchStart.addingTimeInterval(-TravelGapEndpointResolver.maximumAdjacentDelay)
+        let endpointLookahead = fetchEnd.addingTimeInterval(TravelGapEndpointResolver.maximumAdjacentDelay)
+        var nearbyDescriptor = FetchDescriptor<Visit>(
+            predicate: #Predicate<Visit> {
+                $0.arrival <= endpointLookahead && ($0.departure == nil || $0.departure! >= endpointLookback)
+            },
+            sortBy: [SortDescriptor(\Visit.arrival)]
+        )
+        nearbyDescriptor.fetchLimit = 24
+        if let nearbyVisits = try? context.fetch(nearbyDescriptor) {
+            travelEndpoints = TravelGapEndpointResolver.endpoints(for: range, in: nearbyVisits)
+        }
     }
 
     /// Only the *place* — coordinate included when the source visit has one, so a

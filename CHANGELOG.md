@@ -2,6 +2,11 @@
 
 ## 2026-08-18
 
+### More dependable travel recovery and clearer gap repair
+
+- Core Motion's six-hour refresh is now marked complete only after the motion query and its import finish. A Health-triggered replacement can no longer make LifeLog wait six hours after a cancelled motion read, leaving otherwise available car journeys out of the timeline.
+- Unlogged Time now offers an editable “Review likely travel” draft when a short gap is tightly bounded by two different resolved places at least 750 m apart. It skips a trailing coordinate-less walking fragment to show the meaningful endpoints, but never claims a transport mode or writes a journey without review.
+
 ### Mark any gap as travel, not just a Home/Work commute
 
 - Add Visit's "Recorded either side of this gap" section gains a "Mark as
