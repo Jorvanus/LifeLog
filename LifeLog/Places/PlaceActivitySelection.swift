@@ -7,7 +7,7 @@ struct PlaceActivitySelection: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Binding var selection: String
-    @State private var activities = ActivityCatalog.load()
+    @State private var activities = ActivityCatalog.uniqueForPresentation(ActivityCatalog.load())
     @State private var adding = false
 
     var body: some View {
@@ -33,12 +33,12 @@ struct PlaceActivitySelection: View {
         .navigationTitle("Choose Activity")
         // Seeding itself now happens once, unconditionally, at app launch
         // (`RootView`'s `.task`) — this only needs its own local copy.
-        .task { activities = ActivityCatalog.load() }
+        .task { activities = ActivityCatalog.uniqueForPresentation(ActivityCatalog.load()) }
         .sheet(isPresented: $adding) {
             ActivityEditor { newActivity in
                 activities.append(newActivity)
                 guard (try? ActivityCatalog.save(activities, context: context)) != nil else {
-                    activities = ActivityCatalog.load()
+                    activities = ActivityCatalog.uniqueForPresentation(ActivityCatalog.load())
                     return
                 }
                 selection = newActivity.name

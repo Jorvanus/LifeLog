@@ -155,7 +155,7 @@ struct ActivityDetailView: View {
         }
         .sheet(isPresented: $pickingMergeTarget) {
             NavigationStack {
-                MergeTargetPicker(excluding: existingID) { target in
+                MergeTargetPicker(excluding: existingID, excludingName: activityName) { target in
                     pickingMergeTarget = false
                     mergeTarget = target
                 }
@@ -450,12 +450,16 @@ struct ActivityDetailView: View {
 /// Activities tab does, so the two lists read the same way.
 private struct MergeTargetPicker: View {
     let excluding: UUID?
+    let excludingName: String
     let onPick: (ActivityDefinition) -> Void
     @State private var search = ""
 
     private var candidates: [ActivityDefinition] {
-        let all = ActivityCatalog.load().filter { $0.id != excluding }
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        let all = ActivityCatalog.uniqueForPresentation(
+            ActivityCatalog.load(),
+            excludingIDs: excluding.map { Set<UUID>([$0]) } ?? Set<UUID>(),
+            excludingNames: [excludingName]
+        )
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return all }
         return all.filter { $0.name.localizedCaseInsensitiveContains(query) }

@@ -287,6 +287,26 @@ enum ActivityCatalog {
         activities.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
+    /// Returns one row per exact display name for selectors. A short-lived
+    /// compatibility path once allowed the same activity to be adopted more than
+    /// once under different IDs; those records still need to remain addressable for
+    /// archive repair, but showing every copy makes choosing an activity ambiguous.
+    /// Do not use `NameKey` here: `Cafe` and `Café` are intentionally distinct
+    /// activity identities.
+    static func uniqueForPresentation(
+        _ activities: [ActivityDefinition],
+        excludingIDs: Set<UUID> = [],
+        excludingNames: Set<String> = []
+    ) -> [ActivityDefinition] {
+        var seenNames = Set<String>()
+        let excludedNames = Set(excludingNames.map { $0.lowercased() })
+        return sorted(activities).filter { activity in
+            guard !excludingIDs.contains(activity.id),
+                  !excludedNames.contains(activity.name.lowercased()) else { return false }
+            return seenNames.insert(activity.name.lowercased()).inserted
+        }
+    }
+
     /// Set by `legacyDefinitions()` when it most recently found data that existed but could
     /// not be decoded — distinct from finding no data at all (an ordinary first
     /// launch) or decoding an intentionally empty list. This enum is a plain

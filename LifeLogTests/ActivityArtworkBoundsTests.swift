@@ -85,6 +85,25 @@ struct ActivityArtworkBoundsTests {
         #expect(all.count == Set(all).count)
     }
 
+    @Test("Activity selectors collapse duplicate display names without folding accents")
+    func selectorNamesAreUnique() {
+        let duplicateID = UUID()
+        let activities = [
+            ActivityDefinition(id: UUID(), name: "At home", category: "Home", symbol: "house.fill"),
+            ActivityDefinition(id: duplicateID, name: "At home", category: "Home", symbol: "house.fill"),
+            ActivityDefinition(id: UUID(), name: "Cafe", category: "Food & Drink", symbol: "cup.and.saucer.fill"),
+            ActivityDefinition(id: UUID(), name: "Café", category: "Food & Drink", symbol: "cup.and.saucer.fill")
+        ]
+
+        let visible = ActivityCatalog.uniqueForPresentation(activities)
+        #expect(visible.map(\.name).filter { $0 == "At home" }.count == 1)
+        #expect(visible.map(\.name).contains("Cafe"))
+        #expect(visible.map(\.name).contains("Café"))
+        #expect(ActivityCatalog.uniqueForPresentation(activities,
+                                                      excludingIDs: [duplicateID],
+                                                      excludingNames: ["At home"]).map(\.name) == ["Cafe", "Café"])
+    }
+
     @Test("Timeline uses the activity icon selected in Activities")
     func timelineUsesStoredActivityIcon() throws {
         let defaults = try #require(UserDefaults(suiteName: UUID().uuidString))

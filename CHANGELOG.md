@@ -1,5 +1,11 @@
 # Change log
 
+## 2026-08-19 — 2.20.3 (221)
+
+### Activity picker cleanup
+
+- Activity and merge selectors now show one row per exact activity name, so duplicate durable definitions no longer make choices such as “At home” appear repeatedly. Accent variants such as “Cafe” and “Café” remain separate activities.
+
 ## 2026-08-19 — 2.20.2 (220)
 
 ### New-person readiness pass

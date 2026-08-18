@@ -3,7 +3,7 @@ import SwiftData
 
 struct ActivitiesView: View {
     @Environment(\.modelContext) private var context
-    @State private var activities = ActivityCatalog.load()
+    @State private var activities = ActivityCatalog.uniqueForPresentation(ActivityCatalog.load())
     @State private var adding = false
     /// How many visits carry each activity. Deleting an entry that is in use
     /// silently changes how its history is grouped, so the count has to be
@@ -83,14 +83,14 @@ struct ActivitiesView: View {
         .task {
             // Seeding itself now happens once, unconditionally, at app launch
             // (`RootView`'s `.task`) — this only needs its own local copy.
-            activities = ActivityCatalog.load()
+            activities = ActivityCatalog.uniqueForPresentation(ActivityCatalog.load())
             refreshUsage()
         }
         .onAppear {
             // Editing, renaming and deleting all now happen on the pushed detail
             // screen rather than through a callback back to this list, so this is
             // what picks up whatever changed there when it's popped back to.
-            activities = ActivityCatalog.load()
+            activities = ActivityCatalog.uniqueForPresentation(ActivityCatalog.load())
             refreshUsage()
         }
         .confirmationDialog("Delete activity?", isPresented: Binding(
@@ -114,7 +114,7 @@ struct ActivitiesView: View {
                     do {
                         try ActivityCatalog.save(activities, context: context)
                     } catch {
-                        activities = ActivityCatalog.load()
+                        activities = ActivityCatalog.uniqueForPresentation(ActivityCatalog.load())
                         return
                     }
                     refreshUsage()
@@ -128,7 +128,7 @@ struct ActivitiesView: View {
         do {
             try ActivityCatalog.save(activities, context: context)
         } catch {
-            activities = ActivityCatalog.load()
+            activities = ActivityCatalog.uniqueForPresentation(ActivityCatalog.load())
             return
         }
         InsightsInvalidation.invalidate(reason: "Activity deleted", context: context)
