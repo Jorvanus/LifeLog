@@ -57,14 +57,13 @@ struct ManualVisitView: View {
     @State private var resolution: ManualPlaceResolution = .none
     @State private var saveFailed = false
     @State private var confirmingOverlap = false
-    /// The visits immediately either side of `range`, fetched once when the sheet
+    /// The two closest visits on each side of `range`, fetched once when the sheet
     /// appears — not the same visits `visits` below already holds, which is
-    /// deliberately bounded to *inside* the gap. Shown so a person can see what was
-    /// recorded right before and after before deciding what belongs in between, and
-    /// tap either straight into `place`/`resolution` rather than re-typing or
-    /// re-searching a place that is sitting right there on screen.
-    @State private var beforeVisit: Visit?
-    @State private var afterVisit: Visit?
+    /// deliberately bounded to *inside* the gap. One Health walking fragment is
+    /// often not enough context to identify a gap, so show the surrounding sequence
+    /// rather than making that fragment look like the whole story.
+    @State private var beforeVisits: [Visit] = []
+    @State private var afterVisits: [Visit] = []
     @State private var travelEndpoints: TravelGapEndpointResolver.Endpoints?
     @State private var gapSuggestionViewModel: GapSuggestionViewModel
     /// A deterministic resolver rule may safely prepare the blank form, but it
@@ -120,6 +119,11 @@ struct ManualVisitView: View {
         VisitSuggestion.make(from: visits, range: range, savedPlaces: savedPlaces)
     }
 
+    /// The immediate records remain the evidence for existing suggestions and the
+    /// travel draft. The second rows are additional human context, not new inference.
+    private var beforeVisit: Visit? { beforeVisits.first }
+    private var afterVisit: Visit? { afterVisits.first }
+
     /// `departure` alone can predate `arrival` while the person is still dragging
     /// the picker; this is the value actually written, so overlap detection asks
     /// the same question `save()` does rather than a looser one.
@@ -157,15 +161,23 @@ struct ManualVisitView: View {
     var body: some View {
         NavigationStack {
             Form {
-                if beforeVisit != nil || afterVisit != nil {
+                if !beforeVisits.isEmpty || !afterVisits.isEmpty {
                     Section {
-                        if let beforeVisit {
-                            BorderingVisitRow(label: "Before", visit: beforeVisit) { selectPlace(from: beforeVisit) }
-                                .accessibilityIdentifier("manual-visit-before-context")
+                        ForEach(Array(beforeVisits.enumerated()), id: \.element.persistentModelID) { index, visit in
+                            BorderingVisitRow(label: index == 0 ? "Immediately before" : "Earlier", visit: visit) {
+                                selectPlace(from: visit)
+                            }
+                            .accessibilityIdentifier(index == 0
+                                ? "manual-visit-before-context"
+                                : "manual-visit-before-context-\(index)")
                         }
-                        if let afterVisit {
-                            BorderingVisitRow(label: "After", visit: afterVisit) { selectPlace(from: afterVisit) }
-                                .accessibilityIdentifier("manual-visit-after-context")
+                        ForEach(Array(afterVisits.enumerated()), id: \.element.persistentModelID) { index, visit in
+                            BorderingVisitRow(label: index == 0 ? "Immediately after" : "Later", visit: visit) {
+                                selectPlace(from: visit)
+                            }
+                            .accessibilityIdentifier(index == 0
+                                ? "manual-visit-after-context"
+                                : "manual-visit-after-context-\(index)")
                         }
                         if let travelEndpoints {
                             Button {
@@ -177,9 +189,9 @@ struct ManualVisitView: View {
                             .accessibilityIdentifier("manual-visit-mark-as-travel")
                         }
                     } header: {
-                        Text("Recorded either side of this gap")
+                        Text("Two records either side of this gap")
                     } footer: {
-                        Text("Tap Before or After to use that place for this visit. When nearby records bound a short gap between different places, Review likely travel prepares an editable journey — it does not claim to know your transport mode.")
+                        Text("The closest record is shown first. Tap any record to use its place for this visit. When nearby records bound a short gap between different places, Review likely travel prepares an editable journey — it does not claim to know your transport mode.")
                     }
                 }
 
@@ -358,16 +370,16 @@ struct ManualVisitView: View {
             predicate: #Predicate<Visit> { $0.departure != nil && $0.departure! <= fetchStart },
             sortBy: [SortDescriptor(\.arrival, order: .reverse)]
         )
-        beforeDescriptor.fetchLimit = 1
-        beforeVisit = try? context.fetch(beforeDescriptor).first
+        beforeDescriptor.fetchLimit = 2
+        beforeVisits = (try? context.fetch(beforeDescriptor)) ?? []
 
         let fetchEnd = range.end
         var afterDescriptor = FetchDescriptor<Visit>(
             predicate: #Predicate<Visit> { $0.arrival >= fetchEnd },
             sortBy: [SortDescriptor(\.arrival)]
         )
-        afterDescriptor.fetchLimit = 1
-        afterVisit = try? context.fetch(afterDescriptor).first
+        afterDescriptor.fetchLimit = 2
+        afterVisits = (try? context.fetch(afterDescriptor)) ?? []
 
         let endpointLookback = fetchStart.addingTimeInterval(-TravelGapEndpointResolver.maximumAdjacentDelay)
         let endpointLookahead = fetchEnd.addingTimeInterval(TravelGapEndpointResolver.maximumAdjacentDelay)

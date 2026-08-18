@@ -1,5 +1,11 @@
 # Change log
 
+## 2026-08-18 — 2.19.1 (207)
+
+### Clearer context when filling an unlogged gap
+
+- Add Visit now shows up to two records before and two after an unlogged gap, closest first. A pair of adjacent Health walking fragments no longer hides the Home, work, or other visit that explains where the gap actually sits; every displayed record can still be tapped to use its place.
+
 ## 2026-08-18 — 2.19.0 (206)
 
 ### Broader, still-focused Apple Health trends
