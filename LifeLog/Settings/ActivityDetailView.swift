@@ -413,9 +413,13 @@ struct ActivityDetailView: View {
         mergeTarget = nil
         guard let source = ActivityCatalog.load().first(where: { $0.id == existingID }) else { return }
         mergeInFlight = true
+        let startedAt = Date.now
         Task {
             do {
-                _ = try await ActivityCatalog.mergeActivity(source, into: target, context: context)
+                let changed = try await ActivityCatalog.mergeActivity(source, into: target, context: context)
+                Diagnostics.budget(context, subsystem: "Activities", operation: "activity merge",
+                                   startedAt: startedAt, budget: Diagnostics.PerformanceBudget.activityPlaceMerge,
+                                   itemCount: changed)
                 InsightsInvalidation.invalidate(reason: "Activities merged", context: context)
                 mergeInFlight = false
                 dismiss()

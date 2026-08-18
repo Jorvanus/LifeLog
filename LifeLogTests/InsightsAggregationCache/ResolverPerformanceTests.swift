@@ -21,7 +21,7 @@ struct ResolverPerformanceTests {
         // having aggregated nothing at all — proving neither correctness nor speed.
         let year = InsightWindow.year.interval(containing: day)
         let now = year.end.addingTimeInterval(-1)
-        let count = 20_000
+        let count = 32_000
         let spacing = year.duration / Double(count)
         let visits = (0..<count).map { index -> Visit in
             let arrival = year.start.addingTimeInterval(Double(index) * spacing)
@@ -40,6 +40,7 @@ struct ResolverPerformanceTests {
         #expect(snapshot.loggedHours > 0, "the fixture has to land inside the window to test anything")
         #expect(!snapshot.slices.isEmpty)
         #expect(snapshot.totalHours > 0)
-        #expect(elapsed < 15, "20,000 rows took \(String(format: "%.1f", elapsed))s — the aggregation has collapsed")
+        #expect(elapsed < Diagnostics.PerformanceBudget.insightsYear,
+                "32,000 rows took \(String(format: "%.1f", elapsed))s — the aggregation has collapsed")
     }
 }

@@ -42,7 +42,7 @@ struct SettingsView: View {
 
                     NavigationLink {
                         DataRecoverySettingsView(importingJournal: $importingJournal, importingBackup: $importingBackup,
-                                                 backupURL: $backupURL, backupSummary: backupSummary, creatingBackup: creatingBackup,
+                                                 backupURL: $backupURL, backupSummary: $backupSummary, creatingBackup: creatingBackup,
                                                  erasingData: erasingData, createBackup: createBackup,
                                                  cancelBackup: { backupTask?.cancel() }, eraseAllData: { confirmingErase = true },
                                                  reloadGeneration: dataRecoveryGeneration)
@@ -97,6 +97,7 @@ struct SettingsView: View {
     private func createBackup() {
         backupTask?.cancel()
         creatingBackup = true
+        let startedAt = Date.now
         backupTask = Task {
             defer { creatingBackup = false }
             ExportFileCleanup.removeExpired()
@@ -105,14 +106,16 @@ struct SettingsView: View {
                 try Task.checkCancellation()
                 let url = FileManager.default.temporaryDirectory
                     .appendingPathComponent("LifeLog-Backup-\(Int(Date.now.timeIntervalSince1970)).json")
-                try data.write(to: url, options: .atomic)
+                try ExportFileStaging.write(data, to: url)
+                Diagnostics.budget(context, subsystem: "Data & Recovery", operation: "backup setup",
+                                   startedAt: startedAt, budget: Diagnostics.PerformanceBudget.backupSetup)
                 guard !Task.isCancelled else { return }
                 backupURL = url
                 backupSummary = BackupPresentation(data: data)
             } catch is CancellationError {
                 return
             } catch {
-                importMessage = "LifeLog couldn’t create a backup."
+            importMessage = error.localizedDescription
             }
         }
     }

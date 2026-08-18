@@ -66,6 +66,26 @@ struct PlaceMergeTests {
         #expect(unrelated.placeName == "Regional Office")
     }
 
+    @Test("Place merge stays within its attended archive budget on 32,000 visits")
+    func mergeBudgetOnLargeArchive() async throws {
+        let context = try makeContext()
+        for index in 0..<32_000 {
+            let arrival = base.addingTimeInterval(Double(index) * 1_800)
+            context.insert(Visit(arrival: arrival, departure: arrival.addingTimeInterval(1_200),
+                                 latitude: -23.37, longitude: 150.51,
+                                 placeName: index.isMultiple(of: 2) ? "Old Place" : "Other Place",
+                                 inferredActivity: "Visiting"))
+        }
+        try context.save()
+        let began = Date.now
+        let changed = try await PlaceRenameActor(modelContainer: context.container)
+            .mergePlace(sourceNames: ["Old Place"], targetName: "New Place")
+        let elapsed = Date.now.timeIntervalSince(began)
+        #expect(changed == 16_000)
+        #expect(elapsed < Diagnostics.PerformanceBudget.activityPlaceMerge,
+                "Place merge took \(elapsed)s for the 32,000-row fixture")
+    }
+
     private func makeContext() throws -> ModelContext {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(

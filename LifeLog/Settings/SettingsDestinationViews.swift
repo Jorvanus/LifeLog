@@ -370,7 +370,7 @@ struct DataRecoverySettingsView: View {
     @Binding var importingJournal: Bool
     @Binding var importingBackup: Bool
     @Binding var backupURL: URL?
-    let backupSummary: BackupPresentation?
+    @Binding var backupSummary: BackupPresentation?
     let creatingBackup: Bool
     let erasingData: Bool
     let createBackup: () -> Void
@@ -378,6 +378,7 @@ struct DataRecoverySettingsView: View {
     let eraseAllData: () -> Void
     let reloadGeneration: Int
     @Environment(\.modelContext) private var context
+    @Environment(\.scenePhase) private var scenePhase
     @State private var destinationState: BackupDestinationState?
     @State private var destinationStateFailed = false
 
@@ -409,7 +410,7 @@ struct DataRecoverySettingsView: View {
                     BackupCreatedSummary(summary: backupSummary)
                     ShareLink(item: backupURL) { Label("Save or share backup", systemImage: "square.and.arrow.up") }
                         .accessibilityIdentifier("share-backup")
-                    Text("This backup is a temporary copy in LifeLog’s export area. Save it in Files or share it now; LifeLog may remove temporary copies later.")
+                    Text("This is a temporary staging copy in LifeLog’s export area. It is eligible for cleanup after 24 hours, although iOS may remove it sooner. Save it through the share sheet to keep a copy in the destination you choose; LifeLog never deletes that saved copy.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             } header: {
@@ -454,6 +455,10 @@ struct DataRecoverySettingsView: View {
         }
         .navigationTitle("Data & Recovery")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear { clearStaleBackup() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { clearStaleBackup() }
+        }
         .task(id: reloadGeneration) {
             destinationStateFailed = false
             let actor = BackupExportActor(modelContainer: context.container)
@@ -464,6 +469,12 @@ struct DataRecoverySettingsView: View {
                 destinationStateFailed = true
             }
         }
+    }
+
+    private func clearStaleBackup() {
+        guard let backupURL, !ExportFileStaging.isUsable(backupURL) else { return }
+        self.backupURL = nil
+        backupSummary = nil
     }
 }
 

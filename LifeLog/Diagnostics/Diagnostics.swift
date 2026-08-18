@@ -313,15 +313,26 @@ enum Diagnostics {
     enum PerformanceBudget {
         static let responsiveFirstScreen: TimeInterval = 0.25
         static let insightsDay: TimeInterval = 0.25
+        static let insightsWeek: TimeInterval = 0.5
         static let insightsMonth: TimeInterval = 0.75
         static let insightsYear: TimeInterval = 1.5
         static let returnToTimeline: TimeInterval = 0.35
+        /// Settings should prepare its compact status hub without opening an
+        /// archive-wide reader. This is a generous device-class guard, not a
+        /// promise about every physical phone.
+        static let settingsOpening: TimeInterval = 1.0
+        /// Backup setup is attended and archive-wide, so it gets a larger budget
+        /// than an interaction-path screen while remaining measurable.
+        static let backupSetup: TimeInterval = 15.0
         /// A normal Core Location/Maps mutation only considers the callback's local
         /// repair window plus open stays. At a 32,000-row archive it should remain
         /// comfortably below an interaction frame stall; full recovery is allowed a
         /// larger budget because it is explicit and never runs per callback.
         static let locationMutation: TimeInterval = 0.35
         static let locationFullAudit: TimeInterval = 8
+        /// Explicit activity/place merges rewrite historical references and are
+        /// allowed to scan the archive, but must remain bounded on the fixture.
+        static let activityPlaceMerge: TimeInterval = 8.0
         /// One page of the explicit archive search screen, bounded by `fetchLimit`
         /// rather than a persisted index (see `VisitHistoryQuery.search`). Between
         /// the Insights month and year windows: a broader scan than a date-scoped
@@ -344,7 +355,7 @@ enum Diagnostics {
         static func insights(window: InsightWindow) -> TimeInterval {
             switch window {
             case .day: insightsDay
-            case .week: 0.5
+            case .week: insightsWeek
             case .month: insightsMonth
             case .year: insightsYear
             }

@@ -1,6 +1,17 @@
 # Change log
 
+## 2026-08-18 — 2.19.6 (212)
+
+### Backup staging safety
+
+- Create backup and attended archive repair now write complete-protected staging files and explain write/space failures instead of collapsing them into a generic error. Settings clears a staging link when iOS or cleanup has removed the file, and labels the temporary 24-hour-eligible copy separately from a copy saved through the share sheet.
+
 ## 2026-08-18 — 2.19.5 (211)
+
+### Ownership seams and executable archive budgets
+
+- Timeline day selection and VisitEditor draft normalization now live in focused, non-UI seams with direct tests. Location callback/permission handling and Health authorization/import/summary components remain separate ownership boundaries rather than being split only by file size.
+- Added generous, executable archive-scale budgets for Timeline return, Day/Week/Month/Year Insights, Settings activity preparation, backup setup, and activity/place merge using representative 32,000-row fixtures. These tests are regression guards; real-device diagnostics remain the evidence for physical performance.
 
 ### Attended repair and compaction backups now run off the main actor
 

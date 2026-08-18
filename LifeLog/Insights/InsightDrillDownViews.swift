@@ -410,10 +410,14 @@ struct InsightPlaceHistoryView: View {
         mergeInFlight = true
         let source = placeName
         let targetName = target.name
+        let startedAt = Date.now
         Task {
             do {
-                _ = try await PlaceRenameActor(modelContainer: context.container)
+                let changed = try await PlaceRenameActor(modelContainer: context.container)
                     .mergePlace(sourceNames: [source], targetName: targetName)
+                Diagnostics.budget(context, subsystem: "Insights", operation: "place merge",
+                                   startedAt: startedAt, budget: Diagnostics.PerformanceBudget.activityPlaceMerge,
+                                   itemCount: changed)
                 InsightsInvalidation.invalidate(reason: "Places merged", context: context)
                 mergeInFlight = false
                 dismiss()

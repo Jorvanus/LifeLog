@@ -590,20 +590,21 @@ struct VisitEditor: View {
         // this, a screen dismissed before it appeared would write its empty drafts
         // over a real place name.
         guard loadedDrafts else { return }
-        visit.placeName = TextSafety.clean(placeNameDraft, maximumLength: 120)
+        let normalizedDraft = VisitEditorDraft(placeName: placeNameDraft, activity: activityDraft,
+                                               note: noteDraft, arrival: arrivalDraft,
+                                               departure: departureDraft, latitude: latitudeDraft,
+                                               longitude: longitudeDraft,
+                                               recognitionConfidence: recognitionConfidenceDraft).normalized()
+        visit.placeName = normalizedDraft.placeName
         // Nil, not empty: `ActivityImportActor`, `WorkoutJourneys` and the travel
         // policy all read `userActivity == nil` to mean "the person has not said",
         // and an empty string there reads as an answer they never gave.
-        let activity = TextSafety.clean(activityDraft, maximumLength: 80)
-        visit.userActivity = activity.isEmpty ? nil : activity
-        visit.note = TextSafety.clean(noteDraft, maximumLength: 2_000)
-        visit.arrival = arrivalDraft
-        visit.departure = departureDraft
-        if let departure = visit.departure, departure < visit.arrival {
-            visit.departure = visit.arrival
-        }
-        visit.latitude = latitudeDraft
-        visit.longitude = longitudeDraft
+        visit.userActivity = normalizedDraft.storedActivity
+        visit.note = normalizedDraft.note
+        visit.arrival = normalizedDraft.arrival
+        visit.departure = normalizedDraft.departure
+        visit.latitude = normalizedDraft.latitude
+        visit.longitude = normalizedDraft.longitude
         if let recognitionConfidenceDraft {
             visit.recognitionConfidence = recognitionConfidenceDraft
         }

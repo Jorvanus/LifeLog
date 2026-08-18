@@ -64,7 +64,8 @@ struct ActivitiesTabView: View {
         // Archive-wide work is allowed here because it is isolated from the UI actor;
         // retain a realistic diagnostic budget so a future regression remains visible.
         Diagnostics.budget(context, subsystem: "Activities", operation: "background activity statistics",
-                           startedAt: startedAt, budget: 1.0, itemCount: result.itemCount)
+                           startedAt: startedAt, budget: Diagnostics.PerformanceBudget.settingsOpening,
+                           itemCount: result.itemCount)
     }
 
     private struct Row: Identifiable {

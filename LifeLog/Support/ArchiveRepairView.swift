@@ -234,7 +234,7 @@ struct ArchiveRepairView: View {
                 try Task.checkCancellation()
                 let candidateURL = FileManager.default.temporaryDirectory
                     .appendingPathComponent("LifeLog-Repair-Backup-\(Int(Date.now.timeIntervalSince1970)).json")
-                try data.write(to: candidateURL, options: .atomic)
+                try ExportFileStaging.write(data, to: candidateURL)
                 try Task.checkCancellation()
                 url = candidateURL
             } catch is CancellationError {
@@ -242,7 +242,7 @@ struct ArchiveRepairView: View {
                 return
             } catch {
                 await MainActor.run {
-                    message = "The backup could not be created, so nothing was repaired."
+                    message = "(error.localizedDescription) Nothing was repaired."
                     creatingBackup = false
                 }
                 return

@@ -62,8 +62,9 @@ struct PlaceHistoryView: View {
             guard !Task.isCancelled, generation == currentGeneration else { return }
             summaries = result.summaries
             loading = false
-            Diagnostics.budget(context, subsystem: "Place History", operation: "background summary",
-                               startedAt: startedAt, budget: 1.0, itemCount: result.itemCount)
+        Diagnostics.budget(context, subsystem: "Place History", operation: "background summary",
+                           startedAt: startedAt, budget: Diagnostics.PerformanceBudget.settingsOpening,
+                           itemCount: result.itemCount)
         } catch is CancellationError {
             return
         } catch {
@@ -326,10 +327,14 @@ struct PlaceHistoryDetail: View {
         mergeTarget = nil
         mergeInFlight = true
         let sourceName = placeName
+        let startedAt = Date.now
         Task {
             do {
-                _ = try await PlaceRenameActor(modelContainer: context.container)
+                let changed = try await PlaceRenameActor(modelContainer: context.container)
                     .mergePlace(sourceNames: [sourceName], targetName: targetName)
+                Diagnostics.budget(context, subsystem: "Place History", operation: "place merge",
+                                   startedAt: startedAt, budget: Diagnostics.PerformanceBudget.activityPlaceMerge,
+                                   itemCount: changed)
                 InsightsInvalidation.invalidate(reason: "Places merged from Place History", context: context)
                 mergeInFlight = false
                 dismiss()

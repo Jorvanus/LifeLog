@@ -1,8 +1,9 @@
 import Foundation
 
-/// Keeps share staging files short-lived and bounded. Export contents remain in
-/// the user's control after sharing; only temporary copies created by LifeLog
-/// are removed automatically.
+/// Keeps share staging files short-lived and bounded. A matching file becomes
+/// eligible after 24 hours; this is a fallback sweep, not an exact deletion timer.
+/// iOS may purge temporary files earlier. Export contents remain in the user's
+/// control after sharing; only temporary copies created by LifeLog are removed.
 enum ExportFileCleanup {
     static let maximumAge: TimeInterval = 24 * 60 * 60
     private static let prefixes = ["lifelog-", "LifeLog-"]

@@ -66,9 +66,7 @@ struct TimelineView: View {
 
     /// The day a date falls in, as an interval.
     static func interval(of date: Date) -> DateInterval {
-        let start = Calendar.current.startOfDay(for: date)
-        let end = Calendar.current.date(byAdding: .day, value: 1, to: start) ?? start
-        return DateInterval(start: start, end: max(start, end))
+        TimelineDaySelection.interval(of: date)
     }
 
     /// A foreground reference point can be stale while backgrounded, so returning to
@@ -79,7 +77,8 @@ struct TimelineView: View {
     /// just because the app resumed.
     static func selectedDayAfterForeground(current selectedDay: Date, wasShowingToday: Bool,
                                            refreshedClock: Date) -> Date {
-        wasShowingToday ? Calendar.current.startOfDay(for: refreshedClock) : selectedDay
+        TimelineDaySelection.afterForeground(current: selectedDay, wasShowingToday: wasShowingToday,
+                                              refreshedClock: refreshedClock)
     }
 
     /// What a day's journey shows, from the visits available for it.
