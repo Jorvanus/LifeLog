@@ -37,6 +37,18 @@ actor ActivityLinkingCatchUp {
         return linked
     }
 
+    /// A restore replaces the archive the one-time flag describes. Run the same
+    /// complete pass again after that restore commits, even if this device linked a
+    /// previous archive long ago.
+    @discardableResult
+    static func runAfterRestore(modelContainer: ModelContainer,
+                                defaults: UserDefaults = .standard) async throws -> Int {
+        let actor = ActivityLinkingCatchUp(modelContainer: modelContainer)
+        let linked = try await actor.run()
+        defaults.set(true, forKey: caughtUpFlagKey)
+        return linked
+    }
+
     private func run() throws -> Int {
         _ = try ActivityIdentityMigration.adoptLegacyDefinitions(context: modelContext)
         let linked = try ActivityIdentityMigration.linkAll(context: modelContext)

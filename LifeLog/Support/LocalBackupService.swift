@@ -160,6 +160,22 @@ struct LifeLogBackup: Codable {
     }
 }
 
+/// The exact five model groups Restore requires to be empty. Settings fetches
+/// these counts on demand through `BackupExportActor`; it must not observe the
+/// full archive merely to decide whether Restore can be offered.
+struct BackupDestinationState: Equatable, Sendable {
+    let visits: Int
+    let savedPlaces: Int
+    let corrections: Int
+    let diagnostics: Int
+    let locationEvents: Int
+
+    static let empty = Self(visits: 0, savedPlaces: 0, corrections: 0, diagnostics: 0, locationEvents: 0)
+
+    var recordCount: Int { visits + savedPlaces + corrections + diagnostics + locationEvents }
+    var isEmpty: Bool { recordCount == 0 }
+}
+
 /// Every way a backup can describe an impossible store. Checked in full before a
 /// single row is inserted — see `LifeLogBackup.validate()` — so a truncated or
 /// hand-edited archive fails all at once rather than leaving the destination
@@ -526,6 +542,16 @@ enum LocalBackupService {
 /// is read and encoded. The actor returns only the finished `Data` share payload.
 @ModelActor
 actor BackupExportActor {
+    func restoreDestinationState() throws -> BackupDestinationState {
+        try .init(
+            visits: modelContext.fetchCount(FetchDescriptor<Visit>()),
+            savedPlaces: modelContext.fetchCount(FetchDescriptor<SavedPlace>()),
+            corrections: modelContext.fetchCount(FetchDescriptor<VisitCorrection>()),
+            diagnostics: modelContext.fetchCount(FetchDescriptor<DiagnosticEvent>()),
+            locationEvents: modelContext.fetchCount(FetchDescriptor<LocationEvent>())
+        )
+    }
+
     func makeBackup() throws -> Data {
         try Task.checkCancellation()
         let visits = try modelContext.fetch(FetchDescriptor<Visit>())

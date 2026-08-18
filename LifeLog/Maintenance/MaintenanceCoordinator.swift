@@ -34,7 +34,21 @@ final class MaintenanceCoordinator {
     /// therefore must receive the current maintenance version before screens read it.
     func runAfterRestore(context: ModelContext) {
         UserDefaults.standard.removeObject(forKey: Self.completedVersionKey)
-        Task { await run(context: context) }
+        Task {
+            await run(context: context)
+            do {
+                let linked = try await ActivityLinkingCatchUp.runAfterRestore(modelContainer: context.container)
+                if linked > 0 {
+                    Diagnostics.record(context, subsystem: "Activities",
+                                       message: "Linked \(linked) restored visits and Saved Places to the catalogue.",
+                                       severity: "info")
+                }
+            } catch {
+                Diagnostics.record(context, subsystem: "Activities",
+                                   message: "Restored activity links will retry at launch: \(error.localizedDescription)",
+                                   severity: "warning")
+            }
+        }
     }
 
     /// Importers call this after their own save lands. This remains deliberately

@@ -8,7 +8,6 @@ struct TimelineView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.scenePhase) private var scenePhase
     let recorder: LocationRecorder
-    @Binding var returnStartedAt: Date?
     // Imported journals already contain resolved activity/location pairs and never
     // participate in live movement reconciliation. Excluding them keeps the launch
     // timeline query lightweight.
@@ -44,9 +43,8 @@ struct TimelineView: View {
     // Dynamic Type glyph overflows a fixed-size circle at accessibility sizes.
     @ScaledMetric(relativeTo: .title2) private var addButtonDiameter: CGFloat = 56
 
-    init(recorder: LocationRecorder, returnStartedAt: Binding<Date?> = .constant(nil)) {
+    init(recorder: LocationRecorder) {
         self.recorder = recorder
-        _returnStartedAt = returnStartedAt
         // Today needs a small lead-in for an overnight stay, not the full archive.
         let start = Calendar.current.date(byAdding: .day, value: -7, to: Date.now) ?? .now
         let end = Calendar.current.date(byAdding: .day, value: 1, to: Date.now) ?? .now
@@ -188,14 +186,6 @@ struct TimelineView: View {
             .sheet(isPresented: $adding) { ManualVisitView(range: TimelineView.interval(of: selectedDay)) }
             .sheet(isPresented: $jumpingToDate) { jumpToDateSheet }
             .sheet(isPresented: $searching) { NavigationStack { ArchiveSearchView() } }
-            .onAppear {
-                if let returnStartedAt {
-                    Diagnostics.budget(context, subsystem: "Timeline", operation: "return to Timeline",
-                                       startedAt: returnStartedAt,
-                                       budget: Diagnostics.PerformanceBudget.returnToTimeline)
-                    self.returnStartedAt = nil
-                }
-            }
             // Refresh the small foreground reference on activation. Live elapsed
             // labels own their own schedule, so this does not rebuild the journey.
             .onChange(of: scenePhase) { _, phase in

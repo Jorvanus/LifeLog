@@ -1,6 +1,17 @@
 # Change log
 
-## 2026-08-18 — 2.19.1 (207)
+## 2026-08-18 — 2.19.2 (208)
+
+### Settings is now a status-led hub
+
+- Settings now starts with a compact Recording status for Location, Motion, Apple Health, active imports, and the latest operational issue. Its former long form is organised into focused Recording, Apple Health, Places & Activities, Data & Recovery, Diagnostics, and About screens, keeping uncommon repair actions and explanatory detail where they are needed without hiding a permission failure at the bottom.
+- Data & Recovery now shows the temporary backup’s creation time, exact record counts and file size before it is saved or shared. Restore and Erase name the current destination state and the precise data groups they replace or remove, while Journal import/compaction and the two attended archive repairs are collected in the same recovery workspace.
+- Settings now keeps only the live Saved Places count on its hub. Data & Recovery asks the backup actor for the five restore-destination counts only when opened, avoiding archive-wide Settings observations; shared status rows and shorter question-led footers make permission and recovery states easier to scan at larger text sizes.
+
+### Lifecycle-owned maintenance
+
+- Timeline now prepares only the selected day and its current presentation. Startup migration, archive maintenance, Health refreshes, and their operational diagnostics are owned by one lifecycle coordinator, so opening or returning to Timeline cannot repair the database or write a timing diagnostic.
+- Restoring an archive now re-runs the complete activity-link pass after the restore commits, even when this iPhone previously completed it for a different archive. Restored labels can therefore regain their durable activity links without opening a tab or waiting through many launches.
 
 ### Clearer context when filling an unlogged gap
 
