@@ -57,10 +57,14 @@ struct VisitMutationService {
                 return .init(resolution: .incremental, requiresPlaceScoring: false,
                              invalidatedScopes: [.timeline, .insights, .places],
                              diagnosticOperation: "visit ignore change")
-            case .savedPlaceChange, .bulkHistoricalCorrection, .backupRestore, .relaunchRecovery:
+            case .savedPlaceChange, .bulkHistoricalCorrection, .backupRestore:
                 return .init(resolution: .fullAudit, requiresPlaceScoring: false,
                              invalidatedScopes: [.timeline, .insights, .places, .travel],
                              diagnosticOperation: kind.rawValue)
+            case .relaunchRecovery:
+                return .init(resolution: .none, requiresPlaceScoring: false,
+                             invalidatedScopes: [.timeline, .insights, .places, .travel],
+                             diagnosticOperation: "bounded relaunch recovery")
             case .importBatch, .healthKitChange:
                 return .init(resolution: .none, requiresPlaceScoring: false,
                              invalidatedScopes: [.timeline, .insights, .travel],

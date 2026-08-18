@@ -18,12 +18,22 @@ struct WeeklyStrip: View {
     let today: Date
     let selectedDate: Date?
     let onSelectDay: (Date) -> Void
+    /// Timeline uses the strip as a one-tap date control. Insights keeps the
+    /// original two-step selection so a person can inspect a week's total first.
+    var selectsImmediately: Bool = false
+    var compact: Bool = false
     @State private var selectedDay: Date?
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 8) {
+        HStack(alignment: .bottom, spacing: compact ? 4 : 8) {
             ForEach(days) { day in
-                Button { selectedDay = selectedDay == day.date ? nil : day.date } label: {
+                Button {
+                    if selectsImmediately {
+                        onSelectDay(day.date)
+                    } else {
+                        selectedDay = selectedDay == day.date ? nil : day.date
+                    }
+                } label: {
                     VStack(spacing: 6) {
                         column(for: day)
                         VStack(spacing: 1) {
@@ -38,10 +48,12 @@ struct WeeklyStrip: View {
                 .buttonStyle(.plain)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(accessibilityLabel(for: day))
-                .accessibilityHint("Selects this day; use the selected-day action to open Day Insights")
+                .accessibilityHint(selectsImmediately
+                                   ? "Opens this day in Timeline"
+                                   : "Selects this day; use the selected-day action to open Day Insights")
             }
         }
-        if let selectedDay, let day = days.first(where: { Calendar.current.isDate($0.date, inSameDayAs: selectedDay) }) {
+        if !compact, let selectedDay, let day = days.first(where: { Calendar.current.isDate($0.date, inSameDayAs: selectedDay) }) {
             Button { onSelectDay(day.date) } label: {
                 HStack {
                     Label(day.date.formatted(.dateTime.weekday(.wide).month(.wide).day()), systemImage: "calendar")
@@ -86,7 +98,7 @@ struct WeeklyStrip: View {
                 }
             }
         }
-        .frame(width: 28, height: 64)
+        .frame(width: compact ? 22 : 28, height: compact ? 44 : 64)
         .clipShape(RoundedRectangle(cornerRadius: 5))
         .overlay(
             RoundedRectangle(cornerRadius: 5)

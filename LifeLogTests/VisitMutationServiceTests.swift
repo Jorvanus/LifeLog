@@ -19,7 +19,7 @@ struct VisitMutationServiceTests {
             .healthKitChange: .none,
             .bulkHistoricalCorrection: .fullAudit,
             .backupRestore: .fullAudit,
-            .relaunchRecovery: .fullAudit
+            .relaunchRecovery: .none
         ]
 
         #expect(Set(expected.keys) == Set(VisitMutationService.Kind.allCases))

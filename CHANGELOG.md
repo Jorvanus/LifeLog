@@ -1,5 +1,25 @@
 # Change log
 
+## 2026-08-19 — 2.20.0 (218)
+
+### Timeline day orientation
+
+- Timeline now leads each day with the shared 24-hour day bar, recent-day one-tap navigation, and a compact category total before the visit list. Tapping a recorded bar segment opens that visit.
+- Past-day Timeline journeys now pass their bar selection action through the query-backed view correctly.
+
+## 2026-08-19 — 2.19.11 (217)
+
+### App Store and TestFlight readiness roadmap
+
+- Added `APP_STORE_TODO.md` outlining the comprehensive engineering, onboarding, compliance, privacy, asset, and review requirements for distributing LifeLog via TestFlight and the App Store.
+
+## 2026-08-18 — 2.19.11 (217)
+
+### Bounded relaunch recovery
+
+- Relaunch now repairs only recent and open location records; archive-wide location audits remain reserved for explicit maintenance, restore, validation, and repair actions.
+- Launch diagnostics now measure protected-store opening and bounded recovery separately from first-screen preparation.
+
 ## 2026-08-18 — 2.19.10 (216)
 
 ### Maintenance diagnostic isolation

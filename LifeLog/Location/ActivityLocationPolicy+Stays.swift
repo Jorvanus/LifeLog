@@ -60,9 +60,42 @@ extension ActivityLocationPolicy {
         return repairs + stateChanges
     }
 
+    /// Repairs only recent callbacks and open stays during relaunch. Launch must not
+    /// hydrate the complete archive; migration, restore, validation, and manual repair
+    /// use `runFullStoreAudit` explicitly instead.
+    @discardableResult
+    static func recoverRecentRelaunch(context: ModelContext, now: Date = .now,
+                                      lookback: TimeInterval = defaultReapplyLookback) throws -> Int {
+        let startedAt = Date.now
+        let since = now.addingTimeInterval(-lookback)
+        let candidates = try fetchRecentPolicyVisits(context: context, since: since)
+        let repairs = resolveLocationCallbacks(in: candidates, context: context)
+        let stateChanges = reconcileResolutionStates(in: candidates)
+        // Reuse the bounded reconciliation passes; their private archive
+        // implementation stays in the reconciliation file.
+        _ = try reapplyRecentJourneyTiming(context: context, now: now, lookback: lookback)
+        _ = try reapplyRecentMovementAbsorption(context: context, now: now, lookback: lookback)
+        _ = try reapplyRecentOpenStayAbsorption(context: context, now: now, lookback: lookback)
+        coalesceStaysAcrossUnlocatedMovement(in: candidates, context: context, now: now)
+        let afterMovement = try fetchRecentPolicyVisits(context: context, since: since)
+        coalesceAdjacentAutomaticStays(in: afterMovement, context: context, now: now)
+        try updateTravelDescriptions(context: context,
+                                     around: DateInterval(start: since, end: now),
+                                     candidates: afterMovement)
+        if context.hasChanges { try context.save() }
+        let changed = repairs + stateChanges
+        Diagnostics.budget(context, subsystem: "Location resolver", operation: "bounded relaunch recovery",
+                           startedAt: startedAt, budget: Diagnostics.PerformanceBudget.locationMutation,
+                           itemCount: afterMovement.count)
+        Diagnostics.locationMetric(context, operation: "bounded_relaunch_recovery",
+                                   durationMs: Int((Date.now.timeIntervalSince(startedAt) * 1000).rounded()),
+                                   candidateCount: afterMovement.count, repairs: changed)
+        return changed
+    }
+
     /// Full-store recovery is intentionally explicit. It is appropriate after a
-    /// migration, restore, relaunch recovery, Diagnostics validation, or a manual
-    /// repair — never as the ordinary callback path above.
+    /// migration, restore, Diagnostics validation, or a manual repair — never as the
+    /// ordinary callback or relaunch path above.
     @discardableResult
     static func runFullStoreAudit(context: ModelContext, reason: String) throws -> Int {
         let startedAt = Date.now

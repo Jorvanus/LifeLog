@@ -69,6 +69,7 @@ struct LifeLogApp: App {
     }
 
     private static func openContainer(configuration: ModelConfiguration, schema: Schema) throws -> ModelContainer {
+        let startedAt = Date.now
         let container = try ModelContainer(
             for: schema,
             migrationPlan: LifeLogMigrationPlan.self,
@@ -81,15 +82,19 @@ struct LifeLogApp: App {
         // recorded against — before a restore or another migration replaces it —
         // so this runs first, before anything else touches the store.
         try VisitResolutionMigration.convertLegacyIgnoredKeysIfNeeded(context: context)
-        // A background callback may have been persisted just before termination.
-        // Resolve before any screen reads the store so relaunch cannot resurrect an
-        // older open stay or an overlap that Timeline would need to hide.
-        let result = VisitMutationService.perform(context: context, kind: .relaunchRecovery) {
-            .init(changedCount: 0)
-        }
-        if !result.committed {
+        // A callback may have landed just before termination. Repair only its recent
+        // neighbourhood here; the archive-wide audit belongs to explicit maintenance.
+        do {
+            _ = try ActivityLocationPolicy.recoverRecentRelaunch(context: context)
+        } catch {
             throw LifeLogStartupError.recoveryFailed
         }
+        // The ordinary Launch sample starts after the store is open. Keep this
+        // separate so a slow protected-store open cannot hide behind a healthy
+        // first-screen preparation number.
+        Diagnostics.budget(context, subsystem: "Launch", operation: "store open and bounded recovery",
+                           startedAt: startedAt,
+                           budget: Diagnostics.PerformanceBudget.settingsOpening)
         return container
     }
 

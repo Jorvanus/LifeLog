@@ -35,6 +35,7 @@ struct TimelineView: View {
     /// screen stops being a live view and becomes the journal it always held.
     @State private var selectedDay = Calendar.current.startOfDay(for: .now)
     @State private var jumpingToDate = false
+    @State private var barVisit: Visit?
     @State private var draftSelectedDay = Calendar.current.startOfDay(for: .now)
     /// The first day there is anything to read, so the picker cannot offer years of
     /// empty days before the archive begins. Resolved once, from one row.
@@ -183,6 +184,7 @@ struct TimelineView: View {
             .accessibilityIdentifier("timeline-screen")
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $adding) { ManualVisitView(range: TimelineView.interval(of: selectedDay)) }
+            .sheet(item: $barVisit) { visit in VisitEditor(visit: visit) }
             .sheet(isPresented: $jumpingToDate) { jumpToDateSheet }
             .sheet(isPresented: $searching) { NavigationStack { ArchiveSearchView() } }
             // Refresh the small foreground reference on activation. Live elapsed
@@ -389,10 +391,12 @@ struct TimelineView: View {
     /// the same as opening yesterday.
     private struct PastDayJourney: View {
         let day: Date
+        let onSelectVisit: (Visit) -> Void
         @Query private var visits: [Visit]
 
-        init(day: Date) {
+        init(day: Date, onSelectVisit: @escaping (Visit) -> Void) {
             self.day = day
+            self.onSelectVisit = onSelectVisit
             let interval = TimelineView.interval(of: day)
             let end = interval.end
             // A stay is shown on every day it covers, so one that began earlier has to
@@ -421,6 +425,8 @@ struct TimelineView: View {
                 .accessibilityIdentifier("empty-day")
             } else {
                 VStack(spacing: 12) {
+                    TimelineDaySummary(visits: visits, day: interval, now: interval.end,
+                                       onSelectVisit: onSelectVisit)
                     ForEach(Array(rows.enumerated()), id: \.element.id) { index, visit in
                         JourneyRow(visit: visit, day: interval, isCurrent: false,
                                    isFirst: index == 0, isLast: index == rows.count - 1)
@@ -442,36 +448,56 @@ struct TimelineView: View {
     /// removed: attached to the scrolling content it fought that view's own drag, and a
     /// gesture that works only sometimes is worse than one that is not offered.
     private var dayNavigator: some View {
-        HStack(spacing: 8) {
-            Button {
-                draftSelectedDay = selectedDay
-                jumpingToDate = true
-            } label: {
-                HStack(spacing: 6) {
-                    Text(isShowingToday ? "Today’s Journey" : journeyTitle)
-                        .font(.system(.title, design: .rounded, weight: .bold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(2).minimumScaleFactor(0.7)
-                        .multilineTextAlignment(.leading)
-                    // Says the title is a control. Without it a heading that happens to
-                    // be tappable is indistinguishable from a heading that is not.
-                    Image(systemName: "calendar")
-                        .font(.headline).foregroundStyle(.blue)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Button {
+                    draftSelectedDay = selectedDay
+                    jumpingToDate = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(isShowingToday ? "Today’s Journey" : journeyTitle)
+                            .font(.system(.title, design: .rounded, weight: .bold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(2).minimumScaleFactor(0.7)
+                            .multilineTextAlignment(.leading)
+                        // Says the title is a control. Without it a heading that happens to
+                        // be tappable is indistinguishable from a heading that is not.
+                        Image(systemName: "calendar")
+                            .font(.headline).foregroundStyle(.blue)
+                    }
+                }
+                .accessibilityHint("Opens a calendar to pick a day")
+                .accessibilityIdentifier("jump-to-date-button")
+
+                Spacer(minLength: 4)
+
+                if !isShowingToday {
+                    Button("Today") { selectedDay = Calendar.current.startOfDay(for: foregroundNow) }
+                        .font(.subheadline.weight(.semibold))
+                        .accessibilityIdentifier("today-button")
                 }
             }
-            .accessibilityHint("Opens a calendar to pick a day")
-            .accessibilityIdentifier("jump-to-date-button")
-
-            Spacer(minLength: 4)
-
-            if !isShowingToday {
-                Button("Today") { selectedDay = Calendar.current.startOfDay(for: foregroundNow) }
-                    .font(.subheadline.weight(.semibold))
-                    .accessibilityIdentifier("today-button")
-            }
+            recentDaysStrip
         }
         .buttonStyle(.plain)
         .tint(.blue)
+    }
+
+    private var recentDaysStrip: some View {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: foregroundNow)
+        let days = (0..<7).compactMap { offset -> WeeklyStrip.Day? in
+            guard let date = calendar.date(byAdding: .day, value: -6 + offset, to: today) else { return nil }
+            let interval = TimelineView.interval(of: date)
+            return WeeklyStrip.Day(
+                date: date,
+                segments: InsightsSnapshot.segments(visits: visits, range: interval, now: foregroundNow)
+            )
+        }
+        return WeeklyStrip(days: days, today: today, selectedDate: selectedDay,
+                           onSelectDay: { selectedDay = calendar.startOfDay(for: $0) },
+                           selectsImmediately: true, compact: true)
+            .accessibilityIdentifier("recent-days-strip")
     }
 
     private var journeyTitle: String {
@@ -525,7 +551,7 @@ struct TimelineView: View {
                 // A past day owns its own fetch: the query above deliberately excludes
                 // the imported journal to keep launch light, and that archive is exactly
                 // what a past day is made of.
-                PastDayJourney(day: selectedDay)
+                PastDayJourney(day: selectedDay) { barVisit = $0 }
             } else if today.isEmpty && current == nil && !isWaitingForVisitConfirmation {
                 VStack(spacing: 14) {
                     Image(systemName: "location.slash").font(.largeTitle).foregroundStyle(.secondary)
@@ -535,6 +561,9 @@ struct TimelineView: View {
                 }.frame(maxWidth: .infinity).padding(32).lifeCard()
             } else {
                 VStack(spacing: 12) {
+                    TimelineDaySummary(visits: visits, day: TimelineView.interval(of: selectedDay),
+                                       now: foregroundNow,
+                                       onSelectVisit: { barVisit = $0 })
                     if let current {
                         currentCard(current)
                     } else if isWaitingForVisitConfirmation {
@@ -674,6 +703,45 @@ private func dayQualifiedTime(_ date: Date) -> String {
     if calendar.isDateInToday(date) { return time }
     if calendar.isDateInYesterday(date) { return "Yesterday \(time)" }
     return "\(date.formatted(.dateTime.day().month(.abbreviated))) \(time)"
+}
+
+/// The shared Insights day representation placed above Timeline's row list. It
+/// deliberately accepts the day's fetched visits rather than querying again, so
+/// the bar, totals, and rows all describe the same resolved archive slice.
+private struct TimelineDaySummary: View {
+    let visits: [Visit]
+    let day: DateInterval
+    let now: Date
+    let onSelectVisit: (Visit) -> Void
+
+    private var segments: [InsightSegment] {
+        InsightsSnapshot.segments(visits: visits, range: day, now: now)
+    }
+
+    private var totalsLine: String {
+        let totals = InsightsSnapshot.categoryHours(in: segments)
+        let parts = totals
+            .filter { $0.value > 0.01 }
+            .sorted { $0.value > $1.value }
+            .prefix(3)
+            .map { "\($0.key) \(formatHours($0.value))" }
+        return parts.isEmpty ? "No recorded time" : parts.joined(separator: " · ")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(totalsLine)
+                .font(.subheadline.weight(.semibold).monospacedDigit())
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Day totals: \(totalsLine)")
+            DayTimelineBar(segments: segments, interval: day, now: now) { segment in
+                if let visit = segment.visit { onSelectVisit(visit) }
+            }
+            .padding(14)
+            .lifeCard()
+            .accessibilityIdentifier("timeline-day-bar")
+        }
+    }
 }
 
 private struct JourneyRow: View {
