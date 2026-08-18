@@ -136,6 +136,12 @@ be changed safely outrank App Store preparation or speculative integrations.
   contract beside `VisitArchiveReader` and add the 32,000-row fixture to any newly
   accepted whole-store path.
 
+- [ ] **Move attended repair and compaction backups onto `BackupExportActor`.**
+  `JournalCompactionView` and `ArchiveRepairView` still call the synchronous legacy
+  backup helper before changing data. Keep the required preflight backup, but run its
+  full-store read off the UI actor, publish creation/progress/failure state, and honour
+  cancellation before any compaction or repair mutation begins.
+
 - [ ] **Reduce duplicate sources of activity truth.** Finish the transition from the
   UserDefaults catalogue to `ActivityDefinitionRecord`: define which is authoritative
   for active/inactive state and aliases, make backup/restore use it, and confine the

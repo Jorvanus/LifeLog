@@ -98,11 +98,6 @@ final class AppLifecycleCoordinator {
             Diagnostics.record(context, subsystem: "Activities",
                                message: "Renamed the seeded Home time label to At home across \(moved) visits.", severity: "info")
         }
-        if let adopted = try? ActivityCatalog.adoptHistoryLabels(context: context), adopted > 0 {
-            Diagnostics.record(context, subsystem: "Activities",
-                               message: "Adopted \(adopted) labels from recorded history into the activity catalogue.", severity: "info")
-            InsightsInvalidation.invalidate(reason: "History labels adopted", context: context)
-        }
     }
 
     private var backgroundRefreshDescription: String {

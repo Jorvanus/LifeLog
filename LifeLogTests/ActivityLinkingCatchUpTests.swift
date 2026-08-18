@@ -122,4 +122,36 @@ struct ActivityLinkingCatchUpTests {
         ))
         #expect(stillUnlinked.count == 1)
     }
+
+    @Test("Restored archive linking handles the 32,000-row fixture even after an earlier archive set the flag")
+    func restoredArchiveRelinksLargeHistory() async throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+        let definition = ActivityDefinitionRecord(stableID: UUID(), name: "At home",
+                                                  category: "Home", symbol: "house.fill")
+        context.insert(definition)
+        for index in 0..<32_000 {
+            let arrival = start.addingTimeInterval(Double(index) * 1_800)
+            context.insert(Visit(arrival: arrival, departure: arrival.addingTimeInterval(1_200),
+                                 latitude: -23.38, longitude: 150.51, placeName: "Home",
+                                 inferredActivity: "At home", source: "imported-journal"))
+        }
+        try context.save()
+
+        try await withIsolatedCatalog(
+            seeding: [ActivityDefinition(name: "Unrelated", category: "Other", symbol: "circle.fill")]
+        ) {
+            let defaultsSuite = "ActivityLinkingCatchUp.restore.\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: defaultsSuite)!
+            defer { defaults.removePersistentDomain(forName: defaultsSuite) }
+            defaults.set(true, forKey: "LifeLog.ActivityIdentityMigration.linkedAllAtOnce.v1")
+            let linked = try await ActivityLinkingCatchUp.runAfterRestore(modelContainer: container, defaults: defaults)
+            #expect(linked == 32_000)
+        }
+
+        let remaining = try ModelContext(container).fetch(FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.activityDefinitionID == nil }
+        ))
+        #expect(remaining.isEmpty)
+    }
 }

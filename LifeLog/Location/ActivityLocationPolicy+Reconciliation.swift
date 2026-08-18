@@ -23,7 +23,13 @@ extension ActivityLocationPolicy {
     /// Reconciles activity imported before a location visit arrived from Core Location.
     static func reconcile(locationVisit: Visit, context: ModelContext, now: Date = .now) throws {
         guard isLocationVisit(locationVisit) else { return }
-        let visits = try fetchPolicyVisits(context: context)
+        // A live callback only needs its recent neighbours plus any open stay. The
+        // complete non-imported archive belongs to versioned maintenance, never this
+        // interaction-path reconciliation.
+        let visits = try fetchRecentPolicyVisits(
+            context: context,
+            since: min(locationVisit.arrival, now).addingTimeInterval(-defaultReapplyLookback)
+        )
         let activities = visits.filter(isMovementActivity)
         // The arriving visit is what supplies the previous stay's departure, so
         // bounding runs against every stay rather than just this one. It is scoped to

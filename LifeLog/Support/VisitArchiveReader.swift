@@ -45,6 +45,18 @@ struct PlaceHistoryEntry: Identifiable, Sendable, Hashable {
 /// The only archive-wide reader used by interactive history screens. Full scans
 /// are intentional here, but run in this actor and are cached by the shared store
 /// generation so a navigation return does not repeat them unnecessarily.
+///
+/// Whole-store `Visit` contract:
+/// - Allowed only for an attended backup/import, explicit Archive Repair or complete
+///   validation, an attended rename/merge, or an archive statistic with a named
+///   result. Each route uses an isolated actor, exposes in-progress/cancellation in
+///   its owning screen, and carries the 32,000-row fixture before it is accepted.
+/// - `activityUsage`, `placeSummaries`, and `historicalPlaceNames` are the statistics
+///   exceptions here; they check cancellation, return Sendable summaries, and cache by
+///   store generation. `search`, day history, and detail lookups stay bounded.
+/// - Launch, Settings setup, ordinary navigation, and a single-day correction must
+///   use a date/identity/limit-bounded descriptor. They may not call an archive reader
+///   method merely because it already exists.
 @ModelActor
 actor VisitArchiveReader {
     private var usageCache: (generation: Int, counts: [String: Int])?

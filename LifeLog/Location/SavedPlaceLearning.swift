@@ -273,7 +273,10 @@ enum SavedPlaceLearning {
             CorrectionHistory.record(visit: visit, from: previous, context: context,
                                      reason: "Saved Place learned")
         }
-        _ = try ActivityLocationPolicy.runFullStoreAudit(context: context, reason: "Saved Place edit")
+        // This Settings action has already fetched exactly the coordinate candidates it
+        // changed. Re-evaluate that bounded set rather than turning an ordinary edit
+        // into a full-store maintenance pass.
+        _ = ActivityLocationPolicy.reconcileResolutionStates(in: visits)
     }
 
     /// Adds Core Location detail to imported journal rows without changing their

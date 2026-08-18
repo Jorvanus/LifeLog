@@ -1,6 +1,6 @@
 # Change log
 
-## 2026-08-18 — 2.19.2 (208)
+## 2026-08-18 — 2.19.3 (209)
 
 ### Settings is now a status-led hub
 
@@ -12,6 +12,8 @@
 
 - Timeline now prepares only the selected day and its current presentation. Startup migration, archive maintenance, Health refreshes, and their operational diagnostics are owned by one lifecycle coordinator, so opening or returning to Timeline cannot repair the database or write a timing diagnostic.
 - Restoring an archive now re-runs the complete activity-link pass after the restore commits, even when this iPhone previously completed it for a different archive. Restored labels can therefore regain their durable activity links without opening a tab or waiting through many launches.
+- Launch no longer scans every recorded visit to adopt activity labels, and a Saved Place edit now re-evaluates only the visits it changed. The archive-wide reader now documents which attended operations may scan all history and which everyday paths must stay bounded.
+- The development roadmap now tracks moving Journal Compaction and Archive Repair's preflight backups onto the background backup actor, with progress and cancellation before either operation changes data.
 
 ### Clearer context when filling an unlogged gap
 
