@@ -2,6 +2,37 @@
 
 ## 2026-08-18
 
+### Mark any gap as travel, not just a Home/Work commute
+
+- Add Visit's "Recorded either side of this gap" section gains a "Mark as
+  travel" button whenever both a before and after visit are known. Until now,
+  the only gap LifeLog could record as travel was one that landed on Home or
+  Work — a walk that ends and a drive that starts at an ordinary shop had no
+  path to being recorded as travel at all, only as an unlogged gap or a
+  location search that expected a real address.
+- Reuses the exact "A → B" label with no coordinate that
+  `GapSuggestionCandidateGenerator`'s Home/Work commute candidate already
+  writes, generalized to any two recorded places. No new location screen, no
+  map pin required, and nothing here ever creates a Saved Place.
+
+### Routine stability: weekday Home/Work timing, sleep regularity, and commute stability
+
+- New "Routine stability" card, shown beside Recording Quality in Week and
+  Month, reports the season's (12-week) weekday arrival/departure ranges for
+  the Home and Work Saved Place roles, sleep start/end timing regularity, and
+  commute duration median plus variability.
+- Every conclusion requires enough distinct days behind it (a literal count,
+  shown nowhere as a guess) and is suppressed outright when the same season's
+  logged coverage is too poor to trust — reusing Recording Quality's own
+  coverage computation rather than a second definition of "enough data." The
+  sample window is always shown alongside the numbers.
+- Built from the same resolved `InsightSegment`s, `SavedPlaceRole`, and
+  `CommuteDetection` the donut, Timeline, and Week's commute summary already
+  use, off the main actor via the same `InsightsTrendAggregator` fetch the
+  Week rolling baseline already relies on — no new query, no second
+  definition of "a Home visit" or "a commute" that could disagree with the
+  rest of Insights.
+
 ### Recording quality: a new Week/Month insight distinguishing a gap from a quiet day
 
 - New "Recording quality" card, shown ahead of Week and Month's own decorative

@@ -200,6 +200,17 @@ struct InsightsSnapshot {
         return totals
     }
 
+    /// The same locationVisits-filter-then-`makeSegments` pattern `categoryHours`
+    /// and `weekdayPatterns` each already repeat, exposed directly for a caller
+    /// (`InsightsRoutineStability`) that needs the resolved segments themselves
+    /// rather than a total or a per-weekday reduction of them.
+    nonisolated static func segments(visits: [Visit], range: DateInterval, now: Date,
+                                     commutes: [Commute]? = nil, savedPlaces: [SavedPlace] = []) -> [InsightSegment] {
+        let locationVisits = visits.filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
+        return makeSegments(visits: visits, locationVisits: locationVisits,
+                            range: range, now: now, precomputedCommutes: commutes, savedPlaces: savedPlaces)
+    }
+
     /// Builds the weekday chart from history independent of the Insights window.
     /// Each weekday is averaged over the number of occurrences in `range`, so the
     /// chart describes a usual week rather than making a month look four times busier

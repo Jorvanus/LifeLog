@@ -22,6 +22,11 @@ final class InsightsPresentationState {
     /// keeps the Week rolling baseline from comparing a partial week as if it
     /// were whole.
     private(set) var weeklyBaselineTotals: [WeeklyTotals] = []
+    /// Weekday Home/Work arrival-departure ranges, sleep timing regularity, and
+    /// commute stability, over the same season `weeklyBaselineTotals` reads --
+    /// see `reloadTrends`, which is the one fetch behind both.
+    private(set) var routineStability = InsightsRoutineStability.Presentation.empty(
+        window: DateInterval(start: .distantPast, duration: 0))
     private(set) var annualInsights = AnnualInsights.make(current: [], previous: [],
                                                           yearInterval: DateInterval(start: .distantPast, duration: 0), now: .now)
 
@@ -360,6 +365,7 @@ final class InsightsPresentationState {
             // (not sliced to a fixed count here) so the Week section can choose
             // its own baseline width without a second fetch.
             weeklyBaselineTotals = data.weeklyTotals
+            routineStability = data.routineStability
             Diagnostics.performance(context, subsystem: "Insights", operation: "trend history",
                                     startedAt: startedAt, itemCount: data.itemCount)
         } catch {
@@ -368,6 +374,7 @@ final class InsightsPresentationState {
             Diagnostics.record(error, context: context, subsystem: "Insights",
                                operation: "trend history fetch", severity: "warning")
             weeklyBaselineTotals = []
+            routineStability = .empty(window: DateInterval(start: .distantPast, duration: 0))
         }
     }
 

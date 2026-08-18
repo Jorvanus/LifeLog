@@ -424,6 +424,7 @@ struct InsightsView: View {
     /// reachable but demoted, same as Day.
     @ViewBuilder private var weekLayout: some View {
         recordingQualitySection
+        routineStabilitySection
         WeekInsightsView(
             weekDays: periodLoader.weekDays, now: now, selectedDate: anchorDate,
             yourWeekMetrics: presentationState.weeklyYourWeekMetrics(
@@ -452,6 +453,7 @@ struct InsightsView: View {
     @ViewBuilder private var monthLayout: some View {
         let insights = presentationState.monthlyInsights(snapshot: periodLoader.snapshot, window: window, now: now)
         recordingQualitySection
+        routineStabilitySection
         MonthInsightsView(
             insights: insights, comparisonSubtitle: insights.comparisonSubtitle,
             heroMetrics: presentationState.monthlyHeroMetrics(
@@ -585,6 +587,21 @@ struct InsightsView: View {
                 onOpenProvisional: { path.append(InsightsRoute.provisionalRows) },
                 onOpenDay: { date in anchorDate = date; window = .day }
             )
+        }
+    }
+
+    /// Season-wide (not period-bound, unlike Recording Quality): the same
+    /// `InsightsTrendAggregator` fetch the Week rolling baseline already reads,
+    /// off the main actor -- see `InsightsPresentationState.reloadTrends` and
+    /// `InsightsRoutineStability`'s own doc comment.
+    @ViewBuilder private var routineStabilitySection: some View {
+        let routine = presentationState.routineStability
+        // Shown once the season fetch has completed at least once -- before that,
+        // `sampleWindow` is still the placeholder `.distantPast` interval
+        // `InsightsPresentationState` starts with, and there is nothing yet to
+        // suppress or show a conclusion for.
+        if routine.sampleWindow.duration > 0 {
+            InsightRoutineStabilityCard(routine: routine)
         }
     }
 

@@ -84,12 +84,6 @@ be changed safely outrank App Store preparation or speculative integrations.
 
 ## Insights logic and architecture
 
-- [ ] **Add routine stability using existing data.** Start with weekday arrival and
-  departure ranges for explicit Home/Work roles, regularity of sleep start/end, and
-  commute median plus variability. Require enough distinct days, show the sample
-  window, and suppress conclusions when coverage is poor. Reuse resolved segments so
-  the result cannot disagree with the donut or Timeline.
-
 - [ ] **Make currently collected Health data useful before requesting more.** Give
   steps, walking/running distance, exercise minutes, stand hours, active energy,
   workouts, sleep, and the existing heart/breathing signals a coherent overview and

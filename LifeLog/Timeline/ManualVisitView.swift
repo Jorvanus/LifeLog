@@ -166,10 +166,20 @@ struct ManualVisitView: View {
                             BorderingVisitRow(label: "After", visit: afterVisit) { selectPlace(from: afterVisit) }
                                 .accessibilityIdentifier("manual-visit-after-context")
                         }
+                        if let beforeVisit, let afterVisit,
+                           beforeVisit.displayPlaceName.caseInsensitiveCompare(afterVisit.displayPlaceName) != .orderedSame {
+                            Button {
+                                markAsTravel(from: beforeVisit, to: afterVisit)
+                            } label: {
+                                Label("Mark as travel: \(beforeVisit.displayPlaceName) → \(afterVisit.displayPlaceName)",
+                                      systemImage: "car.fill")
+                            }
+                            .accessibilityIdentifier("manual-visit-mark-as-travel")
+                        }
                     } header: {
                         Text("Recorded either side of this gap")
                     } footer: {
-                        Text("Tap either to use that place for this visit.")
+                        Text("Tap Before or After to use that place for this visit, or Mark as travel to record this gap as the journey between them — no location needed, the same way LifeLog already treats a Home/Work commute.")
                     }
                 }
 
@@ -369,6 +379,20 @@ struct ManualVisitView: View {
         resolution = (visit.latitude != 0 || visit.longitude != 0)
             ? .matched(name: visit.displayPlaceName, coordinate: visit.coordinate)
             : .none
+    }
+
+    /// Records this gap as the journey between two recorded places, exactly the
+    /// way `GapSuggestionCandidateGenerator`'s `.homeWorkTransition` candidate
+    /// already fills a Home/Work commute -- an "A → B" label with no coordinate,
+    /// since the whole point is that no single point applies. Not limited to
+    /// Home/Work: a walk that ends and a drive that starts at an ordinary shop is
+    /// travel too, and until now had no path to being recorded as such at all.
+    private func markAsTravel(from before: Visit, to after: Visit) {
+        place = "\(before.displayPlaceName) → \(after.displayPlaceName)"
+        resolution = .none
+        activity = "Travelling"
+        arrival = range.start
+        departure = range.end
     }
 
     /// A resolver rule may point at configured Home or Work directly, rather

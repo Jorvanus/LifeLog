@@ -9,6 +9,7 @@ struct InsightsTrendData: Sendable {
     /// it; the trend lines and weekly rhythm only need the most recent `weeks`.
     let weeklyTotals: [WeeklyTotals]
     let weekdayPatterns: [WeekdayPattern]
+    let routineStability: InsightsRoutineStability.Presentation
     let itemCount: Int
 }
 
@@ -48,6 +49,16 @@ actor InsightsTrendAggregator {
         let displaySpan = InsightsTrends.range(endingAt: now, weeks: InsightsTrends.weeks, calendar: calendar)
         let rhythm = InsightsSnapshot.weekdayPatterns(visits: visits, range: displaySpan, now: now,
                                                        commutes: commutes)
-        return InsightsTrendData(weeklyTotals: allWeeks, weekdayPatterns: rhythm, itemCount: visits.count)
+        // Same season, same already-fetched visits/commutes -- Routine Stability
+        // needs the resolved segments themselves (not the weekday chart's summed
+        // totals), so this is the one place that calls `InsightsSnapshot.segments`
+        // rather than `weekdayPatterns`.
+        let displaySegments = InsightsSnapshot.segments(visits: visits, range: displaySpan, now: now,
+                                                        commutes: commutes, savedPlaces: savedPlaces)
+        let routineStability = InsightsRoutineStability.make(segments: displaySegments, visits: visits, commutes: commutes,
+                                                              savedPlaces: savedPlaces, window: displaySpan, now: now,
+                                                              calendar: calendar)
+        return InsightsTrendData(weeklyTotals: allWeeks, weekdayPatterns: rhythm,
+                                 routineStability: routineStability, itemCount: visits.count)
     }
 }
