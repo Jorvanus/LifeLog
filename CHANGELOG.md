@@ -1,5 +1,15 @@
 # Change log
 
+## 2026-08-19 — 2.20.5 (223)
+
+### Place History detail context
+
+- Place History details now show recent visit dates, times, durations, and activities, plus the saved geofence map and radius when a matching Saved Place exists. Renaming a place also updates its Saved Place name while preserving the geofence settings.
+
+### Place name correction
+
+- Place History now has an explicit place-name correction action with a destination preview, exact entry count, confirmation, and a clear note that Saved Place/geofence definitions are not changed.
+
 ## 2026-08-19 — 2.20.4 (222)
 
 ### Ask LifeLog responsiveness

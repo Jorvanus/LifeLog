@@ -66,6 +66,32 @@ struct PlaceMergeTests {
         #expect(unrelated.placeName == "Regional Office")
     }
 
+    @Test("Renaming a place keeps its saved geofence and updates matching history")
+    func renameUpdatesSavedPlaceNameOnly() async throws {
+        let context = try makeContext()
+        let visit = Visit(arrival: base, departure: base.addingTimeInterval(600), latitude: 0, longitude: 0,
+                          placeName: "Kershaw gardens", inferredActivity: "Visiting")
+        context.insert(visit)
+        let saved = SavedPlace(name: "Kershaw gardens", latitude: -23.38, longitude: 150.51,
+                               radius: 85, defaultActivity: "At home")
+        saved.role = "home"
+        context.insert(saved)
+        try context.save()
+
+        let changed = try await PlaceRenameActor(modelContainer: context.container)
+            .renamePlace(sourceName: "Kershaw gardens", targetName: "Kershaw Gardens")
+        #expect(changed == 1)
+
+        let verify = ModelContext(context.container)
+        let renamedVisit = try #require(verify.fetch(FetchDescriptor<Visit>()).first)
+        let renamedPlace = try #require(verify.fetch(FetchDescriptor<SavedPlace>()).first)
+        #expect(renamedVisit.placeName == "Kershaw Gardens")
+        #expect(renamedPlace.name == "Kershaw Gardens")
+        #expect(renamedPlace.latitude == -23.38)
+        #expect(renamedPlace.radius == 85)
+        #expect(renamedPlace.role == "home")
+    }
+
     @Test("Place merge stays within its attended archive budget on 32,000 visits")
     func mergeBudgetOnLargeArchive() async throws {
         let context = try makeContext()

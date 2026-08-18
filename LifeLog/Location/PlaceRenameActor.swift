@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-/// Merging two place names can legitimately touch every recorded visit, but never
+/// Renaming or merging place names can legitimately touch every recorded visit, but never
 /// needs to hold a drill-down sheet or Places list on the main actor while it does.
 /// Modelled directly on `ActivityRenameActor`: the same shape of problem (multiple
 /// text labels that should read as one) shows up for places just as it does for
@@ -10,8 +10,8 @@ import SwiftData
 @ModelActor
 actor PlaceRenameActor {
     /// Rewrites every visit whose `placeName` matches (case-insensitively) any of
-    /// `sourceNames` to `targetName`. Saved Places are left alone: a merge here is
-    /// about the text label history is grouped by, not about deleting a geofence
+    /// `sourceNames` to `targetName`. Saved Places are left alone: this operation is
+    /// about the text label history is grouped by, not about changing a geofence
     /// definition, which is a separate, more consequential action a person takes
     /// deliberately in Places settings if they want it too.
     func mergePlace(sourceNames: [String], targetName: String) throws -> Int {
@@ -24,6 +24,28 @@ actor PlaceRenameActor {
         }
         try Task.checkCancellation()
         if changed > 0 { try modelContext.save() }
+        return changed
+    }
+
+    /// Renames one place label and its matching Saved Place definition. The
+    /// geofence coordinates, radius, role, and default activity stay intact; only
+    /// the human-readable name moves with the historical visits.
+    func renamePlace(sourceName: String, targetName: String) throws -> Int {
+        let sourceKey = sourceName.lowercased()
+        let visits = try modelContext.fetch(FetchDescriptor<Visit>())
+        var changed = 0
+        for visit in visits where visit.placeName.lowercased() == sourceKey {
+            visit.placeName = targetName
+            changed += 1
+        }
+        let savedPlaces = try modelContext.fetch(FetchDescriptor<SavedPlace>())
+        var renamedSavedPlace = false
+        for place in savedPlaces where place.name.lowercased() == sourceKey {
+            place.name = targetName
+            renamedSavedPlace = true
+        }
+        try Task.checkCancellation()
+        if changed > 0 || renamedSavedPlace { try modelContext.save() }
         return changed
     }
 }

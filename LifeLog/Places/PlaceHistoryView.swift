@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import MapKit
 
 /// Lists every place name in the timeline, however it was recorded. Saved Places
 /// only cover geofenced locations, and imported journal rows have no coordinates
@@ -175,10 +176,13 @@ private struct PlaceVisitAnalytics {
 struct PlaceHistoryDetail: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Query private var savedPlaces: [SavedPlace]
     let placeName: String
     @State private var band: PlaceTimeBand = .allDay
     @State private var replacement = ""
+    @State private var renamedPlace = ""
     @State private var confirming = false
+    @State private var confirmingRename = false
     @State private var message: String?
     @State private var breakdown: [(band: PlaceTimeBand, activities: [(String, Int)])] = []
     @State private var matching: [PlaceHistoryEntry] = []
@@ -191,6 +195,12 @@ struct PlaceHistoryDetail: View {
     @State private var summariesForMerge: [PlaceHistorySummary] = []
 
     private var analytics: PlaceVisitAnalytics { PlaceVisitAnalytics.make(from: matching) }
+    private var savedPlace: SavedPlace? {
+        savedPlaces.first { NameKey.same($0.name, placeName) }
+    }
+    private var recentVisits: [PlaceHistoryEntry] {
+        Array(matching.sorted { $0.arrival > $1.arrival }.prefix(100))
+    }
 
     /// A person's own choice is never overwritten by a bulk change.
     private var protectedCount: Int {
@@ -215,6 +225,42 @@ struct PlaceHistoryDetail: View {
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("place-history-analytics")
+            }
+            if let savedPlace {
+                Section("Saved Place location") {
+                    let coordinate = CLLocationCoordinate2D(latitude: savedPlace.latitude,
+                                                            longitude: savedPlace.longitude)
+                    Map(initialPosition: .region(MKCoordinateRegion(
+                        center: coordinate,
+                        span: .init(latitudeDelta: 0.004, longitudeDelta: 0.004)))) {
+                        Marker(savedPlace.name, coordinate: coordinate)
+                            .tint(.blue)
+                    }
+                    .frame(height: 190)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .mapControls { MapCompass(); MapUserLocationButton() }
+                    .accessibilityIdentifier("place-history-saved-place-map")
+                    LabeledContent("Saved radius", value: "\(Int(savedPlace.radius.rounded())) m")
+                } footer: {
+                    Text("This is the saved geofence location, not a claim that every visit happened at the exact pin.")
+                }
+            }
+            if !recentVisits.isEmpty {
+                Section("Visits") {
+                    ForEach(recentVisits) { visit in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(visit.arrival.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).year().hour().minute()))
+                                .font(.subheadline.weight(.semibold))
+                            Text("\(visit.departure == nil ? "Still open" : formattedDuration(visit.duration)) · \(visit.activity.isEmpty ? "No activity" : visit.activity)")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                } footer: {
+                    Text(matching.count > recentVisits.count
+                         ? "Showing the latest \(recentVisits.count) of \(matching.count) visits."
+                         : "Arrival time, duration, and recorded activity for each visit.")
+                }
             }
             Section("What this place looks like now") {
                 ForEach(breakdown, id: \.band) { entry in
@@ -253,6 +299,17 @@ struct PlaceHistoryDetail: View {
             } footer: {
                 Text("Entries you have confirmed individually are never changed. This rewrites many entries at once and can only be undone from a backup, so create one first if you are unsure.")
             }
+            Section("Correct the place name") {
+                TextField("New place name", text: $renamedPlace)
+                LabeledContent("Entries that will change", value: "\(matching.count)")
+                Button("Rename \(matching.count) entries") { confirmingRename = true }
+                    .disabled(cleanRenamedPlace.isEmpty ||
+                              cleanRenamedPlace.caseInsensitiveCompare(placeName) == .orderedSame ||
+                              mergeInFlight)
+                    .accessibilityIdentifier("rename-place-button")
+            } footer: {
+                Text("This changes the place name on every matching timeline entry, including imported history. A matching Saved Place keeps its location, radius, role, and activity.")
+            }
             if !mergeCandidates.isEmpty {
                 Section {
                     Button {
@@ -279,6 +336,12 @@ struct PlaceHistoryDetail: View {
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("Every entry for \(placeName) in \(band.title.lowercased()) becomes “\(TextSafety.clean(replacement, maximumLength: 80))”, apart from \(protectedCount) you confirmed yourself.")
+        }
+        .confirmationDialog("Rename this place?", isPresented: $confirmingRename) {
+            Button("Rename \(matching.count) entries", role: .destructive) { performRename() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Every timeline entry recorded as “\(placeName)” will become “\(cleanRenamedPlace)”. A matching Saved Place keeps its location, radius, role, and activity.")
         }
         .alert("Place history", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
             Button("OK", role: .cancel) { message = nil }
@@ -311,6 +374,10 @@ struct PlaceHistoryDetail: View {
         summariesForMerge.filter { $0.name.caseInsensitiveCompare(placeName) != .orderedSame }
     }
 
+    private var cleanRenamedPlace: String {
+        TextSafety.clean(renamedPlace, maximumLength: 120)
+    }
+
     private func reload() {
         Task { await reloadInBackground() }
     }
@@ -323,6 +390,7 @@ struct PlaceHistoryDetail: View {
         let currentGeneration = await InsightsAggregationActor.shared.currentGeneration()
         guard !Task.isCancelled, generation == currentGeneration else { return }
         matching = entries
+        if renamedPlace.isEmpty { renamedPlace = placeName }
         if let summaryResult = try? await reader.placeSummaries(generation: generation) {
             summariesForMerge = summaryResult.summaries
         }
@@ -378,7 +446,7 @@ struct PlaceHistoryDetail: View {
         Task {
             do {
                 let changed = try await PlaceRenameActor(modelContainer: context.container)
-                    .mergePlace(sourceNames: [sourceName], targetName: targetName)
+                    .renamePlace(sourceName: sourceName, targetName: targetName)
                 Diagnostics.budget(context, subsystem: "Place History", operation: "place merge",
                                    startedAt: startedAt, budget: Diagnostics.PerformanceBudget.activityPlaceMerge,
                                    itemCount: changed)
@@ -390,6 +458,33 @@ struct PlaceHistoryDetail: View {
             } catch {
                 mergeInFlight = false
                 message = "LifeLog couldn’t merge this place. Nothing changed — try again."
+            }
+        }
+    }
+
+    private func performRename() {
+        let targetName = cleanRenamedPlace
+        guard !targetName.isEmpty,
+              targetName.caseInsensitiveCompare(placeName) != .orderedSame else { return }
+        confirmingRename = false
+        mergeInFlight = true
+        let sourceName = placeName
+        let startedAt = Date.now
+        Task {
+            do {
+                let changed = try await PlaceRenameActor(modelContainer: context.container)
+                    .mergePlace(sourceNames: [sourceName], targetName: targetName)
+                Diagnostics.budget(context, subsystem: "Place History", operation: "place rename",
+                                   startedAt: startedAt, budget: Diagnostics.PerformanceBudget.activityPlaceMerge,
+                                   itemCount: changed)
+                InsightsInvalidation.invalidate(reason: "Place renamed from Place History", context: context)
+                mergeInFlight = false
+                dismiss()
+            } catch is CancellationError {
+                mergeInFlight = false
+            } catch {
+                mergeInFlight = false
+                message = "LifeLog couldn’t rename this place. Nothing changed — try again."
             }
         }
     }
