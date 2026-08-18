@@ -9,12 +9,13 @@ struct PlaceHistoryView: View {
     @State private var summaries: [PlaceHistorySummary] = []
     @State private var loading = true
     @State private var search = ""
+    @State private var sort: PlaceHistorySort = .mostEntries
     @State private var reader: VisitArchiveReader?
 
     private var filtered: [PlaceHistorySummary] {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !query.isEmpty else { return summaries }
-        return summaries.filter { $0.name.lowercased().contains(query) }
+        let matching = query.isEmpty ? summaries : summaries.filter { $0.name.lowercased().contains(query) }
+        return PlaceHistorySort.sorted(matching, by: sort)
     }
 
     var body: some View {
@@ -38,7 +39,7 @@ struct PlaceHistoryView: View {
                         }
                     }
                 } footer: {
-                    Text("Sorted by how often each place appears. Open one to correct its activity across every entry at once.")
+                    Text(sort.footerText + " Open one to correct its activity across every entry at once.")
                 }
             }
         }
@@ -46,6 +47,17 @@ struct PlaceHistoryView: View {
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $search, prompt: "Find a place")
         .accessibilityIdentifier("place-history-screen")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Picker("Sort places", selection: $sort) {
+                    ForEach(PlaceHistorySort.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
+                .pickerStyle(.menu)
+                .accessibilityLabel("Sort places")
+            }
+        }
         .task { await load() }
     }
 
@@ -69,6 +81,41 @@ struct PlaceHistoryView: View {
             return
         } catch {
             loading = false
+        }
+    }
+}
+
+enum PlaceHistorySort: String, CaseIterable, Identifiable {
+    case mostEntries
+    case alphabetical
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .mostEntries: "Most entries"
+        case .alphabetical: "A–Z"
+        }
+    }
+
+    var footerText: String {
+        switch self {
+        case .mostEntries: "Sorted by how often each place appears."
+        case .alphabetical: "Sorted alphabetically by place name."
+        }
+    }
+
+    static func sorted(_ summaries: [PlaceHistorySummary], by order: Self) -> [PlaceHistorySummary] {
+        switch order {
+        case .mostEntries:
+            return summaries.sorted {
+                if $0.count != $1.count { return $0.count > $1.count }
+                return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            }
+        case .alphabetical:
+            return summaries.sorted {
+                $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            }
         }
     }
 }

@@ -11,6 +11,18 @@ import Testing
 /// neither.
 @MainActor
 struct PlaceHistoryLookupTests {
+    @Test("Place History can sort alphabetically with a stable tie-break for frequency")
+    func placeHistorySorts() {
+        let summaries = [
+            PlaceHistorySummary(name: "Work", count: 3, dominantActivity: "Working", dominantShare: 100),
+            PlaceHistorySummary(name: "8 Justin St", count: 10, dominantActivity: "At home", dominantShare: 54),
+            PlaceHistorySummary(name: "Home", count: 3, dominantActivity: "At home", dominantShare: 100)
+        ]
+
+        #expect(PlaceHistorySort.sorted(summaries, by: .alphabetical).map(\.name) == ["8 Justin St", "Home", "Work"])
+        #expect(PlaceHistorySort.sorted(summaries, by: .mostEntries).map(\.name) == ["8 Justin St", "Home", "Work"])
+    }
+
     private let base = Date(timeIntervalSince1970: 1_800_000_000)
 
     @Test("Recurrence survives the scoped fetch: same name far away, same spot under a different name")
