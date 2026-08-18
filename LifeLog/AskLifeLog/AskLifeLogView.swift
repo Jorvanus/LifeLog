@@ -54,9 +54,9 @@ struct AskLifeLogView: View {
     }
 
     @ViewBuilder private var content: some View {
-        switch viewModel.availability {
-        case .available: askForm
-        case let unavailable: unavailableState(unavailable)
+        switch viewModel.state {
+        case .unavailable(let availability): unavailableState(availability)
+        default: askForm
         }
     }
 
@@ -73,8 +73,13 @@ struct AskLifeLogView: View {
 
                 VStack(alignment: .leading, spacing: 10) {
                     TextField("Where did I spend most Friday evenings?", text: $viewModel.question, axis: .vertical)
-                        .textFieldStyle(.roundedBorder)
+                        .textFieldStyle(.plain)
                         .lineLimit(1...3)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .frame(minHeight: 44)
+                        .background(Color(uiColor: .secondarySystemBackground),
+                                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                         .accessibilityIdentifier("ask-lifelog-question-field")
                     Button("Ask") { ask() }
                         .buttonStyle(.borderedProminent)

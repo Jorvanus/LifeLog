@@ -77,7 +77,12 @@ final class AskLifeLogViewModel {
 
         inFlightTask = Task { [planner] in
             let startedAt = Date.now
-            let outcome = await planner.plan(question: trimmed, context: context)
+            // Foundation Models availability and session setup can synchronously
+            // consult system services before their first suspension. Run the whole
+            // planner call detached so opening the sheet and typing stay responsive.
+            let outcome = await Task.detached(priority: .userInitiated) {
+                await planner.plan(question: trimmed, context: context)
+            }.value
             let planDurationMs = Int(Date.now.timeIntervalSince(startedAt) * 1000)
             Diagnostics.askLifeLogPlan(diagnosticsContext, durationMs: planDurationMs,
                                       planKind: outcome.diagnosticPlanKind, outcome: outcome.diagnosticOutcome)

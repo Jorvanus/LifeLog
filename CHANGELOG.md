@@ -1,5 +1,11 @@
 # Change log
 
+## 2026-08-19 — 2.20.4 (222)
+
+### Ask LifeLog responsiveness
+
+- Ask LifeLog now renders its question field immediately, uses the same inset control treatment as the rest of the app, and runs Apple Intelligence planning away from the main interaction path so opening the sheet and typing do not hang the app.
+
 ## 2026-08-19 — Place History sorting
 
 - Added an A–Z option to Place History while keeping the existing most-entries order available.
