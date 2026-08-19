@@ -1,5 +1,11 @@
 # Change log
 
+## 2026-08-20 — Commutes capture the whole journey — 2.22.0 (230)
+
+- Commute detection now chains through a brief real stop on the way (a grocery run under 25 minutes) instead of dropping the leg before it, and exposes each commute as a sequence of transport/stop steps.
+- Insights now labels the moving portion of a detected commute as Commute time on the donut instead of leaving it under generic Travel/Fitness, so a real walking or driving commute is visible where it was previously absorbed into whichever category the device tracked it under. A real stop along the way still keeps its own category.
+- Tapping a Commute slice now opens a step-by-step breakdown of the journey instead of a dead end.
+
 ## 2026-08-19 — Activity import reconciliation
 
 - Health and Motion imports now commit before the main context applies the final timeline reconciliation, so stale import state cannot overwrite the repair.

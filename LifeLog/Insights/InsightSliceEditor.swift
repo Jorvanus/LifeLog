@@ -54,9 +54,11 @@ struct InsightSliceEditor: View {
                                     NavigationLink { VisitEditor(visit: visit) } label: {
                                         rowContent(row)
                                     }
+                                } else if let commute = row.commute {
+                                    NavigationLink { CommuteDetailView(commute: commute) } label: {
+                                        rowContent(row)
+                                    }
                                 } else {
-                                    // Commute time has no backing Visit to open — it is
-                                    // the gap between two real arrivals, not a record.
                                     rowContent(row)
                                 }
                             }

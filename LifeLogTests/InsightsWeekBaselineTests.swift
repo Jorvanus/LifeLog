@@ -89,10 +89,10 @@ struct InsightsWeekBaselineTests {
 
     @Test("categoryHours sums every category present in the segments")
     func categoryHoursCoversEveryCategory() {
-        let home = InsightSegment(id: .visit(ObjectIdentifier(NSObject())), visit: nil, category: "Home",
+        let home = InsightSegment(id: .visit(ObjectIdentifier(NSObject())), visit: nil, commute: nil, category: "Home",
                                   activity: "At home", placeName: "Home", start: start, end: start.addingTimeInterval(3_600),
                                   hours: 1, color: .blue, symbol: "house.fill", isUnlogged: false, isLive: false)
-        let work = InsightSegment(id: .unlogged(0), visit: nil, category: "Work",
+        let work = InsightSegment(id: .unlogged(0), visit: nil, commute: nil, category: "Work",
                                   activity: "Working", placeName: "Office", start: start, end: start.addingTimeInterval(7_200),
                                   hours: 2, color: .blue, symbol: "briefcase.fill", isUnlogged: false, isLive: false)
         let totals = InsightsSnapshot.categoryHours(in: [home, work])
@@ -171,7 +171,7 @@ struct InsightsWeekBaselineTests {
     }
 
     private func makeSegment(category: String, hours: Double) -> InsightSegment {
-        InsightSegment(id: .unlogged(Int.random(in: 0..<Int.max)), visit: nil, category: category,
+        InsightSegment(id: .unlogged(Int.random(in: 0..<Int.max)), visit: nil, commute: nil, category: category,
                        activity: category, placeName: "Test", start: start, end: start.addingTimeInterval(hours * 3_600),
                        hours: hours, color: .blue, symbol: "circle.fill", isUnlogged: false, isLive: false)
     }

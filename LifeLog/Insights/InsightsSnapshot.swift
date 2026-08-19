@@ -270,8 +270,14 @@ struct InsightsSnapshot {
             }
             // A gap between home and work is not missing data — it is the journey
             // between them, so it is counted as commuting rather than reported as
-            // time the person failed to log.
-            if matching.isEmpty, let commute = CommuteDetection.commute(covering: midpoint, in: commutes) {
+            // time the person failed to log. The same is true when the gap isn't
+            // blank but is only ever a device's own movement tracking (walking,
+            // driving) — that is still the commute itself, not a separate "Travel"
+            // or "Fitness" entry, so it claims the slice the same way an unlogged
+            // gap does. A real stop along the way (a shop, a coffee) still wins its
+            // own slice under its own category.
+            if let commute = CommuteDetection.commute(covering: midpoint, in: commutes),
+               matching.isEmpty || matching.allSatisfy(ActivityLocationPolicy.isMovementActivity) {
                 result.append(.commute(commute, from: start, to: end))
                 continue
             }
@@ -455,6 +461,10 @@ enum InsightSegmentID: Hashable {
 struct InsightSegment: Identifiable {
     let id: InsightSegmentID
     let visit: Visit?
+    /// The commute this slice belongs to, if any — carried alongside `visit` (never
+    /// both) so a tapped commute row can open its own step-by-step detail rather
+    /// than being a dead end just because nothing was stored for it.
+    let commute: Commute?
     let category: String
     let activity: String
     let placeName: String?
@@ -473,7 +483,7 @@ struct InsightSegment: Identifiable {
     static func visit(_ visit: Visit, visibleFrom: Date, visibleTo: Date, now: Date) -> InsightSegment {
         let category = visit.insightCategory
         return InsightSegment(
-            id: .visit(ObjectIdentifier(visit)), visit: visit, category: category,
+            id: .visit(ObjectIdentifier(visit)), visit: visit, commute: nil, category: category,
             activity: visit.suspectedActivity, placeName: visit.displayPlaceName,
             start: visibleFrom, end: visibleTo,
             hours: visibleTo.timeIntervalSince(visibleFrom) / 3600,
@@ -487,7 +497,7 @@ struct InsightSegment: Identifiable {
     /// recorded, so it cannot outlive the stays that define it.
     static func commute(_ commute: Commute, from start: Date, to end: Date) -> InsightSegment {
         InsightSegment(
-            id: .commute(commute.start), visit: nil, category: CommuteDetection.categoryName,
+            id: .commute(commute.start), visit: nil, commute: commute, category: CommuteDetection.categoryName,
             activity: commute.direction.label, placeName: nil, start: start, end: end,
             hours: end.timeIntervalSince(start) / 3600,
             color: insightColor(for: CommuteDetection.categoryName),
@@ -498,7 +508,7 @@ struct InsightSegment: Identifiable {
 
     static func unlogged(index: Int, from start: Date, to end: Date) -> InsightSegment {
         InsightSegment(
-            id: .unlogged(index), visit: nil, category: "Unlogged",
+            id: .unlogged(index), visit: nil, commute: nil, category: "Unlogged",
             activity: "Unlogged", placeName: nil, start: start, end: end,
             hours: end.timeIntervalSince(start) / 3600,
             color: .gray.opacity(0.35), symbol: "clock.badge.questionmark",
@@ -515,6 +525,8 @@ struct InsightSegment: Identifiable {
 struct SliceRow: Identifiable {
     let id: InsightSegmentID
     let visit: Visit?
+    /// The commute this row belongs to, if any — see `InsightSegment.commute`.
+    let commute: Commute?
     let activity: String
     let placeName: String?
     let start: Date
@@ -551,7 +563,8 @@ extension InsightsSnapshot {
             let hours = group.reduce(0) { $0 + $1.hours }
             let isPartial = first.visit.map { hours < $0.duration(in: interval, now: now) / 3600 - 0.01 } ?? false
             return SliceRow(
-                id: id, visit: first.visit, activity: first.activity, placeName: first.placeName,
+                id: id, visit: first.visit, commute: first.commute, activity: first.activity,
+                placeName: first.placeName,
                 start: group.map(\.start).min() ?? first.start, end: group.map(\.end).max() ?? first.end,
                 hours: hours, isPartial: isPartial
             )

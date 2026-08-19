@@ -284,7 +284,8 @@ struct InsightGroupDetailView: View {
         let grouped = Dictionary(grouping: matching, by: \.activity)
         return grouped.map { name, segments in
             (name, segments.reduce(0) { $0 + $1.hours }, segments.map {
-                SliceRow(id: $0.id, visit: $0.visit, activity: $0.activity, placeName: $0.placeName,
+                SliceRow(id: $0.id, visit: $0.visit, commute: $0.commute, activity: $0.activity,
+                         placeName: $0.placeName,
                          start: $0.start, end: $0.end, hours: $0.hours, isPartial: false)
             })
         }.sorted { $0.hours > $1.hours }

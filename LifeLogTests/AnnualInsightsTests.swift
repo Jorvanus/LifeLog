@@ -153,7 +153,7 @@ struct AnnualInsightsTests {
         let visit = Visit(arrival: start, departure: start.addingTimeInterval(hours * 3_600),
                           latitude: place == nil ? 0 : -27.47, longitude: place == nil ? 0 : 153.03,
                           placeName: place ?? "", inferredActivity: category, source: source)
-        return InsightSegment(id: .visit(ObjectIdentifier(visit)), visit: visit,
+        return InsightSegment(id: .visit(ObjectIdentifier(visit)), visit: visit, commute: nil,
                               category: category, activity: category, placeName: place,
                               start: start, end: start.addingTimeInterval(hours * 3_600), hours: hours,
                               color: insightColor(for: category), symbol: insightSymbol(for: category),

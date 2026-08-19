@@ -32,12 +32,12 @@ struct MonthlyInsightsTests {
         let visit = Visit(arrival: base, departure: base.addingTimeInterval(3_600),
                           latitude: -27.47, longitude: 153.03,
                           placeName: "New Cafe", inferredActivity: "Eating", source: "automatic")
-        let first = InsightSegment(id: .visit(ObjectIdentifier(visit)), visit: visit,
+        let first = InsightSegment(id: .visit(ObjectIdentifier(visit)), visit: visit, commute: nil,
                                    category: "Food & Drink", activity: "Eating", placeName: "New Cafe",
                                    start: base, end: base.addingTimeInterval(1_800), hours: 0.5,
                                    color: insightColor(for: "Food & Drink"), symbol: "fork.knife",
                                    isUnlogged: false, isLive: false)
-        let second = InsightSegment(id: .visit(ObjectIdentifier(visit)), visit: visit,
+        let second = InsightSegment(id: .visit(ObjectIdentifier(visit)), visit: visit, commute: nil,
                                     category: "Food & Drink", activity: "Eating", placeName: "New Cafe",
                                     start: base.addingTimeInterval(1_800), end: base.addingTimeInterval(3_600), hours: 0.5,
                                     color: insightColor(for: "Food & Drink"), symbol: "fork.knife",
@@ -89,7 +89,7 @@ struct MonthlyInsightsTests {
                           departure: calendar.date(byAdding: .day, value: 4, to: start)!.addingTimeInterval(3_600),
                           latitude: -27.47, longitude: 153.03,
                           placeName: "Home", inferredActivity: "Home", source: "automatic")
-        let segment = InsightSegment(id: .visit(ObjectIdentifier(visit)), visit: visit,
+        let segment = InsightSegment(id: .visit(ObjectIdentifier(visit)), visit: visit, commute: nil,
                                      category: "Home", activity: "Home", placeName: "Home",
                                      start: visit.arrival, end: visit.departure!, hours: 1,
                                      color: insightColor(for: "Home"), symbol: "house.fill",
@@ -119,7 +119,7 @@ struct MonthlyInsightsTests {
         let visit = Visit(arrival: base, departure: base.addingTimeInterval(hours * 3_600),
                           latitude: -27.47, longitude: 153.03,
                           placeName: "Test", inferredActivity: category, source: "manual")
-        return InsightSegment(id: .visit(ObjectIdentifier(visit)), visit: visit,
+        return InsightSegment(id: .visit(ObjectIdentifier(visit)), visit: visit, commute: nil,
                               category: category, activity: category, placeName: "Test",
                               start: base, end: base.addingTimeInterval(hours * 3_600), hours: hours,
                               color: insightColor(for: category), symbol: insightSymbol(for: category),
