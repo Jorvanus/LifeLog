@@ -1,5 +1,10 @@
 # Change log
 
+## 2026-08-20 — Commute previews and trip grouping — 2.22.1 (231)
+
+- The donut's centre card and "Getting around" trip list now show a chained commute's full door-to-door span instead of just its largest fragment — confirmed against a real on-device day where a 38-minute commute with an ALDI stop was showing as three separate trips and a misleading 10-minute preview.
+- A commute segment's centre card no longer offers "Add visit"; there is nothing missing to add, just no single visit behind the journey.
+
 ## 2026-08-20 — Commutes capture the whole journey — 2.22.0 (230)
 
 - Commute detection now chains through a brief real stop on the way (a grocery run under 25 minutes) instead of dropping the leg before it, and exposes each commute as a sequence of transport/stop steps.

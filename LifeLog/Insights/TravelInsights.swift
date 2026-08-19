@@ -128,27 +128,41 @@ struct TravelInsights {
     }
 
     private static func makeTrips(from segments: [InsightSegment]) -> [Trip] {
-        var result: [Trip] = []
+        var result: [(trip: Trip, commuteStart: Date?)] = []
         for segment in segments {
-            guard let last = result.last else {
-                result.append(trip(for: segment))
+            // Every fragment of one detected Commute (a transport leg either side
+            // of a brief real stop, or a silent gap absorbed as commuting) shares
+            // the same underlying Commute regardless of the gap between fragments
+            // -- CommuteDetection already decided this is one journey, so it stays
+            // one trip here too, the same way it stays one row in the slice editor.
+            if let commuteStart = segment.commute?.start,
+               let lastIndex = result.indices.last, result[lastIndex].commuteStart == commuteStart {
+                let last = result[lastIndex].trip
+                result[lastIndex] = (Trip(
+                    start: min(last.start, segment.start), end: max(last.end, segment.end),
+                    isCommute: true, mode: strongest(last.mode, mode(for: segment))
+                ), commuteStart)
                 continue
             }
-            // Motion import can deliver adjacent fragments. Fuse only a short
-            // transition gap; a destination stay between two journeys remains
-            // a real trip boundary.
+            guard let last = result.last?.trip else {
+                result.append((trip(for: segment), segment.commute?.start))
+                continue
+            }
+            // Motion import can deliver adjacent fragments outside a detected
+            // commute. Fuse only a short transition gap; a destination stay
+            // between two journeys remains a real trip boundary.
             if segment.start.timeIntervalSince(last.end) <= segmentMergeGap {
-                result[result.count - 1] = Trip(
+                result[result.count - 1] = (Trip(
                     start: min(last.start, segment.start),
                     end: max(last.end, segment.end),
                     isCommute: last.isCommute || isCommute(segment),
                     mode: strongest(last.mode, mode(for: segment))
-                )
+                ), segment.commute?.start)
             } else {
-                result.append(trip(for: segment))
+                result.append((trip(for: segment), segment.commute?.start))
             }
         }
-        return result
+        return result.map(\.trip)
     }
 
     private static func trip(for segment: InsightSegment) -> Trip {

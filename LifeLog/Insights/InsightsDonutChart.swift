@@ -47,6 +47,19 @@ struct InsightsDonutChart: View {
                                           isUnlogged: focusedSlice.isUnlogged)
     }
 
+    /// A commute is one journey but can back several segments — a stop along the
+    /// way (see `CommuteDetection.waypointTolerance`) still has its own segment for
+    /// its own category, which splits the transport time either side of it. The
+    /// representative segment alone would show only the largest fragment (a few
+    /// minutes) instead of the door-to-door trip it belongs to, so every segment
+    /// sharing the same underlying `Commute` is folded back together here.
+    private func commuteSpan(for segment: InsightSegment) -> (start: Date, end: Date, hours: Double)? {
+        guard let commute = segment.commute else { return nil }
+        let matching = segments.filter { $0.commute?.start == commute.start }
+        guard let start = matching.map(\.start).min(), let end = matching.map(\.end).max() else { return nil }
+        return (start, end, matching.reduce(0) { $0 + $1.hours })
+    }
+
     /// The largest segment in a category, not the earliest one. A category
     /// interrupted partway through the day (Home, split by Sleep) has several
     /// segments; the wedge is sized by all of them together, but the In/Out readout
@@ -281,7 +294,11 @@ struct InsightsDonutChart: View {
     }
 
     private func focusedCenter(for segment: InsightSegment) -> some View {
-        VStack(spacing: 3) {
+        let span = commuteSpan(for: segment)
+        let start = span?.start ?? segment.start
+        let end = span?.end ?? segment.end
+        let hours = span?.hours ?? (segment.end.timeIntervalSince(segment.start) / 3600)
+        return VStack(spacing: 3) {
             Image(systemName: segment.symbol).font(.title3.bold()).foregroundStyle(segment.color)
             Text(segment.activity).font(.headline).multilineTextAlignment(.center).lineLimit(2)
             if let placeName = segment.placeName, placeName != segment.activity {
@@ -296,23 +313,29 @@ struct InsightsDonutChart: View {
                 Text(visit.confidenceLabel)
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(visit.recognition == .confirmed ? .green : .secondary)
+            } else if span != nil {
+                // A commute has no single visit behind it, but it is a real,
+                // resolved journey -- unlike a genuine gap, there is nothing to add.
+                Text("Journey, not a single stop")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             } else {
                 Text("No inferred activity")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
             Divider().padding(.vertical, 2)
-            Text("In  \(timeLabel(segment.start))")
-            Text("Out  \(segment.isLive ? "Now" : timeLabel(segment.end))")
-            Text(formatHours(segment.end.timeIntervalSince(segment.start) / 3600))
+            Text("In  \(timeLabel(start))")
+            Text("Out  \(segment.isLive ? "Now" : timeLabel(end))")
+            Text(formatHours(hours))
                 .font(.subheadline.bold().monospacedDigit()).padding(.top, 2)
-            entryAffordance(hasVisit: segment.visit != nil)
+            entryAffordance(hasVisit: segment.visit != nil || span != nil)
         }
         .font(.caption2.monospacedDigit())
         .foregroundStyle(.primary)
         .frame(width: 176)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(segment.activity), \(segment.placeName ?? ""), \(segment.visit?.confidenceLabel ?? "not inferred"), evidence \(segment.visit.map(evidenceText) ?? "none"), in \(timeLabel(segment.start)), out \(segment.isLive ? "now" : timeLabel(segment.end)), duration \(formatHours(segment.end.timeIntervalSince(segment.start) / 3600))")
+        .accessibilityLabel("\(segment.activity), \(segment.placeName ?? ""), \(segment.visit?.confidenceLabel ?? "not inferred"), evidence \(segment.visit.map(evidenceText) ?? "none"), in \(timeLabel(start)), out \(segment.isLive ? "now" : timeLabel(end)), duration \(formatHours(hours))")
     }
 
     /// A gap has no Visit to open. Keeping this a readout avoids a compact

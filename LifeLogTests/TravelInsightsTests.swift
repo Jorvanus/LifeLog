@@ -75,6 +75,37 @@ struct TravelInsightsTests {
         #expect(result.longTripCount == 1)
     }
 
+    @Test("A commute with a brief stop along the way is still one trip")
+    func waypointStopDoesNotFragmentTheTrip() {
+        // Same shape as the real 2026-08-19 export: Work -> a walk -> a brief ALDI
+        // stop -> transit -> Home. The transport either side of ALDI used to land
+        // in two separate trips because the Shopping segment between them isn't
+        // travel and the resulting gap exceeded `segmentMergeGap` -- but it is one
+        // detected Commute, so it must stay one trip.
+        let homePlace = SavedPlace(name: "Home", latitude: 0, longitude: 0, mapsIdentifier: "home")
+        homePlace.homeWorkRole = .home
+        let workPlace = SavedPlace(name: "Work", latitude: 0, longitude: 0, mapsIdentifier: "work")
+        workPlace.homeWorkRole = .work
+        let work = stay(from: -60, to: 0, name: "Work", activity: "Working", mapsID: "work")
+        let walk = movement(from: 0, to: 12, activity: "Walking")
+        let aldi = stay(from: 12, to: 28.83, name: "ALDI", activity: "Shopping")
+        let transit = movement(from: 28.83, to: 32.67, activity: "Travelling")
+        // 32.67-38.83 is a genuine silent gap after transit ends and before Home's
+        // own arrival -- still absorbed into the same commute, same as today.
+        let home = stay(from: 38.83, to: 300, name: "Home", activity: "At home", mapsID: "home")
+
+        let result = InsightsSnapshot.make(
+            visits: [work, walk, aldi, transit, home], window: .day, anchorDate: base,
+            now: base.addingTimeInterval(10 * 3600),
+            savedPlaces: [homePlace, workPlace]
+        ).travel
+
+        #expect(result.tripCount == 1)
+        #expect(result.trips.first?.isCommute == true)
+        let expectedMinutes = 38.83
+        #expect(abs((result.trips.first?.duration ?? 0) / 60 - expectedMinutes) < 0.1)
+    }
+
     @Test("Walking inside Home is not travel")
     func movementInsideResolvedPlaceIsExcluded() {
         let home = stay(from: 0, to: 180, name: "Home", activity: "At home")
