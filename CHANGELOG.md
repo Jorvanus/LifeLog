@@ -1,5 +1,9 @@
 # Change log
 
+## 2026-08-19 — 2.21.0 (228)
+
+- Removed the retired UserDefaults activity catalogue and ignored-location bridges, and reduced schema source to the supported V11 predecessor and current V12.
+
 ## 2026-08-19 — 2.20.9 (227)
 
 ### TODO review

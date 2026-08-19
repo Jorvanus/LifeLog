@@ -212,12 +212,8 @@ enum ActivityIdentityMigration {
 /// own: callers save through a `ModelContext`, then refresh this small value cache
 /// for synchronous rendering helpers such as timeline artwork.
 enum ActivityCatalog {
-    private static let storageKey = "LifeLog.ActivityCatalog.v1"
-
-    /// The former catalogue store. It is read only while adopting an installation
-    /// created before V12, and immediately cleared after that durable save succeeds.
-    /// Categories use a separate preference key because an intentionally empty group
-    /// has no activity record to carry it; they are not activity identity data.
+    /// Categories use UserDefaults because an intentionally empty group has no
+    /// activity record to carry it; activity identity itself is durable SwiftData.
     nonisolated(unsafe) static var storage: UserDefaults = .standard
 
     /// Unsafe only to let pure rendering helpers read it without an actor hop. All
@@ -307,64 +303,23 @@ enum ActivityCatalog {
         }
     }
 
-    /// Set by `legacyDefinitions()` when it most recently found data that existed but could
-    /// not be decoded — distinct from finding no data at all (an ordinary first
-    /// launch) or decoding an intentionally empty list. This enum is a plain
-    /// UserDefaults wrapper with no `ModelContext` of its own to log through, so
-    /// the lifecycle compatibility bridge can report the distinction if needed.
-    nonisolated(unsafe) private(set) static var lastLoadWasCorrupt = false
-
-    /// Decodes the retired UserDefaults snapshot for one-way compatibility adoption.
-    /// No current screen or mutation reads this result. Missing/corrupt/legacy-empty
-    /// remain distinct so the lifecycle coordinator can report corruption rather than
-    /// treating it as a deliberate empty catalogue.
-    static func legacyDefinitions() -> [ActivityDefinition] { decodedLegacyDefinitions() }
-
-    /// The underlying decoding fallback treats a missing, corrupt, and deliberately
-    /// empty snapshot differently for diagnostics, while preserving the old safe
-    /// behaviour of offering built-in definitions rather than an unusable empty UI.
-    private static func decodedLegacyDefinitions() -> [ActivityDefinition] {
-        guard let data = storage.data(forKey: storageKey) else {
-            lastLoadWasCorrupt = false
-            return sorted(defaults.map {
-                ActivityDefinition(name: $0.name, category: $0.category, symbol: $0.symbol)
-            })
-        }
-        guard let decoded = try? JSONDecoder().decode([ActivityDefinition].self, from: data) else {
-            lastLoadWasCorrupt = true
-            return sorted(defaults.map {
-                ActivityDefinition(name: $0.name, category: $0.category, symbol: $0.symbol)
-            })
-        }
-        lastLoadWasCorrupt = false
-        guard !decoded.isEmpty else {
-            return sorted(defaults.map {
-                ActivityDefinition(name: $0.name, category: $0.category, symbol: $0.symbol)
-            })
-        }
-        return sorted(decoded)
-    }
-
     /// Active records are the source of truth once the store is open. `load()` stays
     /// synchronous because icon, colour and inference fallbacks are used in hot view
     /// paths; it never touches UserDefaults or fetches SwiftData.
     nonisolated static func load() -> [ActivityDefinition] { cached }
 
-    /// Makes the durable table authoritative before normal navigation begins. It
-    /// adopts the pre-V12 snapshot exactly once, merges only aliases into an existing
-    /// record (the record's name and active state win), and erases the old snapshot
-    /// only after the transaction has saved successfully.
+    /// Makes the durable table authoritative before normal navigation begins.
+    /// Built-in definitions seed an empty store; no UserDefaults catalogue snapshot
+    /// is decoded or merged here.
     @MainActor
     static func prepareDurableCatalogue(context: ModelContext) throws -> Int {
         var records = try context.fetch(FetchDescriptor<ActivityDefinitionRecord>())
-        let legacyDataExists = storage.data(forKey: storageKey) != nil
-        let legacy = legacyDataExists ? decodedLegacyDefinitions() : []
         var changed = 0
 
         if records.isEmpty {
-            let seed = legacy.isEmpty ? defaults.map {
+            let seed = defaults.map {
                 ActivityDefinition(name: $0.name, category: $0.category, symbol: $0.symbol)
-            } : legacy
+            }
             for definition in seed {
                 context.insert(ActivityDefinitionRecord(stableID: definition.id, name: definition.name,
                                                         category: definition.category, symbol: definition.symbol,
@@ -373,38 +328,12 @@ enum ActivityCatalog {
             }
             changed = seed.count
             records = try context.fetch(FetchDescriptor<ActivityDefinitionRecord>())
-        } else {
-            // A prior staged release mirrored edits to both stores. Its durable name,
-            // category and active state are already newer authority; only aliases were
-            // absent from the record and need an additive merge here.
-            for definition in legacy {
-                let sameName = records.filter {
-                    $0.name.caseInsensitiveCompare(definition.name) == .orderedSame
-                }
-                guard let record = records.first(where: { $0.stableID == definition.id }) ??
-                                    (sameName.count == 1 ? sameName[0] : nil) else { continue }
-                let additions = definition.legacyNames.filter { alias in
-                    alias.caseInsensitiveCompare(record.name) != .orderedSame &&
-                    !record.legacyNames.contains { $0.caseInsensitiveCompare(alias) == .orderedSame }
-                }
-                if !additions.isEmpty {
-                    record.legacyNames.append(contentsOf: additions)
-                    record.modifiedAt = .now
-                    changed += 1
-                }
-            }
         }
         do {
             if context.hasChanges { try context.save() }
         } catch {
             context.rollback()
             throw error
-        }
-        if legacyDataExists {
-            // The compatibility copy can never become newer after this point. Clearing
-            // it only after the store commits avoids losing a person's definitions if
-            // opening the new schema runs out of space or otherwise fails to save.
-            storage.removeObject(forKey: storageKey)
         }
         try refresh(context: context)
         return changed
@@ -841,7 +770,6 @@ enum ActivityCatalog {
     /// Clears only retired compatibility data for isolated seeded UI tests. The test
     /// store itself remains responsible for its durable records.
     static func resetForTesting() {
-        storage.removeObject(forKey: storageKey)
         storage.removeObject(forKey: categoryStorageKey)
         cached = sorted(defaults.map {
             ActivityDefinition(name: $0.name, category: $0.category, symbol: $0.symbol)

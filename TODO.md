@@ -1,6 +1,7 @@
 # LifeLog — code roadmap
 
-Rebuilt from a repository-wide audit of `main` at `9f65bfe` on 2026-08-19. This is an
+Rebuilt from a repository-wide audit of `main` at `9f65bfe` on 2026-08-19 and
+updated after the migration-debt cleanup. This is an
 open-work list, not a record of shipped features. The previous roadmap (from
 2026-08-16) was mostly completed since — backup manifest/versioning, Settings'
 status-led redesign, the maintenance coordinator, the archive-wide-fetch contract,
@@ -11,34 +12,6 @@ LifeLog is a private app for one iPhone 17 Pro Max, owned and used by one person
 Correct history, predictable background ingestion, responsive access to the archive,
 and code that can be changed safely outrank App Store preparation or speculative
 integrations.
-
-## Retire one-time migration debt — this device has already migrated
-
-Every item below exists to carry data or a schema shape from before a migration that
-has already completed, on the one device that will ever open this store. None of them
-protect against a real future case; they are load-bearing only until deleted.
-
-- [ ] **Drop the UserDefaults activity-catalogue bridge.**
-  `ActivityCatalog.prepareDurableCatalogue`'s `legacyDataExists` check has been
-  permanently false on this device since the one migration that mattered removed its
-  UserDefaults key. Delete the legacy-snapshot decode path and the alias-merge loop
-  it feeds. Keep `ActivityDefinition.legacyNames` itself — that's the live
-  rename-alias feature `AskLifeLogResolver` still searches, not the migration
-  bridge.
-
-- [ ] **Drop the legacy ignored-locations conversion.**
-  `VisitResolutionMigration.convertLegacyIgnoredKeysIfNeeded` already short-circuits
-  on this device (its one-time completion flag is permanently set). Delete it, its
-  launch call, `IgnoredLocations`'s legacy key-encoding helpers, and the
-  `ignoredVisitKeys` backup field — every ignore is already carried by
-  `Visit.resolutionState`.
-
-- [ ] **Delete frozen schema versions V1 through V10.**
-  `LifeLogMigrationPlan.schemas` only ever consults `[LifeLogSchemaV11, LifeLogSchemaV12]`
-  — the roughly 850 lines of V1–V10 struct declarations in `LifeLogSchema.swift` are
-  unreachable on a device that has already migrated to V12 and exist only as
-  historical documentation. Delete them; keep V11 (the one live predecessor) and V12
-  (current).
 
 ## Correctness and recovery — still open
 

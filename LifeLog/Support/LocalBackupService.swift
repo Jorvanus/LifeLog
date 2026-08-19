@@ -20,11 +20,6 @@ struct LifeLogBackup: Codable {
     /// timeline's coordinates, and this is the evidence needed to explain how
     /// those visits were created.
     let locationEvents: [LocationEventRecord]?
-    /// Retained in V3/V4 for a stable document shape. New backups write it empty:
-    /// every visit's own `resolutionState` carries `.ignored` keyed by its
-    /// `stableID`, unlike a key built from a row identity SwiftData reassigns on
-    /// every restore.
-    let ignoredVisitKeys: [String]
     let activityDefinitions: [ActivityDefinition]
     /// Field-for-field snapshot of every `ActivityDefinitionRecord` the
     /// catalogue is currently active, plus any inactive one a historical
@@ -304,8 +299,6 @@ enum LocalBackupService {
     private static let excludedPreferencePrefixes = [
         "LifeLog.WiFiAnchor.", "LifeLog.HealthKit.sleepAnchor", "LifeLog.HealthKit.workoutAnchor",
         "LifeLog.HardwareValidation.",
-        // Superseded by each visit's own `resolutionState`; see `ignoredVisitKeys`.
-        "LifeLog.IgnoredLocations.v1",
     ]
     private static func isPortablePreferenceKey(_ key: String) -> Bool {
         key.hasPrefix("LifeLog.") && !excludedPreferencePrefixes.contains { key.hasPrefix($0) }
@@ -385,7 +378,7 @@ enum LocalBackupService {
         let document = LifeLogBackup(version: LifeLogBackup.currentVersion, createdAt: .now,
             visits: visitRecords, savedPlaces: savedPlaceRecords, corrections: correctionRecords,
             diagnostics: diagnosticRecords, locationEvents: locationEventRecords,
-            ignoredVisitKeys: [], activityDefinitions: [],
+            activityDefinitions: [],
             activityDefinitionRecords: definitionRecords, preferences: preferences(), manifest: manifest)
         let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601; encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         return try encoder.encode(document)
@@ -399,8 +392,7 @@ enum LocalBackupService {
     /// is no earlier `context.save()` to leave standing: a decode, validation,
     /// non-empty-destination, insert, activity-identity, or audit/resolver
     /// failure at any point rolls back everything staged in this call, and
-    /// UserDefaults (`IgnoredLocations`, the legacy `ActivityCatalog` snapshot,
-    /// and portable preferences) is only ever written after that commit is
+    /// Portable preferences are only ever written after that commit is
     /// confirmed, so a caller never sees a store or a preference set left
     /// half-restored.
     @MainActor
@@ -541,7 +533,6 @@ enum LocalBackupService {
         // one thing that could still fail is already known to have succeeded --
         // otherwise a resolver failure above would leave preferences restored
         // against a store that never actually committed.
-        IgnoredLocations.importKeys(backup.ignoredVisitKeys)
         try? ActivityCatalog.refresh(context: context)
         for (key, value) in backup.preferences where isPortablePreferenceKey(key) {
             UserDefaults.standard.set(value, forKey: key)

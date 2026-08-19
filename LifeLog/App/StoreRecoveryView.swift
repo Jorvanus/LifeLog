@@ -123,7 +123,7 @@ enum StoreRecoverySupport {
     /// Derived from `LifeLogMigrationPlan` -- the same source of truth
     /// `LocalBackupService` reads for its own manifest -- so a recovery report
     /// never drifts from the schema `LifeLogApp` actually opens, the way the
-    /// hard-coded "LifeLogSchemaV4" text once did across seven version bumps.
+    /// hard-coded historical schema text once did across version bumps.
     static var currentSchemaDescription: String {
         let current = LifeLogMigrationPlan.schemas.last!
         return "\(current) (\(current.versionIdentifier))"

@@ -81,7 +81,6 @@ struct LifeLogApp: App {
         // `persistentModelID` while this is still the same store the keys were
         // recorded against — before a restore or another migration replaces it —
         // so this runs first, before anything else touches the store.
-        try VisitResolutionMigration.convertLegacyIgnoredKeysIfNeeded(context: context)
         // A callback may have landed just before termination. Repair only its recent
         // neighbourhood here; the archive-wide audit belongs to explicit maintenance.
         do {
