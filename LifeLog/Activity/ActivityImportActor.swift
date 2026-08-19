@@ -36,8 +36,7 @@ actor ActivityImportActor {
     // main context had just written to the same row. These copies are never inserted
     // into `modelContext`, so mutating them can never be swept into a save — the main
     // context remains the only writer of a stay's own recorded departure, and re-applies
-    // the same correction itself right after this import announces it has finished
-    // (`ActivityLocationPolicy.reapplyRecentJourneyTiming`). This array exists solely so
+    // the same correction itself in the writer's final reconciliation. This array exists solely so
     // this session's own segment math sees a bounded stay's shortened window immediately,
     // the same way it always has.
     private var boundableStays: [Visit] = []
@@ -195,7 +194,19 @@ actor ActivityImportActor {
         return toRemove.count
     }
 
-    func finish() throws {
+    /// Completes an import and its recent-activity reconciliation in the same
+    /// writer context. The import actor is the only context allowed to save these
+    /// rows, so movement/timing corrections cannot be overwritten by its stale
+    /// snapshot after a separate main-context repair.
+    func finish(reconcileLookback: TimeInterval? = nil) throws {
+        if let reconcileLookback, reconcileLookback > 0 {
+            _ = try ActivityLocationPolicy.reapplyRecentMovementAbsorption(
+                context: modelContext, lookback: reconcileLookback, save: false)
+            _ = try ActivityLocationPolicy.reapplyRecentJourneyTiming(
+                context: modelContext, lookback: reconcileLookback, save: false)
+            _ = try ActivityLocationPolicy.reapplyRecentOpenStayAbsorption(
+                context: modelContext, lookback: reconcileLookback, save: false)
+        }
         updateTravelDescriptions()
         if modelContext.hasChanges { try modelContext.save() }
         clearSession()

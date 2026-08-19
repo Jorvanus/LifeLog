@@ -51,17 +51,6 @@ final class MaintenanceCoordinator {
         }
     }
 
-    /// Importers call this after their own save lands. This remains deliberately
-    /// unversioned: it repairs only the imported lookback, while `runIfNeeded` owns
-    /// the archive-wide migration work above.
-    func reconcileRecentImport(context: ModelContext, lookback: TimeInterval) throws {
-        status = .running(phase: "Reconciling recent activity")
-        _ = try ActivityLocationPolicy.reapplyRecentMovementAbsorption(context: context, lookback: lookback)
-        _ = try ActivityLocationPolicy.reapplyRecentJourneyTiming(context: context, lookback: lookback)
-        _ = try ActivityLocationPolicy.reapplyRecentOpenStayAbsorption(context: context, lookback: lookback)
-        try context.save()
-        status = .complete
-    }
 
     private func run(context: ModelContext) async {
         await Task.yield()

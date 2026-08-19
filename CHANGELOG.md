@@ -1,8 +1,13 @@
 # Change log
 
+## 2026-08-19 — 2.21.1 (229)
+
+- Moved Health/Motion recent reconciliation into the import writer's final save boundary while retaining all three race safeguards.
+
 ## 2026-08-19 — 2.21.0 (228)
 
 - Removed the retired UserDefaults activity catalogue and ignored-location bridges, and reduced schema source to the supported V11 predecessor and current V12.
+- Health and Motion imports now run their recent movement, journey-timing, and open-stay reconciliation in the import writer context before the single final save, preserving the live race safeguards without a second main-context repair.
 
 ## 2026-08-19 — 2.20.9 (227)
 

@@ -29,17 +29,6 @@ integrations.
   few more days of normal on-device use, re-run this same audit before trying the
   retirement again.
 
-- [ ] **Do not delete the live race safeguards; move them to the writer that needs
-  them.** `reapplyRecentMovementAbsorption`, `reapplyRecentJourneyTiming`, and
-  `reapplyRecentOpenStayAbsorption` still compensate for the Health/Motion import
-  actor finishing with a different `ModelContext`. **Partial mitigation shipped**,
-  not the fix this item asks for: the three passes now take an explicit `lookback`,
-  and `ActivityDataService` re-applies them once more after each Health/Motion
-  import at the width it actually just replayed. This closes the gap without the
-  architectural change; making import completion one coordinated
-  mutation/save/publication boundary — so the Timeline appearance repairs and their
-  duplicate invalidation observer can be removed outright — is still the real fix.
-
 - [ ] **Merge adjacent same-place `.automatic` stays with nothing recorded between
   them at all.** `coalesceStaysAcrossUnlocatedMovement` only folds away a fragment
   that carries no coordinates; `mergeOverlappingStays` only merges stays that

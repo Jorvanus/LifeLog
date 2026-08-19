@@ -827,7 +827,11 @@ final class ActivityDataService {
                         in: Self.mergedSleepWindows(rebuiltSleepWindows), expected: rebuiltSleepRecords
                     )
                 }
-                try await importWriter.finish()
+                let importedDays = max(healthDays ?? 0, motionDays ?? 0)
+                let importedLookback = importedDays > 0
+                    ? TimeInterval(importedDays) * 24 * 60 * 60
+                    : nil
+                try await importWriter.finish(reconcileLookback: importedLookback)
                 // A newer request cancels this task and owns all user-visible state.
                 // Its anchor must win too; a superseded read can be replayed safely.
                 guard importCoordinator.mayPublish(id) else { return }
@@ -872,29 +876,6 @@ final class ActivityDataService {
                 if motionSegmentsRead > 0 {
                     HardwareValidation.recordFirst(.motionHistory, context: context,
                         message: "Core Motion returned \(motionSegmentsRead) segment(s) and the automatic import finished.")
-                }
-                // TimelineView's own `.onReceive(InsightsInvalidation.notification)`
-                // already re-applies these three at a flat 24h lookback for every
-                // invalidation, whatever its cause — cheap, and correct for a manual
-                // edit. But `walkingRecords` has no anchored-query equivalent and
-                // `healthImportWindowDays` can size this import's own replay window up
-                // to 30 days after any gap in successful imports, so a 24h correction
-                // is not wide enough to reach everything this import's stale
-                // `ActivityImportActor` snapshot (see its own doc comment) could have
-                // just overwritten. Re-apply once more here, scoped to the width this
-                // import actually read, so nothing between 24h and that width is left
-                // silently reverted until the next launch — or forever, since the
-                // archive-wide `reconcileAll` pass this would otherwise wait for only
-                // ever runs once per app version.
-                let importedDays = max(healthDays ?? 0, motionDays ?? 0)
-                if importedDays > 0, let context {
-                    let lookback = TimeInterval(importedDays) * 24 * 60 * 60
-                    do {
-                        try MaintenanceCoordinator.shared.reconcileRecentImport(context: context, lookback: lookback)
-                    } catch {
-                        // Retried on the next import; the coordinator owns every
-                        // post-import repair instead of relying on a visible tab.
-                    }
                 }
                 InsightsInvalidation.invalidate(reason: "HealthKit or Motion import", context: context)
                 if continueQueuedHealthObserverImportIfNeeded() { return }
