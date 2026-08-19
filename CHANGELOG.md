@@ -1,5 +1,17 @@
 # Change log
 
+## 2026-08-19 — Activity import reconciliation
+
+- Health and Motion imports now commit before the main context applies the final timeline reconciliation, so stale import state cannot overwrite the repair.
+
+## 2026-08-19 — Day timeline interaction
+
+- Tapping the Day timeline now opens a chronological, readable list of every recorded period and unlogged gap, so short periods no longer need to be tapped as tiny slivers.
+
+## 2026-08-19 — iPhone-only target
+
+- Declared LifeLog as an iPhone-only application and removed the unused iPad orientation declaration.
+
 ## 2026-08-19 — 2.21.1 (229)
 
 - Moved Health/Motion recent reconciliation into the import writer's final save boundary while retaining all three race safeguards.

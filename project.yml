@@ -30,7 +30,7 @@ targets:
         DEVELOPMENT_TEAM: 337KNRL5L8
         IPHONEOS_DEPLOYMENT_TARGET: "27.0"
         SWIFT_EMIT_LOC_STRINGS: YES
-        TARGETED_DEVICE_FAMILY: "1,2"
+        TARGETED_DEVICE_FAMILY: "1"
     entitlements:
       path: LifeLog/LifeLog.entitlements
       properties:

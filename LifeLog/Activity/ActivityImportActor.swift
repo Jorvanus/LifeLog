@@ -194,19 +194,10 @@ actor ActivityImportActor {
         return toRemove.count
     }
 
-    /// Completes an import and its recent-activity reconciliation in the same
-    /// writer context. The import actor is the only context allowed to save these
-    /// rows, so movement/timing corrections cannot be overwritten by its stale
-    /// snapshot after a separate main-context repair.
-    func finish(reconcileLookback: TimeInterval? = nil) throws {
-        if let reconcileLookback, reconcileLookback > 0 {
-            _ = try ActivityLocationPolicy.reapplyRecentMovementAbsorption(
-                context: modelContext, lookback: reconcileLookback, save: false)
-            _ = try ActivityLocationPolicy.reapplyRecentJourneyTiming(
-                context: modelContext, lookback: reconcileLookback, save: false)
-            _ = try ActivityLocationPolicy.reapplyRecentOpenStayAbsorption(
-                context: modelContext, lookback: reconcileLookback, save: false)
-        }
+    /// Commits the import actor's final batch. Its caller re-applies bounded timeline
+    /// reconciliation only after this save, using the main context that owns the
+    /// policy and diagnostics; this actor must never send its context across actors.
+    func finish() throws {
         updateTravelDescriptions()
         if modelContext.hasChanges { try modelContext.save() }
         clearSession()

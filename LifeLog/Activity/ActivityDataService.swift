@@ -831,7 +831,19 @@ final class ActivityDataService {
                 let importedLookback = importedDays > 0
                     ? TimeInterval(importedDays) * 24 * 60 * 60
                     : nil
-                try await importWriter.finish(reconcileLookback: importedLookback)
+                try await importWriter.finish()
+                if let importedLookback, let context {
+                    // The writer has committed and will not save its stale snapshot
+                    // again, so this main-context repair cannot be overwritten by
+                    // the import batch that made it necessary.
+                    _ = try ActivityLocationPolicy.reapplyRecentMovementAbsorption(
+                        context: context, lookback: importedLookback, save: false)
+                    _ = try ActivityLocationPolicy.reapplyRecentJourneyTiming(
+                        context: context, lookback: importedLookback, save: false)
+                    _ = try ActivityLocationPolicy.reapplyRecentOpenStayAbsorption(
+                        context: context, lookback: importedLookback, save: false)
+                    if context.hasChanges { try context.save() }
+                }
                 // A newer request cancels this task and owns all user-visible state.
                 // Its anchor must win too; a superseded read can be replayed safely.
                 guard importCoordinator.mayPublish(id) else { return }

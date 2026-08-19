@@ -33,6 +33,7 @@ struct DayTimelineBar: View {
     let interval: DateInterval
     let now: Date
     let onSelect: (InsightSegment) -> Void
+    @State private var isShowingEntries = false
 
     private static let gap: CGFloat = 2
 
@@ -65,13 +66,12 @@ struct DayTimelineBar: View {
                 let blocks = self.blocks
                 let gaps = Self.gap * CGFloat(max(blocks.count - 1, 0))
                 let available = max(proxy.size.width - gaps, 1)
-                    ZStack(alignment: .leading) {
-                        HStack(spacing: Self.gap) {
-                            ForEach(blocks) { block in
+                ZStack(alignment: .leading) {
+                    HStack(spacing: Self.gap) {
+                        ForEach(blocks) { block in
                             DayBarSegment(block: block,
                                           width: available * block.hours / totalHours,
                                           onSelect: onSelect)
-                                .contentShape(Rectangle())
                         }
                     }
                     if let nowFraction {
@@ -81,9 +81,16 @@ struct DayTimelineBar: View {
                             .offset(x: proxy.size.width * nowFraction - 1)
                             .accessibilityHidden(true)
                     }
+                    // Short periods have to remain visually proportional, which can
+                    // make them only a few points wide. The whole bar opens a readable
+                    // chronological list instead of demanding a tiny target.
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { isShowingEntries = true }
+                        .accessibilityHidden(true)
                 }
             }
-            .frame(height: 34)
+            .frame(height: 44)
             GeometryReader { proxy in
                 let tickPositions = [0, 6, 12, 18].map {
                     proxy.size.width * CGFloat($0) / 24
@@ -108,6 +115,12 @@ struct DayTimelineBar: View {
             }
             .frame(height: 30)
             DayTimelineLegend()
+            Text("Tap the timeline to see its recorded periods.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .sheet(isPresented: $isShowingEntries) {
+            DayTimelineEntriesSheet(blocks: blocks, onSelect: onSelect)
         }
     }
 
@@ -118,6 +131,67 @@ struct DayTimelineBar: View {
         case let hour where hour < 12: "\(hour)am"
         default: "\(hour - 12)pm"
         }
+    }
+}
+
+/// A readable counterpart to the proportional day bar. It retains unlogged gaps so
+/// the list explains the whole elapsed day, while each row remains a normal-sized
+/// control that opens the same review destination as its timeline segment.
+private struct DayTimelineEntriesSheet: View {
+    let blocks: [DayBarBlock]
+    let onSelect: (InsightSegment) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    private var pastBlocks: [DayBarBlock] { blocks.filter { !$0.isFuture } }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(pastBlocks) { block in
+                    Button {
+                        dismiss()
+                        onSelect(block.segment)
+                    } label: {
+                        DayTimelineEntryRow(block: block)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .navigationTitle("Timeline periods")
+        }
+        .presentationDetents([.medium, .large])
+    }
+}
+
+private struct DayTimelineEntryRow: View {
+    let block: DayBarBlock
+
+    private var title: String {
+        if block.segment.isUnlogged { return "Not logged" }
+        if block.segment.isSleep { return "Sleep" }
+        if block.isTravel { return "Travel" }
+        return block.segment.activity
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 4)
+                .fill(block.segment.isUnlogged ? Color.gray.opacity(0.45) : block.segment.color)
+                .frame(width: 8, height: 40)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.headline)
+                Text("\(block.start.formatted(date: .omitted, time: .shortened)) – \(block.end.formatted(date: .omitted, time: .shortened)) · \(formatHours(block.hours))")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption.bold())
+                .foregroundStyle(.tertiary)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title), \(block.start.formatted(date: .omitted, time: .shortened)) to \(block.end.formatted(date: .omitted, time: .shortened)), \(formatHours(block.hours))")
+        .accessibilityHint("Opens this period")
     }
 }
 
