@@ -97,6 +97,13 @@ Reusing them is wiring, not new design or new calculation.
   activities that do not fit an existing group, while keeping the generic dot as an
   intentional fallback rather than the only choice.
 
+- [ ] **Explain the walking records.** Distinguish an Apple Fitness/Health walking
+  workout (`health-workout`, with its deliberate session and distance) from passive
+  walking detected by the device (`health-walking`/motion). Keep the useful kilometre
+  value on Timeline, but give the rows source-aware wording such as “Walking workout”
+  versus “Walking detected,” and consider a separate colour or badge so the activity
+  and its evidence are immediately clear without treating either as medical data.
+
 ## Correctness and recovery — still open
 
 - [ ] **Run one explicit audit of the cleaned archive, then retire four historical

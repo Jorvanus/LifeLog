@@ -3,6 +3,18 @@ import Testing
 @testable import LifeLog
 
 struct TimelineDaySelectionTests {
+    @Test("Timeline distinguishes walking workout from passive walking")
+    func walkingSourceLabels() {
+        #expect(TimelineWalkingSource.resolve(source: VisitSource.healthWorkoutRaw,
+                                              activity: "Walking") == .workout)
+        #expect(TimelineWalkingSource.resolve(source: VisitSource.healthWalkingRaw,
+                                              activity: "Walking") == .detected)
+        #expect(TimelineWalkingSource.resolve(source: VisitSource.motionRaw,
+                                              activity: "Walking") == .detected)
+        #expect(TimelineWalkingSource.workout.title == "Walking workout")
+        #expect(TimelineWalkingSource.detected.title == "Walking detected")
+    }
+
     @Test("Timeline day intervals use the calendar day rather than a fixed duration")
     func intervalIsCalendarBounded() {
         var calendar = Calendar(identifier: .gregorian)

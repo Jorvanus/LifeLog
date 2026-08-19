@@ -3,6 +3,26 @@ import SwiftData
 import MapKit
 import UIKit
 
+/// The two kinds of walking shown on Timeline. Both can say "Walking", but one is
+/// a deliberate Apple Fitness/Health session and the other is passive device evidence.
+enum TimelineWalkingSource: String, Sendable, Equatable {
+    case workout
+    case detected
+
+    static func resolve(source: String, activity: String) -> Self? {
+        guard ActivityLocationPolicy.describesWalking(activity) else { return nil }
+        switch source {
+        case VisitSource.healthWorkoutRaw: return .workout
+        case VisitSource.healthWalkingRaw, VisitSource.motionRaw: return .detected
+        default: return nil
+        }
+    }
+
+    var title: String { self == .workout ? "Walking workout" : "Walking detected" }
+    var badge: String { self == .workout ? "Apple Fitness workout" : "Device detected" }
+    var symbol: String { self == .workout ? "figure.walk.motion" : "figure.walk" }
+}
+
 struct TimelineView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -751,7 +771,17 @@ private struct JourneyRow: View {
     let isCurrent: Bool
     let isFirst: Bool
     let isLast: Bool
-    private var color: Color { visit.needsCategorisation ? .orange : activityColor(visit.activity) }
+    private var walkingSource: TimelineWalkingSource? {
+        TimelineWalkingSource.resolve(source: visit.source, activity: visit.activity)
+    }
+    private var color: Color {
+        if visit.needsCategorisation { return .orange }
+        switch walkingSource {
+        case .workout: return .blue
+        case .detected: return .teal
+        case nil: return activityColor(visit.activity)
+        }
+    }
 
     var body: some View {
         NavigationLink { VisitEditor(visit: visit) } label: {
@@ -845,17 +875,21 @@ private struct JourneyRow: View {
                 Text("Suspected: \(visit.inferredActivity)")
                     .font(.subheadline).foregroundStyle(.secondary)
             } else if visit.hasRoute {
-                // A journey is described by how far it went. Its place name is only
-                // ever "Walking workout", which says nothing.
-                Text(visit.activity).font(.headline.weight(.semibold)).foregroundStyle(.primary)
+                // A walking journey is described by both its source and distance;
+                // the route measurement remains the useful part of this row.
+                Text(walkingSource?.title ?? visit.activity)
+                    .font(.headline.weight(.semibold)).foregroundStyle(.primary)
                 Text(formattedDistance(visit.routeDistance))
                     .font(.subheadline).foregroundStyle(.secondary)
+                walkingSourceBadge
             } else {
                 // Place name leads, activity follows -- matching the Current
                 // Activity card above, so the same "Home"/"At home" pairing
                 // doesn't read backwards between the two.
                 Text(visit.displayPlaceName).font(.headline.weight(.semibold)).foregroundStyle(.primary)
-                Text(visit.activity).font(.subheadline).foregroundStyle(.secondary)
+                Text(walkingSource?.title ?? visit.activity)
+                    .font(.subheadline).foregroundStyle(.secondary)
+                walkingSourceBadge
             }
             Text(timeDescription).font(.subheadline).foregroundStyle(.secondary)
         }
@@ -873,6 +907,19 @@ private struct JourneyRow: View {
         } else {
             Text(visit.confidenceLabel).font(.caption.weight(.semibold)).foregroundStyle(.green)
                 .padding(.horizontal, 10).padding(.vertical, 6).background(.green.opacity(0.1), in: Capsule())
+        }
+    }
+
+    @ViewBuilder private var walkingSourceBadge: some View {
+        if let walkingSource {
+            Label(walkingSource.badge, systemImage: walkingSource.symbol)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(color.opacity(0.12), in: Capsule())
+                .accessibilityLabel(walkingSource.badge)
         }
     }
 

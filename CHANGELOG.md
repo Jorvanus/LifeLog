@@ -1,6 +1,15 @@
 # Change log
 
-## 2026-08-19 — 2.20.7 (225)
+## 2026-08-19 — 2.20.8 (226)
+
+### Walking source labels
+
+- Timeline now distinguishes Apple Fitness walking workouts from passive device-detected walking, while retaining route distance and using separate source badges and colours.
+- Source badges now sit beneath the activity details instead of competing with the duration column, preventing walking labels from wrapping one word per line.
+
+### Walking source clarity roadmap
+
+- Added follow-up work to distinguish Apple Fitness walking workouts from passive device-detected walking while retaining Timeline distance.
 
 ### Duplicate activity edit
 
