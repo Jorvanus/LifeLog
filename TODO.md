@@ -1,6 +1,6 @@
 # LifeLog — code roadmap
 
-Rebuilt from a repository-wide audit of `main` at `5fb546a` on 2026-08-18. This is an
+Rebuilt from a repository-wide audit of `main` at `9f65bfe` on 2026-08-19. This is an
 open-work list, not a record of shipped features. The previous roadmap (from
 2026-08-16) was mostly completed since — backup manifest/versioning, Settings'
 status-led redesign, the maintenance coordinator, the archive-wide-fetch contract,
@@ -18,28 +18,6 @@ Every item below exists to carry data or a schema shape from before a migration 
 has already completed, on the one device that will ever open this store. None of them
 protect against a real future case; they are load-bearing only until deleted.
 
-- [ ] **Retire the Life Cycle CSV importer.** `JournalCSVImporter.swift` and its
-  Settings wiring (`SettingsView`'s `importingJournal` state, `.fileImporter`, and
-  `importJournal(_:)`) exist to bulk-import a defunct third-party app's CSV export —
-  a one-time historical migration already completed on this device. Delete the
-  importer, its Settings row, and its test coverage in
-  `MalformedFixturesAndImportExportTests.swift`. Keep everything downstream
-  untouched: the `"imported-journal"` `Visit.source` tag and every place that reads
-  it (Timeline filtering, Insights, AskLifeLog, Archive Repair, and
-  `JournalCompactionView`, the separate screen that manages already-imported rows)
-  describe data already in the archive and must keep working regardless of whether a
-  new import can ever happen again.
-
-- [ ] **Narrow backup restore to the current version only.** `LocalBackupService.restore`
-  currently accepts the current backup version and the one before it, and
-  `LifeLogBackup` carries a page of `Optional` fields plus a whole alias-merge branch
-  (in `restore`, gated on `backup.version == currentVersion - 1`) purely to keep
-  reading that older shape. A single-owner device that only ever restores its own
-  recent exports doesn't need that window. Narrow the version guard to equality,
-  make the now-always-present fields non-optional (`locationEvents`,
-  `ActivityDefinitionRecordEntry.legacyNames`, most of `VisitRecord`'s optionals,
-  `SavedPlaceRecord.role`), and delete the previous-version alias-merge branch.
-
 - [ ] **Drop the UserDefaults activity-catalogue bridge.**
   `ActivityCatalog.prepareDurableCatalogue`'s `legacyDataExists` check has been
   permanently false on this device since the one migration that mattered removed its
@@ -52,8 +30,8 @@ protect against a real future case; they are load-bearing only until deleted.
   `VisitResolutionMigration.convertLegacyIgnoredKeysIfNeeded` already short-circuits
   on this device (its one-time completion flag is permanently set). Delete it, its
   launch call, `IgnoredLocations`'s legacy key-encoding helpers, and the
-  `ignoredVisitKeys` backup field once the backup-narrowing item above lands — every
-  ignore is already carried by `Visit.resolutionState`.
+  `ignoredVisitKeys` backup field — every ignore is already carried by
+  `Visit.resolutionState`.
 
 - [ ] **Delete frozen schema versions V1 through V10.**
   `LifeLogMigrationPlan.schemas` only ever consults `[LifeLogSchemaV11, LifeLogSchemaV12]`
@@ -61,48 +39,6 @@ protect against a real future case; they are load-bearing only until deleted.
   unreachable on a device that has already migrated to V12 and exist only as
   historical documentation. Delete them; keep V11 (the one live predecessor) and V12
   (current).
-
-## Timeline presentation
-
-Two pieces of visual infrastructure already exist, are tested, and are fed by the
-same resolved data Timeline already reads — they just never made it out of Insights.
-Reusing them is wiring, not new design or new calculation.
-
-- [ ] **Show the day at a glance, not just as a list.** `DayTimelineBar` (Insights) is
-  a tested 24-hour visual bar built from the same `InsightsSnapshot` segments the
-  donut and Day Insights already use, with tap-to-select. It currently only appears
-  inside Insights' Day screen. Surface it at the top of Timeline's own day journey —
-  today and any past day, via `PastDayJourney` — so the day's shape (sleep, travel,
-  unlogged gaps) is visible before scrolling the vertical list, with a tap scrolling
-  to or opening that visit.
-
-- [ ] **Make the date jump faster for recent days.** `dayNavigator` currently offers
-  only "Today" or the full calendar sheet (`jumpToDateSheet`) — even yesterday needs
-  the sheet. A compact recent-days strip, sized down from Insights' `WeeklyStrip`,
-  next to the date control would make the last week reachable in one tap without a
-  second full navigation surface.
-
-- [ ] **Give a past day a one-line total.** `PastDayJourney` opens straight into the
-  row list with no summary of the day as a whole. A single line above the list —
-  reusing `InsightsSnapshot.categoryHours`, not a new calculation — would orient a
-  person before they scroll, especially on a day with many short entries.
-
-## Activity presentation
-
-- [x] **Expand People & pets icon combinations.** Add more useful SF Symbols that
-  combine people and animals (for example, person-plus-paw or family-and-pet
-  contexts) so activity labels are not forced into a generic person or paw icon.
-
-- [x] **Expand Other icons.** Add a small, coherent set of neutral symbols for
-  activities that do not fit an existing group, while keeping the generic dot as an
-  intentional fallback rather than the only choice.
-
-- [ ] **Explain the walking records.** Distinguish an Apple Fitness/Health walking
-  workout (`health-workout`, with its deliberate session and distance) from passive
-  walking detected by the device (`health-walking`/motion). Keep the useful kilometre
-  value on Timeline, but give the rows source-aware wording such as “Walking workout”
-  versus “Walking detected,” and consider a separate colour or badge so the activity
-  and its evidence are immediately clear without treating either as medical data.
 
 ## Correctness and recovery — still open
 

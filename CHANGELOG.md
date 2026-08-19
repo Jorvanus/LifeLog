@@ -1,6 +1,14 @@
 # Change log
 
-## 2026-08-19 — 2.20.8 (226)
+## 2026-08-19 — 2.20.9 (227)
+
+### TODO review
+
+- Removed shipped Timeline, walking-source, importer, and obsolete backup-version roadmap entries; the remaining list is limited to open migration and correctness work.
+
+### TODO cleanup
+
+- Removed completed activity icon expansion items from the open roadmap.
 
 ### Walking source labels
 
