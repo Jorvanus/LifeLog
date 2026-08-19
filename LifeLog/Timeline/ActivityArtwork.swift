@@ -37,7 +37,7 @@ struct ActivityIcon: View {
         if let definition = ActivityCatalog.load().first(where: {
             $0.matchesSnapshot(activity)
         }) {
-            return definition.symbol
+            return ActivityCatalog.symbol(for: activity)
         }
         if text.contains("travel") || text.contains("transit") { return "car.fill" }
         if text.contains("home") { return "house.fill" }

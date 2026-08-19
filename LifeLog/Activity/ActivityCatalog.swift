@@ -494,6 +494,27 @@ enum ActivityCatalog {
         return inferredCategory(for: key)
     }
 
+    /// The symbol to use when rendering a label from either the catalogue or the
+    /// archive. History can contain an alias, a label that has not been adopted, or
+    /// an older definition whose symbol was the generic dot. Resolve those cases to
+    /// the definition's category instead of making every list invent its own lookup.
+    /// A deliberately chosen dot remains valid for an activity in Other.
+    static func symbol(for activity: String,
+                       in catalogue: [ActivityDefinition]? = nil) -> String {
+        let activities = catalogue ?? load()
+        if let definition = activities.first(where: { $0.matchesSnapshot(activity) }) {
+            let symbol = definition.symbol.trimmingCharacters(in: .whitespacesAndNewlines)
+            let category = definition.category
+            if ActivityIcons.contains(symbol),
+               !(symbol == "circle.fill" && category.caseInsensitiveCompare(fallbackCategory) != .orderedSame) {
+                return symbol
+            }
+            return ActivityIcons.symbol(forCategory: category)
+        }
+
+        return ActivityIcons.symbol(forCategory: category(for: activity))
+    }
+
     /// The group a label belongs to when nothing else knows it: an imported journal
     /// entry, or anything typed straight onto a visit. This used to be four rules
     /// wide (sleep/walk/travel), which is why an archive full of real labels --

@@ -104,6 +104,19 @@ struct ActivityArtworkBoundsTests {
                                                       excludingNames: ["At home"]).map(\.name) == ["Cafe", "Café"])
     }
 
+    @Test("Activity list symbols resolve aliases and non-Other category fallbacks")
+    func listSymbolsDoNotCollapseToDots() {
+        let health = ActivityDefinition(name: "Dentist", category: "Health", symbol: "circle.fill")
+        let renamed = ActivityDefinition(name: "At home", category: "Home", symbol: "house.fill")
+        var alias = ActivityDefinition(name: "Breakfast", category: "Food & Drink", symbol: "sunrise.fill")
+        alias.legacyNames = ["Morning meal"]
+        let catalogue = [health, renamed, alias]
+
+        #expect(ActivityCatalog.symbol(for: "Dentist", in: catalogue) == "cross.case.fill")
+        #expect(ActivityCatalog.symbol(for: "Morning meal", in: catalogue) == "sunrise.fill")
+        #expect(ActivityCatalog.symbol(for: "Doctor", in: catalogue) == "cross.case.fill")
+    }
+
     @Test("Timeline uses the activity icon selected in Activities")
     func timelineUsesStoredActivityIcon() throws {
         let defaults = try #require(UserDefaults(suiteName: UUID().uuidString))

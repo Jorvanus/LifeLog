@@ -34,6 +34,7 @@ struct ActivityDetailView: View {
     @State private var loadedEditableState = false
 
     @State private var confirmingDelete = false
+    @State private var deleteFailed = false
     /// The name of the existing activity a Save attempt collided with. Renaming
     /// into an occupied name is refused outright rather than silently merging by
     /// spelling — see `mergeTarget` below for the real, explicit replacement.
@@ -135,6 +136,11 @@ struct ActivityDetailView: View {
             Button("OK", role: .cancel) { }
         } message: {
             Text("“\(activityName)” could not be merged just now. Nothing changed; try again.")
+        }
+        .alert("Activity couldn’t be deleted", isPresented: $deleteFailed) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("Nothing changed. Check that the local store is available and try again.")
         }
         .confirmationDialog("Delete activity?", isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button("Delete anyway", role: .destructive) { delete() }
@@ -434,8 +440,20 @@ struct ActivityDetailView: View {
 
     private func delete() {
         var activities = ActivityCatalog.load()
-        activities.removeAll { $0.id == existingID }
-        guard (try? ActivityCatalog.save(activities, context: context)) != nil else { return }
+        let id = existingID ?? activities.first {
+            $0.name.caseInsensitiveCompare(activityName) == .orderedSame
+        }?.id
+        guard let id else {
+            deleteFailed = true
+            return
+        }
+        activities.removeAll { $0.id == id }
+        do {
+            try ActivityCatalog.save(activities, context: context)
+        } catch {
+            deleteFailed = true
+            return
+        }
         InsightsInvalidation.invalidate(reason: "Activity deleted", context: context)
         dismiss()
     }

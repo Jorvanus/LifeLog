@@ -32,8 +32,6 @@ struct ActivitiesTabView: View {
     private func reload() async {
         let startedAt = Date.now
         let definitions = ActivityCatalog.load()
-        var symbols: [String: String] = [:]
-        for definition in definitions { symbols[definition.name.lowercased()] = definition.symbol }
 
         // Summaries, not full statistics: the list shows occasions, total time and
         // the week's shape. Everything else is computed when an activity is opened.
@@ -55,7 +53,7 @@ struct ActivitiesTabView: View {
         let adopted = Set(definitions.map { NameKey.matching($0.name) })
         var built = summaries.map { entry in
             Row(name: entry.activity,
-                symbol: symbols[entry.activity.lowercased()] ?? "circle.fill",
+                symbol: ActivityCatalog.symbol(for: entry.activity, in: definitions),
                 statistics: entry,
                 isAdopted: adopted.contains(NameKey.matching(entry.activity)))
         }

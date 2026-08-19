@@ -1,5 +1,23 @@
 # Change log
 
+## 2026-08-19 — 2.20.6 (224)
+
+### Activity icon fallback
+
+- Activity lists now share the catalogue's alias and category-aware symbol resolver, so older labels and Health activities do not silently render as generic dots when their stored icon is missing.
+
+### Activity deletion feedback
+
+- Activity deletion now refreshes visible lists from the durable catalogue, handles a missing cached identity, and reports a failed save instead of silently leaving the row visible.
+
+## 2026-08-19 — Activity list icons
+
+- Activity Labels now render each stored activity icon in an explicit leading column, matching the icon shown on the activity detail screen.
+
+## 2026-08-19 — Place History compile fix
+
+- Split the Place History detail into focused section views with explicit section headers so SwiftUI can type-check the map, analytics, visits, and correction controls reliably. Visit rows now open on a separate history screen instead of loading into the detail view.
+
 ## 2026-08-19 — 2.20.5 (223)
 
 ### Place History detail context

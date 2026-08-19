@@ -10,6 +10,7 @@ struct ActivitiesView: View {
     /// visible before it rather than discovered afterwards in Insights.
     @State private var usage: [String: Int] = [:]
     @State private var pendingDeletion: IndexSet?
+    @State private var deleteError = false
     @State private var reader: VisitArchiveReader?
     @State private var usageTask: Task<Void, Never>?
 
@@ -24,14 +25,18 @@ struct ActivitiesView: View {
         NavigationLink {
             ActivityDetailView(activityName: activity.name, symbol: activity.symbol)
         } label: {
-            Label {
+            HStack(spacing: 12) {
+                Image(systemName: ActivityCatalog.symbol(for: activity.name, in: activities))
+                    .font(.title3)
+                    .foregroundStyle(activityColor(activity.name))
+                    .frame(width: 30, height: 30)
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(activity.name).font(.headline)
                     Text(subtitle(for: activity))
                         .font(.caption).foregroundStyle(.secondary)
                 }
-            } icon: {
-                Image(systemName: activity.symbol).foregroundStyle(activityColor(activity.name))
+                Spacer(minLength: 0)
             }
         }
         // Belongs on the row, not the pushed destination, so the colour is announced
@@ -93,6 +98,15 @@ struct ActivitiesView: View {
             activities = ActivityCatalog.uniqueForPresentation(ActivityCatalog.load())
             refreshUsage()
         }
+        .onReceive(NotificationCenter.default.publisher(for: InsightsInvalidation.notification)) { _ in
+            activities = ActivityCatalog.uniqueForPresentation(ActivityCatalog.load())
+            refreshUsage()
+        }
+        .alert("Activity couldn’t be deleted", isPresented: $deleteError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("Nothing changed. Check that the local store is available and try again.")
+        }
         .confirmationDialog("Delete activity?", isPresented: Binding(
             get: { pendingDeletion != nil },
             set: { if !$0 { pendingDeletion = nil } })
@@ -129,6 +143,7 @@ struct ActivitiesView: View {
             try ActivityCatalog.save(activities, context: context)
         } catch {
             activities = ActivityCatalog.uniqueForPresentation(ActivityCatalog.load())
+            deleteError = true
             return
         }
         InsightsInvalidation.invalidate(reason: "Activity deleted", context: context)

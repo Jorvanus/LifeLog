@@ -81,17 +81,19 @@ enum ActivityIcons {
     /// sheet and the inline action on the Activities tab — and the same activity must
     /// not come out looking different depending on which one was used.
     static func symbol(forCategory category: String) -> String {
-        switch category {
+        switch category.trimmingCharacters(in: .whitespacesAndNewlines) {
         case "Home": "house.fill"
         case "Work": "briefcase.fill"
-        case "Food & Drink": "fork.knife"
-        case "Shopping": "bag.fill"
+        case "Work & study", "Education": "book.fill"
+        case "Food & Drink", "Food & drink": "fork.knife"
+        case "Shopping", "Shopping & money", "Errands": "bag.fill"
         case "Fitness": "figure.run"
-        case "Healthcare": "cross.case.fill"
-        case "Education": "book.fill"
+        case "Healthcare", "Health": "cross.case.fill"
         case "Travel": "car.fill"
+        case "Commute": "car.fill"
         case "Entertainment": "film.fill"
         case "Social": "person.2.fill"
+        case "Pets", "People & pets": "pawprint.fill"
         case "Sleep": "bed.double.fill"
         default: "circle.fill"
         }
