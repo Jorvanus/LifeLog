@@ -75,6 +75,10 @@ extension ActivityLocationPolicy {
     /// — the walk to the park, the drive to work — is an event in its own right.
     static func shouldShowInTimeline(_ visit: Visit, locationVisits: [Visit], now: Date = .now) -> Bool {
         guard !isSupersededLocation(visit) else { return false }
+        // A person-confirmed journey is an explicit answer to this gap. Keep it on
+        // the timeline even when it is shorter than the normal vehicle-motion
+        // threshold; that threshold is only for passive device samples.
+        if visit.visitSource == .manualTravel { return true }
         // Timeline is destination-first: device activity that occurs inside a
         // recorded place is retained for Insights but does not become another
         // simultaneous card. Sleep is the intentional exception.

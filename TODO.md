@@ -87,6 +87,16 @@ Reusing them is wiring, not new design or new calculation.
   reusing `InsightsSnapshot.categoryHours`, not a new calculation — would orient a
   person before they scroll, especially on a day with many short entries.
 
+## Activity presentation
+
+- [x] **Expand People & pets icon combinations.** Add more useful SF Symbols that
+  combine people and animals (for example, person-plus-paw or family-and-pet
+  contexts) so activity labels are not forced into a generic person or paw icon.
+
+- [x] **Expand Other icons.** Add a small, coherent set of neutral symbols for
+  activities that do not fit an existing group, while keeping the generic dot as an
+  intentional fallback rather than the only choice.
+
 ## Correctness and recovery — still open
 
 - [ ] **Run one explicit audit of the cleaned archive, then retire four historical

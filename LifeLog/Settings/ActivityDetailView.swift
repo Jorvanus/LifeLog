@@ -384,7 +384,7 @@ struct ActivityDetailView: View {
         // rather than treated as a merge — two IDs sharing a display name would
         // undo the identity separation this migration adds. Use "Merge into
         // another activity" below for that instead.
-        if let collision {
+        if renamed, let collision {
             nameCollision = collision.name
             return
         }
@@ -402,6 +402,18 @@ struct ActivityDetailView: View {
         var activities = ActivityCatalog.load()
         if let index = activities.firstIndex(where: { $0.id == definition.id }) {
             activities[index] = definition
+            // Older catalogue adoption could leave more than one durable ID for
+            // the same display label. Editing the label's icon/category should not
+            // be blocked by that duplicate, nor leave the visible row dependent on
+            // which duplicate happens to sort first.
+            if definition.name.caseInsensitiveCompare(activityName) == .orderedSame {
+                for duplicateIndex in activities.indices where duplicateIndex != index &&
+                    activities[duplicateIndex].name.caseInsensitiveCompare(definition.name) == .orderedSame {
+                    activities[duplicateIndex].category = definition.category
+                    activities[duplicateIndex].symbol = definition.symbol
+                    activities[duplicateIndex].colorHex = definition.colorHex
+                }
+            }
         } else {
             activities.append(definition)
         }

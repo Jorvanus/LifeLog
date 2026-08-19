@@ -55,6 +55,7 @@ struct ManualVisitView: View {
     @State private var arrival: Date
     @State private var departure: Date
     @State private var resolution: ManualPlaceResolution = .none
+    @State private var recordingJourney = false
     @State private var saveFailed = false
     @State private var confirmingOverlap = false
     /// The two closest visits on each side of `range`, fetched once when the sheet
@@ -196,15 +197,21 @@ struct ManualVisitView: View {
                 }
 
                 Section {
-                    NavigationLink {
-                        VisitLocationChooser(name: $place, resolution: $resolution)
-                    } label: {
-                        LabeledContent("Location") {
-                            Text(place.isEmpty ? "Choose location" : place)
-                                .foregroundStyle(place.isEmpty ? .secondary : .primary)
+                    if recordingJourney {
+                        LabeledContent("Journey") {
+                            Text(place).foregroundStyle(.primary)
                         }
+                    } else {
+                        NavigationLink {
+                            VisitLocationChooser(name: $place, resolution: $resolution)
+                        } label: {
+                            LabeledContent("Location") {
+                                Text(place.isEmpty ? "Choose location" : place)
+                                    .foregroundStyle(place.isEmpty ? .secondary : .primary)
+                            }
+                        }
+                        .accessibilityIdentifier("choose-location-link")
                     }
-                    .accessibilityIdentifier("choose-location-link")
 
                     NavigationLink {
                         PlaceActivitySelection(selection: $activity)
@@ -219,6 +226,8 @@ struct ManualVisitView: View {
                     if let automaticDraftMessage {
                         Label(automaticDraftMessage, systemImage: "wand.and.stars")
                             .accessibilityIdentifier("manual-visit-automatic-draft-note")
+                    } else if recordingJourney {
+                        Text("This records the time as travel between these endpoints. It does not create or rename a location.")
                     }
                 }
 
@@ -327,6 +336,7 @@ struct ManualVisitView: View {
     /// the same "A → B" arrow label `VisitSuggestion` already uses for a
     /// commute, so it reads as transition time rather than a destination.
     private func useSuggestionAsDraft(_ candidate: GapSuggestionCandidate) {
+        recordingJourney = candidate.kind == .homeWorkTransition
         populateDraft(from: candidate)
         acceptedDraftSnapshot = DraftSnapshot(place: place, activity: activity, arrival: arrival, departure: departure)
     }
@@ -341,6 +351,7 @@ struct ManualVisitView: View {
         case .continuationOfAfterStay:
             if let afterVisit { selectPlace(from: afterVisit) }
         case .homeWorkTransition:
+            recordingJourney = true
             let fromLabel = beforeVisit?.displayPlaceName ?? "Home"
             let toLabel = afterVisit?.displayPlaceName ?? "Work"
             place = "\(fromLabel) → \(toLabel)"
@@ -400,6 +411,7 @@ struct ManualVisitView: View {
     /// The activity is left for the person to choose; a coffee stop before a gap
     /// does not mean the gap itself was also coffee.
     private func selectPlace(from visit: Visit) {
+        recordingJourney = false
         place = visit.displayPlaceName
         resolution = (visit.latitude != 0 || visit.longitude != 0)
             ? .matched(name: visit.displayPlaceName, coordinate: visit.coordinate)
@@ -413,6 +425,7 @@ struct ManualVisitView: View {
     /// Home/Work: a walk that ends and a drive that starts at an ordinary shop is
     /// travel too, and until now had no path to being recorded as such at all.
     private func markAsTravel(from before: Visit, to after: Visit) {
+        recordingJourney = true
         place = "\(before.displayPlaceName) → \(after.displayPlaceName)"
         resolution = .none
         activity = "Travelling"
@@ -424,6 +437,7 @@ struct ManualVisitView: View {
     /// than either bordering health fragment. Carry its coordinate into the
     /// editable draft exactly as choosing that Saved Place by hand does.
     private func selectPlace(from savedPlace: SavedPlace) {
+        recordingJourney = false
         place = savedPlace.name
         resolution = .matched(name: savedPlace.name, coordinate: savedPlace.coordinate)
     }
@@ -442,13 +456,14 @@ struct ManualVisitView: View {
         let safeDeparture = effectiveDeparture
         let coordinate = resolution.coordinate
         let inferred = InferenceEngine.activity(placeName: safePlace, arrival: arrival)
+        let source = recordingJourney ? VisitSource.manualTravelRaw : VisitSource.manualRaw
         let visit = Visit(arrival: arrival, departure: safeDeparture,
                              latitude: coordinate?.latitude ?? 0, longitude: coordinate?.longitude ?? 0,
                              placeName: safePlace,
                              inferredActivity: safeActivity.isEmpty ? inferred : safeActivity,
-                             userActivity: safeActivity.isEmpty ? nil : safeActivity, source: "manual",
+                             userActivity: safeActivity.isEmpty ? nil : safeActivity, source: source,
                              recognitionConfidence: resolution.confidence,
-                             placeFieldProvenance: "manual")
+                             placeFieldProvenance: recordingJourney ? nil : "manual")
         let result = VisitMutationService.perform(context: context, kind: .manualVisit) {
             context.insert(visit)
             return .init(affectedVisit: visit, callbackInterval: DateInterval(start: arrival, end: safeDeparture),

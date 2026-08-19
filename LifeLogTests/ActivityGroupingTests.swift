@@ -72,4 +72,16 @@ struct ActivityGroupingTests {
                     "\"\(label)\" produced an unshipped group")
         }
     }
+
+    @Test("Groups show one row per activity label")
+    func groupPresentationCollapsesDuplicateDefinitions() {
+        let activities = [
+            ActivityDefinition(name: "At home", category: "Home", symbol: "house.fill"),
+            ActivityDefinition(name: "At home", category: "Home", symbol: "house.fill"),
+            ActivityDefinition(name: "Travelling", category: "Travel", symbol: "car.fill")
+        ]
+
+        let visible = ActivityCatalog.uniqueForPresentation(activities)
+        #expect(visible.map(\.name) == ["At home", "Travelling"])
+    }
 }

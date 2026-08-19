@@ -59,13 +59,20 @@ enum ActivityIcons {
             "gamecontroller.fill", "party.popper.fill", "balloon.fill", "ticket.fill"
         ]),
         Group(name: "People & pets", symbols: [
-            "person.2.fill", "person.3.fill", "figure.2",
-            "figure.2.and.child.holdinghands", "figure.and.child.holdinghands",
-            "pawprint.fill", "dog.fill", "cat.fill", "hand.wave.fill"
+            "person.2.fill", "person.3.fill", "person.crop.circle.fill",
+            "person.crop.circle.badge.plus", "person.2.circle.fill", "person.badge.plus",
+            "figure.2", "figure.2.and.child.holdinghands", "figure.and.child.holdinghands",
+            "pawprint.fill", "pawprint.circle.fill", "dog.fill", "cat.fill", "bird.fill",
+            "fish.fill", "tortoise.fill", "hare.fill", "rabbit.fill", "ant.fill",
+            "ladybug.fill", "lizard.fill", "hand.wave.fill"
         ]),
         Group(name: "Other", symbols: [
             "circle.fill", "star.fill", "flag.fill", "clock.fill", "calendar",
-            "bell.fill", "questionmark.circle.fill"
+            "bell.fill", "questionmark.circle.fill", "bookmark.fill", "tag.fill",
+            "pin.fill", "mappin.circle.fill", "sparkles", "lightbulb.fill",
+            "gearshape.fill", "checkmark.seal.fill", "exclamationmark.triangle.fill",
+            "ellipsis.circle.fill", "square.grid.2x2.fill", "target", "timer",
+            "hourglass", "note.text"
         ])
     ]
 

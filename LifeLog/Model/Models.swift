@@ -24,13 +24,14 @@ enum VisitResolutionActor: Sendable {
 /// readable by an older build as `.unknown(raw)` rather than being recast as a known
 /// source and changing resolver behaviour.
 enum VisitSource: Codable, Sendable, Equatable, Hashable {
-    case automatic, automaticSuperseded, manual, importedJournal, motion
+    case automatic, automaticSuperseded, manual, manualTravel, importedJournal, motion
     case healthSleep, healthWalking, healthWorkout
     case unknown(String)
 
     static let automaticRaw = "automatic"
     static let automaticSupersededRaw = "automatic-superseded"
     static let manualRaw = "manual"
+    static let manualTravelRaw = "manual-travel"
     static let importedJournalRaw = "imported-journal"
     static let motionRaw = "motion"
     static let healthSleepRaw = "health-sleep"
@@ -42,6 +43,7 @@ enum VisitSource: Codable, Sendable, Equatable, Hashable {
         case Self.automaticRaw: self = .automatic
         case Self.automaticSupersededRaw: self = .automaticSuperseded
         case Self.manualRaw: self = .manual
+        case Self.manualTravelRaw: self = .manualTravel
         case Self.importedJournalRaw: self = .importedJournal
         case Self.motionRaw: self = .motion
         case Self.healthSleepRaw: self = .healthSleep
@@ -56,6 +58,7 @@ enum VisitSource: Codable, Sendable, Equatable, Hashable {
         case .automatic: Self.automaticRaw
         case .automaticSuperseded: Self.automaticSupersededRaw
         case .manual: Self.manualRaw
+        case .manualTravel: Self.manualTravelRaw
         case .importedJournal: Self.importedJournalRaw
         case .motion: Self.motionRaw
         case .healthSleep: Self.healthSleepRaw
@@ -70,7 +73,9 @@ enum VisitSource: Codable, Sendable, Equatable, Hashable {
 
     var isLocation: Bool { self == .automatic || self == .manual }
     var isHealth: Bool { self == .healthSleep || self == .healthWalking || self == .healthWorkout }
-    var isDeviceActivity: Bool { self == .motion || isHealth }
+    /// A manually confirmed journey belongs with movement for Timeline and Insights,
+    /// but not with locations: its endpoint arrow is context, never a place to save.
+    var isDeviceActivity: Bool { self == .motion || self == .manualTravel || isHealth }
 }
 
 enum VisitRecognitionConfidence: Codable, Sendable, Equatable, Hashable {

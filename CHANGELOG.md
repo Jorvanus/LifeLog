@@ -1,6 +1,23 @@
 # Change log
 
-## 2026-08-19 — 2.20.6 (224)
+## 2026-08-19 — 2.20.7 (225)
+
+### Duplicate activity edit
+
+- Changing an icon or other presentation setting no longer triggers a false duplicate-name warning when older catalogue records share the same label; matching duplicates receive the same presentation update.
+
+### Groups list cleanup
+
+- Groups now collapse duplicate durable activity definitions to one visible row per label, while retaining the underlying records for repair and identity handling.
+
+### Activity icons expanded
+
+- Added broader People & pets choices, including common animal symbols and people/pet combinations.
+- Added a useful neutral Other icon set while retaining the generic dot as an intentional fallback.
+
+### Manual travel records
+
+- Confirming likely travel in Add Visit now records a movement segment between the two displayed endpoints without treating the endpoint arrow as a new location or Saved Place.
 
 ### Activity icon fallback
 

@@ -460,4 +460,18 @@ struct TravelConstructionTests {
         #expect(stays[0].departure == replay.time(375))
         #expect(try replay.travelRecords().count == 1)
     }
+
+    @Test("A manually confirmed journey is movement, not a location")
+    func manualJourneyDoesNotBecomePlace() {
+        let journey = Visit(arrival: base, departure: base.addingTimeInterval(15 * 60),
+                            latitude: 0, longitude: 0,
+                            placeName: "State Government Building → ALDI",
+                            inferredActivity: "Travelling", userActivity: "Travelling",
+                            source: VisitSource.manualTravelRaw)
+
+        #expect(journey.visitSource.isLocation == false)
+        #expect(journey.visitSource.isDeviceActivity)
+        #expect(ActivityLocationPolicy.isTravelActivity(journey))
+        #expect(ActivityLocationPolicy.shouldShowInTimeline(journey, locationVisits: []))
+    }
 }

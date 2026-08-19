@@ -22,7 +22,8 @@ struct ActivityGroupsView: View {
     }
 
     private func members(of group: String) -> [ActivityDefinition] {
-        activities.filter { $0.category.caseInsensitiveCompare(group) == .orderedSame }
+        ActivityCatalog.uniqueForPresentation(activities)
+            .filter { $0.category.caseInsensitiveCompare(group) == .orderedSame }
     }
 
     var body: some View {
@@ -38,7 +39,7 @@ struct ActivityGroupsView: View {
                             Label {
                                 Text(activity.name)
                             } icon: {
-                                Image(systemName: activity.symbol)
+                                Image(systemName: ActivityCatalog.symbol(for: activity.name, in: activities))
                                     .foregroundStyle(activityColor(activity.name))
                             }
                         }
@@ -160,6 +161,9 @@ struct ActivityGroupsView: View {
 
     private func reload() {
         groups = ActivityCatalog.loadCategories()
-        activities = ActivityCatalog.load()
+        // A one-time catalogue adoption could leave several durable IDs carrying
+        // the same display label. Groups are a presentation surface, so show one
+        // member per label; the durable duplicates remain addressable for repair.
+        activities = ActivityCatalog.uniqueForPresentation(ActivityCatalog.load())
     }
 }
