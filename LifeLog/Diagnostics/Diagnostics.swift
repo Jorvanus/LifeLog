@@ -528,6 +528,19 @@ enum Diagnostics {
         }
     }
 
+    private static func performanceSamples(from events: [DiagnosticEvent]) -> [PerformanceReport.Sample] {
+        events
+            .filter { $0.category == Category.performance }
+            .map { event -> PerformanceReport.Sample in
+                .init(createdAt: event.createdAt, subsystem: event.subsystem, eventCode: event.eventCode,
+                      durationMs: event.durationMs ?? legacyDuration(from: event.message),
+                      budgetMs: event.budgetMs,
+                      itemCount: event.itemCount ?? legacyItemCount(from: event.message),
+                      repairCount: event.repairCount,
+                      severity: event.severity)
+            }
+    }
+
     /// Best effort: `PerformanceReport` is a plain `Codable` struct built entirely
     /// from primitives, so an encode failure here is not a realistic outcome. An
     /// empty `Data()` fallback writes as a zero-byte file the person can share —
@@ -538,17 +551,57 @@ enum Diagnostics {
         let device = deviceIdentifier()
         let os = ProcessInfo.processInfo.operatingSystemVersion
         let osClass = "iOS \(os.majorVersion).\(os.minorVersion)"
-        let samples = events
-            .filter { $0.category == Category.performance }
-            .map { event -> PerformanceReport.Sample in
-                .init(createdAt: event.createdAt, subsystem: event.subsystem, eventCode: event.eventCode,
-                      durationMs: event.durationMs ?? legacyDuration(from: event.message),
-                      budgetMs: event.budgetMs,
-                      itemCount: event.itemCount ?? legacyItemCount(from: event.message),
-                      repairCount: event.repairCount,
-                      severity: event.severity)
-            }
+        let samples = performanceSamples(from: events)
         return (try? JSONEncoder().encode(PerformanceReport(generatedAt: .now, appVersion: version, deviceClass: device, osClass: osClass, samples: samples))) ?? Data()
+    }
+
+    /// A support report a person can copy or share from the Diagnostics screen.
+    /// Redacted by default: identical in content to `makePerformanceReport` above
+    /// -- aggregate timings, counts, app version, and device/OS class, and nothing
+    /// that names a place, a person, or a coordinate.
+    ///
+    /// `includeDetailedEvidence` is an explicit, one-time opt-in for a single
+    /// report: it additionally lists each retained event's own message text.
+    /// Those messages are already written to be privacy-safe on the normal hot
+    /// path (see every `Diagnostics.record`/`LocationDiagnostics.record` call
+    /// site), with one exception the person controls separately -- turning on
+    /// "detailed location diagnostics" in Settings lets a small number of
+    /// location-resolution messages name places and distances, because that is
+    /// the whole point of that switch. This flag does not change what gets
+    /// logged; it only decides whether the messages already on this device are
+    /// included in *this* exported report.
+    struct SupportReport: Codable {
+        let generatedAt: Date
+        let appVersion: String
+        let deviceClass: String
+        let osClass: String
+        let includesDetailedEvidence: Bool
+        let samples: [PerformanceReport.Sample]
+        let events: [EventDetail]?
+        struct EventDetail: Codable {
+            let createdAt: Date
+            let subsystem: String
+            let severity: String
+            let eventCode: String
+            let message: String
+        }
+    }
+
+    static func makeSupportReport(events: [DiagnosticEvent], includeDetailedEvidence: Bool) -> Data {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+        let device = deviceIdentifier()
+        let os = ProcessInfo.processInfo.operatingSystemVersion
+        let osClass = "iOS \(os.majorVersion).\(os.minorVersion)"
+        let samples = performanceSamples(from: events)
+        let detail: [SupportReport.EventDetail]? = includeDetailedEvidence
+            ? events.sorted { $0.createdAt > $1.createdAt }.map {
+                .init(createdAt: $0.createdAt, subsystem: $0.subsystem, severity: $0.severity,
+                      eventCode: $0.eventCode, message: $0.message)
+              }
+            : nil
+        let report = SupportReport(generatedAt: .now, appVersion: version, deviceClass: device, osClass: osClass,
+                                   includesDetailedEvidence: includeDetailedEvidence, samples: samples, events: detail)
+        return (try? JSONEncoder().encode(report)) ?? Data()
     }
 
     /// Records only slow operations. The message intentionally contains timing and

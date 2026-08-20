@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UIKit
 
 struct DiagnosticsView: View {
     let recorder: LocationRecorder
@@ -14,6 +15,8 @@ struct DiagnosticsView: View {
     private var automaticVisits: [Visit]
     @Query private var locationEvents: [LocationEvent]
     @State private var reportURL: URL?
+    @State private var reportData: Data?
+    @State private var includeDetailedEvidence = false
     @State private var confirmingClear = false
     @State private var message: String?
 
@@ -73,18 +76,34 @@ struct DiagnosticsView: View {
             // events, so anything below it is effectively unreachable without
             // scrolling the whole history first.
             Section {
+                Toggle("Include detailed local evidence", isOn: $includeDetailedEvidence)
+                    .accessibilityIdentifier("diagnostics-include-detail-toggle")
+                    .onChange(of: includeDetailedEvidence) { _, _ in
+                        // A report on screen reflects whichever mode made it; changing the
+                        // toggle without clearing it would let someone copy or share a report
+                        // that no longer matches what the switch and footer just told them.
+                        reportURL = nil
+                        reportData = nil
+                    }
                 Button {
                     createReport()
                 } label: { Label("Create performance report", systemImage: "chart.bar.doc.horizontal") }
                     .accessibilityIdentifier("create-performance-report")
                 if let reportURL {
+                    Button {
+                        copyReport()
+                    } label: { Label("Copy report", systemImage: "doc.on.doc") }
+                        .accessibilityIdentifier("copy-performance-report")
                     ShareLink(item: reportURL) { Label("Share performance report", systemImage: "square.and.arrow.up") }
+                        .accessibilityIdentifier("share-performance-report")
                 }
                 Button("Clear diagnostics", role: .destructive) { confirmingClear = true }
                     .disabled(visibleDiagnostics.isEmpty)
                     .accessibilityIdentifier("clear-diagnostics")
             } footer: {
-                Text("Reports contain only aggregate timings, counts, app version, and device/OS class—not coordinates, place names, notes, or Health values.")
+                Text(includeDetailedEvidence
+                     ? "Detailed reports add the retained events' own text, which stays generic except for a few location-resolution lines that can name places or distances if you've turned on detailed location diagnostics in Settings. Nothing leaves this iPhone automatically — LifeLog has no server. Copying or sharing puts you in control of who sees it, for your own troubleshooting. A temporary copy is removed automatically after 24 hours even if you never share it."
+                     : "Reports contain only aggregate timings, counts, app version, and device/OS class—not coordinates, place names, notes, or Health values. A temporary copy is removed automatically after 24 hours even if you never share it.")
             }
             // Its own screen rather than mixed into the list below: these are raw
             // inputs, there are several per arrival, and they carry coordinates that
@@ -142,20 +161,35 @@ struct DiagnosticsView: View {
 
     private func createReport() {
         ExportFileCleanup.removeExpired()
-        let data = Diagnostics.makePerformanceReport(events: visibleDiagnostics)
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("LifeLog-Performance-Report.json")
+        let data = Diagnostics.makeSupportReport(events: visibleDiagnostics, includeDetailedEvidence: includeDetailedEvidence)
+        let filename = includeDetailedEvidence ? "LifeLog-Support-Report-Detailed.json" : "LifeLog-Performance-Report.json"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
         do {
             if UITestFailureInjection.shouldFailProtectedReport {
                 throw CocoaError(.fileWriteNoPermission)
             }
-            // Written with complete protection: the report is aggregate-only, but it
-            // still describes this device and stays in the temporary directory until
-            // it is shared or expires.
+            // Written with complete protection: stays in the temporary directory,
+            // protected, until it is shared, copied, or expires on its own.
             try data.write(to: url, options: [.atomic, .completeFileProtection])
             reportURL = url
+            reportData = data
         } catch {
             message = "LifeLog couldn’t write the performance report."
         }
+    }
+
+    /// A share sheet is not the only way off this screen — someone pasting into
+    /// Messages or Notes to describe a problem needs the report's text directly,
+    /// without a file attachment. Reads back from the in-memory copy rather than
+    /// the staged file, so a copy still works even if the file was already swept
+    /// by `ExportFileCleanup`.
+    private func copyReport() {
+        guard let reportData, let text = String(data: reportData, encoding: .utf8) else {
+            message = "LifeLog couldn’t copy the report."
+            return
+        }
+        UIPasteboard.general.string = text
+        message = "Report copied. Paste it wherever you're describing the problem."
     }
 
     private func clear() {

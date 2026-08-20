@@ -1,5 +1,15 @@
 # Change log
 
+## 2026-08-20 — Team coding and TestFlight workflow guide
+
+- Added a plain-English team document covering branch names, local/simulator/device/TestFlight testing, pull requests and merges, version/build numbering, release-candidate preparation, conflict resolution, and tester bug reports.
+
+## 2026-08-20 — Redacted-by-default diagnostics reports — 2.25.0 (249)
+
+- Diagnostics reports are now redacted by default: aggregate timings, counts, app version, and device/OS class only. An explicit "Include detailed local evidence" toggle opts into a report that also lists retained events' own text, with an in-UI explanation of what that adds, that nothing leaves the device automatically (LifeLog has no server), and that a temporary copy expires after 24 hours regardless.
+- Diagnostics now offers Copy report alongside Share report, so describing a problem doesn't require the system share sheet.
+- Removed the last three raw stable-ID (`Visit.stableID`) interpolations from payload-preservation diagnostics in `Models.swift`; those messages now describe the decoding outcome without naming the record.
+
 ## 2026-08-20 — TestFlight release hardening — 2.25.0 (247)
 
 - Added the HealthKit Background Delivery capability used by LifeLog's observer queries and made registration failures visible in Diagnostics.

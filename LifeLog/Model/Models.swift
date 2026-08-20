@@ -636,7 +636,7 @@ final class Visit {
         guard decoded.status != .unsupported && decoded.status != .corrupt else {
             // Resolver follow-up must not make a future or damaged payload vanish.
             // A repair tool can explicitly replace it after exporting the raw bytes.
-            queuePayloadDiagnostic("Preserved unreadable candidate payload for \(stableID); automatic update was skipped.")
+            queuePayloadDiagnostic("Preserved an unreadable candidate payload; automatic update was skipped.")
             return
         }
         let payload = decoded.value
@@ -656,7 +656,7 @@ final class Visit {
     /// empty payload. The durable diagnostic makes that otherwise invisible data
     /// loss risk inspectable without turning a property setter into a second save.
     private func recordPayloadWriteFailure(_ kind: String, error: Error) {
-        queuePayloadDiagnostic("Could not encode \(kind) payload for \(stableID): \(error.localizedDescription)")
+        queuePayloadDiagnostic("Could not encode \(kind) payload: \(error.localizedDescription)")
     }
 
     /// `Visit` accessors are not main-actor isolated. Queue the evidence here;
@@ -676,7 +676,7 @@ final class Visit {
             ("route", routeDecoding.status, routeDecoding.reason)
         ] where status == .unsupported || status == .corrupt {
             Diagnostics.stage(context, subsystem: "Visit payload",
-                              message: "Preserved \(kind) payload for \(stableID) is \(status.rawValue): \(reason ?? "no detail")")
+                              message: "Preserved \(kind) payload is \(status.rawValue): \(reason ?? "no detail")")
         }
     }
 

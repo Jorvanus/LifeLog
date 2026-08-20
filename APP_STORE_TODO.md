@@ -340,19 +340,26 @@ debug convenience.
 
 ## 8. Diagnostics and support privacy
 
-- [ ] Review Diagnostics and Location Journal exports as sensitive-data exports.
-  Make the scope visible before sharing and offer a redacted/default form that
-  removes exact coordinates, place names, notes, Health values, stable IDs, and
-  device identifiers unless the owner explicitly opts into a detailed report.
-- [ ] Add a concise “include detailed local evidence” explanation when a support
-  report genuinely needs personal data. The recipient, retention, and deletion
-  path must be clear.
-- [ ] Ensure diagnostics do not log raw HealthKit samples, notes, home/work names,
-  or exact coordinates on the normal hot path. Keep aggregate timings, counts,
-  source labels, and error codes instead.
-- [ ] Add a support workflow: copy report, share report, explain where it goes,
-  cancel safely, and recover if the share sheet is dismissed. Do not require an
-  account or cloud upload just to report a problem.
+- [x] Review Diagnostics and Location Journal exports as sensitive-data exports,
+  and offer a redacted-by-default form. `Diagnostics.makeSupportReport` is
+  aggregate-only (timings, counts, app/device/OS class) unless the person
+  explicitly turns on "Include detailed local evidence," which is a per-report
+  opt-in, not a standing setting.
+- [x] Add an "include detailed local evidence" explanation. The Diagnostics
+  footer states what detailed mode adds, that nothing leaves the device
+  automatically (no server), and that the temporary export expires after 24
+  hours regardless of sharing.
+- [x] Confirm diagnostics do not log raw HealthKit samples, notes, home/work
+  names, or exact coordinates on the normal hot path. Audited every
+  `Diagnostics.record`/`stage` call site; the only exception is the
+  location-resolution detail already gated behind the separate, existing
+  "detailed location diagnostics" Settings toggle. Fixed the one violation
+  found: three `Visit.stableID` interpolations in `Models.swift`'s
+  payload-preservation diagnostics now describe the outcome, not the record.
+- [x] Add a support workflow: Diagnostics now offers Copy report alongside
+  Share report, so describing a problem doesn't require the share sheet;
+  cancelling or dismissing the share sheet leaves the report available to
+  retry, copy, or clear. No account or upload is required.
 - [ ] Maintain a release incident checklist for data corruption, duplicate Health
   imports, stuck maintenance, battery regressions, and a bad migration. Document
   how to pause distribution and communicate a fix to TestFlight testers.
