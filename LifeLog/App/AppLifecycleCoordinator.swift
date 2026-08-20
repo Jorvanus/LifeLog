@@ -33,6 +33,9 @@ final class AppLifecycleCoordinator {
         prepareActivityCatalogue(context: context, modelContainer: modelContainer)
 
         recorder.connect(context)
+        // Location is the app's primary input. Ask on the first real launch instead
+        // of leaving an empty timeline until the owner discovers Settings.
+        recorder.requestPermissionOnLaunchIfNeeded()
         activityData.connect(context, container: modelContainer)
         await MaintenanceCoordinator.shared.runIfNeeded(context: context)
         // Core Motion retains only a short history, so collection belongs to app

@@ -193,9 +193,10 @@ final class ActivityDataService {
         // data and needs neither source.
         guard !ProcessInfo.processInfo.arguments.contains("-uiTesting") else { return }
         Task { await refreshHealthStatus(requestingIfNeeded: true) }
-        // Core Motion has no request call: authorisation is raised by the first query,
-        // which the automatic refresh performs.
-        refreshAutomatically()
+        // Core Motion has no request call: authorisation is raised by its first query.
+        // The normal refresh correctly ignores unreadable `.notDetermined` access, so
+        // use the dedicated tiny query here to ensure the launch prompt really appears.
+        requestMotionAccess()
     }
 
     /// Asks HealthKit what it would actually do, and reports that.

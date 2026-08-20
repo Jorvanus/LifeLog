@@ -161,6 +161,13 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         holdServiceSession(requiring: .whenInUse)
     }
 
+    func requestPermissionOnLaunchIfNeeded() {
+        // System permission sheets make seeded UI-test launches nondeterministic.
+        guard !ProcessInfo.processInfo.arguments.contains("-uiTesting"),
+              authorization == .notDetermined else { return }
+        requestPermission()
+    }
+
     func enableBackgroundLogging() {
         isBackgroundLoggingEnabled = true
         UserDefaults.standard.set(true, forKey: PreferenceKey.backgroundLoggingEnabled)

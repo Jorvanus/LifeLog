@@ -1,5 +1,13 @@
 # Change log
 
+## 2026-08-20 — First-launch recording permissions
+
+- LifeLog now asks for Location and Motion & Fitness access on its first real launch, while keeping the existing Recording settings as the recovery path when access is declined.
+
+## 2026-08-20 — iOS 26 compatibility — 2.25.0 (246)
+
+- Lowered the minimum supported system for LifeLog and its test targets from iOS 27 to iOS 26 so the app can build and install on the owner's iPhone 12 without dropping iPhone-only targeting.
+
 ## 2026-08-20 — Prepared Locations review queue — 2.24.0 (245)
 
 - Locations now prepares one complete archive-wide review queue on an isolated reader, caches it by store generation, and renders only compact Sendable rows and a count instead of hydrating the full Visit archive on the main context.

@@ -34,7 +34,6 @@ enum InferenceEngine {
         .hiking: .init(activity: "Exercising", mapsHint: "Fitness"),
         .kayaking: .init(activity: "Exercising", mapsHint: "Fitness"),
         .miniGolf: .init(activity: "Exercising", mapsHint: "Fitness"),
-        .picnicArea: .init(activity: "Exercising", mapsHint: "Fitness"),
         .rockClimbing: .init(activity: "Exercising", mapsHint: "Fitness"),
         .skatePark: .init(activity: "Exercising", mapsHint: "Fitness"),
         .skating: .init(activity: "Exercising", mapsHint: "Fitness"),
@@ -50,13 +49,11 @@ enum InferenceEngine {
         .university: .init(activity: "Studying", mapsHint: "Education"),
         .library: .init(activity: "Studying", mapsHint: "Education"),
         .airport: .init(activity: "Travelling", mapsHint: "Travel"),
-        .airportTerminal: .init(activity: "Travelling", mapsHint: "Travel"),
         .carRental: .init(activity: "Travelling", mapsHint: "Travel"),
         .gasStation: .init(activity: "Travelling", mapsHint: "Travel"),
         .hotel: .init(activity: "Travelling", mapsHint: "Travel"),
         .marina: .init(activity: "Travelling", mapsHint: "Travel"),
         .publicTransport: .init(activity: "Travelling", mapsHint: "Travel"),
-        .restArea: .init(activity: "Travelling", mapsHint: "Travel"),
         .rvPark: .init(activity: "Travelling", mapsHint: "Travel"),
         .amusementPark: .init(activity: "Visiting", mapsHint: "Social"),
         .aquarium: .init(activity: "Visiting", mapsHint: "Social"),
@@ -69,12 +66,26 @@ enum InferenceEngine {
         .nationalMonument: .init(activity: "Visiting", mapsHint: "Social"),
         .nightlife: .init(activity: "Visiting", mapsHint: "Social"),
         .planetarium: .init(activity: "Visiting", mapsHint: "Social"),
-        .rangerStation: .init(activity: "Visiting", mapsHint: "Social"),
-        .scenicView: .init(activity: "Visiting", mapsHint: "Social"),
-        .ticketOffice: .init(activity: "Visiting", mapsHint: "Social"),
-        .visitorCenter: .init(activity: "Visiting", mapsHint: "Social"),
         .zoo: .init(activity: "Visiting", mapsHint: "Social")
     ]
+
+    private static func categoryMapping(for category: MKPointOfInterestCategory) -> CategoryMapping? {
+        // These categories were added in iOS 27. Keep their richer inference on new
+        // systems without making the whole activity engine unavailable on iOS 26.
+        if #available(iOS 27.0, *) {
+            switch category {
+            case .picnicArea:
+                return .init(activity: "Exercising", mapsHint: "Fitness")
+            case .airportTerminal, .restArea:
+                return .init(activity: "Travelling", mapsHint: "Travel")
+            case .rangerStation, .scenicView, .ticketOffice, .visitorCenter:
+                return .init(activity: "Visiting", mapsHint: "Social")
+            default:
+                break
+            }
+        }
+        return categoryMappings[category]
+    }
 
     /// Infers an activity from the place name and, when Maps supplied one, the typed
     /// point-of-interest category. The category is a transient signal only — LifeLog
@@ -90,7 +101,7 @@ enum InferenceEngine {
 
     static func mapsHint(for category: MKPointOfInterestCategory?) -> String {
         guard let category else { return "Other" }
-        return categoryMappings[category]?.mapsHint ?? "Other"
+        return categoryMapping(for: category)?.mapsHint ?? "Other"
     }
 
     /// The concept the rules recognised, before the catalogue decides the wording.
@@ -106,7 +117,7 @@ enum InferenceEngine {
                                   mapsCategory: MKPointOfInterestCategory? = nil,
                                   mapsHint: String = "") -> String {
         if let defaultActivity, !defaultActivity.isEmpty { return defaultActivity }
-        if let mapsCategory, let mapped = categoryMappings[mapsCategory] {
+        if let mapsCategory, let mapped = categoryMapping(for: mapsCategory) {
             return mapped.activity
         }
         let text = "\(placeName) \(mapsHint)".lowercased()
