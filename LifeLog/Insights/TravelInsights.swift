@@ -23,13 +23,21 @@ struct TravelInsights {
     }
 
     struct Trip: Identifiable, Sendable {
+        /// The full span shown in a trip's own row — "5:08pm – 5:46pm" — which for a
+        /// chained commute (see `CommuteDetection.waypointTolerance`) covers a real
+        /// stop along the way as well as the moving parts.
         let start: Date
         let end: Date
         let isCommute: Bool
         let mode: Mode
+        /// Time actually spent moving (or a silent gap absorbed as commuting), not
+        /// `end - start`. A commute chained through a brief stop has a `start`/`end`
+        /// envelope wider than this -- the stop keeps its own category and its own
+        /// segment, the same way it does on the donut and the Commute activity page,
+        /// so it must not inflate the trip's own duration or the totals built from it.
+        let duration: TimeInterval
 
         var id: Date { start }
-        var duration: TimeInterval { max(0, end.timeIntervalSince(start)) }
         var hours: Double { duration / 3600 }
     }
 
@@ -140,7 +148,8 @@ struct TravelInsights {
                 let last = result[lastIndex].trip
                 result[lastIndex] = (Trip(
                     start: min(last.start, segment.start), end: max(last.end, segment.end),
-                    isCommute: true, mode: strongest(last.mode, mode(for: segment))
+                    isCommute: true, mode: strongest(last.mode, mode(for: segment)),
+                    duration: last.duration + segment.hours * 3600
                 ), commuteStart)
                 continue
             }
@@ -156,7 +165,8 @@ struct TravelInsights {
                     start: min(last.start, segment.start),
                     end: max(last.end, segment.end),
                     isCommute: last.isCommute || isCommute(segment),
-                    mode: strongest(last.mode, mode(for: segment))
+                    mode: strongest(last.mode, mode(for: segment)),
+                    duration: last.duration + segment.hours * 3600
                 ), segment.commute?.start)
             } else {
                 result.append((trip(for: segment), segment.commute?.start))
@@ -166,7 +176,8 @@ struct TravelInsights {
     }
 
     private static func trip(for segment: InsightSegment) -> Trip {
-        Trip(start: segment.start, end: segment.end, isCommute: isCommute(segment), mode: mode(for: segment))
+        Trip(start: segment.start, end: segment.end, isCommute: isCommute(segment), mode: mode(for: segment),
+            duration: segment.hours * 3600)
     }
 
     private static func isCommute(_ segment: InsightSegment) -> Bool {

@@ -75,13 +75,14 @@ struct TravelInsightsTests {
         #expect(result.longTripCount == 1)
     }
 
-    @Test("A commute with a brief stop along the way is still one trip")
+    @Test("A commute with a brief stop along the way is still one trip, ALDI included")
     func waypointStopDoesNotFragmentTheTrip() {
         // Same shape as the real 2026-08-19 export: Work -> a walk -> a brief ALDI
-        // stop -> transit -> Home. The transport either side of ALDI used to land
-        // in two separate trips because the Shopping segment between them isn't
-        // travel and the resulting gap exceeded `segmentMergeGap` -- but it is one
-        // detected Commute, so it must stay one trip.
+        // stop -> transit -> Home. The whole door-to-door span is one detected
+        // Commute (see CommuteDetection.waypointTolerance), and the owner wants the
+        // stop itself folded into "Commute home" on the donut/trip totals too -- its
+        // own Visit record still exists and is still editable, it just does not get
+        // a separate donut slice or a separate trip.
         let homePlace = SavedPlace(name: "Home", latitude: 0, longitude: 0, mapsIdentifier: "home")
         homePlace.homeWorkRole = .home
         let workPlace = SavedPlace(name: "Work", latitude: 0, longitude: 0, mapsIdentifier: "work")

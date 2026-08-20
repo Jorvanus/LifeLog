@@ -1,5 +1,10 @@
 # Change log
 
+## 2026-08-20 — A commute's stop is bound into the commute — 2.22.2 (233)
+
+- Revised the previous "waypoint keeps its own donut category" decision: a brief real stop chained into a commute (see `CommuteDetection.waypointTolerance`) now folds fully into the Commute slice, trip, and totals, the same as the moving legs either side of it. Its own Visit record is untouched and still viewable/editable elsewhere — only its Insights categorisation changes.
+- This also fixes a real inconsistency: the "Commute" activity page and "Getting around" trips list were showing different totals for the same day (25m vs 42m) because one summed only transport-category segments while the other spanned the full door-to-door window; both now agree.
+
 ## 2026-08-20 — Commute previews and trip grouping — 2.22.1 (231)
 
 - The donut's centre card and "Getting around" trip list now show a chained commute's full door-to-door span instead of just its largest fragment — confirmed against a real on-device day where a 38-minute commute with an ALDI stop was showing as three separate trips and a misleading 10-minute preview.

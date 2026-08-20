@@ -270,14 +270,16 @@ struct InsightsSnapshot {
             }
             // A gap between home and work is not missing data — it is the journey
             // between them, so it is counted as commuting rather than reported as
-            // time the person failed to log. The same is true when the gap isn't
-            // blank but is only ever a device's own movement tracking (walking,
-            // driving) — that is still the commute itself, not a separate "Travel"
-            // or "Fitness" entry, so it claims the slice the same way an unlogged
-            // gap does. A real stop along the way (a shop, a coffee) still wins its
-            // own slice under its own category.
-            if let commute = CommuteDetection.commute(covering: midpoint, in: commutes),
-               matching.isEmpty || matching.allSatisfy(ActivityLocationPolicy.isMovementActivity) {
+            // time the person failed to log. The same is true for the rest of a
+            // detected commute's span: device movement tracking (walking, driving)
+            // and a brief real stop chained into it (see
+            // `CommuteDetection.waypointTolerance`) both read as one "Commute" slice
+            // on the donut, not scattered across Travel/Fitness/Shopping — the stop's
+            // own Visit is untouched and still its own record in Timeline/Activities,
+            // only its Insights categorisation folds into the journey it was part of.
+            // A Home or Work stay itself never matches here: it is the endpoint the
+            // commute is measured *to*, not inside it.
+            if let commute = CommuteDetection.commute(covering: midpoint, in: commutes) {
                 result.append(.commute(commute, from: start, to: end))
                 continue
             }
