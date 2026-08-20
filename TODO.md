@@ -73,18 +73,6 @@ A code-tidiness audit, 2026-08-20: simplification/deduplication candidates, not
 correctness bugs (those stay in the section above). Ranked by how much confusion or
 duplication cost each one actually carries.
 
-- [ ] **Three call-alike but not-actually-equivalent `VisitHistoryQuery` lookups,
-  two of them dead.** `day(_:calendar:includesImported:)`, `month(containing:)`,
-  and `year(containing:)` (`VisitHistoryQuery.swift:8-33`) have zero call sites —
-  Timeline actually builds its own inline `@Query` predicate instead
-  (`TimelineView.swift`'s `PastDayJourney`), which doesn't even replicate what
-  those functions do. Worse, `ArchiveSearchView.swift:5-7`'s doc comment cites
-  `VisitHistoryQuery.day`/`.month` as if Timeline routes through them, which will
-  send a future reader to dead code looking for where day-fetching really lives.
-  Separately, `place(named:mapsIdentifier:limit:)` (line 35-45) is also unreachable
-  — every real call site uses the sibling `place(mapsIdentifier:)` overload or
-  `legacyPlace(named:)` instead.
-
 - [ ] **`ActivityCatalog.mergeWorkingIntoWork(context:)` has no caller outside
   tests.** `ActivityCatalog.swift:807` — only referenced from
   `SavedPlaceLearningTests.swift`. Reads like a one-time "Working" → "Work" data

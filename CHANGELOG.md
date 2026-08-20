@@ -1,5 +1,9 @@
 # Change log
 
+## 2026-08-20 — Remove dead VisitHistoryQuery lookups — 2.23.5 (240)
+
+- Removed `VisitHistoryQuery.day`/`.month`/`.year` and `place(named:mapsIdentifier:limit:)` — all four had zero call sites; Timeline fetches a day with its own inline query instead, and every real place lookup already used `place(mapsIdentifier:)` or `legacyPlace(named:)`.
+
 ## 2026-08-20 — Remove a half-built colour override — 2.23.4 (239)
 
 - Removed `categoryColorHex`'s `UserDefaults` read for a per-category colour override that had no setter or UI anywhere — a colour now always comes from `CategoryPalette`, matching the file's own "one place a colour is chosen."
