@@ -59,6 +59,14 @@ enum AnnualGroupChartDataBuilder {
 }
 
 struct AnnualGroupsChart: View {
+    private struct Bar: Identifiable {
+        let id: String
+        let month: String
+        let group: String
+        let hours: Double
+        let opacity: Double
+    }
+
     let months: [AnnualInsights.Month]
     @Binding var selectedGroup: String?
     let openGroup: (AnnualGroupChartData) -> Void
@@ -78,18 +86,25 @@ struct AnnualGroupsChart: View {
         return data.first { $0.group == selectedGroup }
     }
 
+    private var bars: [Bar] {
+        var result: [Bar] = []
+        for (monthIndex, month) in months.enumerated() {
+            for row in data {
+                let opacity: Double = selectedGroup == nil || selectedGroup == row.group ? 1 : 0.24
+                result.append(Bar(id: "\(month.id)-\(row.group)", month: month.label,
+                                  group: row.group, hours: row.monthlyHours[monthIndex], opacity: opacity))
+            }
+        }
+        return result
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Chart {
-                ForEach(months) { month in
-                    ForEach(data) { row in
-                        let monthIndex = months.firstIndex { $0.id == month.id } ?? 0
-                        let hours = row.monthlyHours[monthIndex]
-                        let barOpacity: Double = selectedGroup == nil || selectedGroup == row.group ? 1 : 0.24
-                        BarMark(x: .value("Month", month.label), y: .value("Hours", hours))
-                            .foregroundStyle(by: .value("Group", row.group))
-                            .opacity(barOpacity)
-                    }
+                ForEach(bars) { bar in
+                    BarMark(x: .value("Month", bar.month), y: .value("Hours", bar.hours))
+                        .foregroundStyle(by: .value("Group", bar.group))
+                        .opacity(bar.opacity)
                 }
             }
             .chartYAxis { AxisMarks(position: .leading) }

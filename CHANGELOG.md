@@ -1,5 +1,10 @@
 # Change log
 
+## 2026-08-21 — Annual chart compiler simplification — 2.25.6 (255)
+
+- Precomputed annual chart bars before entering the Swift Charts builder so
+  Release/TestFlight builds avoid the nested-expression type-checking limit.
+
 ## 2026-08-21 — Annual Insights archive compiler fix — 2.25.5 (254)
 
 - Split the annual groups chart bar expression into explicit values so the
