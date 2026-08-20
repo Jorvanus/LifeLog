@@ -138,8 +138,12 @@ struct VisitEditor: View {
                     Text("Journey")
                 } footer: {
                     // Said plainly, because this is the most precise location data
-                    // LifeLog holds and the person should know it is here.
-                    Text("The path this walk followed, recorded by Apple Health.")
+                    // LifeLog holds and the person should know it is here. A passive
+                    // walk's route is LifeLog's own coarse breadcrumbs (see
+                    // WalkBreadcrumbStore), not Health data, so it says so.
+                    Text(visit.visitSource == .healthWalking
+                         ? "A rough path pieced together from occasional location while you walked — a handful of points, not a precise trace."
+                         : "The path this walk followed, recorded by Apple Health.")
                 }
             }
             // Only where there would otherwise be no map at all, and only for a

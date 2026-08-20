@@ -1,5 +1,12 @@
 # Change log
 
+## 2026-08-20 — Coarse routes for passive walks — 2.23.0 (234)
+
+- Added an opt-in "Track walking routes" setting (Settings → Recording, off by default). When on, a passive walk (a HealthKit step-count walk, not a Fitness workout) can now carry a rough path — a handful of coarse points, not a smooth trace — shown the same way a Fitness walk's route already is.
+- Reuses location fixes LifeLog already receives for existing geofencing (no new continuous GPS tracking, no added battery cost) and keeps a small, capped cache of recent points outside the SwiftData archive — disposable scratch data, never part of a backup, pruned automatically.
+- A routed walk still never becomes a named place: its own latitude/longitude stay at 0 exactly as before, so it can never trigger Review Queue, place confirmation, or geofence learning — all of that stays keyed on how the visit was recorded, not on whether it has coordinates.
+- Only applies going forward from when the setting is turned on; there is no way to recover location history for a walk that already happened.
+
 ## 2026-08-20 — A commute's stop is bound into the commute — 2.22.2 (233)
 
 - Revised the previous "waypoint keeps its own donut category" decision: a brief real stop chained into a commute (see `CommuteDetection.waypointTolerance`) now folds fully into the Commute slice, trip, and totals, the same as the moving legs either side of it. Its own Visit record is untouched and still viewable/editable elsewhere — only its Insights categorisation changes.

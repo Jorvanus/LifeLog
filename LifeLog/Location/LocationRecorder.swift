@@ -423,6 +423,10 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                                    transition: transition,
                                    openVisit: latestLocationVisit(in: context), context: context)
         }
+        // Independent of the diagnostics journal above and its own toggle: a coarse
+        // breadcrumb for the next passive walk to claim, kept only when the owner has
+        // turned that on.
+        WalkBreadcrumbStore.record(location)
     }
 
     private func beginLocationConfirmation(pendingArrival: PendingArrival? = nil) {

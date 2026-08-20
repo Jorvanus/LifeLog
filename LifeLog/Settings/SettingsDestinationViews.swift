@@ -115,6 +115,7 @@ private struct ActivityImportStatus: View {
 }
 
 struct RecordingSettingsView: View {
+    @AppStorage(WalkRouteTracking.key) private var walkRouteTracking = false
     let recorder: LocationRecorder
     let activityData: ActivityDataService
 
@@ -126,6 +127,13 @@ struct RecordingSettingsView: View {
                 Text("Location")
             } footer: {
                 Text(locationExplanation)
+            }
+            Section {
+                Toggle("Track walking routes", isOn: $walkRouteTracking)
+                    .onChange(of: walkRouteTracking) { _, enabled in WalkRouteTracking.isEnabled = enabled }
+                    .accessibilityIdentifier("walk-route-tracking")
+            } footer: {
+                Text("Keeps a rough, coarse path for a walk between two places — a handful of points, not a smooth trace, and never a new named place. Only walks after this is turned on can have one; nothing past can be filled in.")
             }
             Section {
                 SettingsStatusRow(title: "Motion access", value: activityData.ui.motionStatus,

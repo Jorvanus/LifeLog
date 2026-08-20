@@ -464,9 +464,17 @@ actor ActivitySampleReader {
         }
         return merge(intervals, maximumGap: walkingBurstGap)
             .filter { $0.duration >= 2 * 60 }
-            .map {
-                ActivityImportRecord(name: "Walking", activity: "Walking",
-                                     source: "health-walking", start: $0.start, end: $0.end)
+            .map { walk in
+                // Step counts carry no location of their own; this is the only
+                // place a passive walk can pick up a coordinate at all, and only
+                // when `WalkRouteTracking.isEnabled` has ever left anything behind
+                // for this window (see `WalkBreadcrumbStore`). Empty otherwise,
+                // exactly as every passive walk has been until now.
+                let route = WalkBreadcrumbStore.breadcrumbs(in: walk)
+                    .map { RoutePoint(latitude: $0.latitude, longitude: $0.longitude, time: $0.recordedAt) }
+                return ActivityImportRecord(name: "Walking", activity: "Walking",
+                                            source: "health-walking", start: walk.start, end: walk.end,
+                                            route: route)
             }
     }
 
