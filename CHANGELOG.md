@@ -1,5 +1,10 @@
 # Change log
 
+## 2026-08-21 — Release archive compiler fixes — 2.25.3 (252)
+
+- Fixed the monitored-place ranking name collision and made manual-visit context
+  rows use explicit enumeration identity so the TestFlight Release archive type-checks.
+
 ## 2026-08-21 — MapKit SDK compatibility — 2.25.2 (251)
 
 - Removed point-of-interest categories unavailable in the current Xcode SDK so

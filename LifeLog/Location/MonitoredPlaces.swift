@@ -37,14 +37,14 @@ enum MonitoredPlaces {
         let stays = visits.filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
         var ranked: [Ranked] = []
         for place in places {
-            let matches = stays.filter { matches($0, place) }
+            let placeMatches = stays.filter { matches($0, place) }
             ranked.append(Ranked(
                 name: place.name,
                 latitude: place.latitude,
                 longitude: place.longitude,
                 radius: place.radius,
-                visits: matches.count,
-                lastVisit: matches.map(\.arrival).max()
+                visits: placeMatches.count,
+                lastVisit: placeMatches.map(\.arrival).max()
             ))
         }
         ranked.sort { left, right in

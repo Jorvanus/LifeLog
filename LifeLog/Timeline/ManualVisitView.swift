@@ -164,7 +164,7 @@ struct ManualVisitView: View {
             Form {
                 if !beforeVisits.isEmpty || !afterVisits.isEmpty {
                     Section {
-                        ForEach(Array(beforeVisits.enumerated()), id: \.element.persistentModelID) { index, visit in
+                        ForEach(Array(beforeVisits.enumerated()), id: \.offset) { index, visit in
                             BorderingVisitRow(label: index == 0 ? "Immediately before" : "Earlier", visit: visit) {
                                 selectPlace(from: visit)
                             }
@@ -172,7 +172,7 @@ struct ManualVisitView: View {
                                 ? "manual-visit-before-context"
                                 : "manual-visit-before-context-\(index)")
                         }
-                        ForEach(Array(afterVisits.enumerated()), id: \.element.persistentModelID) { index, visit in
+                        ForEach(Array(afterVisits.enumerated()), id: \.offset) { index, visit in
                             BorderingVisitRow(label: index == 0 ? "Immediately after" : "Later", visit: visit) {
                                 selectPlace(from: visit)
                             }
