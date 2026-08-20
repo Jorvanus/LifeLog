@@ -73,14 +73,6 @@ A code-tidiness audit, 2026-08-20: simplification/deduplication candidates, not
 correctness bugs (those stay in the section above). Ranked by how much confusion or
 duplication cost each one actually carries.
 
-- [ ] **A per-category custom-colour override is read but never written anywhere.**
-  `ActivityColors.swift:33` checks `UserDefaults` for
-  `"LifeLog.CategoryColor.\(key)"` before falling back to `CategoryPalette` — no
-  setter, no UI, no test writes that key. Half-built feature that adds a silent
-  branch to the file's own stated "one place a colour is chosen," for a
-  capability that doesn't exist yet. Either build the override UI or delete the
-  read path.
-
 - [ ] **Three call-alike but not-actually-equivalent `VisitHistoryQuery` lookups,
   two of them dead.** `day(_:calendar:includesImported:)`, `month(containing:)`,
   and `year(containing:)` (`VisitHistoryQuery.swift:8-33`) have zero call sites —

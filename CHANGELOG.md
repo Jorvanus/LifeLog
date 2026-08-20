@@ -1,5 +1,9 @@
 # Change log
 
+## 2026-08-20 — Remove a half-built colour override — 2.23.4 (239)
+
+- Removed `categoryColorHex`'s `UserDefaults` read for a per-category colour override that had no setter or UI anywhere — a colour now always comes from `CategoryPalette`, matching the file's own "one place a colour is chosen."
+
 ## 2026-08-20 — One merge implementation, not two — 2.23.3 (238)
 
 - `ActivitySampleReader.merge` is now `mergeWithIdentifiers` with the id discarded, instead of a second copy of the same sort-and-coalesce logic.

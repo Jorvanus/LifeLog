@@ -30,9 +30,6 @@ func categoryColor(forCategory category: String) -> Color {
 /// look like one colour on screen and report as another.
 func categoryColorHex(forCategory category: String) -> String {
     let key = category.trimmingCharacters(in: .whitespacesAndNewlines)
-    if let stored = UserDefaults.standard.string(forKey: "LifeLog.CategoryColor.\(key)") {
-        return "#\(stored)"
-    }
     return "#\(CategoryPalette.hex(for: key))"
 }
 
