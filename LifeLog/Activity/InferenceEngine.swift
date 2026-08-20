@@ -70,20 +70,6 @@ enum InferenceEngine {
     ]
 
     private static func categoryMapping(for category: MKPointOfInterestCategory) -> CategoryMapping? {
-        // These categories were added in iOS 27. Keep their richer inference on new
-        // systems without making the whole activity engine unavailable on iOS 26.
-        if #available(iOS 27.0, *) {
-            switch category {
-            case .picnicArea:
-                return .init(activity: "Exercising", mapsHint: "Fitness")
-            case .airportTerminal, .restArea:
-                return .init(activity: "Travelling", mapsHint: "Travel")
-            case .rangerStation, .scenicView, .ticketOffice, .visitorCenter:
-                return .init(activity: "Visiting", mapsHint: "Social")
-            default:
-                break
-            }
-        }
         return categoryMappings[category]
     }
 

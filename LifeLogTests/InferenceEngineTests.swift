@@ -15,9 +15,6 @@ struct InferenceEngineTests {
     func mapsHintUsesTheSameCategoryTable() {
         #expect(InferenceEngine.mapsHint(for: .pharmacy) == "Healthcare")
         #expect(InferenceEngine.mapsHint(for: .cafe) == "Food & Drink")
-        if #available(iOS 27.0, *) {
-            #expect(InferenceEngine.mapsHint(for: .airportTerminal) == "Travel")
-        }
         #expect(InferenceEngine.mapsHint(for: nil) == "Other")
     }
 

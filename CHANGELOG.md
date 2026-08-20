@@ -1,5 +1,10 @@
 # Change log
 
+## 2026-08-21 — MapKit SDK compatibility — 2.25.2 (251)
+
+- Removed point-of-interest categories unavailable in the current Xcode SDK so
+  Release archives can compile while retaining supported Maps and name-based inference.
+
 ## 2026-08-20 — Team coding and TestFlight workflow guide
 
 - Added a plain-English team document covering branch names, local/simulator/device/TestFlight testing, pull requests and merges, version/build numbering, release-candidate preparation, conflict resolution, and tester bug reports.
