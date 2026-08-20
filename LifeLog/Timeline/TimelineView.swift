@@ -60,6 +60,8 @@ struct TimelineView: View {
     /// The first day there is anything to read, so the picker cannot offer years of
     /// empty days before the archive begins. Resolved once, from one row.
     @State private var earliestDay: Date?
+    @State private var reviewQueue = ReviewQueue.PreparedResult.empty
+    @State private var reviewReader: VisitArchiveReader?
     // The add button's glyph and its circle have to grow together, otherwise a
     // Dynamic Type glyph overflows a fixed-size circle at accessibility sizes.
     @ScaledMetric(relativeTo: .title2) private var addButtonDiameter: CGFloat = 56
@@ -162,10 +164,6 @@ struct TimelineView: View {
         }
     }
 
-    private var reviewQueue: [ReviewQueue.Entry] {
-        // The live unknown location has its own prominent card; the queue is for past stays.
-        ReviewQueue.entries(in: visits, now: foregroundNow).filter { $0.visit.departure != nil }
-    }
     private var current: Visit? {
         visits.first { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored && $0.departure == nil }
     }
@@ -187,7 +185,7 @@ struct TimelineView: View {
                         // a reader for one day of the journal.
                         if isShowingToday {
                             header
-                            if let review = reviewQueue.first { reviewCard(review) }
+                            if let review = reviewQueue.rows.first { reviewCard(review) }
                         }
                         journey
                     }
@@ -215,9 +213,14 @@ struct TimelineView: View {
                 foregroundNow = .now
                 selectedDay = TimelineView.selectedDayAfterForeground(
                     current: selectedDay, wasShowingToday: wasShowingToday, refreshedClock: foregroundNow)
+                Task { await loadReviewQueue() }
             }
             .task {
                 loadEarliestDay()
+                await loadReviewQueue()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: InsightsInvalidation.notification)) { _ in
+                Task { await loadReviewQueue() }
             }
         }
     }
@@ -251,7 +254,7 @@ struct TimelineView: View {
                     // suffer. The review count below is not capped: it is the one line
                     // here worth acting on.
                     .dynamicTypeSize(...DynamicTypeSize.accessibility2)
-                    if !reviewQueue.isEmpty {
+                    if reviewQueue.count > 0 {
                         Text("\(reviewQueue.count) \(reviewQueue.count == 1 ? "place" : "places") to review")
                             .font(.subheadline.weight(.medium)).foregroundStyle(.orange)
                             // Without this the row shares its width with the add button
@@ -290,9 +293,8 @@ struct TimelineView: View {
         }.padding(.top, dynamicTypeSize.isAccessibilitySize ? 8 : 20)
     }
 
-    private func reviewCard(_ entry: ReviewQueue.Entry) -> some View {
-        let visit = entry.visit
-        return NavigationLink { VisitEditor(visit: visit) } label: {
+    private func reviewCard(_ row: ReviewQueue.Row) -> some View {
+        NavigationLink { ReviewVisitDestination(stableID: row.stableID) } label: {
             VStack(alignment: .leading, spacing: 17) {
                 Label(dynamicTypeSize.isAccessibilitySize ? "Review" : "Review Queue",
                       systemImage: "exclamationmark.triangle.fill")
@@ -306,20 +308,20 @@ struct TimelineView: View {
                     // Each reason asks a different question. Agreeing with a weak
                     // guess, naming a place LifeLog knows nothing about, and saying
                     // whether you stopped at all are not the same request.
-                    Text(entry.reason.prompt).font(.headline).foregroundStyle(.primary)
-                    if entry.reason == .unidentified {
-                        if !visit.hasPlaceholderName {
-                            Text("Likely: \(visit.placeName)").font(.subheadline).foregroundStyle(.secondary)
+                    Text(row.reason.prompt).font(.headline).foregroundStyle(.primary)
+                    if row.reason == .unidentified {
+                        if !row.hasPlaceholderName {
+                            Text("Likely: \(row.placeName)").font(.subheadline).foregroundStyle(.secondary)
                         }
                     } else {
-                        Text(visit.placeName).font(.subheadline).foregroundStyle(.secondary)
+                        Text(row.placeName).font(.subheadline).foregroundStyle(.secondary)
                     }
-                    Text(entry.reason == .passingStay
-                         ? "\(formattedDuration(visit.duration)) here, and you have not been back"
-                         : "Suspected activity: \(visit.inferredActivity)")
+                    Text(row.reason == .passingStay
+                         ? "\(formattedDuration(row.duration)) here, and you have not been back"
+                         : "Suspected activity: \(row.inferredActivity)")
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
-                let action = Text(entry.reason == .unidentified ? "Categorise" : "Check")
+                let action = Text(row.reason == .unidentified ? "Categorise" : "Check")
                     .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
                     .padding(.horizontal, 15).padding(.vertical, 8)
                     .background(.orange.gradient, in: RoundedRectangle(cornerRadius: 9))
@@ -329,7 +331,7 @@ struct TimelineView: View {
                     action.frame(maxWidth: .infinity)
                 } else {
                     HStack(spacing: 14) {
-                        ActivityIcon(activity: visit.activity, context: visit.displayPlaceName, color: .orange)
+                        ActivityIcon(activity: row.activity, context: row.displayPlaceName, color: .orange)
                         details
                         Spacer()
                         action
@@ -345,6 +347,17 @@ struct TimelineView: View {
         .dynamicTypeSize(...DynamicTypeSize.accessibility2)
         .buttonStyle(.plain)
         .accessibilityIdentifier("uncategorised-location-card")
+    }
+
+    private func loadReviewQueue() async {
+        let generation = InsightsAggregationActor.shared.currentGeneration()
+        let reader = reviewReader ?? VisitArchiveReader(modelContainer: context.container)
+        reviewReader = reader
+        guard let complete = try? await reader.completeReviewQueue(generation: generation, now: foregroundNow),
+              !Task.isCancelled,
+              generation == InsightsAggregationActor.shared.currentGeneration() else { return }
+        let start = Calendar.current.date(byAdding: .day, value: -7, to: foregroundNow) ?? foregroundNow
+        reviewQueue = complete.result.recentClosedPreview(since: start)
     }
 
     private func currentCard(_ visit: Visit) -> some View {

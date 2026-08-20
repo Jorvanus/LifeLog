@@ -40,6 +40,91 @@ struct VisitArchiveReaderTests {
         #expect(entries.first?.placeName == "Renamed cafe")
     }
 
+    @Test("Timeline preview is a recent slice of Locations' complete review queue")
+    func reviewQueueScopesAgree() async throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let previewStart = now.addingTimeInterval(-7 * 86_400)
+        let oldCafe = Visit(arrival: previewStart.addingTimeInterval(-86_400),
+                            departure: previewStart.addingTimeInterval(-86_100),
+                            latitude: 0, longitude: 0, placeName: "Cafe",
+                            inferredActivity: "Visiting", source: "automatic",
+                            resolutionState: .resolved)
+        let recentCafe = Visit(arrival: previewStart.addingTimeInterval(3_600),
+                               departure: previewStart.addingTimeInterval(3_900),
+                               latitude: 0, longitude: 0, placeName: "Cafe",
+                               inferredActivity: "Visiting", source: "automatic",
+                               resolutionState: .resolved)
+        let recentUnknown = Visit(arrival: previewStart.addingTimeInterval(7_200),
+                                  departure: previewStart.addingTimeInterval(8_200),
+                                  latitude: 1, longitude: 1,
+                                  inferredActivity: "Visiting", source: "automatic",
+                                  resolutionState: .provisional)
+        [oldCafe, recentCafe, recentUnknown].forEach(context.insert)
+        try context.save()
+
+        let complete = try await VisitArchiveReader(modelContainer: container)
+            .completeReviewQueue(generation: 1, now: now).result
+        let preview = complete.recentClosedPreview(since: previewStart)
+        let expected = complete.rows.filter { $0.departure != nil && $0.arrival >= previewStart }
+
+        #expect(preview.rows == expected)
+        #expect(preview.count == expected.count)
+        #expect(preview.rows.map(\.stableID) == [recentUnknown.stableID])
+        #expect(!preview.rows.contains { $0.stableID == recentCafe.stableID },
+                "the older Cafe return must keep the recent Cafe out of both queue scopes")
+    }
+
+    @Test("Complete review queue cache advances only with store generation")
+    func reviewQueueCacheRespectsGeneration() async throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        context.insert(Visit(arrival: now.addingTimeInterval(-7_200),
+                             departure: now.addingTimeInterval(-6_200),
+                             latitude: 0, longitude: 0, source: "automatic"))
+        try context.save()
+
+        let reader = VisitArchiveReader(modelContainer: container)
+        #expect(try await reader.completeReviewQueue(generation: 1, now: now).result.count == 1)
+
+        context.insert(Visit(arrival: now.addingTimeInterval(-3_600),
+                             departure: now.addingTimeInterval(-2_600),
+                             latitude: 1, longitude: 1, source: "automatic"))
+        try context.save()
+        #expect(try await reader.completeReviewQueue(generation: 1, now: now).result.count == 1)
+        #expect(try await reader.completeReviewQueue(generation: 2, now: now).result.count == 2)
+    }
+
+    @Test("Complete review queue stays within budget against a 32,000-row archive")
+    func reviewQueueBudgetOnLargeArchive() async throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        for index in 0..<32_000 {
+            let arrival = now.addingTimeInterval(Double(index - 32_000) * 1_800)
+            context.insert(Visit(arrival: arrival,
+                                 departure: arrival.addingTimeInterval(1_200),
+                                 latitude: -27.47, longitude: 153.03,
+                                 placeName: "Place \(index % 500)",
+                                 inferredActivity: "Visiting", source: "automatic",
+                                 recognitionConfidence: "low",
+                                 resolutionState: .provisional))
+        }
+        try context.save()
+
+        let reader = VisitArchiveReader(modelContainer: container)
+        let startedAt = Date.now
+        let prepared = try await reader.completeReviewQueue(generation: 1, now: now)
+        let elapsed = Date.now.timeIntervalSince(startedAt)
+
+        #expect(prepared.itemCount == 32_000)
+        #expect(prepared.result.count == 32_000)
+        #expect(elapsed < Diagnostics.PerformanceBudget.reviewQueuePreparation,
+                "completeReviewQueue took \(elapsed)s for the 32,000-row fixture")
+    }
+
     private func makeContainer() throws -> ModelContainer {
         try ModelContainer(for: Visit.self, SavedPlace.self, VisitCorrection.self, DiagnosticEvent.self,
                            configurations: ModelConfiguration(isStoredInMemoryOnly: true))

@@ -15,18 +15,6 @@ integrations.
 
 ## Correctness and recovery — still open
 
-- [ ] **Stop reporting failed user mutations as if they succeeded, and retain the
-  original Core Location failure.** `ActivityGroupsView` discards errors from group
-  rename/delete with `try?`, then reloads and posts an Insights invalidation as though
-  the mutation committed. `PlacesView` similarly discards the save failure when an
-  ignored visit is restored/hidden and when a Saved Place is deleted. Route these
-  through the same explicit committed/failed result pattern as
-  `VisitMutationService`, keep the existing data visible on failure, and show one
-  actionable error state. Separately, replace `LocationRecorder`'s `_ = error` in
-  `locationManager(_:didFailWithError:)` with a diagnostic that retains the error
-  domain/code and useful description; the current generic `.failure` event throws
-  away the only reason Core Location supplied.
-
 - [ ] **Run one explicit audit of the cleaned archive, then retire four historical
   Timeline passes.** Once the audit reports clean, delete
   `automatic-location-deduplicated-v3`, `stay-splits-rejoined-v1`,
@@ -83,18 +71,6 @@ integrations.
 
 A code-first audit on 2026-08-20. These are ranked interaction-path and ownership
 improvements, not a request for blanket rewrites or cosmetic file splitting.
-
-- [ ] **Make the Locations review queue one prepared result, with one explicit
-  scope.** `PlacesView` currently hydrates every automatic/manual `Visit` through an
-  unbounded main-context `@Query`. Its `needingReview` computed property then rebuilds
-  and sorts `ReviewQueue.entries(in:)` each time it is read; the body reads it for the
-  destination, empty label, and count, so one render can repeat the same archive walk.
-  The comment that this is the "same queue" as Timeline is also false in scope:
-  Timeline passes only its seven-day query while Locations passes the full archive.
-  Define whether Locations is the complete queue and Timeline is a recent preview (or
-  make them genuinely identical), prepare the result once on an isolated reader keyed
-  by store generation, and return only the Sendable row/count data each surface needs.
-  Add a 32,000-row budget test and an agreement test for the chosen scope.
 
 - [ ] **Calculate Activity Detail statistics once per meaningful input change.**
   `ActivityDetailView.statistics` runs `ActivityStatistics.make` over as many as

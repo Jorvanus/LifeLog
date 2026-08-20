@@ -100,6 +100,22 @@ struct LocationArrivalConfirmationTests {
         #expect(coordinator.isCurrent(new, for: visit))
     }
 
+    @Test("A Core Location failure retains the framework's reason in diagnostics")
+    @MainActor
+    func locationFailureKeepsFrameworkDetails() {
+        var recordedMessage: String?
+        let recorder = LocationRecorder(diagnosticsRecorder: .init { _, message, _ in
+            recordedMessage = message
+        })
+        let error = NSError(domain: "kCLErrorDomain", code: 1,
+                            userInfo: [NSLocalizedDescriptionKey: "Location permission denied"])
+
+        recorder.locationManager(CLLocationManager(), didFailWithError: error)
+
+        #expect(recorder.lastError == "Location updates are temporarily unavailable.")
+        #expect(recordedMessage == "A location update failed (kCLErrorDomain 1): Location permission denied")
+    }
+
     @Test("Relaunch recovery only starts the background workflow when it can be useful")
     func recoveryStartPolicyIsExplicit() {
         #expect(LocationRecoveryCoordinator.shouldStartBackgroundWorkflow(

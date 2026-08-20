@@ -8,7 +8,27 @@ enum CoreLocationEvent: Sendable {
     case visitArrival(coordinate: CLLocationCoordinate2D, arrival: Date, accuracy: CLLocationAccuracy, callbackDelay: TimeInterval)
     case visitDeparture(coordinate: CLLocationCoordinate2D, arrival: Date, departure: Date, accuracy: CLLocationAccuracy)
     case locationSample(LocationCallbackSample)
-    case failure
+    case failure(LocationFailure)
+}
+
+/// The useful, Sendable part of an NSError captured at the delegate boundary.
+/// Core Location's Error cannot cross into typed event handling itself, but reducing
+/// it to a generic failure used to discard the only reason the framework supplied.
+struct LocationFailure: Sendable, Equatable {
+    let domain: String
+    let code: Int
+    let description: String
+
+    init(_ error: Error) {
+        let error = error as NSError
+        domain = error.domain
+        code = error.code
+        description = error.localizedDescription
+    }
+
+    var diagnosticMessage: String {
+        "A location update failed (\(domain) \(code)): \(description)"
+    }
 }
 
 struct LocationCallbackSample: Sendable {

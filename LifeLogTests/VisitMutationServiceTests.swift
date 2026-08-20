@@ -82,6 +82,24 @@ struct VisitMutationServiceTests {
         }.isEmpty)
     }
 
+    @Test("A failed Saved Place deletion restores the place")
+    func failedSavedPlaceDeletionRollsBack() throws {
+        let context = try makeContext()
+        let place = SavedPlace(name: "Home", latitude: -27.47, longitude: 153.03,
+                               radius: 100, defaultActivity: "At home")
+        context.insert(place)
+        try context.save()
+
+        let result = VisitMutationService.perform(context: context, kind: .savedPlaceChange) {
+            context.delete(place)
+            throw TestFailure.expected
+        }
+
+        #expect(!result.committed)
+        #expect(try context.fetchCount(FetchDescriptor<SavedPlace>()) == 1)
+        #expect(try context.fetch(FetchDescriptor<SavedPlace>()).first?.name == "Home")
+    }
+
     private func makeContext() throws -> ModelContext {
         let container = try ModelContainer(for: Visit.self, SavedPlace.self, VisitCorrection.self,
                                            DiagnosticEvent.self,

@@ -14,6 +14,7 @@ struct ActivityGroupsView: View {
     @State private var renaming: RenameRequest?
     @State private var pendingDeletion: String?
     @State private var duplicateName = false
+    @State private var mutationFailureMessage: String?
 
     private struct RenameRequest: Identifiable {
         let previous: String
@@ -116,9 +117,13 @@ struct ActivityGroupsView: View {
             Button("Rename") {
                 guard let request = renaming else { return }
                 renaming = nil
-                try? ActivityCatalog.renameCategory(from: request.previous, to: request.updated, context: context)
-                reload()
-                InsightsInvalidation.invalidate(reason: "Activity group renamed", context: context)
+                do {
+                    try ActivityCatalog.renameCategory(from: request.previous, to: request.updated, context: context)
+                    reload()
+                    InsightsInvalidation.invalidate(reason: "Activity group renamed", context: context)
+                } catch {
+                    mutationFailureMessage = "LifeLog couldn't rename the group. \(error.localizedDescription)"
+                }
             }
         } message: {
             if let request = renaming {
@@ -141,13 +146,25 @@ struct ActivityGroupsView: View {
             Button("Delete group", role: .destructive) {
                 guard let group = pendingDeletion else { return }
                 pendingDeletion = nil
-                try? ActivityCatalog.deleteCategory(group, context: context)
-                reload()
-                InsightsInvalidation.invalidate(reason: "Activity group deleted", context: context)
+                do {
+                    try ActivityCatalog.deleteCategory(group, context: context)
+                    reload()
+                    InsightsInvalidation.invalidate(reason: "Activity group deleted", context: context)
+                } catch {
+                    mutationFailureMessage = "LifeLog couldn't delete the group. \(error.localizedDescription)"
+                }
             }
             Button("Cancel", role: .cancel) { pendingDeletion = nil }
         } message: {
             Text("Its activities keep their labels and move to \(ActivityCatalog.fallbackCategory).")
+        }
+        .alert("Couldn't update group", isPresented: Binding(
+            get: { mutationFailureMessage != nil },
+            set: { if !$0 { mutationFailureMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { mutationFailureMessage = nil }
+        } message: {
+            Text(mutationFailureMessage ?? "LifeLog left the group and its activities unchanged.")
         }
     }
 

@@ -51,16 +51,19 @@ struct PlaceHistoryEntry: Identifiable, Sendable, Hashable {
 ///   validation, an attended rename/merge, or an archive statistic with a named
 ///   result. Each route uses an isolated actor, exposes in-progress/cancellation in
 ///   its owning screen, and carries the 32,000-row fixture before it is accepted.
-/// - `activityUsage`, `placeSummaries`, and `historicalPlaceNames` are the statistics
-///   exceptions here; they check cancellation, return Sendable summaries, and cache by
-///   store generation. `search`, day history, and detail lookups stay bounded.
+/// - `activityUsage`, `placeSummaries`, `completeReviewQueue`, and
+///   `historicalPlaceNames` are the statistics exceptions here; they check
+///   cancellation, return Sendable summaries, and cache by store generation.
+///   `search`, day history, and detail lookups stay bounded.
 /// - Launch, Settings setup, ordinary navigation, and a single-day correction must
-///   use a date/identity/limit-bounded descriptor. They may not call an archive reader
-///   method merely because it already exists.
+///   otherwise use a date/identity/limit-bounded descriptor. Timeline's review preview
+///   is the explicit exception: it derives after the shell renders from the cached
+///   complete queue so its classification agrees with Locations.
 @ModelActor
 actor VisitArchiveReader {
     private var usageCache: (generation: Int, counts: [String: Int])?
     private var placeSummaryCache: (generation: Int, summaries: [PlaceHistorySummary], itemCount: Int)?
+    private var reviewQueueCache: (generation: Int, result: ReviewQueue.PreparedResult, itemCount: Int)?
     /// Keyed on the year boundary and scope too, not just generation: Year's own
     /// date navigation changes `before` far more often than the store itself
     /// changes, and the Insights source-scope picker can change `scope` without
@@ -110,6 +113,25 @@ actor VisitArchiveReader {
         }.sorted { $0.count > $1.count }
         placeSummaryCache = (generation, summaries, eligible)
         return (summaries, eligible)
+    }
+
+    /// Locations' complete review queue. Timeline derives its seven-day preview
+    /// from this same prepared result, so classification and ranking never depend
+    /// on which surface asked. Only automatic visits can enter `ReviewQueue`; the
+    /// store predicate avoids hydrating manual, journal, Health, and Motion rows.
+    func completeReviewQueue(generation: Int, now: Date) throws
+    -> (result: ReviewQueue.PreparedResult, itemCount: Int) {
+        if let reviewQueueCache, reviewQueueCache.generation == generation {
+            return (reviewQueueCache.result, reviewQueueCache.itemCount)
+        }
+        try Task.checkCancellation()
+        let visits = try modelContext.fetch(FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.source == "automatic" }
+        ))
+        try Task.checkCancellation()
+        let result = ReviewQueue.prepare(visits: visits, now: now)
+        reviewQueueCache = (generation, result, visits.count)
+        return (result, visits.count)
     }
 
     /// Backs the explicit archive search screen. Deliberately uncached: a search

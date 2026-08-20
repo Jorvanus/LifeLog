@@ -1,5 +1,15 @@
 # Change log
 
+## 2026-08-20 — Prepared Locations review queue — 2.24.0 (245)
+
+- Locations now prepares one complete archive-wide review queue on an isolated reader, caches it by store generation, and renders only compact Sendable rows and a count instead of hydrating the full Visit archive on the main context.
+- Timeline now presents a seven-day closed-entry preview of that complete queue, so older returns still influence classification and both surfaces agree about which recent locations need review.
+
+## 2026-08-20 — Honest mutation failures — 2.23.9 (244)
+
+- Group rename/delete, ignored-location changes, and Saved Place deletion now reload, invalidate, or dismiss only after their durable mutation commits; failures keep the existing data visible and show an actionable error instead of presenting success.
+- Core Location failures now retain the framework error domain, code, and description in Diagnostics while keeping the concise owner-facing availability message.
+
 ## 2026-08-20 — Deep code-tidiness roadmap review — 2.23.8 (243)
 
 - Expanded the open code roadmap with evidence-backed cleanup and efficiency work for failed mutation handling, Locations review-queue preparation, repeated Activity Detail aggregation, Diagnostics archive reads, confirmed dead declarations, compiler warnings, and the remaining Location Recorder ownership seams.

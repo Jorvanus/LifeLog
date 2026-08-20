@@ -23,7 +23,7 @@ enum ReviewQueue {
     /// neighbouring businesses stay separate.
     private static let coordinatePrecision = 1_000.0
 
-    enum Reason: String, Sendable {
+    enum Reason: String, Sendable, Hashable {
         /// LifeLog has no name for it.
         case unidentified
         /// It has a name, but only a weak guess at one.
@@ -49,6 +49,44 @@ enum ReviewQueue {
         /// Correcting one that recurs fixes more of the timeline than a one-off.
         let impact: TimeInterval
         var id: Visit.ID { visit.id }
+    }
+
+    /// A model-free review row safe to return from an isolated archive reader.
+    /// Views use `stableID` for a one-row lookup only when the person opens or
+    /// mutates an entry; rendering the queue never hydrates the underlying models.
+    struct Row: Identifiable, Sendable, Hashable {
+        let stableID: UUID
+        let arrival: Date
+        let departure: Date?
+        let placeName: String
+        let displayPlaceName: String
+        let inferredActivity: String
+        let activity: String
+        let hasPlaceholderName: Bool
+        let reason: Reason
+
+        var id: UUID { stableID }
+        var duration: TimeInterval { max(0, (departure ?? arrival).timeIntervalSince(arrival)) }
+    }
+
+    struct PreparedResult: Sendable, Equatable {
+        let rows: [Row]
+        let count: Int
+
+        static let empty = PreparedResult(rows: [])
+
+        init(rows: [Row]) {
+            self.rows = rows
+            count = rows.count
+        }
+
+        /// Timeline is deliberately a recent preview of Locations' complete queue,
+        /// not a separately classified queue. Filtering after complete preparation
+        /// means an older return visit still prevents a recent brief stay from being
+        /// mislabelled as a one-off just because it falls outside seven days.
+        func recentClosedPreview(since start: Date) -> PreparedResult {
+            PreparedResult(rows: rows.filter { $0.departure != nil && $0.arrival >= start })
+        }
     }
 
     /// Everything worth reviewing, most valuable first.
@@ -83,6 +121,23 @@ enum ReviewQueue {
             if left.impact != right.impact { return left.impact > right.impact }
             return left.visit.arrival > right.visit.arrival
         }
+    }
+
+    static func prepare(visits: [Visit], now: Date = .now) -> PreparedResult {
+        PreparedResult(rows: entries(in: visits, now: now).map { entry in
+            let visit = entry.visit
+            return Row(
+                stableID: visit.stableID,
+                arrival: visit.arrival,
+                departure: visit.departure,
+                placeName: visit.placeName,
+                displayPlaceName: visit.displayPlaceName,
+                inferredActivity: visit.inferredActivity,
+                activity: visit.activity,
+                hasPlaceholderName: visit.hasPlaceholderName,
+                reason: entry.reason
+            )
+        })
     }
 
     /// Why this stay needs a person, or nil if it does not.

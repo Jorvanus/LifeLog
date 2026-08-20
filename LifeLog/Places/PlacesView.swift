@@ -5,35 +5,32 @@ import MapKit
 struct PlacesView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \SavedPlace.name) private var places: [SavedPlace]
-    // Only automatic/manual location visits can be uncategorised or ignored here;
-    // journal and HealthKit rows do not belong in the Settings list.
-    @Query(filter: #Predicate<Visit> { $0.source == "automatic" || $0.source == "manual" },
+    // Ignored locations are the only Visit models this shell keeps live. The
+    // complete review queue is prepared off-main as Sendable rows below.
+    @Query(filter: #Predicate<Visit> { $0.resolutionStateRaw == "ignored" },
            sort: \Visit.arrival, order: .reverse) private var visits: [Visit]
     let recorder: LocationRecorder
-
-    // The same queue Timeline shows, in the same order, so the count here and the
-    // one on the Timeline header can never disagree.
-    private var reviewEntries: [ReviewQueue.Entry] {
-        ReviewQueue.entries(in: visits)
-    }
-    private var needingReview: [Visit] {
-        reviewEntries.map(\.visit)
-    }
-    private var ignored: [Visit] {
-        visits.filter { $0.isIgnored && ActivityLocationPolicy.isLocationVisit($0) }
-    }
+    @State private var reviewQueue = ReviewQueue.PreparedResult.empty
+    @State private var reviewQueueLoading = true
+    @State private var reviewReader: VisitArchiveReader?
 
     var body: some View {
         List {
             Section("Review") {
                 NavigationLink {
-                    LocationVisitList(title: "Locations to Review", visits: needingReview, mode: .uncategorised)
+                    LocationReviewQueueList(initialResult: reviewQueue,
+                                            reader: reviewReader)
                 } label: {
                     Label {
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Locations to Review").font(.headline)
-                            Text(needingReview.isEmpty ? "None to review" : "\(needingReview.count) to review")
-                                .font(.caption).foregroundStyle(.secondary)
+                            if reviewQueueLoading {
+                                Text("Preparing complete queue…")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            } else {
+                                Text(reviewQueue.count == 0 ? "None to review" : "\(reviewQueue.count) to review")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
                         }
                     } icon: {
                         Image(systemName: "questionmark.circle.fill").foregroundStyle(.orange)
@@ -41,12 +38,12 @@ struct PlacesView: View {
                 }
                 .accessibilityIdentifier("uncategorised-locations-link")
                 NavigationLink {
-                    LocationVisitList(title: "Ignored Locations", visits: ignored, mode: .ignored)
+                    LocationVisitList(visits: visits)
                 } label: {
                     Label {
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Ignored Locations").font(.headline)
-                            Text(ignored.isEmpty ? "None ignored" : "\(ignored.count) hidden locations")
+                            Text(visits.isEmpty ? "None ignored" : "\(visits.count) hidden locations")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     } icon: {
@@ -96,6 +93,10 @@ struct PlacesView: View {
         }
         .navigationTitle("Locations")
         .accessibilityIdentifier("saved-places-screen")
+        .task { await loadReviewQueue() }
+        .onReceive(NotificationCenter.default.publisher(for: InsightsInvalidation.notification)) { _ in
+            Task { await loadReviewQueue() }
+        }
     }
 
     private func delete(at offsets: IndexSet) {
@@ -108,22 +109,139 @@ struct PlacesView: View {
         if mutation.committed { recorder.invalidateSavedPlaceCache() }
     }
 
+    private func loadReviewQueue() async {
+        let startedAt = Date.now
+        let generation = InsightsAggregationActor.shared.currentGeneration()
+        let reader = reviewReader ?? VisitArchiveReader(modelContainer: context.container)
+        reviewReader = reader
+        do {
+            let prepared = try await reader.completeReviewQueue(generation: generation, now: .now)
+            let currentGeneration = InsightsAggregationActor.shared.currentGeneration()
+            guard !Task.isCancelled, generation == currentGeneration else { return }
+            reviewQueue = prepared.result
+            reviewQueueLoading = false
+            Diagnostics.budget(context, subsystem: "Locations", operation: "complete review queue",
+                               startedAt: startedAt,
+                               budget: Diagnostics.PerformanceBudget.reviewQueuePreparation,
+                               itemCount: prepared.itemCount)
+        } catch is CancellationError {
+            return
+        } catch {
+            reviewQueueLoading = false
+        }
+    }
+
+}
+
+private struct LocationReviewQueueList: View {
+    @Environment(\.modelContext) private var context
+    @State private var reader: VisitArchiveReader?
+    @State private var result: ReviewQueue.PreparedResult
+    @State private var mutationFailureMessage: String?
+
+    init(initialResult: ReviewQueue.PreparedResult, reader: VisitArchiveReader?) {
+        _reader = State(initialValue: reader)
+        _result = State(initialValue: initialResult)
+    }
+
+    var body: some View {
+        List {
+            if result.rows.isEmpty {
+                ContentUnavailableView(
+                    "Nothing to review",
+                    systemImage: "checkmark.circle",
+                    description: Text("Places needing a label, or an uncertain match needing confirmation, will appear here.")
+                )
+            } else {
+                ForEach(result.rows) { row in
+                    HStack {
+                        NavigationLink { ReviewVisitDestination(stableID: row.stableID) } label: {
+                            VisitRowLabel(title: row.displayPlaceName,
+                                         subtitle: row.arrival.formatted(date: .abbreviated, time: .shortened))
+                        }
+                        Spacer()
+                        Button("Ignore") { ignore(row) }
+                            .font(.caption.bold()).buttonStyle(.bordered).tint(.orange)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Locations to Review")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await reload() }
+        .onReceive(NotificationCenter.default.publisher(for: InsightsInvalidation.notification)) { _ in
+            Task { await reload() }
+        }
+        .alert("Couldn't update location", isPresented: Binding(
+            get: { mutationFailureMessage != nil },
+            set: { if !$0 { mutationFailureMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { mutationFailureMessage = nil }
+        } message: {
+            Text(mutationFailureMessage ?? "LifeLog left this location unchanged.")
+        }
+    }
+
+    private func ignore(_ row: ReviewQueue.Row) {
+        let stableID = row.stableID
+        var descriptor = FetchDescriptor<Visit>(predicate: #Predicate { $0.stableID == stableID })
+        descriptor.fetchLimit = 1
+        guard let visit = try? context.fetch(descriptor).first else {
+            mutationFailureMessage = "LifeLog couldn't find this location. Refresh the queue and try again."
+            return
+        }
+        let mutation = VisitMutationService.perform(context: context, kind: .ignoreChange) {
+            visit.isIgnored = true
+            return .init(affectedVisit: visit)
+        }
+        if mutation.committed {
+            result = ReviewQueue.PreparedResult(rows: result.rows.filter { $0.id != row.id })
+        } else {
+            mutationFailureMessage = mutation.failureDescription
+                ?? "LifeLog couldn't update this location."
+        }
+    }
+
+    private func reload() async {
+        let generation = InsightsAggregationActor.shared.currentGeneration()
+        let reader = reader ?? VisitArchiveReader(modelContainer: context.container)
+        self.reader = reader
+        guard let prepared = try? await reader.completeReviewQueue(generation: generation, now: .now),
+              !Task.isCancelled,
+              generation == InsightsAggregationActor.shared.currentGeneration() else { return }
+        result = prepared.result
+    }
+}
+
+struct ReviewVisitDestination: View {
+    @Query private var visits: [Visit]
+
+    init(stableID: UUID) {
+        _visits = Query(filter: #Predicate { $0.stableID == stableID })
+    }
+
+    var body: some View {
+        if let visit = visits.first {
+            VisitEditor(visit: visit)
+        } else {
+            ContentUnavailableView("Location unavailable", systemImage: "mappin.slash",
+                                   description: Text("This location may have been changed or removed."))
+        }
+    }
 }
 
 private struct LocationVisitList: View {
-    enum Mode { case uncategorised, ignored }
-    let title: String
     let visits: [Visit]
-    let mode: Mode
     @Environment(\.modelContext) private var context
+    @State private var mutationFailureMessage: String?
 
     var body: some View {
         List {
             if visits.isEmpty {
                 ContentUnavailableView(
-                    mode == .uncategorised ? "Nothing to review" : "No ignored locations",
-                    systemImage: mode == .uncategorised ? "checkmark.circle" : "eye",
-                    description: Text(mode == .uncategorised ? "Places needing a label, or an uncertain match needing confirmation, will appear here." : "Ignored locations will appear here when you hide them."))
+                    "No ignored locations",
+                    systemImage: "eye",
+                    description: Text("Ignored locations will appear here when you hide them."))
             } else {
                 ForEach(visits) { visit in
                     HStack {
@@ -132,18 +250,32 @@ private struct LocationVisitList: View {
                                          subtitle: visit.arrival.formatted(date: .abbreviated, time: .shortened))
                         }
                         Spacer()
-                        Button(mode == .ignored ? "Restore" : "Ignore") {
-                            visit.isIgnored = mode != .ignored
-                            try? context.save()
+                        Button("Restore") {
+                            let result = VisitMutationService.perform(context: context, kind: .ignoreChange) {
+                                visit.isIgnored = false
+                                return .init(affectedVisit: visit)
+                            }
+                            if !result.committed {
+                                mutationFailureMessage = result.failureDescription
+                                    ?? "LifeLog couldn't update this location."
+                            }
                         }
                         .font(.caption.bold()).buttonStyle(.bordered)
-                        .tint(mode == .ignored ? .green : .orange)
+                        .tint(.green)
                     }
                 }
             }
         }
-        .navigationTitle(title)
+        .navigationTitle("Ignored Locations")
         .navigationBarTitleDisplayMode(.inline)
+        .alert("Couldn't update location", isPresented: Binding(
+            get: { mutationFailureMessage != nil },
+            set: { if !$0 { mutationFailureMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { mutationFailureMessage = nil }
+        } message: {
+            Text(mutationFailureMessage ?? "LifeLog left this location unchanged.")
+        }
     }
 }
 
@@ -289,10 +421,16 @@ private struct SavedPlaceEditor: View {
         }
         .confirmationDialog("Delete this place?", isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button("Delete Place", role: .destructive) {
-                context.delete(place)
-                try? context.save()
-                recorder.invalidateSavedPlaceCache()
-                dismiss()
+                let result = VisitMutationService.perform(context: context, kind: .savedPlaceChange) {
+                    context.delete(place)
+                    return .init()
+                }
+                if result.committed {
+                    recorder.invalidateSavedPlaceCache()
+                    dismiss()
+                } else {
+                    saveFailed = true
+                }
             }
             Button("Cancel", role: .cancel) { }
         } message: {

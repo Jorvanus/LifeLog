@@ -358,8 +358,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        _ = error
-        handle(.failure)
+        handle(.failure(LocationFailure(error)))
     }
 
     /// Delegate callbacks are deliberately limited to adaptation and dispatch. All
@@ -401,10 +400,10 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                                       horizontalAccuracy: sample.accuracy, verticalAccuracy: -1,
                                       timestamp: sample.timestamp)
             recordLocationEvidence(location, callbackType: .locationUpdate)
-        case .failure:
+        case .failure(let failure):
             cancelLocationConfirmation()
             lastError = "Location updates are temporarily unavailable."
-            diagnosticsRecorder.record(context, "A location update failed.", "warning")
+            diagnosticsRecorder.record(context, failure.diagnosticMessage, "warning")
         }
     }
 

@@ -351,6 +351,10 @@ enum Diagnostics {
         /// allowed more than an interaction-path budget — but still needs a
         /// real number, since Year's place story reads as loading until it lands.
         static let annualHistoricalPlaces: TimeInterval = 2.0
+        /// Locations' complete queue is intentionally archive-wide but prepared on
+        /// `VisitArchiveReader`, cached by generation, and reduced to Sendable rows.
+        /// This budget is measured against the standard 32,000-row fixture.
+        static let reviewQueuePreparation: TimeInterval = 2.0
 
         static func insights(window: InsightWindow) -> TimeInterval {
             switch window {
