@@ -173,12 +173,14 @@ struct ManualVisitView: View {
                                 : "manual-visit-before-context-\(index)")
                         }
                         ForEach(Array(afterVisits.enumerated()), id: \.offset) { index, visit in
-                            BorderingVisitRow(label: index == 0 ? "Immediately after" : "Later", visit: visit) {
+                            let rowLabel: String = index == 0 ? "Immediately after" : "Later"
+                            let rowIdentifier: String = index == 0
+                                ? "manual-visit-after-context"
+                                : "manual-visit-after-context-\(index)"
+                            BorderingVisitRow(label: rowLabel, visit: visit) {
                                 selectPlace(from: visit)
                             }
-                            .accessibilityIdentifier(index == 0
-                                ? "manual-visit-after-context"
-                                : "manual-visit-after-context-\(index)")
+                            .accessibilityIdentifier(rowIdentifier)
                         }
                         if let travelEndpoints {
                             Button {

@@ -1,5 +1,10 @@
 # Change log
 
+## 2026-08-21 — Manual visit archive compiler fix — 2.25.4 (253)
+
+- Broke the manual-visit context row into explicit intermediate values so the
+  Release/TestFlight compiler can type-check the view reliably.
+
 ## 2026-08-21 — Release archive compiler fixes — 2.25.3 (252)
 
 - Fixed the monitored-place ranking name collision and made manual-visit context
