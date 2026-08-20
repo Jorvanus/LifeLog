@@ -1,5 +1,10 @@
 # Change log
 
+## 2026-08-21 — Annual Insights archive compiler fix — 2.25.5 (254)
+
+- Split the annual groups chart bar expression into explicit values so the
+  Release/TestFlight compiler can type-check it reliably.
+
 ## 2026-08-21 — Manual visit archive compiler fix — 2.25.4 (253)
 
 - Broke the manual-visit context row into explicit intermediate values so the

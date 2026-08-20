@@ -84,10 +84,11 @@ struct AnnualGroupsChart: View {
                 ForEach(months) { month in
                     ForEach(data) { row in
                         let monthIndex = months.firstIndex { $0.id == month.id } ?? 0
-                        BarMark(x: .value("Month", month.label),
-                                y: .value("Hours", row.monthlyHours[monthIndex]))
+                        let hours = row.monthlyHours[monthIndex]
+                        let barOpacity: Double = selectedGroup == nil || selectedGroup == row.group ? 1 : 0.24
+                        BarMark(x: .value("Month", month.label), y: .value("Hours", hours))
                             .foregroundStyle(by: .value("Group", row.group))
-                            .opacity(selectedGroup == nil || selectedGroup == row.group ? 1 : 0.24)
+                            .opacity(barOpacity)
                     }
                 }
             }
