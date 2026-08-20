@@ -40,6 +40,26 @@ integrations.
   stretch before two stays are no longer "the same visit," and must never touch a
   `manual`-source row someone entered by hand.
 
+- [ ] **A drive with no Core Motion sample yet can lose its whole duration into the
+  parking-spot stay at its start, not just the commute display.** Confirmed against
+  the real archive 2026-08-20: leaving Work's geofence created a new stay (the
+  parking spot) at 07:09:55; raw location samples show a real drive from there
+  reaching 8.6km away by 07:23; a new Home arrival closed the loop at 07:25:15 —
+  but CoreLocation's own `.visitDeparture` for the parking-spot stay did not fire
+  until 07:26:27 (device already home), and no Core Motion automotive sample
+  existed yet to bound the stay against (motion import is throttled to once every
+  6 hours, `ActivityDataService.swift:720`). The parking-spot stay's departure
+  defaulted to the next visit's arrival, so the entire ~15-minute drive read as
+  "Visiting" the parking spot instead of commuting. Even once the motion sample
+  does import, `boundStay`'s guard (`departure <= movement.end`,
+  `ActivityLocationPolicy+Journeys.swift:64`) may not retroactively correct a stay
+  whose departure was already pushed past where the real drive ended — unverified
+  either way. Waiting on the owner to recheck the same day's data after the next
+  motion refresh before touching this: `boundStay`/`extendStay` have already caused
+  a nine-day repair loop from an earlier tuning attempt (see the comment at
+  `ActivityLocationPolicy+Journeys.swift:114`), so a next change here needs a real
+  before/after on-device comparison, not just reasoning about the code.
+
 - [ ] **Find and eliminate the source of recurring duplicate sleep before removing
   `SleepSessionRepair`.** It has found duplicates after the original arrival-window
   bug was fixed, including around erase/restore and live Health sync. Serialize
