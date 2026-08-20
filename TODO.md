@@ -67,6 +67,79 @@ integrations.
   the repair as a measured safety net until a test reproduces the race and the
   counter remains zero across real use.
 
+## Tidiness — still open
+
+A code-tidiness audit, 2026-08-20: simplification/deduplication candidates, not
+correctness bugs (those stay in the section above). Ranked by how much confusion or
+duplication cost each one actually carries.
+
+- [ ] **Broken string interpolation garbles a real error message.**
+  `ExportFileStaging.swift:15` — `"LifeLog couldn't write the temporary backup:
+  (error.localizedDescription)"` is missing the `\` before the parenthesized
+  expression, so anyone hitting this failure sees the literal text
+  `(error.localizedDescription)` instead of the actual reason. `Diagnostics.swift`
+  has an explicit comment (~line 662) warning against exactly this mistake after an
+  earlier instance of it, which suggests this one slipped past the same review.
+  Trivial, safe, one-line fix.
+
+- [ ] **The same "visit row" is hand-rolled four separate times and has already
+  started to drift.** `PlacesView.swift:113-149` (`LocationVisitList`),
+  `Settings/ActivityDetailView.swift:531-559` (`ActivityVisitsView`),
+  `Timeline/VisitLocationChooser.swift:756-775` (`PlaceVisitList`), and
+  `Places/ArchiveSearchView.swift:68-72` (`resultRow`) each build their own
+  `Text(title)` + caption-timestamp row backed by a `NavigationLink` to
+  `VisitEditor`. They've already diverged: `PlaceVisitList` shows
+  `visit.activity` where the other two show `visit.displayPlaceName`. One shared
+  row view would mean a future visual tweak (duration, icon) has one place to
+  change instead of four to remember.
+
+- [ ] **`ActivitySampleReader.swift` implements the same interval-merge algorithm
+  twice.** `merge` (line 534, one caller) and `mergeWithIdentifiers` (line 550,
+  three callers for sleep sessions) both sort-and-coalesce overlapping/near
+  intervals within a gap tolerance — the second's own doc comment says "Same merge
+  as above, but keeps track of...". `merge` could just be
+  `mergeWithIdentifiers` with placeholder IDs stripped afterward, so a future fix
+  to the gap-comparison logic only has to land once.
+
+- [ ] **A per-category custom-colour override is read but never written anywhere.**
+  `ActivityColors.swift:33` checks `UserDefaults` for
+  `"LifeLog.CategoryColor.\(key)"` before falling back to `CategoryPalette` — no
+  setter, no UI, no test writes that key. Half-built feature that adds a silent
+  branch to the file's own stated "one place a colour is chosen," for a
+  capability that doesn't exist yet. Either build the override UI or delete the
+  read path.
+
+- [ ] **Three call-alike but not-actually-equivalent `VisitHistoryQuery` lookups,
+  two of them dead.** `day(_:calendar:includesImported:)`, `month(containing:)`,
+  and `year(containing:)` (`VisitHistoryQuery.swift:8-33`) have zero call sites —
+  Timeline actually builds its own inline `@Query` predicate instead
+  (`TimelineView.swift`'s `PastDayJourney`), which doesn't even replicate what
+  those functions do. Worse, `ArchiveSearchView.swift:5-7`'s doc comment cites
+  `VisitHistoryQuery.day`/`.month` as if Timeline routes through them, which will
+  send a future reader to dead code looking for where day-fetching really lives.
+  Separately, `place(named:mapsIdentifier:limit:)` (line 35-45) is also unreachable
+  — every real call site uses the sibling `place(mapsIdentifier:)` overload or
+  `legacyPlace(named:)` instead.
+
+- [ ] **`ActivityCatalog.mergeWorkingIntoWork(context:)` has no caller outside
+  tests.** `ActivityCatalog.swift:807` — only referenced from
+  `SavedPlaceLearningTests.swift`. Reads like a one-time "Working" → "Work" data
+  migration that either already ran once and should be deleted, or was meant to be
+  wired into `AppLifecycleCoordinator` alongside the adjacent
+  `ActivityIdentityMigration.backfillNextBatch` and never was. Worth finding out
+  which before touching it.
+
+- [ ] **Shared formatting helpers live in a `Timeline` file that `Places` and
+  `Settings` quietly depend on.** `formattedDuration`/`durationWithinDay`/
+  `formattedDistance` (`Timeline/TimelineView.swift:691,703,711`) are called from
+  `PlaceHistoryView.swift`, `Settings/ActivitiesTabView.swift`, and
+  `Settings/ActivityDetailView.swift`. Not wrong, but it breaks the "one obvious
+  home" pattern `ActivityColors.swift`/`CategoryPalette.swift` were themselves
+  written to establish for lookups — someone in `Settings` looking for where
+  duration text comes from has to know to check a `Timeline` file first. Lowest
+  priority here: a mechanical move to a neutrally-named formatting file, not a
+  design change.
+
 ## Deliberately not priorities
 
 - App Store metadata, public privacy policy, consumer onboarding, and generalized
