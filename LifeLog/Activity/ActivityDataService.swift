@@ -437,6 +437,12 @@ final class ActivityDataService {
         return try operation()
     }
 
+    /// Exposes the mutex `withStoreReplacement` and every Health import share, so a
+    /// regression test can reproduce their real ordering guarantee against an
+    /// `ActivityImportActor` it drives directly, without depending on live HealthKit.
+    var importWriteCoordinatorForTesting: HealthImportWriteCoordinator { importWriteCoordinator
+    }
+
     /// Core Motion has no separate authorization API. Its first history query is the
     /// request, so keep that tiny query behind the explicit Settings action rather
     /// than making a person wait for the next automatic import.

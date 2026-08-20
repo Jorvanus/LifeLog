@@ -292,9 +292,19 @@ debug convenience.
   evidence. Separate build, unit-test, simulator, signed-archive, and real-device
   claims; simulator success does not prove Location, Motion, HealthKit, protected
   storage, or battery behavior.
-- [ ] Review all `Task`, actor, model-context, and main-actor boundaries in Release.
-  A background HealthKit import must not write through a stale context after erase,
-  restore, or cancellation.
+- [x] Confirm a background HealthKit import cannot write through a stale context
+  after erase, restore, or cancellation. `ModelContainer` is created once in
+  `LifeLogApp.init()` and never swapped mid-session, so erase and restore write
+  through the same long-lived context rather than a replaced one.
+  `ActivityDataService.withStoreReplacement` (`ActivityDataService.swift:432`)
+  cancels the running import and takes the same `importWriteCoordinator` mutex
+  actor that live Health sync holds before every save; the import itself checks
+  `Task.checkCancellation()` before every phase/batch and rolls back rather than
+  saving on cancellation. Verified by reading the erase/restore/import code paths,
+  not by a new regression test alone — see `ActivityImportCancellationTests`.
+- [ ] Review remaining `Task`, actor, model-context, and main-actor boundaries in
+  Release beyond the HealthKit-import case above (e.g. LocationRecorder background
+  delivery, MaintenanceCoordinator, diagnostics writers).
 - [ ] Add crash logging/symbolication and a small release diagnostic policy. Never
   attach raw personal location or Health data to an automatic crash report.
 - [x] Gate debug launch arguments, the in-memory store, failure injection, test

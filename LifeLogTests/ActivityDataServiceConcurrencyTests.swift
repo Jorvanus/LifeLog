@@ -87,6 +87,75 @@ struct ActivityDataServiceConcurrencyTests {
         #expect(a === b, "concurrent callers must share one writer, or each can insert the same HealthKit sample as a separate visit")
     }
 
+    @Test("withStoreReplacement waits for an in-flight import's coordinator before erasing, and a cancelled import leaves nothing behind")
+    func storeReplacementSerializesAgainstInFlightImport() async throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(
+            for: Visit.self, SavedPlace.self, VisitCorrection.self, DiagnosticEvent.self,
+            ActivityDefinitionRecord.self,
+            configurations: configuration
+        )
+        let context = ModelContext(container)
+        let service = ActivityDataService()
+        service.connect(context, container: container)
+
+        let writer = try #require(await service.backgroundWriter())
+        let coordinator = service.importWriteCoordinatorForTesting
+        let order = OrderedEvents()
+        let gate = ContinuationGate()
+        let record = ActivityImportRecord(name: "Walking", activity: "Walking", source: "health-walking",
+                                          start: Date(timeIntervalSince1970: 1_800_000_000),
+                                          end: Date(timeIntervalSince1970: 1_800_003_600),
+                                          healthKitSampleIDs: [UUID()])
+
+        // Reproduces startImport()'s own sequencing: acquire the same coordinator
+        // withStoreReplacement uses, insert an uncommitted batch (autosave is off
+        // until `finish()`), then get cancelled mid-flight and roll back -- the
+        // same path startImport's `catch is CancellationError` takes. `gate` makes
+        // the resume-after-cancel ordering deterministic: a single `Task.yield()`
+        // does not guarantee `importTask.cancel()` below actually lands before this
+        // task re-checks `Task.isCancelled`, so this task waits for an explicit
+        // signal the test only sends after cancelling.
+        let importTask = Task {
+            await coordinator.acquire()
+            defer { Task { await coordinator.release() } }
+            try await writer.prepare()
+            _ = try await writer.insertBatch([record])
+            await order.append("import inserted (uncommitted)")
+            await gate.wait()
+            guard !Task.isCancelled else {
+                await writer.cancel()
+                await order.append("import rolled back")
+                return
+            }
+            try? await writer.finish()
+        }
+        // Wait for the deterministic checkpoint rather than a single Task.yield(),
+        // which does not guarantee the other task has reached its own await chain.
+        while await order.values.isEmpty { await Task.yield() }
+        importTask.cancel()
+        await gate.signal()
+
+        // Settings' eraseAllData()/LocalBackupService.restore() both go through this
+        // exact call. If it ran concurrently with the import above instead of behind
+        // its coordinator, the erase could finish before the import's later `finish()`
+        // resurrected the batch it just deleted.
+        try await service.withStoreReplacement {
+            try context.delete(model: Visit.self)
+            try context.save()
+        }
+        await order.append("erase finished")
+        try await importTask.value
+
+        let events = await order.values
+        #expect(events == ["import inserted (uncommitted)", "import rolled back", "erase finished"],
+                "erase must wait for the coordinator the in-flight import already holds")
+
+        let visits = try ModelContext(container).fetch(FetchDescriptor<Visit>())
+        #expect(visits.isEmpty,
+                "a cancelled import must never write through erase's own store replacement")
+    }
+
     @Test("Four overlapping callers still converge on one actor instance")
     func manyConcurrentCallersShareOneWriter() async throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
@@ -109,6 +178,30 @@ struct ActivityDataServiceConcurrencyTests {
             #expect(try #require(writer) === first)
         }
     }
+}
+
+/// Suspends `wait()` until `signal()` is called, even if `signal()` runs first --
+/// unlike a single `Task.yield()`, which only offers the scheduler a chance to run
+/// the other side and does not guarantee it reaches any particular point.
+private actor ContinuationGate {
+    private var isSignaled = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        if isSignaled { return }
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func signal() {
+        isSignaled = true
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
+private actor OrderedEvents {
+    private(set) var values: [String] = []
+    func append(_ value: String) { values.append(value) }
 }
 
 private actor WriteProbe {
