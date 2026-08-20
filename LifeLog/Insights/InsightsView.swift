@@ -99,7 +99,14 @@ struct InsightsView: View {
                 ScrollView {
                     LazyVStack(spacing: 22) {
                         controls
-                        if window == .day {
+                        if periodLoader.snapshot.segments.isEmpty {
+                            if !periodLoader.archiveHasAnyVisits && insightsScope == .allHistory {
+                                InsightsFirstRunCard(onAddVisit: { isAddingVisit = true })
+                            } else {
+                                InsightsNoDataCard(periodTitle: periodTitle,
+                                                   detail: insightsScope.emptyState)
+                            }
+                        } else if window == .day {
                             dayLayout
                         } else if window == .week {
                             weekLayout
@@ -116,12 +123,14 @@ struct InsightsView: View {
             .accessibilityIdentifier("insights-screen")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { isAskingLifeLog = true } label: {
-                        Image(systemName: "apple.intelligence")
+                if periodLoader.archiveHasAnyVisits {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { isAskingLifeLog = true } label: {
+                            Image(systemName: "apple.intelligence")
+                        }
+                        .accessibilityLabel("Ask LifeLog")
+                        .accessibilityIdentifier("insights-ask-lifelog-button")
                     }
-                    .accessibilityLabel("Ask LifeLog")
-                    .accessibilityIdentifier("insights-ask-lifelog-button")
                 }
             }
             .sheet(isPresented: $isAskingLifeLog, onDismiss: {
@@ -744,6 +753,50 @@ struct InsightsView: View {
             presentationState.beginYearPlaceholder(snapshot: periodLoader.snapshot, interval: interval, now: now,
                                                     annualHealth: healthState.annualHealth)
         }
+    }
+}
+
+private struct InsightsFirstRunCard: View {
+    let onAddVisit: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Label("Your timeline starts here", systemImage: "sparkles")
+                .font(.title3.weight(.semibold))
+            Text("LifeLog will build your days from this point forward. Time before you started using LifeLog is not treated as missing.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+            Text("Location access enables background visits. You can also begin with a visit entered manually.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Button(action: onAddVisit) {
+                Label("Add your first visit", systemImage: "plus")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .accessibilityIdentifier("insights-first-run-add-visit")
+        }
+        .padding(20)
+        .lifeCard()
+        .accessibilityIdentifier("insights-first-run-card")
+    }
+}
+
+private struct InsightsNoDataCard: View {
+    let periodTitle: String
+    let detail: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("No LifeLog history for \(periodTitle)", systemImage: "calendar.badge.exclamationmark")
+                .font(.headline)
+            Text(detail)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .padding(20)
+        .lifeCard()
+        .accessibilityIdentifier("insights-period-no-data")
     }
 }
 

@@ -15,6 +15,7 @@ import SwiftData
 final class InsightsPeriodLoader {
     private(set) var visits: [Visit] = []
     private(set) var snapshot = InsightsSnapshot.empty
+    private(set) var archiveHasAnyVisits = false
     private var snapshotCache = InsightsSnapshotCache()
     /// The day bar's own segments, over the *uncapped* calendar day rather
     /// than `snapshot.analysisInterval` (which stops at `now` for today) --
@@ -39,6 +40,7 @@ final class InsightsPeriodLoader {
         // Fetch only the selected and comparison periods. Keeping the nine-year journal
         // archive out of memory is substantially cheaper than trimming useful history.
         let currentInterval = window.interval(containing: anchorDate)
+        let observationStart = RecordingObservation.startedAt()
         let fetchEnd = currentInterval.contains(now) ? now : currentInterval.end
         let analysisInterval = DateInterval(start: currentInterval.start, end: fetchEnd)
         let comparisonBasis = window == .month && currentInterval.contains(now) ? currentInterval : analysisInterval
@@ -51,6 +53,7 @@ final class InsightsPeriodLoader {
             sortBy: [SortDescriptor(\.arrival)]
         )
         do {
+            archiveHasAnyVisits = ((try? context.fetchCount(FetchDescriptor<Visit>())) ?? 0) > 0
             var fetched = scope.filtering(try context.fetch(descriptor))
             // Preserve a current multi-day location whose arrival predates the comparison
             // range without widening the main archive query.
@@ -102,10 +105,12 @@ final class InsightsPeriodLoader {
             guard let role = place.homeWorkRole else { return nil }
             return "\(role.rawValue):\(place.latitude),\(place.longitude),\(place.radius)"
         }.sorted().joined(separator: "|")
-        let cacheKey = "\(window.rawValue)|\(scope.rawValue)|\(anchorDate.timeIntervalSinceReferenceDate)|\(visits.count)|\(homeKey)|\(rolesKey)"
+        let observationKey = observationStart?.timeIntervalSinceReferenceDate.description ?? "none"
+        let cacheKey = "\(window.rawValue)|\(scope.rawValue)|\(anchorDate.timeIntervalSinceReferenceDate)|\(visits.count)|\(homeKey)|\(rolesKey)|\(observationKey)"
         snapshot = snapshotCache.snapshot(key: cacheKey, generation: aggregationGeneration) {
             InsightsSnapshot.make(visits: visits, window: window, anchorDate: anchorDate, now: now,
-                                  home: home, savedPlaces: savedPlaces)
+                                  home: home, savedPlaces: savedPlaces,
+                                  observationStart: observationStart)
         }
         Diagnostics.budget(context, subsystem: "Insights", operation: "\(window.rawValue) snapshot rebuild",
                            startedAt: startedAt,
@@ -120,7 +125,8 @@ final class InsightsPeriodLoader {
         if window == .day {
             let locationVisits = visits.filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
             daySegments = InsightsSnapshot.makeSegments(visits: visits, locationVisits: locationVisits,
-                                                        range: currentInterval, now: now, savedPlaces: savedPlaces)
+                                                        range: currentInterval, now: now, savedPlaces: savedPlaces,
+                                                        observationStart: observationStart)
         } else {
             daySegments = []
         }
@@ -135,7 +141,8 @@ final class InsightsPeriodLoader {
                 guard dayEnd > dayStart else { break }
                 let dayInterval = DateInterval(start: dayStart, end: dayEnd)
                 let segments = InsightsSnapshot.makeSegments(visits: visits, locationVisits: locationVisits,
-                                                             range: dayInterval, now: now, savedPlaces: savedPlaces)
+                                                             range: dayInterval, now: now, savedPlaces: savedPlaces,
+                                                             observationStart: observationStart)
                 days.append(WeeklyStrip.Day(date: dayStart, segments: segments))
                 dayStart = dayEnd
             }
@@ -148,7 +155,8 @@ final class InsightsPeriodLoader {
             let locationVisits = visits.filter { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored }
             monthDays = MonthlyInsights.daySummaries(
                 segments: InsightsSnapshot.makeSegments(visits: visits, locationVisits: locationVisits,
-                                                        range: currentInterval, now: now, savedPlaces: savedPlaces),
+                                                        range: currentInterval, now: now, savedPlaces: savedPlaces,
+                                                        observationStart: observationStart),
                 interval: currentInterval, now: now
             )
         } else {

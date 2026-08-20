@@ -40,13 +40,38 @@ struct InsightsWeekBaselineTests {
         #expect(totals.reduce(0) { $0 + ($1.hours["Work"] ?? 0) } == 0)
     }
 
-    @Test("A day with no visits at all is one full-day unlogged segment, not empty or a crash")
-    func emptyDayProducesOneUnloggedSegment() {
+    @Test("A day before LifeLog started is outside the unlogged timeline")
+    func dayBeforeObservationStartProducesNoSegments() {
         let dayInterval = DateInterval(start: start, end: start.addingTimeInterval(24 * 3_600))
-        let segments = InsightsSnapshot.makeSegments(visits: [], locationVisits: [], range: dayInterval, now: dayInterval.end)
+        let segments = InsightsSnapshot.makeSegments(visits: [], locationVisits: [], range: dayInterval,
+                                                     now: dayInterval.end,
+                                                     observationStart: dayInterval.end.addingTimeInterval(1))
+        #expect(segments.isEmpty)
+    }
+
+    @Test("A silent period after LifeLog started remains an unlogged segment")
+    func silentPeriodAfterObservationStartRemainsUnlogged() {
+        let dayInterval = DateInterval(start: start, end: start.addingTimeInterval(24 * 3_600))
+        let segments = InsightsSnapshot.makeSegments(visits: [], locationVisits: [], range: dayInterval,
+                                                     now: dayInterval.end,
+                                                     observationStart: dayInterval.start)
         #expect(segments.count == 1)
         #expect(segments.first?.isUnlogged == true)
         #expect(segments.first?.hours == 24)
+    }
+
+    @Test("Observation start preserves an existing archive and round-trips through preferences")
+    func observationStartPreservesExistingHistory() {
+        let defaults = UserDefaults(suiteName: "LifeLogTests.RecordingObservation")!
+        defaults.removePersistentDomain(forName: "LifeLogTests.RecordingObservation")
+        let historyStart = start.addingTimeInterval(-86_400)
+        #expect(RecordingObservation.ensureStarted(now: start,
+                                                   existingHistoryStart: historyStart,
+                                                   defaults: defaults) == historyStart)
+        #expect(RecordingObservation.startedAt(defaults: defaults) == historyStart)
+        RecordingObservation.setStartedAt(start, defaults: defaults)
+        #expect(RecordingObservation.startedAt(defaults: defaults) == start)
+        defaults.removePersistentDomain(forName: "LifeLogTests.RecordingObservation")
     }
 
     @Test("The noticeable-change threshold includes a real swing and excludes a small one")

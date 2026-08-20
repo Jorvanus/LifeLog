@@ -4,6 +4,13 @@
 
 - Added a plain-English team document covering branch names, local/simulator/device/TestFlight testing, pull requests and merges, version/build numbering, release-candidate preparation, conflict resolution, and tester bug reports.
 
+## 2026-08-20 — First-run Insights experience — 2.25.1 (250)
+
+- Fresh installs now show a welcoming Insights start state; time before LifeLog
+  became available is excluded from unlogged-gap reporting and coverage.
+- Existing archives and restored backups retain their real history boundary, and
+  Ask LifeLog is hidden until there is history it can answer from.
+
 ## 2026-08-20 — Redacted-by-default diagnostics reports — 2.25.0 (249)
 
 - Diagnostics reports are now redacted by default: aggregate timings, counts, app version, and device/OS class only. An explicit "Include detailed local evidence" toggle opts into a report that also lists retained events' own text, with an in-UI explanation of what that adds, that nothing leaves the device automatically (LifeLog has no server), and that a temporary copy expires after 24 hours regardless.

@@ -537,6 +537,16 @@ enum LocalBackupService {
         for (key, value) in backup.preferences where isPortablePreferenceKey(key) {
             UserDefaults.standard.set(value, forKey: key)
         }
+        // Older backups predate the observation marker. Their earliest visit is
+        // still the honest beginning of the restored archive, unlike the launch
+        // time of the fresh destination phone.
+        let restoredObservationStart = backup.preferences[RecordingObservation.startedAtKey]
+            .flatMap(TimeInterval.init)
+            .map { Date(timeIntervalSinceReferenceDate: $0) }
+            ?? backup.visits.map(\.arrival).min()
+        if let restoredObservationStart {
+            RecordingObservation.setStartedAt(restoredObservationStart)
+        }
         MaintenanceCoordinator.shared.runAfterRestore(context: context)
     }
 

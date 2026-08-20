@@ -114,7 +114,7 @@ final class InsightsVisualRegressionTests: LifeLogUITestCase {
         app.launchArguments = ["-uiTesting", "-ui-test-empty"]
         app.launch()
         app.tabBars.buttons["Insights"].tap()
-        XCTAssertTrue(element("insights-day-bar").waitForExistence(timeout: 10))
+        XCTAssertTrue(element("insights-first-run-card").waitForExistence(timeout: 10))
         XCTAssertFalse(element("insights-travel-summary").exists)
         recordInsightsScreenshot("insights-sparse-no-health-no-travel")
 

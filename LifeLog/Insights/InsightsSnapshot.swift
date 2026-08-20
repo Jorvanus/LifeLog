@@ -32,6 +32,16 @@ struct InsightsSnapshot {
     let supersededCount: Int
     let travel: TravelInsights.Summary
 
+    /// Clips a calendar period to the time LifeLog was available. A nil boundary
+    /// keeps this pure aggregation API backwards-compatible for archive fixtures.
+    nonisolated static func observedRange(_ range: DateInterval,
+                                          since observationStart: Date?) -> DateInterval? {
+        guard let observationStart else { return range }
+        let start = max(range.start, observationStart)
+        guard start < range.end else { return nil }
+        return DateInterval(start: start, end: range.end)
+    }
+
     static let empty = InsightsSnapshot(
         generatedAt: .distantPast,
         analysisInterval: DateInterval(start: .distantPast, duration: 0),
@@ -85,7 +95,8 @@ struct InsightsSnapshot {
     }
 
     static func make(visits: [Visit], window: InsightWindow, anchorDate: Date, now: Date,
-                     home: HomePlace? = nil, savedPlaces: [SavedPlace] = []) -> InsightsSnapshot {
+                     home: HomePlace? = nil, savedPlaces: [SavedPlace] = [],
+                     observationStart: Date? = nil) -> InsightsSnapshot {
         // Every window compares like-for-like elapsed spans: a month three days in
         // is measured against the same first three days of the previous month, not
         // the whole of it. Comparing partial current against a complete previous
@@ -104,10 +115,14 @@ struct InsightsSnapshot {
         // selected range. Resolve it once so current and prior periods share the same
         // result instead of sorting and scanning the same visits twice on a transition.
         let commutes = CommuteDetection.commutes(in: visits, savedPlaces: savedPlaces, now: now)
+        let effectiveAnalysisInterval = observedRange(analysisInterval, since: observationStart)
+            ?? DateInterval(start: analysisInterval.end, duration: 0)
+        let effectivePreviousInterval = observedRange(previousInterval, since: observationStart)
+            ?? DateInterval(start: previousInterval.end, duration: 0)
         let segments = makeSegments(
             visits: visits,
             locationVisits: locationVisits,
-            range: analysisInterval,
+            range: effectiveAnalysisInterval,
             now: now,
             precomputedCommutes: commutes,
             savedPlaces: savedPlaces
@@ -115,7 +130,7 @@ struct InsightsSnapshot {
         let previousSegments = makeSegments(
             visits: visits,
             locationVisits: locationVisits,
-            range: previousInterval,
+            range: effectivePreviousInterval,
             now: now,
             precomputedCommutes: commutes,
             savedPlaces: savedPlaces
@@ -154,7 +169,7 @@ struct InsightsSnapshot {
 
         return InsightsSnapshot(
             generatedAt: now,
-            analysisInterval: analysisInterval,
+            analysisInterval: effectiveAnalysisInterval,
             segments: segments,
             previousSegments: previousSegments,
             slices: slices,
@@ -229,7 +244,9 @@ struct InsightsSnapshot {
     nonisolated static func makeSegments(visits: [Visit], locationVisits: [Visit],
                                          range: DateInterval, now: Date,
                                          precomputedCommutes: [Commute]? = nil,
-                                         savedPlaces: [SavedPlace] = []) -> [InsightSegment] {
+                                         savedPlaces: [SavedPlace] = [],
+                                         observationStart: Date? = nil) -> [InsightSegment] {
+        guard let range = observedRange(range, since: observationStart) else { return [] }
         let orderedVisits = visits
             .filter { $0.overlaps(range, now: now) && $0.resolutionState != .ignored && $0.resolutionState != .superseded }
             .filter { ActivityLocationPolicy.shouldShowInInsights($0, locationVisits: locationVisits, now: now) }

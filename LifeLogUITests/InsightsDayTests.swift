@@ -84,21 +84,18 @@ final class InsightsDayTests: LifeLogUITestCase {
         add(attachment)
     }
 
-    func testDayTimelineScreenshotCoversNoDataState() {
+    func testInsightsFirstRunUsesAStartHereState() {
         app.terminate()
         app.launchArguments = ["-uiTesting", "-ui-test-empty"]
         app.launch()
         app.tabBars.buttons["Insights"].tap()
 
-        XCTAssertTrue(element("insights-day-bar").waitForExistence(timeout: 10))
-        let noDataSegment = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label BEGINSWITH[c] 'Unlogged time'"))
-            .firstMatch
-        XCTAssertTrue(noDataSegment.waitForExistence(timeout: 5))
+        XCTAssertTrue(element("insights-first-run-card").waitForExistence(timeout: 10))
+        XCTAssertTrue(element("insights-first-run-add-visit").exists)
 
         let screenshot = XCUIScreen.main.screenshot()
         let attachment = XCTAttachment(screenshot: screenshot)
-        attachment.name = "day-timeline-no-data"
+        attachment.name = "insights-first-run"
         attachment.lifetime = .keepAlways
         add(attachment)
     }

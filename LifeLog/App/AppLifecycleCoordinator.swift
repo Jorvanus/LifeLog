@@ -26,6 +26,15 @@ final class AppLifecycleCoordinator {
         status = .starting
         let startedAt = Date.now
 
+        // Calendar periods predate a new installation. Record the local point at
+        // which LifeLog became available so Insights can distinguish "before
+        // LifeLog started" from a genuine silent gap after the app was opened.
+        let existingHistoryStart = (try? context.fetch(
+            FetchDescriptor<Visit>(sortBy: [SortDescriptor(\.arrival)])
+        ).first?.arrival)
+        _ = RecordingObservation.ensureStarted(now: startedAt,
+                                               existingHistoryStart: existingHistoryStart)
+
         ExportFileCleanup.removeExpired()
         // A background operation cannot rely on being able to save its own diagnostic.
         // Flush its queued note at the first known-good store transaction instead.
