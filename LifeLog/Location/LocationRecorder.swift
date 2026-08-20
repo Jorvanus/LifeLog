@@ -163,7 +163,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
 
     func requestPermissionOnLaunchIfNeeded() {
         // System permission sheets make seeded UI-test launches nondeterministic.
-        guard !ProcessInfo.processInfo.arguments.contains("-uiTesting"),
+        guard !InternalLaunchArguments.contains("-uiTesting"),
               authorization == .notDetermined else { return }
         requestPermission()
     }

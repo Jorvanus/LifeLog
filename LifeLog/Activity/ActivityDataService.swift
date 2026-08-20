@@ -81,6 +81,9 @@ final class ActivityDataService {
     private var importTask: Task<Void, Never>?
     private var stepCache: [String: Double] = [:]
     private var healthObserverQueries: [HKQuery] = []
+    /// Registration runs once per observed type; one capability/profile failure can
+    /// reject every type, so retain one actionable event instead of flooding Diagnostics.
+    private var hasReportedBackgroundDeliveryFailure = false
     /// HealthKit requires observer completion only after the anchored work has been
     /// processed. Coalesce arrivals while an import is active instead of acknowledging
     /// a Watch sync that is still waiting behind another batch.
@@ -92,7 +95,7 @@ final class ActivityDataService {
     private let workoutAnchorKey = "LifeLog.HealthKit.workoutAnchor.v1"
 
     private var usesUITestHealthFixture: Bool {
-        ProcessInfo.processInfo.arguments.contains("-ui-test-health-connected")
+        InternalLaunchArguments.contains("-ui-test-health-connected")
     }
     private static let uiTestSleepSummary = SleepSummary(
         totalSleep: 7.25 * 60 * 60, timeInBed: 7.75 * 60 * 60,
@@ -160,7 +163,20 @@ final class ActivityDataService {
             }
             healthStore.execute(query)
             healthObserverQueries.append(query)
-            healthStore.enableBackgroundDelivery(for: type, frequency: .hourly) { _, _ in }
+            healthStore.enableBackgroundDelivery(for: type, frequency: .hourly) { [weak self] success, error in
+                guard !success else { return }
+                Task { @MainActor [weak self] in
+                    guard let self, !self.hasReportedBackgroundDeliveryFailure else { return }
+                    self.hasReportedBackgroundDeliveryFailure = true
+                    if let error {
+                        Diagnostics.record(error, context: self.context, subsystem: "HealthKit",
+                                           operation: "Background delivery registration")
+                    } else {
+                        Diagnostics.record(self.context, subsystem: "HealthKit",
+                                           message: "Background delivery registration failed without an error.")
+                    }
+                }
+            }
         }
     }
 
@@ -191,7 +207,7 @@ final class ActivityDataService {
         // A UI test run cannot dismiss a system permission sheet, and a sheet over the
         // first screen fails every test that follows it. The seeded run has its own
         // data and needs neither source.
-        guard !ProcessInfo.processInfo.arguments.contains("-uiTesting") else { return }
+        guard !InternalLaunchArguments.contains("-uiTesting") else { return }
         Task { await refreshHealthStatus(requestingIfNeeded: true) }
         // Core Motion has no request call: authorisation is raised by its first query.
         // The normal refresh correctly ignores unreadable `.notDetermined` access, so

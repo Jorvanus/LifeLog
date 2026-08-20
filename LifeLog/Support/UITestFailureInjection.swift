@@ -4,18 +4,18 @@ import Foundation
 /// that depend on protected files or an unavailable backup writer.
 enum UITestFailureInjection {
     private static var enabled: Bool {
-        ProcessInfo.processInfo.arguments.contains("-uiTesting")
+        InternalLaunchArguments.contains("-uiTesting")
     }
 
     static var shouldFailBackup: Bool {
-        enabled && ProcessInfo.processInfo.arguments.contains("-ui-test-fail-backup")
+        enabled && InternalLaunchArguments.contains("-ui-test-fail-backup")
     }
 
     static var shouldFailProtectedReport: Bool {
-        enabled && ProcessInfo.processInfo.arguments.contains("-ui-test-fail-protected-report")
+        enabled && InternalLaunchArguments.contains("-ui-test-fail-protected-report")
     }
 
     static var shouldShowEmptyDiagnostics: Bool {
-        enabled && ProcessInfo.processInfo.arguments.contains("-ui-test-empty-diagnostics")
+        enabled && InternalLaunchArguments.contains("-ui-test-empty-diagnostics")
     }
 }

@@ -110,7 +110,7 @@ struct ManualVisitView: View {
     /// `AskLifeLogView`'s own planner chooser does, rather than depending on
     /// live Apple Intelligence.
     private static func gapSuggestionService(for range: DateInterval) -> GapSuggestionRequesting {
-        if ProcessInfo.processInfo.arguments.contains(FakeGapSuggestionService.launchArgument) {
+        if InternalLaunchArguments.contains(FakeGapSuggestionService.launchArgument) {
             return FakeGapSuggestionService.uiTestService(gapStart: range.start)
         }
         return FoundationModelsGapSuggestionService()

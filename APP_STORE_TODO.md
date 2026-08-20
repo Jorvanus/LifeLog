@@ -18,28 +18,24 @@ LifeLog currently has:
   signals, with anchored/idempotent import work;
 - local JSON backup/restore and archive repair tools;
 - no sign-in, account, cloud sync, analytics, advertising, or server dependency;
-- iPhone and iPad in `TARGETED_DEVICE_FAMILY`, although the owner’s validated
-  device is an iPhone 17 Pro Max;
-- a deployment target of iOS 27.0, which must be an intentional release decision,
-  not an accidental dependency on a beta SDK;
-- a privacy manifest that currently declares UserDefaults access but still needs
-  a complete required-reason-API audit;
-- UI-test seed and failure-injection paths that must not become a reviewer-facing
-  data path by accident;
+- an iPhone-only application target, with iPhone 17 Pro Max as the primary
+  physical-device validation target;
+- a minimum deployment target of iOS 26.0;
+- a privacy manifest declaring the UserDefaults and app-container file-timestamp
+  APIs currently found in source, while the signed archive still needs inspection;
+- debug-only launch-argument handling for UI-test seeds, fake services, injected
+  failures, and test navigation;
 - no committed public privacy-policy, support, or reviewer-instructions URL.
 
 Before implementation, decide:
 
-- [ ] **TestFlight only, or App Store as well?** TestFlight can remain a small,
-  invite-only beta. App Store distribution adds public support, privacy, metadata,
-  accessibility, review, update, and incident-response obligations.
-- [ ] **iPhone only, or universal?** The project currently declares iPhone and
-  iPad. Choose iPhone-only unless iPad is a real supported product surface. If
-  universal remains selected, add iPad navigation/layout coverage before upload.
-- [ ] **Minimum OS policy.** Ship against the current public SDK/OS supported by
-  the release environment, or explicitly accept that an iOS 27-only build has a
-  narrow audience. Do not submit an app that only builds with an unreleased beta
-  toolchain unless that is intentional and App Store eligibility has been checked.
+- [x] **Release scope.** Start with a small internal TestFlight deployment. Public
+  App Store release and external TestFlight remain later decisions with additional
+  privacy, support, metadata, accessibility, and review obligations.
+- [x] **Device family.** Ship the application as iPhone-only. Test bundles remain
+  development tooling and do not define the distributed app's device family.
+- [x] **Minimum OS policy.** Support iOS 26 and later. Confirm the exact Xcode/SDK
+  remains accepted by App Store Connect immediately before each upload.
 - [ ] **Public positioning.** Decide whether LifeLog is primarily a private
   location diary (Lifestyle/Productivity) with HealthKit enrichment, or a
   Health & Fitness product. The choice affects metadata, screenshots, review
@@ -48,6 +44,24 @@ Before implementation, decide:
   export containing sensitive location and potentially Health-derived records.
   Decide what the public product promises about export compatibility, retention,
   and future schema changes before inviting testers.
+
+### 2026-08-20 deployment snapshot
+
+- [x] The generated project and both unsigned Release builds (iPhone Simulator and
+  generic iPhone device SDK) compile at version 2.25.0 (246), minimum iOS 26, with
+  the application restricted to iPhone.
+- [x] The built simulator app contains the expected privacy manifest and matching
+  binary/dSYM UUIDs. This is bundle evidence, not signed-archive proof.
+- [x] Produce a locally signed Release archive. Its effective entitlements include
+  HealthKit Background Delivery, but its `get-task-allow` entitlement is true, so
+  this is development-signing evidence only and cannot be uploaded to TestFlight.
+- [ ] Restore App Store distribution signing. The local Keychain has an Apple
+  Development identity, but no Apple Distribution identity or iOS App Store profile.
+- [ ] Create the iOS App Store profile for `com.aaronbaxter.LifeLog`. Xcode's
+  automatic export reported that the selected Apple team lacks permission to create
+  App Store profiles; an Account Holder must grant the required developer-portal
+  access or select the paid distribution team before this can proceed.
+- [ ] Create or verify the App Store Connect record before uploading the first build.
 
 ## Release gates at a glance
 
@@ -138,10 +152,9 @@ The in-app explanation and App Store metadata must agree with the implementation
 
 ### Privacy manifest and required-reason APIs
 
-- [ ] Audit every required-reason API in the source and all linked dependencies.
-  The current manifest declares UserDefaults only; verify whether file timestamps,
-  disk-space queries, system boot time, or other listed APIs are used and add only
-  the Apple-approved reason codes that actually apply.
+- [x] Audit required-reason API use in the app source. The current manifest declares
+  UserDefaults (`CA92.1`) and app-container file timestamps (`C617.1`). Repeat this
+  for every dependency and inspect the privacy report from the signed archive.
 - [ ] Validate the built archive’s privacy manifest, not just the source file.
 - [ ] Confirm `NSPrivacyTracking` and tracking domains remain false/empty if there
   is no tracking.
@@ -181,8 +194,9 @@ The in-app explanation and App Store metadata must agree with the implementation
 
 ### HealthKit
 
-- [ ] Confirm the HealthKit capability, read-only request set, and Info.plist
-  purpose string match the exact types requested in `HealthKitTypeCatalog`.
+- [x] Add the HealthKit and Background Delivery entitlements used by the read-only
+  observer queries, retain failure diagnostics for registration, and keep the
+  Info.plist purpose string aligned with `HealthKitTypeCatalog`.
 - [ ] Request only the types that support a named screen and have tested
   authorized, denied, unavailable, empty, stale, and partially available states.
 - [ ] Do not request Health access at launch. Request it in a clearly explained
@@ -283,10 +297,9 @@ debug convenience.
   restore, or cancellation.
 - [ ] Add crash logging/symbolication and a small release diagnostic policy. Never
   attach raw personal location or Health data to an automatic crash report.
-- [ ] Verify no debug launch argument, in-memory store, failure injection, test
-  destination, or seeded fixture can be activated through ordinary user input in
-  a distribution build. Prefer compile-time or explicit internal-build guards for
-  developer-only paths.
+- [x] Gate debug launch arguments, the in-memory store, failure injection, test
+  destinations, fake services, and seeded fixtures behind a compile-time Debug
+  boundary so a distribution build ignores them.
 - [ ] Add a migration/rollback note for every schema release. Keep the previous
   supported backup scheme test fixture in the repository, but do not silently
   promise indefinite historical imports.

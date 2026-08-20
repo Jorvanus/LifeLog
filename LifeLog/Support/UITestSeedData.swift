@@ -64,13 +64,13 @@ enum UITestSeedData {
         // A focused visual fixture keeps the DayTimelineBar states deterministic:
         // sleep wins part of a Home stay, a resolved travel interval sits between
         // destinations, and the day still has an explicitly future half.
-        if ProcessInfo.processInfo.arguments.contains("-ui-test-timeline-states") {
+        if InternalLaunchArguments.contains("-ui-test-timeline-states") {
             visit(0, 120, "Home", "At home")
             visit(120, 480, "Sleep", "Sleeping", "health-sleep", "device")
             visit(480, 510, "In transit", "Travelling", "motion", "device")
             visit(510, 600, "Gracemere Shopping World", "Shopping")
         }
-        if ProcessInfo.processInfo.arguments.contains("-ui-test-manual-visit-gap") {
+        if InternalLaunchArguments.contains("-ui-test-manual-visit-gap") {
             // A single, isolated, unambiguous gap far from the default fixture's
             // overlapping visits and its open-ended "Home" stay (which would
             // otherwise cover straight through to `now` and leave nothing to find).
@@ -86,7 +86,7 @@ enum UITestSeedData {
                                  latitude: -23.38, longitude: 150.51, placeName: "Regional Office",
                                  inferredActivity: "Work", userActivity: "Work", source: "imported-journal"))
         }
-        if ProcessInfo.processInfo.arguments.contains("-ui-test-gap-suggestion") {
+        if InternalLaunchArguments.contains("-ui-test-gap-suggestion") {
             // A single, isolated gap bordered by a Home-role stay and a
             // Work-role stay, on a day found nowhere else in the seed, so the
             // real deterministic candidate generator produces exactly one
@@ -108,12 +108,12 @@ enum UITestSeedData {
                                  inferredActivity: "Work", userActivity: "Work", source: "automatic",
                                  recognitionConfidence: "learned"))
         }
-        if ProcessInfo.processInfo.arguments.contains("-ui-test-week-travel") {
+        if InternalLaunchArguments.contains("-ui-test-week-travel") {
             // A dedicated long transition makes the Week card's meaningful-travel
             // state deterministic without changing the default seed's small-trip case.
             visit(900, 1_140, "Flight", "Flight", "manual", "learned")
         }
-        if ProcessInfo.processInfo.arguments.contains("-ui-test-long-labels") {
+        if InternalLaunchArguments.contains("-ui-test-long-labels") {
             let longPlace = "The Very Long Riverfront Community Health and Wellbeing Centre"
             context.insert(SavedPlace(name: longPlace, latitude: shops.latitude, longitude: shops.longitude,
                                       defaultActivity: "Long-form community activity"))
@@ -121,7 +121,7 @@ enum UITestSeedData {
                   "A very long activity name for accessibility and truncation regression coverage",
                   "manual", "learned")
         }
-        if ProcessInfo.processInfo.arguments.contains("-ui-test-imported-history") {
+        if InternalLaunchArguments.contains("-ui-test-imported-history") {
             // A bounded, repeatable imported archive gives the source-scope and
             // annual layouts realistic density without reading any journal on disk.
             for offset in stride(from: 1, through: 16, by: 1) {
@@ -139,7 +139,7 @@ enum UITestSeedData {
     }
 
     private static func resetPersistentTestStateIfNeeded() {
-        let arguments = ProcessInfo.processInfo.arguments
+        let arguments = InternalLaunchArguments.all
         guard arguments.contains("-uiTesting"),
               !arguments.contains("-ui-test-preserve-preferences"),
               let identifier = Bundle.main.bundleIdentifier else { return }

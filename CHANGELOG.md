@@ -1,5 +1,12 @@
 # Change log
 
+## 2026-08-20 — TestFlight release hardening — 2.25.0 (247)
+
+- Added the HealthKit Background Delivery capability used by LifeLog's observer queries and made registration failures visible in Diagnostics.
+- Declared the app-container file-timestamp privacy reason used to expire temporary exports.
+- Release builds now ignore UI-test seed, fake-service, failure-injection, and test-navigation launch arguments.
+- Updated the deployment checklist to the current iPhone-only, iOS 26, internal-TestFlight-first baseline.
+
 ## 2026-08-20 — First-launch recording permissions
 
 - LifeLog now asks for Location and Motion & Fitness access on its first real launch, while keeping the existing Recording settings as the recovery path when access is declined.

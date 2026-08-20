@@ -281,7 +281,7 @@ struct InsightsView: View {
     /// `UITestSeedData`/`UITestFailureInjection` gate deterministic behaviour
     /// behind a launch argument, rather than depending on live Apple Intelligence.
     private func askLifeLogPlanner() -> AskLifeLogPlanning {
-        if ProcessInfo.processInfo.arguments.contains(FakeAskLifeLogPlanner.launchArgument) {
+        if InternalLaunchArguments.contains(FakeAskLifeLogPlanner.launchArgument) {
             return FakeAskLifeLogPlanner.uiTestPlanner()
         }
         return FoundationModelsAskLifeLogPlanner()

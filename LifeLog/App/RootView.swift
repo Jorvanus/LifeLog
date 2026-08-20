@@ -21,14 +21,14 @@ struct RootView: View {
     /// simulator panel does not run on this machine's Xcode beta, so screens have to be
     /// reachable from a launch argument to be screenshotted at all.
     @State private var selectedTab: Int = {
-        if ProcessInfo.processInfo.arguments.contains("-showInsights") { return 1 }
+        if InternalLaunchArguments.contains("-showInsights") { return 1 }
         let requested = UserDefaults.standard.integer(forKey: "showTab")
         return (0...3).contains(requested) ? requested : 0
     }()
     /// Deep links exist only for UI tests so long, accessibility-sized Settings forms
     /// can exercise their lower-level screens without coordinate-based taps.
     @State private var uiTestDestination: UITestDestination? = {
-        let arguments = ProcessInfo.processInfo.arguments
+        let arguments = InternalLaunchArguments.all
         if arguments.contains("-uiTesting"), arguments.contains("-ui-test-open-diagnostics") { return .diagnostics }
         if arguments.contains("-uiTesting"), arguments.contains("-ui-test-open-journal-storage") { return .journalStorage }
         if arguments.contains("-uiTesting"), arguments.contains("-ui-test-open-archive-repair") { return .archiveRepair }
