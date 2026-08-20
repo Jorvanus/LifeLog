@@ -67,23 +67,6 @@ integrations.
   the repair as a measured safety net until a test reproduces the race and the
   counter remains zero across real use.
 
-## Tidiness — still open
-
-A code-tidiness audit, 2026-08-20: simplification/deduplication candidates, not
-correctness bugs (those stay in the section above). Ranked by how much confusion or
-duplication cost each one actually carries.
-
-- [ ] **Shared formatting helpers live in a `Timeline` file that `Places` and
-  `Settings` quietly depend on.** `formattedDuration`/`durationWithinDay`/
-  `formattedDistance` (`Timeline/TimelineView.swift:691,703,711`) are called from
-  `PlaceHistoryView.swift`, `Settings/ActivitiesTabView.swift`, and
-  `Settings/ActivityDetailView.swift`. Not wrong, but it breaks the "one obvious
-  home" pattern `ActivityColors.swift`/`CategoryPalette.swift` were themselves
-  written to establish for lookups — someone in `Settings` looking for where
-  duration text comes from has to know to check a `Timeline` file first. Lowest
-  priority here: a mechanical move to a neutrally-named formatting file, not a
-  design change.
-
 ## Deliberately not priorities
 
 - App Store metadata, public privacy policy, consumer onboarding, and generalized

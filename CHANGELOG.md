@@ -1,5 +1,9 @@
 # Change log
 
+## 2026-08-20 — One home for visit formatting — 2.23.7 (242)
+
+- Moved `formattedDuration`/`durationWithinDay`/`formattedDistance` out of `Timeline/TimelineView.swift` into a new `Support/VisitFormatting.swift` — Places and Settings already depended on them, so a `Timeline` file was the wrong home. Mechanical move, no behaviour change. This closes out the 2026-08-20 code-tidiness audit.
+
 ## 2026-08-20 — Remove a completed one-time migration — 2.23.6 (241)
 
 - Removed `ActivityCatalog.mergeWorkingIntoWork` and its test. Traced through git history: it was a real, wired-in launch migration that folded a seeded "Working" activity into "Work", and its call site was deliberately removed when the activity catalogue became durable/versioned (2026-08-18) — it already did its job and was never reconnected. Nothing left calling it outside the test that existed solely to exercise it.
