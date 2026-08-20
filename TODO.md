@@ -73,14 +73,6 @@ A code-tidiness audit, 2026-08-20: simplification/deduplication candidates, not
 correctness bugs (those stay in the section above). Ranked by how much confusion or
 duplication cost each one actually carries.
 
-- [ ] **`ActivityCatalog.mergeWorkingIntoWork(context:)` has no caller outside
-  tests.** `ActivityCatalog.swift:807` — only referenced from
-  `SavedPlaceLearningTests.swift`. Reads like a one-time "Working" → "Work" data
-  migration that either already ran once and should be deleted, or was meant to be
-  wired into `AppLifecycleCoordinator` alongside the adjacent
-  `ActivityIdentityMigration.backfillNextBatch` and never was. Worth finding out
-  which before touching it.
-
 - [ ] **Shared formatting helpers live in a `Timeline` file that `Places` and
   `Settings` quietly depend on.** `formattedDuration`/`durationWithinDay`/
   `formattedDistance` (`Timeline/TimelineView.swift:691,703,711`) are called from

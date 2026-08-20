@@ -803,19 +803,6 @@ enum ActivityCatalog {
         }
     }
 
-    @MainActor
-    static func mergeWorkingIntoWork(context: ModelContext) throws -> Int {
-        var activities = load()
-        guard let working = activities.first(where: { $0.name.caseInsensitiveCompare("Working") == .orderedSame }) else { return 0 }
-        let moved = try renameActivity(from: working.name, to: "Work", context: context)
-        activities.removeAll { $0.id == working.id }
-        if !activities.contains(where: { $0.name.caseInsensitiveCompare("Work") == .orderedSame }) {
-            activities.append(ActivityDefinition(name: "Work", category: working.category, symbol: working.symbol))
-        }
-        save(activities)
-        return moved
-    }
-
     @discardableResult
     static func renameCategory(from previous: String, to updated: String) -> Int {
         let clean = TextSafety.clean(updated, maximumLength: 40)

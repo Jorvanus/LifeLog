@@ -417,47 +417,6 @@ struct SavedPlaceLearningTests {
         #expect(ActivityCatalog.preferredLabel(for: "Working", in: catalogue) == "Working")
     }
 
-    @Test("The seeded Working entry is merged into an adopted Work, visits and all")
-    func mergesSeededWorkingIntoAdoptedWork() throws {
-        let context = try makeContext()
-        let defaults = try #require(UserDefaults(suiteName: UUID().uuidString))
-        let base = Date(timeIntervalSince1970: 1_800_000_000)
-        for offset in 0..<3 {
-            context.insert(Visit(arrival: base.addingTimeInterval(Double(offset) * 3600),
-                                 departure: base.addingTimeInterval(Double(offset) * 3600 + 1800),
-                                 latitude: -23.38, longitude: 150.52, placeName: "atWork Australia",
-                                 inferredActivity: "Working", userActivity: "Working",
-                                 source: "imported-journal"))
-        }
-        try context.save()
-
-        try ActivityCatalog.withStorage(defaults) {
-            // The real catalogue: "Work" adopted from history, seeded "Working" still there.
-            ActivityCatalog.save([
-                ActivityDefinition(name: "Working", category: "Work", symbol: "briefcase.fill"),
-                ActivityDefinition(name: "Work", category: "Work", symbol: "briefcase.fill")
-            ])
-
-            let moved = try ActivityCatalog.mergeWorkingIntoWork(context: context)
-            #expect(moved == 3, "the visits move with the label rather than being stranded on it")
-
-            let catalogue = ActivityCatalog.load()
-            #expect(catalogue.filter { $0.category == "Work" }.count == 1, "no duplicate Work entries")
-            #expect(catalogue.contains { $0.name == "Work" })
-            #expect(!catalogue.contains { $0.name == "Working" })
-            #expect(ActivityCatalog.preferredLabel(for: "Working", in: catalogue) == "Work")
-
-            // Runs once: an entry named back to "Working" afterwards is left alone.
-            ActivityCatalog.save(catalogue + [ActivityDefinition(name: "Working", category: "Work",
-                                                                 symbol: "briefcase.fill")])
-            #expect(try ActivityCatalog.mergeWorkingIntoWork(context: context) == 0)
-            #expect(ActivityCatalog.load().contains { $0.name == "Working" })
-        }
-
-        let visits = try context.fetch(FetchDescriptor<Visit>())
-        #expect(visits.allSatisfy { $0.activity == "Work" })
-    }
-
     @Test("LocationRecorder loads and populates saved place cache when connected")
     func locationRecorderSavedPlaceCache() throws {
         let context = try makeContext()

@@ -1,5 +1,9 @@
 # Change log
 
+## 2026-08-20 — Remove a completed one-time migration — 2.23.6 (241)
+
+- Removed `ActivityCatalog.mergeWorkingIntoWork` and its test. Traced through git history: it was a real, wired-in launch migration that folded a seeded "Working" activity into "Work", and its call site was deliberately removed when the activity catalogue became durable/versioned (2026-08-18) — it already did its job and was never reconnected. Nothing left calling it outside the test that existed solely to exercise it.
+
 ## 2026-08-20 — Remove dead VisitHistoryQuery lookups — 2.23.5 (240)
 
 - Removed `VisitHistoryQuery.day`/`.month`/`.year` and `place(named:mapsIdentifier:limit:)` — all four had zero call sites; Timeline fetches a day with its own inline query instead, and every real place lookup already used `place(mapsIdentifier:)` or `legacyPlace(named:)`.
