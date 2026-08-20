@@ -1,5 +1,9 @@
 # Change log
 
+## 2026-08-20 — Deep code-tidiness roadmap review — 2.23.8 (243)
+
+- Expanded the open code roadmap with evidence-backed cleanup and efficiency work for failed mutation handling, Locations review-queue preparation, repeated Activity Detail aggregation, Diagnostics archive reads, confirmed dead declarations, compiler warnings, and the remaining Location Recorder ownership seams.
+
 ## 2026-08-20 — One home for visit formatting — 2.23.7 (242)
 
 - Moved `formattedDuration`/`durationWithinDay`/`formattedDistance` out of `Timeline/TimelineView.swift` into a new `Support/VisitFormatting.swift` — Places and Settings already depended on them, so a `Timeline` file was the wrong home. Mechanical move, no behaviour change. This closes out the 2026-08-20 code-tidiness audit.
