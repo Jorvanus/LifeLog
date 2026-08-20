@@ -73,15 +73,6 @@ A code-tidiness audit, 2026-08-20: simplification/deduplication candidates, not
 correctness bugs (those stay in the section above). Ranked by how much confusion or
 duplication cost each one actually carries.
 
-- [ ] **Broken string interpolation garbles a real error message.**
-  `ExportFileStaging.swift:15` — `"LifeLog couldn't write the temporary backup:
-  (error.localizedDescription)"` is missing the `\` before the parenthesized
-  expression, so anyone hitting this failure sees the literal text
-  `(error.localizedDescription)` instead of the actual reason. `Diagnostics.swift`
-  has an explicit comment (~line 662) warning against exactly this mistake after an
-  earlier instance of it, which suggests this one slipped past the same review.
-  Trivial, safe, one-line fix.
-
 - [ ] **`ActivitySampleReader.swift` implements the same interval-merge algorithm
   twice.** `merge` (line 534, one caller) and `mergeWithIdentifiers` (line 550,
   three callers for sleep sessions) both sort-and-coalesce overlapping/near

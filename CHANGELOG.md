@@ -1,5 +1,9 @@
 # Change log
 
+## 2026-08-20 — Fix a garbled export error message — 2.23.2 (237)
+
+- Fixed a missing `\` in `ExportFileStagingError.writeFailed`'s interpolation, which had been showing the literal text `(error.localizedDescription)` instead of the real reason a backup export failed to write.
+
 ## 2026-08-20 — One shared visit row — 2.23.1 (236)
 
 - Replaced four hand-rolled copies of the same "visit row" (Places' uncategorised/ignored lists, an activity's visit list, a place's visit list, archive search results) with one shared `VisitRowLabel`, fixing the drift already visible between them.

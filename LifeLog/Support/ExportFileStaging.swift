@@ -12,7 +12,7 @@ enum ExportFileStagingError: LocalizedError {
         case .protectionFailed:
             "LifeLog couldn’t apply complete file protection to the temporary backup. Nothing was exported."
         case .writeFailed(let error):
-            "LifeLog couldn’t write the temporary backup: (error.localizedDescription)"
+            "LifeLog couldn’t write the temporary backup: \(error.localizedDescription)"
         }
     }
 }
