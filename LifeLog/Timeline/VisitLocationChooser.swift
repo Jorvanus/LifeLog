@@ -761,11 +761,8 @@ private struct PlaceVisitList: View {
         List {
             ForEach(visits) { visit in
                 NavigationLink { VisitEditor(visit: visit) } label: {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(visit.activity).font(.headline)
-                        Text(visit.arrival.formatted(date: .abbreviated, time: .shortened))
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
+                    VisitRowLabel(title: visit.activity,
+                                 subtitle: visit.arrival.formatted(date: .abbreviated, time: .shortened))
                 }
             }
         }

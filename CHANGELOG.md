@@ -1,5 +1,10 @@
 # Change log
 
+## 2026-08-20 — One shared visit row — 2.23.1 (236)
+
+- Replaced four hand-rolled copies of the same "visit row" (Places' uncategorised/ignored lists, an activity's visit list, a place's visit list, archive search results) with one shared `VisitRowLabel`, fixing the drift already visible between them.
+- Fixed a stale doc comment in `ArchiveSearchView.swift` pointing at two dead `VisitHistoryQuery` lookups.
+
 ## 2026-08-20 — Coarse routes for passive walks — 2.23.0 (234)
 
 - Added an opt-in "Track walking routes" setting (Settings → Recording, off by default). When on, a passive walk (a HealthKit step-count walk, not a Fitness workout) can now carry a rough path — a handful of coarse points, not a smooth trace — shown the same way a Fitness walk's route already is.

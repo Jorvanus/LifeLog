@@ -2,9 +2,9 @@ import SwiftUI
 import SwiftData
 
 /// The one explicit search screen across the whole archive, by place and activity.
-/// Ordinary Timeline queries (`VisitHistoryQuery.day`, `.month`, …) never touch
-/// `note`, so a broad note search only ever happens here, and only once the person
-/// opts into it — see `VisitHistoryQuery.search` for why that split exists.
+/// Ordinary Timeline fetches never touch `note`, so a broad note search only ever
+/// happens here, and only once the person opts into it — see
+/// `VisitHistoryQuery.search` for why that split exists.
 struct ArchiveSearchView: View {
     @Environment(\.modelContext) private var context
     @State private var query = ""
@@ -66,11 +66,8 @@ struct ArchiveSearchView: View {
     }
 
     private func resultRow(_ entry: ArchiveSearchEntry) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(entry.placeName).font(.headline).lineLimit(1)
-            Text("\(entry.activity) · \(entry.arrival.formatted(date: .abbreviated, time: .shortened))")
-                .font(.caption).foregroundStyle(.secondary)
-        }
+        VisitRowLabel(title: entry.placeName,
+                     subtitle: "\(entry.activity) · \(entry.arrival.formatted(date: .abbreviated, time: .shortened))")
     }
 
     /// Debounced so a fast typist does not fire one query per keystroke; the

@@ -128,11 +128,8 @@ private struct LocationVisitList: View {
                 ForEach(visits) { visit in
                     HStack {
                         NavigationLink { VisitEditor(visit: visit) } label: {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(visit.displayPlaceName).font(.headline)
-                                Text(visit.arrival.formatted(date: .abbreviated, time: .shortened))
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
+                            VisitRowLabel(title: visit.displayPlaceName,
+                                         subtitle: visit.arrival.formatted(date: .abbreviated, time: .shortened))
                         }
                         Spacer()
                         Button(mode == .ignored ? "Restore" : "Ignore") {

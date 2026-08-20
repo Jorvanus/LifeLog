@@ -201,6 +201,7 @@
 		C3B117D996892C8911B22A4E /* LocationQuality.swift in Sources */ = {isa = PBXBuildFile; fileRef = D34EB14ADC9759756AF5EC1E /* LocationQuality.swift */; };
 		C5D90D6549DDED454C7A352D /* InsightsTrendAggregator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86930351BA999975C9D617AD /* InsightsTrendAggregator.swift */; };
 		C77965B7DD7E42C18719548B /* VisitMutationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DFAD8D89BC0668562A7475D /* VisitMutationService.swift */; };
+		781A3FFCED7DE7EAE85D7626 /* VisitRowLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7E0E626D52E6D6EAD858498 /* VisitRowLabel.swift */; };
 		C8AA07223CFD786CE708D687 /* UnloggedGapsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 036D35D5E131F6716312F247 /* UnloggedGapsView.swift */; };
 		C8C8E5D03FC9F9D885973F65 /* ManualSleepEntryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23EB15E3E6D84ADEF8672133 /* ManualSleepEntryView.swift */; };
 		CB15B97417DC0A3EFCEA9597 /* TimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F04598A86CF649E23443B8E5 /* TimelineView.swift */; };
@@ -392,6 +393,7 @@
 		6D7E2E5F979BAD5391832541 /* InsightSliceRowsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightSliceRowsTests.swift; sourceTree = "<group>"; };
 		6DB878829333B0C2550F5B7E /* InsightsRecordingQuality.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsRecordingQuality.swift; sourceTree = "<group>"; };
 		6DFAD8D89BC0668562A7475D /* VisitMutationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitMutationService.swift; sourceTree = "<group>"; };
+		F7E0E626D52E6D6EAD858498 /* VisitRowLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitRowLabel.swift; sourceTree = "<group>"; };
 		71DA95327D42FD135EC2CFF0 /* ActivitiesTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivitiesTabView.swift; sourceTree = "<group>"; };
 		71F7D776B0D8C8532B9EA5F2 /* SleepSessionRepair.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepSessionRepair.swift; sourceTree = "<group>"; };
 		758C890C7E53A34817C0C399 /* HealthKitTypeCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitTypeCatalog.swift; sourceTree = "<group>"; };
@@ -972,6 +974,7 @@
 				036D35D5E131F6716312F247 /* UnloggedGapsView.swift */,
 				48C827B55966E693983C0F29 /* VisitArchiveReader.swift */,
 				0BEB2168BA2458808108C713 /* VisitHistoryQuery.swift */,
+				F7E0E626D52E6D6EAD858498 /* VisitRowLabel.swift */,
 			);
 			path = Support;
 			sourceTree = "<group>";
@@ -1230,6 +1233,7 @@
 				E8FE6C6D767B0E4172D13F8E /* VisitHistoryQuery.swift in Sources */,
 				3B13CFC55D6441F7A10F082D /* VisitLocationChooser.swift in Sources */,
 				C77965B7DD7E42C18719548B /* VisitMutationService.swift in Sources */,
+				781A3FFCED7DE7EAE85D7626 /* VisitRowLabel.swift in Sources */,
 				A692CC19BB95D69B9118732E /* VisitPayloadEnvelope.swift in Sources */,
 				DE8B3A2A3D7C9F06362C6F80 /* VisitSuggestion.swift in Sources */,
 				29C990CA25792091226AFD0D /* WeekInsightsView.swift in Sources */,
@@ -1477,7 +1481,7 @@
 				CODE_SIGN_ENTITLEMENTS = LifeLog/LifeLog.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 235;
+				CURRENT_PROJECT_VERSION = 236;
 				DEVELOPMENT_TEAM = 337KNRL5L8;
 				INFOPLIST_FILE = LifeLog/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
@@ -1597,7 +1601,7 @@
 				CODE_SIGN_ENTITLEMENTS = LifeLog/LifeLog.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 235;
+				CURRENT_PROJECT_VERSION = 236;
 				DEVELOPMENT_TEAM = 337KNRL5L8;
 				INFOPLIST_FILE = LifeLog/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 27.0;

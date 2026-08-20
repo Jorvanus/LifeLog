@@ -82,17 +82,6 @@ duplication cost each one actually carries.
   earlier instance of it, which suggests this one slipped past the same review.
   Trivial, safe, one-line fix.
 
-- [ ] **The same "visit row" is hand-rolled four separate times and has already
-  started to drift.** `PlacesView.swift:113-149` (`LocationVisitList`),
-  `Settings/ActivityDetailView.swift:531-559` (`ActivityVisitsView`),
-  `Timeline/VisitLocationChooser.swift:756-775` (`PlaceVisitList`), and
-  `Places/ArchiveSearchView.swift:68-72` (`resultRow`) each build their own
-  `Text(title)` + caption-timestamp row backed by a `NavigationLink` to
-  `VisitEditor`. They've already diverged: `PlaceVisitList` shows
-  `visit.activity` where the other two show `visit.displayPlaceName`. One shared
-  row view would mean a future visual tweak (duration, icon) has one place to
-  change instead of four to remember.
-
 - [ ] **`ActivitySampleReader.swift` implements the same interval-merge algorithm
   twice.** `merge` (line 534, one caller) and `mergeWithIdentifiers` (line 550,
   three callers for sleep sessions) both sort-and-coalesce overlapping/near

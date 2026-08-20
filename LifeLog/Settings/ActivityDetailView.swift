@@ -541,11 +541,8 @@ private struct ActivityVisitsView: View {
                 Section {
                     ForEach(visits) { visit in
                         NavigationLink { VisitEditor(visit: visit) } label: {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(visit.displayPlaceName).font(.headline).lineLimit(1)
-                                Text(visit.arrival.formatted(date: .abbreviated, time: .shortened))
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
+                            VisitRowLabel(title: visit.displayPlaceName,
+                                         subtitle: visit.arrival.formatted(date: .abbreviated, time: .shortened))
                         }
                     }
                 } footer: {
