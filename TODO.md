@@ -73,14 +73,6 @@ A code-tidiness audit, 2026-08-20: simplification/deduplication candidates, not
 correctness bugs (those stay in the section above). Ranked by how much confusion or
 duplication cost each one actually carries.
 
-- [ ] **`ActivitySampleReader.swift` implements the same interval-merge algorithm
-  twice.** `merge` (line 534, one caller) and `mergeWithIdentifiers` (line 550,
-  three callers for sleep sessions) both sort-and-coalesce overlapping/near
-  intervals within a gap tolerance — the second's own doc comment says "Same merge
-  as above, but keeps track of...". `merge` could just be
-  `mergeWithIdentifiers` with placeholder IDs stripped afterward, so a future fix
-  to the gap-comparison logic only has to land once.
-
 - [ ] **A per-category custom-colour override is read but never written anywhere.**
   `ActivityColors.swift:33` checks `UserDefaults` for
   `"LifeLog.CategoryColor.\(key)"` before falling back to `CategoryPalette` — no

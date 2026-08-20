@@ -539,22 +539,16 @@ actor ActivitySampleReader {
         activity == "Travelling" ? 10 * 60 : 90
     }
 
+    /// `mergeWithIdentifiers` with the per-item id discarded, for the one caller
+    /// that has no sample to track back to.
     private func merge(_ intervals: [DateInterval], maximumGap: TimeInterval) -> [DateInterval] {
-        let sorted = intervals.sorted { $0.start < $1.start }
-        var result: [DateInterval] = []
-        for interval in sorted {
-            if let last = result.last, interval.start.timeIntervalSince(last.end) <= maximumGap {
-                result[result.count - 1] = DateInterval(start: last.start, end: max(last.end, interval.end))
-            } else {
-                result.append(interval)
-            }
-        }
-        return result
+        mergeWithIdentifiers(intervals.map { (interval: $0, id: UUID()) }, maximumGap: maximumGap)
+            .map(\.interval)
     }
 
-    /// Same merge as above, but keeps track of which sample UUIDs contributed to
-    /// each merged interval, so a merged sleep session can still be matched back
-    /// to every underlying HealthKit sample if one of them is later deleted.
+    /// Keeps track of which sample UUIDs contributed to each merged interval, so a
+    /// merged sleep session can still be matched back to every underlying
+    /// HealthKit sample if one of them is later deleted.
     private func mergeWithIdentifiers(
         _ items: [(interval: DateInterval, id: UUID)], maximumGap: TimeInterval
     ) -> [(interval: DateInterval, ids: [UUID])] {

@@ -1,5 +1,9 @@
 # Change log
 
+## 2026-08-20 — One merge implementation, not two — 2.23.3 (238)
+
+- `ActivitySampleReader.merge` is now `mergeWithIdentifiers` with the id discarded, instead of a second copy of the same sort-and-coalesce logic.
+
 ## 2026-08-20 — Fix a garbled export error message — 2.23.2 (237)
 
 - Fixed a missing `\` in `ExportFileStagingError.writeFailed`'s interpolation, which had been showing the literal text `(error.localizedDescription)` instead of the real reason a backup export failed to write.
