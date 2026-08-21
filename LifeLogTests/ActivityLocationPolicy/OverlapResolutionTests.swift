@@ -226,6 +226,67 @@ struct OverlapResolutionTests {
         #expect(home.departure == walkStart, "the gap belonged to the stay the walk left")
     }
 
+    /// The same shape as `stayHoldsUntilTheWalkThatLeftIt`, replayed with a location
+    /// journal that has nothing in the gap. An empty journal must read exactly like no
+    /// journal at all -- diagnostics being on with genuinely nothing recorded, and
+    /// diagnostics being off, are the same fact to this decision.
+    @Test("With no location evidence in the gap, the location check refuses nothing")
+    func locationCheckStaysSilentWithNoEvidence() throws {
+        let context = try ActivityLocationPolicyFixtures.makeContext()
+        let home = Visit(arrival: base.addingTimeInterval(-9 * 3600),
+                         departure: base, latitude: -23.4454, longitude: 150.4581,
+                         placeName: "Home", inferredActivity: "At home", source: "automatic")
+        context.insert(home)
+        try context.save()
+
+        let walkStart = base.addingTimeInterval(13.6 * 60)
+        let refused = ActivityLocationPolicy.extensionRefusedByLocationEvidence(
+            for: home, upTo: DateInterval(start: walkStart, end: walkStart.addingTimeInterval(48 * 60)),
+            context: context
+        )
+
+        #expect(!refused, "silence in an empty journal must not read as confirmed departure")
+    }
+
+    /// The morning of 2026-08-21: Home's departure read 08:40:31, matching a
+    /// health-walking record with no coordinates, but Core Location's own raw samples
+    /// show the geofence was actually left at 08:26:24 and the device was 9.4 km away
+    /// by 08:41 -- a real ~9 km, ~21-minute commute that a displayed 7 minutes came
+    /// from. Replayed here as a location journal, this must refuse the extension.
+    @Test("A real departure recorded in the journal refuses the extension")
+    func locationCheckRefusesARealDeparture() throws {
+        let context = try ActivityLocationPolicyFixtures.makeContext()
+        let home = Visit(arrival: base, departure: base.addingTimeInterval(27 * 60),
+                         latitude: -23.445305502060005, longitude: 150.45172903562235,
+                         placeName: "Home", inferredActivity: "At home", source: "automatic")
+        context.insert(home)
+        // The raw callbacks from that morning: a geofence-exit near Home, then steady
+        // movement away from it, all inside the gap `extendStay` would otherwise
+        // stretch Home's departure across.
+        let events = [
+            (offset: 26.4 * 60, lat: -23.44552, lon: 150.45231, type: "geofence-exit"),
+            (offset: 27.1 * 60, lat: -23.44557, lon: 150.45239, type: "visit-departure"),
+            (offset: 32.2 * 60, lat: -23.41111, lon: 150.47133, type: "location-update"),
+            (offset: 37.9 * 60, lat: -23.39784, lon: 150.50582, type: "live-location-sample"),
+        ]
+        for event in events {
+            context.insert(LocationEvent(
+                recordedAt: base.addingTimeInterval(event.offset), callbackType: event.type,
+                callbackAt: base.addingTimeInterval(event.offset),
+                latitude: event.lat, longitude: event.lon, accuracy: 10
+            ))
+        }
+        try context.save()
+
+        let walkStart = base.addingTimeInterval(40.5 * 60)
+        let refused = ActivityLocationPolicy.extensionRefusedByLocationEvidence(
+            for: home, upTo: DateInterval(start: walkStart, end: walkStart.addingTimeInterval(4 * 60)),
+            context: context
+        )
+
+        #expect(refused, "the journal shows the person already 9+ km from Home inside the gap")
+    }
+
     /// The inference is only sound across silence. Anything recorded in the gap is
     /// evidence of what happened in it, and the stay must not be stretched over it.
     @Test("A stay is not stretched over minutes something else already claims")

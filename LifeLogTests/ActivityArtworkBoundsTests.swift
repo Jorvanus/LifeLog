@@ -96,9 +96,10 @@ struct ActivityArtworkBoundsTests {
         ]
 
         let visible = ActivityCatalog.uniqueForPresentation(activities)
-        #expect(visible.map(\.name).filter { $0 == "At home" }.count == 1)
-        #expect(visible.map(\.name).contains("Cafe"))
-        #expect(visible.map(\.name).contains("Café"))
+        let visibleNames = visible.map(\.name)
+        #expect(visibleNames.filter { $0 == "At home" }.count == 1)
+        #expect(visibleNames.contains("Cafe"))
+        #expect(visibleNames.contains("Café"))
         #expect(ActivityCatalog.uniqueForPresentation(activities,
                                                       excludingIDs: [duplicateID],
                                                       excludingNames: ["At home"]).map(\.name) == ["Cafe", "Café"])

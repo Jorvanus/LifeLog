@@ -114,6 +114,54 @@ integrations.
      against what the owner actually remembers, before letting it mutate
      `stay.departure` live.
 
+- [ ] **Seven pre-existing unit test failures, surfaced 2026-08-22 and not yet
+  investigated.** The `LifeLogTests` target could not compile at all before
+  2026-08-22 (a Swift 6.3.3 SILGen crash on a keypath over `[any
+  VersionedSchema.Type]` in `SchemaFingerprintTests.swift`, now fixed with an
+  explicit closure in place of the keypath literal), so nobody could see these.
+  None touch anything changed that day; each needs its own look:
+  1. `ActivityMergeTests.seedingStabilizesLoadIDs()` --
+     `ActivityCatalog.load().first { $0.name == "Work" } → nil`
+     (`ActivityMergeTests.swift:124`): seeding isn't producing a "Work" entry
+     repeated `load()` calls can find.
+  2. `ArchiveModelFieldCoverageTests.fullArchiveRoundTrips()` --
+     `(decoded.version → 4) == 3` (`ArchiveModelFieldCoverageTests.swift:209`):
+     either a real round-trip bug or a fixture left at the previous schema
+     version after an unrelated bump -- worth checking which before assuming
+     either.
+  3. `ExportFileStagingTests.writesProtectedStagingFile()` --
+     `attributes[.protectionKey] as? FileProtectionType → nil` where `.complete`
+     was expected (`ExportFileStagingTests.swift:18`): could be a real
+     regression in the staging write, or the simulator/sandbox here not
+     reporting file protection classes the way a device does -- needs a device
+     check before concluding either way.
+  4. `GapSuggestionViewModelTests.sleepWalkingWorkoutOffersHomeWithoutAppleIntelligence()`
+     -- "Expected a Home draft, got .idle" (`GapSuggestionViewModelTests.swift:102`):
+     the short Sleep-to-walking-workout gap case that should bypass Apple
+     Intelligence and still offer Home is instead resolving to no suggestion.
+  5. `LocalBackupTests.negativeAccuracyLocationEventRestores()` -- restoring a
+     backup throws `NSCocoaErrorDomain Code=259 "the file couldn't be opened
+     because it isn't in the correct format"` (`LocalBackupTests.swift:344`):
+     the fixture this test builds to prove a negative-accuracy location event
+     survives restore may itself be malformed, or restore is rejecting
+     something it shouldn't.
+  6. `TravelConstructionTests.commutesRequireBothEnds()` --
+     `(shopsToWork.first?.start → 09:00:00) == (shops.departure → 09:25:00)`
+     (`TravelConstructionTests.swift:345`): a constructed commute's start time
+     doesn't match the departure it should be anchored to.
+  7. `VisitMutationServiceTests.failedMutationDoesNotPublishPartialState()` --
+     `(original.placeName → "Unsaved replacement") == "Home"`
+     (`VisitMutationServiceTests.swift:79`): a failed mutation's rollback is
+     leaving the replacement name visible instead of restoring "Home", which
+     is exactly the partial-state leak this test exists to catch.
+  Separately, the `LifeLogUITests` target reported 36 of 60 tests failing in
+  the same run, spread across every unrelated screen (Accessibility, Insights,
+  Settings, Timeline) with generic "element didn't appear" failures -- that
+  breadth points at the sandboxed simulator session lacking something a real
+  run needs (permission state, animation timing), not 36 independent
+  regressions. Re-run on-device or in a normal interactive simulator session
+  before trusting that count.
+
 - [ ] **Re-enable place geofence monitoring (`CLMonitor`) once Apple fixes it.**
   Disabled 2026-08-21 after a confirmed, reproducible crash loop on the owner's
   iPhone 17 Pro Max on iOS 27.0 beta (`24A5418b`): `CLMonitor`'s own initializer

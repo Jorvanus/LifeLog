@@ -89,4 +89,39 @@ enum LocationJournal {
         try? context.save()
         return all.count
     }
+
+    /// Whether the journal has real evidence the person was already away from a stay
+    /// during `window` -- used by `ActivityLocationPolicy.extendStay` to tell "still
+    /// getting ready, nothing recorded" apart from "already gone, just nothing
+    /// *resolved* yet". Only a row inside the window that is itself more than `radius`
+    /// from the stay's coordinate counts; the journal recording nothing here is
+    /// inconclusive, not confirmation -- it is off unless detailed location
+    /// diagnostics is on, and trimmed to its most recent `retentionLimit` rows, so
+    /// absence of rows must never be read as absence of movement.
+    ///
+    /// `nonisolated` deliberately: `ActivityLocationPolicy`'s reconciliation runs
+    /// synchronously wherever its caller already holds a `ModelContext`, the same
+    /// pattern `Diagnostics.record` and `boundStays`'s own `context.insert` already
+    /// use in that file -- routing this through the main actor would be the one
+    /// query in the pass that needed a hop the rest of it never does.
+    nonisolated static func showsDeparture(fromStayAt coordinate: CLLocationCoordinate2D,
+                                           in window: DateInterval,
+                                           beyond radius: CLLocationDistance,
+                                           context: ModelContext) -> Bool {
+        guard window.duration > 0 else { return false }
+        let start = window.start
+        let end = window.end
+        let descriptor = FetchDescriptor<LocationEvent>(
+            predicate: #Predicate { $0.recordedAt >= start && $0.recordedAt <= end }
+        )
+        guard let events = try? context.fetch(descriptor), !events.isEmpty else { return false }
+        let origin = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        return events.contains { event in
+            guard CLLocationCoordinate2DIsValid(
+                CLLocationCoordinate2D(latitude: event.latitude, longitude: event.longitude)
+            ) else { return false }
+            let sample = CLLocation(latitude: event.latitude, longitude: event.longitude)
+            return sample.distance(from: origin) > radius
+        }
+    }
 }

@@ -32,6 +32,10 @@ enum ActivityLocationPolicyFixtures {
             // The resolver records why it merged, closed or superseded a callback, so
             // its diagnostics have to be part of the store these tests write to.
             DiagnosticEvent.self,
+            // `extendStay` consults the raw location journal to tell a real departure
+            // apart from silence; without this, `context.fetch(LocationEvent)` throws
+            // (caught by `try?`, so it reads as "no evidence" rather than as an error).
+            LocationEvent.self,
             configurations: configuration
         )
         return ModelContext(container)

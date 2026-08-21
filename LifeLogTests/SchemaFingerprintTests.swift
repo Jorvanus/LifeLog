@@ -10,7 +10,12 @@ struct SchemaFingerprintTests {
 
     @Test("The migration plan contains only the supported one-step window")
     func migrationPlanContainsOnlyV11AndV12() {
-        #expect(LifeLogMigrationPlan.schemas.map(\.versionIdentifier) == [LifeLogSchemaV11.versionIdentifier, LifeLogSchemaV12.versionIdentifier])
+        // A keypath literal over `[any VersionedSchema.Type]` here crashes SILGen on
+        // Swift 6.3.3 (swiftlang-6.3.3.1.3) -- an explicit closure produces the same
+        // value without going through keypath-component synthesis for an existential
+        // metatype.
+        let identifiers = LifeLogMigrationPlan.schemas.map { $0.versionIdentifier }
+        #expect(identifiers == [LifeLogSchemaV11.versionIdentifier, LifeLogSchemaV12.versionIdentifier])
         #expect(LifeLogMigrationPlan.stages.count == 1)
     }
 
