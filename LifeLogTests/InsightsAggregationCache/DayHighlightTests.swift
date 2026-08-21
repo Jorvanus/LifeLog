@@ -18,6 +18,7 @@ struct DayHighlightTests {
         #expect(highlight?.isCelebration == true)
         #expect(highlight?.headline == "7,000 steps")
         #expect(highlight?.detail == "40% more than your usual Tuesday.")
+        #expect(highlight?.isNotable == true)
     }
 
     @Test("A quieter day is reported plainly rather than congratulated")
@@ -36,6 +37,9 @@ struct DayHighlightTests {
                                             weekdayName: "Tuesday")
         #expect(highlight?.isCelebration == false)
         #expect(highlight?.detail == "About the same as your usual Tuesday.")
+        // Marked not notable so it never structurally wins `highlights.first` over
+        // something that actually happened that day -- see reloadHighlights.
+        #expect(highlight?.isNotable == false)
     }
 
     @Test("A longer night than usual is celebrated")
@@ -43,6 +47,14 @@ struct DayHighlightTests {
         let highlight = DayHighlights.sleep(lastNight: 8 * 3600, averageNight: 6.5 * 3600)
         #expect(highlight?.isCelebration == true)
         #expect(highlight?.headline == "8h asleep")
+        #expect(highlight?.isNotable == true)
+    }
+
+    @Test("A night within the noise is called about the same, and is not notable")
+    func sleepWithinNoiseIsUnremarkable() {
+        let highlight = DayHighlights.sleep(lastNight: 7.05 * 3600, averageNight: 7 * 3600)
+        #expect(highlight?.detail == "About as much as you usually sleep.")
+        #expect(highlight?.isNotable == false)
     }
 
     @Test("No sleep recorded says nothing at all")
@@ -61,6 +73,9 @@ struct DayHighlightTests {
         ]
         let highlight = DayHighlights.activity(from: comparisons, window: .day)
         #expect(highlight?.headline == "3h less on home")
+        // Defaulted true: activity already gates on a real threshold before
+        // returning anything, so it has no "about the same" filler to mark down.
+        #expect(highlight?.isNotable == true)
     }
 
     /// Time has no agreed direction, so an activity shift is reported, never praised.

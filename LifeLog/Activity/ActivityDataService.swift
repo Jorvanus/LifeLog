@@ -643,7 +643,10 @@ final class ActivityDataService {
             activeEnergyKilocalories: result.energy, exerciseMinutes: result.exercise,
             standHours: result.stand, workouts: result.workouts, sleep: await sleep,
             interval: interval, calendar: Calendar.current,
-            lastSuccessfulImport: lastImport
+            lastSuccessfulImport: lastImport,
+            stepsTotal: result.stepsTotal, walkingRunningMetersTotal: result.walkingTotal,
+            activeEnergyKilocaloriesTotal: result.energyTotal, exerciseMinutesTotal: result.exerciseTotal,
+            standHoursTotal: result.standTotal
         )
         healthSummaryCache[key] = summary
         return summary

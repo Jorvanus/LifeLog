@@ -49,6 +49,27 @@ struct HealthInsightsSummaryTests {
         #expect(summary.steps == 4_000)
     }
 
+    /// Confirmed on-device 2026-08-22: Health overview read Steps 9,545 and
+    /// Walk+Run 7.9 km against Apple Health's own 4,771 steps / 4 km for the same
+    /// day -- both almost exactly 2x, consistent with an iPhone and a paired Watch
+    /// each independently recording the same walking, as two samples with distinct
+    /// UUIDs. UUID-based dedup alone cannot merge those; only HealthKit's own
+    /// source-aware cumulative statistic can, which `ActivitySampleReader` now
+    /// fetches separately and passes in as `stepsTotal`/`walkingRunningMetersTotal`.
+    /// This must win over the naive raw-fixture sum whenever it's available.
+    @Test("A supplied deduplicated total wins over the raw double-counted sample sum")
+    func deduplicatedTotalOverridesRawSampleSum() {
+        let phone = HealthQuantityFixture(id: id, start: interval.start, end: interval.end, value: 4_771)
+        let watch = HealthQuantityFixture(id: UUID(), start: interval.start, end: interval.end, value: 4_774)
+        let summary = HealthInsightsAggregation.summary(
+            steps: [phone, watch], walkingRunningMeters: [], activeEnergyKilocalories: [],
+            exerciseMinutes: [], standHours: [], workouts: [], sleep: nil,
+            interval: interval, calendar: Calendar(identifier: .gregorian), now: interval.end,
+            stepsTotal: 4_771
+        )
+        #expect(summary.steps == 4_771, "the deduplicated total, not phone + watch's 9,545")
+    }
+
     @Test("Deleted samples disappear from the next aggregation")
     func deletedSample() {
         let sample = HealthQuantityFixture(id: id, start: interval.start, end: interval.end, value: 4_000)

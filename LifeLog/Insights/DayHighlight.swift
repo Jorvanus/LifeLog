@@ -14,6 +14,14 @@ struct DayHighlight: Identifiable, Equatable {
     /// Whether this is worth congratulating. Only ever used for tone — a day with
     /// fewer steps than usual is still reported, just without the confetti.
     let isCelebration: Bool
+    /// Whether this highlight actually found something to remark on, as opposed to
+    /// the honest "about the same" filler `steps`/`sleep` return when nothing
+    /// cleared `noticeableChange`. Defaulted `true` so every other construction
+    /// site is unaffected; only the two filler branches below opt out. Read by
+    /// `InsightsPresentationState.reloadHighlights` to keep "about the same" from
+    /// structurally winning the day's one headline just by being appended first —
+    /// see the comment there.
+    var isNotable: Bool = true
 }
 
 enum DayHighlights {
@@ -64,7 +72,7 @@ enum DayHighlights {
         return DayHighlight(id: "steps", symbol: "figure.walk",
                             headline: headline,
                             detail: "About the same as your usual \(weekdayName).",
-                            isCelebration: false)
+                            isCelebration: false, isNotable: false)
     }
 
     /// Last night's sleep against the recent nightly average.
@@ -93,7 +101,7 @@ enum DayHighlights {
         return DayHighlight(id: "sleep", symbol: "bed.double.fill",
                             headline: headline,
                             detail: "About as much as you usually sleep.",
-                            isCelebration: false)
+                            isCelebration: false, isNotable: false)
     }
 
     /// The largest shift in how the time itself was spent.

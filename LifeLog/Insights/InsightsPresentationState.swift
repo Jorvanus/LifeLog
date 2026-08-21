@@ -342,7 +342,19 @@ final class InsightsPresentationState {
         // available. Still computed for every window, unread the rest of the
         // time; the underlying fetches already run off the main actor and are
         // bounded, so this is left alone rather than gating it on `window`.
-        let ordered = variedHighlights(found, interval: interval)
+        //
+        // `found` is otherwise plain append order (steps, sleep, activity, leading
+        // place, retrospectives, year-over-year), and steps is appended first and
+        // almost always non-nil once a month of history exists -- including its own
+        // honest "about the same" filler when nothing actually moved. Left as
+        // append order, that filler structurally won `highlights.first` on most
+        // days regardless of whether sleep or activity had a far bigger, genuinely
+        // noteworthy swing that same day. `isNotable` (false only for that filler
+        // and sleep's equivalent) moves any real finding ahead of it while leaving
+        // relative order untouched within each tier -- `filter` is stable, so this
+        // is a partition, not a re-sort by some new priority scheme.
+        let ordered = variedHighlights(found.filter(\.isNotable) + found.filter { !$0.isNotable },
+                                       interval: interval)
         highlights = window == .day ? Array(ordered.prefix(3)) : ordered
     }
 

@@ -166,7 +166,9 @@ actor ActivitySampleReader {
     func healthInsightsFixtures(in interval: DateInterval) async -> (
         steps: [HealthQuantityFixture], walking: [HealthQuantityFixture],
         energy: [HealthQuantityFixture], exercise: [HealthQuantityFixture],
-        stand: [HealthQuantityFixture], workouts: [HealthWorkoutFixture]
+        stand: [HealthQuantityFixture], workouts: [HealthWorkoutFixture],
+        stepsTotal: Double?, walkingTotal: Double?, energyTotal: Double?,
+        exerciseTotal: Double?, standTotal: Double?
     ) {
         async let steps = safeQuantityFixtures(in: interval, identifier: .stepCount, unit: .count())
         async let walking = safeQuantityFixtures(in: interval, identifier: .distanceWalkingRunning, unit: .meter())
@@ -174,12 +176,45 @@ actor ActivitySampleReader {
         async let exercise = safeQuantityFixtures(in: interval, identifier: .appleExerciseTime, unit: .minute())
         async let stand = safeQuantityFixtures(in: interval, identifier: .appleStandTime, unit: .hour())
         async let workouts = safeWorkoutFixtures(in: interval)
-        return await (steps, walking, energy, exercise, stand, workouts)
+        // The raw fixtures above are kept for `activeStepDays`' day-by-day presence
+        // check, which genuinely needs per-sample granularity across a multi-day
+        // window. The *totals* Health overview actually displays must not be a
+        // naive sum of those same raw fixtures -- summing every distinct sample
+        // double-counts a walk both an iPhone and a paired Watch independently
+        // recorded (confirmed on-device: Steps and Walk+Run both read almost
+        // exactly 2x Apple Health's own figures). `quantityCumulativeSum` mirrors
+        // `ActivityDataService.stepCount(for:)`'s already-correct pattern.
+        async let stepsTotal = quantityCumulativeSum(in: interval, identifier: .stepCount, unit: .count())
+        async let walkingTotal = quantityCumulativeSum(in: interval, identifier: .distanceWalkingRunning, unit: .meter())
+        async let energyTotal = quantityCumulativeSum(in: interval, identifier: .activeEnergyBurned, unit: .kilocalorie())
+        async let exerciseTotal = quantityCumulativeSum(in: interval, identifier: .appleExerciseTime, unit: .minute())
+        async let standTotal = quantityCumulativeSum(in: interval, identifier: .appleStandTime, unit: .hour())
+        return await (steps, walking, energy, exercise, stand, workouts,
+                      stepsTotal, walkingTotal, energyTotal, exerciseTotal, standTotal)
     }
 
     private func safeQuantityFixtures(in interval: DateInterval, identifier: HKQuantityTypeIdentifier,
                                       unit: HKUnit) async -> [HealthQuantityFixture] {
         (try? await quantityFixtures(in: interval, identifier: identifier, unit: unit)) ?? []
+    }
+
+    /// Source-aware deduplicated total, matching `ActivityDataService.stepCount(for:)`'s
+    /// pattern exactly: HealthKit's own cumulative statistic merges overlapping
+    /// iPhone/Watch samples for the same real-world activity, which a raw per-sample
+    /// sum (`quantityFixtures`, `total(_:)` in `HealthInsightsAggregation`) cannot --
+    /// two devices independently recording the same walk have distinct sample UUIDs,
+    /// so UUID-based dedup alone does not merge them.
+    private func quantityCumulativeSum(in interval: DateInterval, identifier: HKQuantityTypeIdentifier,
+                                       unit: HKUnit) async -> Double? {
+        guard let type = HKObjectType.quantityType(forIdentifier: identifier) else { return nil }
+        let predicate = HKQuery.predicateForSamples(withStart: interval.start, end: interval.end,
+                                                     options: [.strictStartDate, .strictEndDate])
+        let descriptor = HKStatisticsQueryDescriptor(
+            predicate: .quantitySample(type: type, predicate: predicate),
+            options: .cumulativeSum
+        )
+        guard let statistics = try? await descriptor.result(for: healthStore) else { return nil }
+        return statistics.sumQuantity()?.doubleValue(for: unit)
     }
 
     private func safeWorkoutFixtures(in interval: DateInterval) async -> [HealthWorkoutFixture] {

@@ -115,7 +115,17 @@ enum HealthInsightsAggregation {
                         restingHeartRate: [HealthQuantityFixture] = [],
                         walkingHeartRate: [HealthQuantityFixture] = [], heartRateRecovery: [HealthQuantityFixture] = [],
                         respiratoryRate: [HealthQuantityFixture] = [], now: Date = .now,
-                        lastSuccessfulImport: Date? = nil) -> HealthInsightsSummary {
+                        lastSuccessfulImport: Date? = nil,
+                        // Source-aware deduplicated totals, when the caller has them (see
+                        // `ActivitySampleReader.quantityCumulativeSum`). Defaulted `nil` so
+                        // every existing caller/test that only has raw fixtures is
+                        // unaffected; production code passes these, and they take
+                        // priority over the naive raw-fixture sum below, which double
+                        // counts a sample independently recorded by both an iPhone and a
+                        // paired Watch.
+                        stepsTotal: Double? = nil, walkingRunningMetersTotal: Double? = nil,
+                        activeEnergyKilocaloriesTotal: Double? = nil, exerciseMinutesTotal: Double? = nil,
+                        standHoursTotal: Double? = nil) -> HealthInsightsSummary {
         func unique(_ values: [HealthQuantityFixture]) -> [HealthQuantityFixture] {
             var seen = Set<UUID>()
             return values.filter { seen.insert($0.id).inserted }
@@ -143,11 +153,11 @@ enum HealthInsightsAggregation {
         let dayCount = max(1, dayDifference + 1)
         let activeDays = Set(uniqueSteps.filter { $0.value > 0 }.map { calendar.startOfDay(for: $0.start) }).count
         return HealthInsightsSummary(
-            steps: total(steps),
-            walkingRunningMeters: total(walkingRunningMeters),
-            activeEnergyKilocalories: total(activeEnergyKilocalories),
-            exerciseMinutes: total(exerciseMinutes),
-            standHours: total(standHours),
+            steps: stepsTotal ?? total(steps),
+            walkingRunningMeters: walkingRunningMetersTotal ?? total(walkingRunningMeters),
+            activeEnergyKilocalories: activeEnergyKilocaloriesTotal ?? total(activeEnergyKilocalories),
+            exerciseMinutes: exerciseMinutesTotal ?? total(exerciseMinutes),
+            standHours: standHoursTotal ?? total(standHours),
             restingHeartRateBPM: average(restingHeartRate),
             walkingHeartRateBPM: average(walkingHeartRate),
             heartRateRecoveryBPM: average(heartRateRecovery),
