@@ -114,6 +114,20 @@ integrations.
      against what the owner actually remembers, before letting it mutate
      `stay.departure` live.
 
+- [ ] **Re-enable place geofence monitoring (`CLMonitor`) once Apple fixes it.**
+  Disabled 2026-08-21 after a confirmed, reproducible crash loop on the owner's
+  iPhone 17 Pro Max on iOS 27.0 beta (`24A5418b`): `CLMonitor`'s own initializer
+  raised an uncaught assertion in
+  `+[CLMonitor _requestMonitorWithConfiguration:locationManager:completion:]` on
+  every single launch, three times in a row, unchanged by a fresh monitor
+  identifier or a 500 ms delay before construction — ruling out stale on-disk
+  state or a launch-timing race in LifeLog's own code. A Feedback Assistant
+  report was filed with Apple 2026-08-21, referencing matching reports already on
+  the Apple Developer Forums (threads 802143, 771001). `placeMonitoringDisabledPendingAppleFix`
+  (`LocationRecorder.swift:855`) is the single flag to flip back once a build
+  confirms it no longer reproduces; re-test on-device (install fresh, not over a
+  prior build) before trusting it, the same way this bug was first found.
+
 - [ ] **Find and eliminate the source of recurring duplicate sleep before removing
   `SleepSessionRepair`.** It has found duplicates after the original arrival-window
   bug was fixed, including around erase/restore and live Health sync. Serialize
