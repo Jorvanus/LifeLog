@@ -1,17 +1,24 @@
 # LifeLog — code roadmap
 
 Rebuilt from a repository-wide audit of `main` at `9f65bfe` on 2026-08-19 and
-updated after a second dead-code and interaction-path audit on 2026-08-20. This is an
-open-work list, not a record of shipped features. The previous roadmap (from
-2026-08-16) was mostly completed since — backup manifest/versioning, Settings'
-status-led redesign, the maintenance coordinator, the archive-wide-fetch contract,
-activity-catalogue durability, staging-file hardening, and the `VisitEditor`/Timeline
-ownership seams all landed — so it was rebuilt rather than amended.
+updated after a second dead-code and interaction-path audit on 2026-08-20, and
+reframed on 2026-08-22 as LifeLog begins moving toward TestFlight distribution to a
+small group of trusted testers. This is an open-work list, not a record of shipped
+features. The previous roadmap (from 2026-08-16) was mostly completed since —
+backup manifest/versioning, Settings' status-led redesign, the maintenance
+coordinator, the archive-wide-fetch contract, activity-catalogue durability,
+staging-file hardening, and the `VisitEditor`/Timeline ownership seams all landed —
+so it was rebuilt rather than amended.
 
-LifeLog is a private app for one iPhone 17 Pro Max, owned and used by one person.
-Correct history, predictable background ingestion, responsive access to the archive,
-and code that can be changed safely outrank App Store preparation or speculative
-integrations.
+LifeLog was built as a private app for one iPhone 17 Pro Max, owned and used by one
+person, and that history still shows in places that assume whoever is using it
+already knows how it works. Correct history, predictable background ingestion,
+responsive access to the archive, and code that can be changed safely remain the
+top priorities — they matter more, not less, once someone other than the author
+depends on the app behaving right without being able to ask why it didn't.
+Distribution-readiness work (see below) is now genuinely in scope rather than
+deliberately deferred, though the scope for now is a small TestFlight group, not a
+public App Store listing.
 
 ## Correctness and recovery — still open
 
@@ -183,6 +190,53 @@ integrations.
   the repair as a measured safety net until a test reproduces the race and the
   counter remains zero across real use.
 
+## Distribution readiness — new priority
+
+Concrete work that was explicitly out of scope while LifeLog was private-only.
+The scope for now is a small TestFlight group, not a public App Store listing —
+this is about a tester not being confused or losing trust in their own data, not
+about marketing copy, ratings prompts, or broad-market onboarding.
+
+- [ ] **Distinguish "still syncing" from "confirmed nothing" for Health data,
+  starting with sleep.** Found 2026-08-22: HealthKit repeatedly returned zero
+  sleep samples across several queries right after wake-up (`Sleep evidence
+  rebuilt: 0 measured, 0 in-bed session(s)`, logged from
+  `ActivityDataService.swift`), because the Watch's overnight sleep hadn't
+  finished syncing to the phone yet — the same data appeared correctly a few
+  minutes later, confirmed against the Health app directly. The owner knew to
+  wait; a first-time tester won't, and Settings' "Add sleep manually" prompt
+  ("What can this add? A sleep entry when Apple Health has no usable sleep
+  evidence") is sitting right there inviting exactly the wrong move at exactly
+  the wrong moment — a manual entry that becomes a duplicate once the real
+  Watch data lands. Needs a distinct UI state for "checked recently and found
+  nothing yet" versus "confirmed empty after a reasonable wait," so the
+  manual-entry prompt doesn't fire during the plausible sync window. Directly
+  related to the duplicate-sleep item above: this removes one more source
+  feeding that bug, not just a symptom next to it.
+
+- [ ] **Write a real privacy policy and host it somewhere linkable.** TestFlight
+  external testing requires a privacy policy URL for Apple's Beta App Review,
+  even for a small group. Needs to accurately describe what LifeLog actually
+  does: on-device-only storage, no server, exactly what Health/Location/Motion
+  data it reads and why, and that diagnostics are redacted by default (already
+  true, see the 2026-08-20 changelog entry) but can include real personal data
+  when someone explicitly turns on detailed diagnostics for their own
+  troubleshooting.
+
+- [ ] **Audit UI copy and defaults for "the owner already knows this"
+  assumptions.** Look for onboarding gaps, permission-request copy, and error
+  states written for someone who already understands why LifeLog wants Always
+  location, or why sleep might briefly show as missing (see above). A focused
+  pass through first launch, the permission-request flow, and Settings —
+  not the whole app at once.
+
+- [ ] **Confirm the Xcode Cloud release workflow is reliably distribution-clean.**
+  The Archive action's Distribution Preparation and the TestFlight Internal
+  Testing post-action are configured and have shipped one build successfully
+  (2.25.11); worth a second confirmed clean build before trusting that
+  pipeline, since the first attempts hit both a missing Distribution
+  Preparation setting and a missing `NSHealthUpdateUsageDescription` key.
+
 ## Efficiency and tidiness — still open
 
 A code-first audit on 2026-08-20. These are ranked interaction-path and ownership
@@ -239,8 +293,9 @@ improvements, not a request for blanket rewrites or cosmetic file splitting.
 
 ## Deliberately not priorities
 
-- App Store metadata, public privacy policy, consumer onboarding, and generalized
-  release work while LifeLog remains a private personal app.
+- Public App Store marketing, ratings/review prompts, broad-market accessibility
+  localization, and other public-listing-specific work — in scope once TestFlight
+  distribution to trusted testers is solid, not before.
 - Cloud sync, a website, or multi-user infrastructure before local restore is complete
   and demonstrably atomic.
 - Broad medical-data collection, diagnoses, or correlations presented without enough
