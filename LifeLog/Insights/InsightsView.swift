@@ -271,9 +271,25 @@ struct InsightsView: View {
     }
 
     /// Rebuilds highlights only when its selected period or source data changes.
+    ///
+    /// `comparisons.count` alone is not enough: it only changes when a category
+    /// appears or disappears, not when an *existing* one's hours change -- which
+    /// is exactly what happens when a delayed HealthKit sync or a manual sleep
+    /// entry resolves after the first load. `.task(id:)` only re-runs when the
+    /// id string itself changes, so a stale "count" left the comparison for
+    /// "Sleep" (and everything else) frozen at whatever it read on the first
+    /// pass, even once the snapshot feeding the donut and glance tiles had moved
+    /// on to the correct numbers. Summing each comparison's delta makes the key
+    /// sensitive to the actual values, not just how many categories exist.
     private var highlightKey: String {
         let leadingPlace = periodLoader.snapshot.placeTotals.first
-        return "\(window.rawValue)-\(insightsScope.rawValue)-\(interval.start.timeIntervalSinceReferenceDate)-\(periodLoader.snapshot.comparisons.count)-\(leadingPlace?.id ?? "none")-\(leadingPlace?.hours ?? 0)"
+        // Minute precision, matching `formatHours`' own rounding elsewhere: fine
+        // enough to catch a real change, coarse enough that floating-point noise
+        // from re-deriving the same segments twice can't churn the key.
+        let comparisonSignature = periodLoader.snapshot.comparisons
+            .map { "\($0.name):\(Int(($0.hours * 60).rounded())):\(Int(($0.previousHours * 60).rounded()))" }
+            .joined(separator: ",")
+        return "\(window.rawValue)-\(insightsScope.rawValue)-\(interval.start.timeIntervalSinceReferenceDate)-\(comparisonSignature)-\(leadingPlace?.id ?? "none")-\(leadingPlace?.hours ?? 0)"
     }
 
     private func reloadHighlights() async {
