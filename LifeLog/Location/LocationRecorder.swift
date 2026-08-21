@@ -842,22 +842,23 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     /// neighbouring business over the top of somewhere the person named themselves.
     /// A geofence says "this is Home" the moment the boundary is crossed, with no
     /// Maps request and no delay — and, just as usefully, says when it was left.
-    /// Bumped after a confirmed crash loop on iOS 27.0: installing a TestFlight build
-    /// over an on-device debug build of the same bundle ID inherited `.authorizedAlways`
-    /// and background logging from the old process, so `CLMonitor` was constructed
-    /// within ~4 seconds of a cold launch and raised an uncaught assertion in
-    /// `+[CLMonitor _requestMonitorWithConfiguration:locationManager:completion:]` --
-    /// twice, identically, on every launch. A new identifier avoids reusing whatever
-    /// on-disk monitor state the previous binary left behind; the launch-time delay
-    /// below gives CoreLocation's connection to the new process room to settle first.
-    private static let placeMonitorIdentifier = "LifeLogSavedPlaces.v2"
+    /// Disabled after a confirmed, reproducible crash loop on iOS 27.0 (beta build
+    /// 24A5418b): `CLMonitor`'s own initializer raises an uncaught assertion in
+    /// `+[CLMonitor _requestMonitorWithConfiguration:locationManager:completion:]`
+    /// on every single launch -- three times, symbolicated to this call site, and
+    /// unchanged by a fresh monitor identifier or a 500ms delay before construction.
+    /// That rules out stale on-disk state or a launch-timing race; this is CLMonitor
+    /// itself failing on this OS. Saved Places still resolve without it, through the
+    /// CLVisit-vs-SavedPlace-proximity matching this geofence path was added to
+    /// improve on (see below) -- slower to recognise a place, but it doesn't crash.
+    /// Re-enable once Apple ships an iOS 27 build where this no longer reproduces.
+    private static let placeMonitoringDisabledPendingAppleFix = true
 
     private func startPlaceMonitoring() {
+        guard !Self.placeMonitoringDisabledPendingAppleFix else { return }
         guard authorization == .authorizedAlways, placeMonitorTask == nil else { return }
         placeMonitorTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(500))
-            guard !Task.isCancelled else { return }
-            let monitor = await CLMonitor(Self.placeMonitorIdentifier)
+            let monitor = await CLMonitor("LifeLogSavedPlaces")
             guard let self else { return }
             self.placeMonitor = monitor
             await self.refreshMonitoredRegions()

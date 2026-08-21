@@ -1,3 +1,15 @@
+## 2026-08-21 — Disabled CLMonitor geofence monitoring, still crashing — 2.25.11 (260)
+
+- Build 13's fresh identifier and launch delay (2.25.10) did not stop the crash: a
+  third, fully symbolicated report showed the exact same uncaught assertion at
+  `LocationRecorder.swift:860`, `CLMonitor`'s own initializer, on iOS 27.0 beta
+  build 24A5418b -- ruling out stale on-disk state or a launch-timing race. This
+  is CLMonitor itself failing on this OS. Place geofence monitoring is disabled
+  for now; Saved Places still resolve through the older CLVisit-vs-proximity
+  matching this feature was layered on top of, just without instant
+  boundary-crossing recognition. Re-enable once Apple ships a build where this
+  no longer reproduces.
+
 ## 2026-08-21 — Fixed launch crash loop in place geofence monitoring — 2.25.10 (259)
 
 - Build 12 (2.25.9) crash-looped on launch, twice, identically: installing over an
