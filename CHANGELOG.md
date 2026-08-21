@@ -1,5 +1,13 @@
 # Change log
 
+## 2026-08-21 — Added missing Health write purpose string — 2.25.9 (258)
+
+- App Store Connect rejected build 10 (ITMS-90683): the HealthKit entitlement
+  requires both `NSHealthShareUsageDescription` and
+  `NSHealthUpdateUsageDescription` in Info.plist even though LifeLog never
+  writes to Health (`requestAuthorization(toShare: [], ...)`). Added the
+  missing key, stating plainly that the app never writes Health data.
+
 ## 2026-08-21 — Cooled down HealthKit observer-triggered imports — 2.25.8 (257)
 
 - On a secondary iPhone left uncarried for a while, iCloud delivering its Health
