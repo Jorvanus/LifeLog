@@ -190,55 +190,39 @@ public App Store listing.
   the repair as a measured safety net until a test reproduces the race and the
   counter remains zero across real use.
 
-## In progress — pick this up first, mid-investigation as of 2026-08-22
-
-- [ ] **"One thing from today" showed "5h 27m more on sleep — Compared with the
-  previous day," and the real comparison should not have said that.** On
-  `weekend-testing`, not `main`. Sequence so far:
-  1. Confirmed the categorisation pipeline is source-agnostic: a `manual-sleep`
-     visit and an automatic `health-sleep` visit both resolve to the "Sleep"
-     category the same way (`Visit.insightCategory` → `ActivityCatalog.category`
-     keys off the activity string, never `source`). Not a manual-entry bug.
-  2. Confirmed `InsightsPeriodComparison.comparisonIntervals` builds a genuinely
-     symmetric elapsed-window pair (today clamped to `now`, "previous" shifted
-     back exactly one calendar day via `InsightWindow.previousComparisonInterval`
-     applied to the *already-clamped* current interval). Not a scope mismatch.
-  3. Hand-simulated `InsightsSnapshot.makeSegments`'s exact boundary/midpoint/
-     tie-break algorithm against a real backup
-     (`LifeLog-Backup-1787353549.json`, 2026-08-22 09:05) for both elapsed
-     windows. Result: today's Sleep should total ~5h27m (326.6 min, the
-     `health-sleep` visit alone) and yesterday's should total ~7h00m (420 min,
-     the `manual-sleep` visit 2026-08-20 23:46→07:00, correctly clipped to the
-     window and correctly winning its tie-break against the enclosing Home stay
-     by shorter full-visit duration) — i.e. the honest highlight should read
-     "1h 33m **less** on sleep," not "5h 27m more."
-  4. Found and fixed one real, confirmed staleness bug on the way: `highlightKey`
-     (`InsightsView.swift`) was built from `comparisons.count`, which only
-     changes when a *category* appears or disappears, not when an existing
-     one's *hours* change — exactly what a delayed HealthKit sync or a manual
-     entry resolving after first load does. `.task(id:)` never re-fired, so
-     `highlights.first` stayed frozen on whatever it computed first. Fixed to
-     key off each comparison's rounded hours instead of just the count.
-  5. **Reported still unchanged after a direct Xcode build+run of
-     `weekend-testing` onto the device** (ruling out "wrong branch"/stale
-     TestFlight build as the explanation) — so either (4) was insufficient, or
-     there is a second staleness layer upstream in `periodLoader.snapshot`
-     itself (`InsightsPeriodLoader.swift`, `InsightsAggregationCache.swift`)
-     that never got checked. `InsightsInvalidation` firing correctly on manual
-     sleep save was confirmed (`ManualSleepEntryView.swift:61`), but that only
-     proves the *notification* fires, not that `InsightsPeriodLoader` rebuilds
-     `comparisons` correctly in response, or that nothing else caches in
-     between.
-  **Next step**: get a fresh screenshot of Insights Day *and* a fresh backup
-  taken at the same moment (the elapsed comparison windows shift with time, so
-  a stale pairing will look wrong for reasons that have nothing to do with any
-  of this). Re-run the same hand-simulation against that fresh data first --
-  if the app's actual number still doesn't match the simulation, the bug is in
-  `InsightsPeriodLoader`/`InsightsAggregationCache`, not `DayHighlight`/
-  `InsightsSnapshot`; read those two files next, specifically whether a period
-  change re-triggers a full rebuild of `comparisons` or reuses a memoised one
-  keyed on something too coarse (the same class of bug as (4), just one layer
-  up).
+- [x] **"One thing from today" showed "5h 27m more on sleep — Compared with the
+  previous day" when the honest comparison was "1h 33m less."** Root cause found
+  and fixed 2026-08-22, confirmed against a fresh backup/screenshot pair taken at
+  the same moment (`LifeLog-Backup-1787354271.json`, 09:17:51). Not the
+  categorisation pipeline, the elapsed-window pairing, or `DayHighlight`/
+  `InsightsSnapshot`'s comparison math — all three were already confirmed sound
+  in the prior investigation pass, and `highlightKey`'s staleness
+  (`InsightsView.swift`, fixed earlier the same day) was real but not sufficient
+  on its own. The actual bug was one layer up, in `InsightsPeriodLoader.reload`'s
+  SwiftData fetch: its predicate was `visit.arrival >= fetchStart && visit.arrival
+  < fetchEnd`, but `InsightsSnapshot.makeSegments` selects and clips candidates
+  with `Visit.overlaps` (`arrival < range.end && (departure ?? now) > range.start`)
+  — a *laxer* lower bound that also admits a visit whose `arrival` predates the
+  range but that hadn't departed yet by the time the range started. The manual
+  sleep entry for the previous night (2026-08-20 23:46 → 07:00 local) arrived 14
+  minutes before the previous comparison window's own midnight boundary, so the
+  fetch dropped it entirely — not clipped, *absent*. `makeComparisons` then read
+  the previous period's missing "Sleep" category as `0` rather than the ~7h it
+  actually was, so `delta = 5.443 - 0 = +5.443h`, and the sign flipped from "less"
+  to "more" because the previous total didn't shrink, it vanished. The existing
+  "active visit supplement" query already patched this exact class of bug for a
+  still-*open* multi-day stay (`departure == nil`); it just never covered a
+  *completed* visit straddling the same boundary. Generalized that supplement's
+  predicate to `visit.arrival < fetchStart && (visit.departure ?? farFuture) >
+  fetchStart` (`InsightsPeriodLoader.swift`) — matching `Visit.overlaps`'s
+  semantics exactly, for either an open or a completed visit. Note: SwiftData's
+  `#Predicate` macro cannot translate a forced-unwrap (`departure! > fetchStart`)
+  to SQL and throws `unsupportedPredicate` at fetch time; the surrounding `catch`
+  swallowed that silently on the first attempt, so the fetch never actually
+  changed until the predicate was rewritten with `??` instead. Regression test:
+  `LifeLogTests/InsightsPeriodLoaderTests.swift` — inserts a completed visit
+  straddling a fetch boundary into an in-memory `ModelContainer`, confirmed to
+  fail against the pre-fix predicate and pass against the fix.
 
 ## Distribution readiness — new priority
 
