@@ -1,5 +1,16 @@
 # Change log
 
+## 2026-08-21 — Cooled down HealthKit observer-triggered imports — 2.25.8 (257)
+
+- On a secondary iPhone left uncarried for a while, iCloud delivering its Health
+  backlog as many small batches — plus a locked-device `errorDatabaseInaccessible`
+  failure retrying immediately — chained one full sleep/workouts/walking import
+  pass per delivery with nothing bounding the rate. A performance report from the
+  device showed 29 consecutive passes in about a minute, item counts staying flat
+  rather than trending toward zero. Observer-triggered imports (including the
+  chained replacement run after one finishes, on success, cancellation, or
+  failure) now coalesce into at most one pass every 60 seconds.
+
 ## 2026-08-21 — Manual visit before-context compiler fix — 2.25.7 (256)
 
 - The `beforeVisits` context row in `ManualVisitView` still inlined its label/

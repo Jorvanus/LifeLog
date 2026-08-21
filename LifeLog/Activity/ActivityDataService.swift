@@ -182,10 +182,8 @@ final class ActivityDataService {
 
     private func processHealthObserverDelivery(_ delivery: HealthObserverDelivery) {
         invalidateHealthSummaryCache()
-        guard observerDeliveryCoordinator.receive(delivery, importing: isImporting) else { return }
-        // Anchors make this cheap; the two-day read is only the bounded sleep rebuild
-        // and catches a complete night that was delivered after waking.
-        startImport(healthDays: 2, motionDays: nil)
+        guard observerDeliveryCoordinator.receive(delivery, importing: isImporting || observerCooldownTask != nil) else { return }
+        runObserverTriggeredImport()
     }
 
     private func finishHealthObserverDeliveries() {
@@ -194,8 +192,39 @@ final class ActivityDataService {
 
     private func continueQueuedHealthObserverImportIfNeeded() -> Bool {
         guard observerDeliveryCoordinator.takeReplacementIfNeeded() else { return false }
-        startImport(healthDays: 2, motionDays: nil)
+        runObserverTriggeredImport()
         return true
+    }
+
+    /// Coalesces HealthKit's own delivery bursts into at most one import every
+    /// `observerImportCooldown`, rather than one full sleep/workouts/walking pass per
+    /// delivery. Confirmed on a secondary iPhone that goes uncarried for a while: once
+    /// it reconnects, iCloud's Health backlog arrives as many small deliveries rather
+    /// than one batch, and a locked-device `errorDatabaseInaccessible` failure retried
+    /// immediately too — with nothing bounding the rate, either produced dozens of
+    /// back-to-back passes with flat, non-decreasing item counts.
+    private let observerImportCooldown: TimeInterval = 60
+    private var lastObserverImportStartedAt: Date?
+    private var observerCooldownTask: Task<Void, Never>?
+
+    private func runObserverTriggeredImport() {
+        let now = Date.now
+        if let last = lastObserverImportStartedAt, now.timeIntervalSince(last) < observerImportCooldown {
+            scheduleObserverTriggeredImport(after: observerImportCooldown - now.timeIntervalSince(last))
+            return
+        }
+        lastObserverImportStartedAt = now
+        startImport(healthDays: 2, motionDays: nil)
+    }
+
+    private func scheduleObserverTriggeredImport(after delay: TimeInterval) {
+        guard observerCooldownTask == nil else { return }
+        observerCooldownTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard let self else { return }
+            self.observerCooldownTask = nil
+            self.runObserverTriggeredImport()
+        }
     }
 
     /// Asks for Health and Motion once, on first run.
