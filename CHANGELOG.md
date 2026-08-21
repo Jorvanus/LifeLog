@@ -1,4 +1,15 @@
-# Change log
+## 2026-08-21 — Fixed launch crash loop in place geofence monitoring — 2.25.10 (259)
+
+- Build 12 (2.25.9) crash-looped on launch, twice, identically: installing over an
+  on-device debug build of the same bundle ID meant `.authorizedAlways` and
+  background logging were already active, so `CLMonitor` was constructed within
+  ~4 seconds of a cold launch and raised an uncaught assertion in
+  `+[CLMonitor _requestMonitorWithConfiguration:locationManager:completion:]`
+  (iOS 27.0). Moved the monitor identifier to `LifeLogSavedPlaces.v2` so it can't
+  pick up on-disk state a previous binary left behind, and gave the launch path a
+  500ms delay before constructing it so CoreLocation's connection to the new
+  process has room to settle. Not reproducible here without the physical device
+  and iOS 27 beta that hit it -- needs on-device confirmation.
 
 ## 2026-08-21 — Added missing Health write purpose string — 2.25.9 (258)
 

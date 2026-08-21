@@ -842,10 +842,22 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     /// neighbouring business over the top of somewhere the person named themselves.
     /// A geofence says "this is Home" the moment the boundary is crossed, with no
     /// Maps request and no delay — and, just as usefully, says when it was left.
+    /// Bumped after a confirmed crash loop on iOS 27.0: installing a TestFlight build
+    /// over an on-device debug build of the same bundle ID inherited `.authorizedAlways`
+    /// and background logging from the old process, so `CLMonitor` was constructed
+    /// within ~4 seconds of a cold launch and raised an uncaught assertion in
+    /// `+[CLMonitor _requestMonitorWithConfiguration:locationManager:completion:]` --
+    /// twice, identically, on every launch. A new identifier avoids reusing whatever
+    /// on-disk monitor state the previous binary left behind; the launch-time delay
+    /// below gives CoreLocation's connection to the new process room to settle first.
+    private static let placeMonitorIdentifier = "LifeLogSavedPlaces.v2"
+
     private func startPlaceMonitoring() {
         guard authorization == .authorizedAlways, placeMonitorTask == nil else { return }
         placeMonitorTask = Task { [weak self] in
-            let monitor = await CLMonitor("LifeLogSavedPlaces")
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            let monitor = await CLMonitor(Self.placeMonitorIdentifier)
             guard let self else { return }
             self.placeMonitor = monitor
             await self.refreshMonitoredRegions()
