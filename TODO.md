@@ -190,6 +190,56 @@ public App Store listing.
   the repair as a measured safety net until a test reproduces the race and the
   counter remains zero across real use.
 
+## In progress — pick this up first, mid-investigation as of 2026-08-22
+
+- [ ] **"One thing from today" showed "5h 27m more on sleep — Compared with the
+  previous day," and the real comparison should not have said that.** On
+  `weekend-testing`, not `main`. Sequence so far:
+  1. Confirmed the categorisation pipeline is source-agnostic: a `manual-sleep`
+     visit and an automatic `health-sleep` visit both resolve to the "Sleep"
+     category the same way (`Visit.insightCategory` → `ActivityCatalog.category`
+     keys off the activity string, never `source`). Not a manual-entry bug.
+  2. Confirmed `InsightsPeriodComparison.comparisonIntervals` builds a genuinely
+     symmetric elapsed-window pair (today clamped to `now`, "previous" shifted
+     back exactly one calendar day via `InsightWindow.previousComparisonInterval`
+     applied to the *already-clamped* current interval). Not a scope mismatch.
+  3. Hand-simulated `InsightsSnapshot.makeSegments`'s exact boundary/midpoint/
+     tie-break algorithm against a real backup
+     (`LifeLog-Backup-1787353549.json`, 2026-08-22 09:05) for both elapsed
+     windows. Result: today's Sleep should total ~5h27m (326.6 min, the
+     `health-sleep` visit alone) and yesterday's should total ~7h00m (420 min,
+     the `manual-sleep` visit 2026-08-20 23:46→07:00, correctly clipped to the
+     window and correctly winning its tie-break against the enclosing Home stay
+     by shorter full-visit duration) — i.e. the honest highlight should read
+     "1h 33m **less** on sleep," not "5h 27m more."
+  4. Found and fixed one real, confirmed staleness bug on the way: `highlightKey`
+     (`InsightsView.swift`) was built from `comparisons.count`, which only
+     changes when a *category* appears or disappears, not when an existing
+     one's *hours* change — exactly what a delayed HealthKit sync or a manual
+     entry resolving after first load does. `.task(id:)` never re-fired, so
+     `highlights.first` stayed frozen on whatever it computed first. Fixed to
+     key off each comparison's rounded hours instead of just the count.
+  5. **Reported still unchanged after a direct Xcode build+run of
+     `weekend-testing` onto the device** (ruling out "wrong branch"/stale
+     TestFlight build as the explanation) — so either (4) was insufficient, or
+     there is a second staleness layer upstream in `periodLoader.snapshot`
+     itself (`InsightsPeriodLoader.swift`, `InsightsAggregationCache.swift`)
+     that never got checked. `InsightsInvalidation` firing correctly on manual
+     sleep save was confirmed (`ManualSleepEntryView.swift:61`), but that only
+     proves the *notification* fires, not that `InsightsPeriodLoader` rebuilds
+     `comparisons` correctly in response, or that nothing else caches in
+     between.
+  **Next step**: get a fresh screenshot of Insights Day *and* a fresh backup
+  taken at the same moment (the elapsed comparison windows shift with time, so
+  a stale pairing will look wrong for reasons that have nothing to do with any
+  of this). Re-run the same hand-simulation against that fresh data first --
+  if the app's actual number still doesn't match the simulation, the bug is in
+  `InsightsPeriodLoader`/`InsightsAggregationCache`, not `DayHighlight`/
+  `InsightsSnapshot`; read those two files next, specifically whether a period
+  change re-triggers a full rebuild of `comparisons` or reuses a memoised one
+  keyed on something too coarse (the same class of bug as (4), just one layer
+  up).
+
 ## Distribution readiness — new priority
 
 Concrete work that was explicitly out of scope while LifeLog was private-only.
