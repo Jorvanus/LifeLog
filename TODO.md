@@ -60,6 +60,60 @@ integrations.
   `ActivityLocationPolicy+Journeys.swift:114`), so a next change here needs a real
   before/after on-device comparison, not just reasoning about the code.
 
+- [ ] **`extendStay` cannot tell "still getting ready" from "already gone" apart,
+  and a real commute got shrunk from ~21 minutes to a displayed 7 as a result.**
+  Confirmed against the real archive 2026-08-21/22: Core Location logged
+  `geofence-exit` and `visit-departure` for Home at 08:26:24/08:27:08 (raw
+  samples then show steady movement to 9.4 km away by 08:41), but the Home
+  `Visit`'s persisted departure reads 08:40:31 -- matching a `health-walking`
+  record that starts then. `extendStay` (`ActivityLocationPolicy+Journeys.swift:96`)
+  reached Home's departure forward across the entire real drive because nothing
+  in `stays`/`activities` occupied the gap, which is the *only* evidence it ever
+  consults. The same pattern, same ~13-14 minute gap, is also the shape of the
+  legitimate case already covered by
+  `OverlapResolutionTests.stayHoldsUntilTheWalkThatLeftIt` (Home closed
+  2026-08-08 07:02:44, a `health-workout` walk began 07:16:22, and extending was
+  correct -- they really were still home). A same-source-type, same-duration fix
+  attempted 2026-08-22 (excluding all HealthKit-sourced movement from
+  `extendStay`) was reverted before landing because it cannot tell these two
+  cases apart either -- it would have silently broken the tested, correct case
+  to fix the broken one. Neither `health-walking` nor `health-workout` records
+  carry coordinates, so the source type alone is not enough signal.
+  **Design sketch for a real fix, not yet started:**
+  1. `LocationJournal` (`Diagnostics/LocationJournal.swift`) already has exactly
+     the missing signal -- `geofence-exit`/`visit-departure` rows carry real
+     coordinates and `distanceFromCurrentVisit` -- but only when
+     `LocationDiagnostics.isDetailed` is on (it happens to be, on the owner's
+     phone, which is how this was diagnosed at all) and only for its most
+     recent 500 rows (`LocationJournal.retentionLimit`). A design that relies on
+     it must treat "no rows in the gap" as *inconclusive*, not as "confirmed
+     still there" -- diagnostics being off and genuine silence must stay
+     indistinguishable, or every stay would extend by default the moment
+     detailed diagnostics is switched off.
+  2. Add `LocationJournal.showsDeparture(fromStayAt:in:beyond:context:) -> Bool`:
+     query `LocationEvent` rows in the candidate gap window and return whether
+     any exceeds `ActivityLocationPolicy.departureRadius` (250 m, already
+     defined at `ActivityLocationPolicy+Journeys.swift:16`) from the stay's
+     coordinate.
+  3. Thread a `context: ModelContext?` into `extendStay` (the call site,
+     `boundStays(around:stays:context:now:)` at line 227, already carries one)
+     and refuse to extend a candidate when `showsDeparture` is true for its gap.
+     With diagnostics off or the journal empty for that window, the query finds
+     nothing and today's behaviour is unchanged -- this is strictly more
+     conservative, never a new way to wrongly hold a stay open.
+  4. Add `LocationEvent` fixtures to `OverlapResolutionTests.swift` alongside
+     the existing ones: the 8 August case replayed with **no** location events
+     (must still extend, guarding against repeating the reverted mistake), and
+     the 21 August case replayed with real `geofence-exit`/`live-location-sample`
+     rows showing distance past 250 m (must **not** extend).
+  5. Given `boundStay`/`extendStay` already caused a nine-day repair loop from an
+     earlier tuning attempt (`ActivityLocationPolicy+Journeys.swift:114`), land
+     this diagnostics-only first -- log what it *would* have decided differently
+     (same pattern as the existing "Journey ... bounded/held/changed nothing"
+     logging at line 261) for a week or two of real mornings, and compare
+     against what the owner actually remembers, before letting it mutate
+     `stay.departure` live.
+
 - [ ] **Find and eliminate the source of recurring duplicate sleep before removing
   `SleepSessionRepair`.** It has found duplicates after the original arrival-window
   bug was fixed, including around erase/restore and live Health sync. Serialize
