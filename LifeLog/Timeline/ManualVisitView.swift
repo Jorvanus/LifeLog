@@ -159,28 +159,38 @@ struct ManualVisitView: View {
             .joined(separator: "\n")
     }
 
+    /// Split out of the body's ForEach closures: inlining this ternary chain
+    /// directly in the view builder overwhelmed the type checker.
+    @ViewBuilder
+    private func contextRow(index: Int, visit: Visit, immediateLabel: String, laterLabel: String, identifierBase: String) -> some View {
+        let label = index == 0 ? immediateLabel : laterLabel
+        let identifier = index == 0 ? identifierBase : "\(identifierBase)-\(index)"
+        BorderingVisitRow(label: label, visit: visit) {
+            selectPlace(from: visit)
+        }
+        .accessibilityIdentifier(identifier)
+    }
+
     var body: some View {
         NavigationStack {
             Form {
                 if !beforeVisits.isEmpty || !afterVisits.isEmpty {
                     Section {
                         ForEach(Array(beforeVisits.enumerated()), id: \.offset) { index, visit in
-                            BorderingVisitRow(label: index == 0 ? "Immediately before" : "Earlier", visit: visit) {
-                                selectPlace(from: visit)
-                            }
-                            .accessibilityIdentifier(index == 0
-                                ? "manual-visit-before-context"
-                                : "manual-visit-before-context-\(index)")
+                            contextRow(
+                                index: index,
+                                visit: visit,
+                                immediateLabel: "Immediately before",
+                                laterLabel: "Earlier",
+                                identifierBase: "manual-visit-before-context")
                         }
                         ForEach(Array(afterVisits.enumerated()), id: \.offset) { index, visit in
-                            let rowLabel: String = index == 0 ? "Immediately after" : "Later"
-                            let rowIdentifier: String = index == 0
-                                ? "manual-visit-after-context"
-                                : "manual-visit-after-context-\(index)"
-                            BorderingVisitRow(label: rowLabel, visit: visit) {
-                                selectPlace(from: visit)
-                            }
-                            .accessibilityIdentifier(rowIdentifier)
+                            contextRow(
+                                index: index,
+                                visit: visit,
+                                immediateLabel: "Immediately after",
+                                laterLabel: "Later",
+                                identifierBase: "manual-visit-after-context")
                         }
                         if let travelEndpoints {
                             Button {

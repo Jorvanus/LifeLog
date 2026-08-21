@@ -1,5 +1,12 @@
 # Change log
 
+## 2026-08-21 — Manual visit before-context compiler fix — 2.25.7 (256)
+
+- The `beforeVisits` context row in `ManualVisitView` still inlined its label/
+  identifier ternaries directly in the view builder, unlike the `afterVisits`
+  row fixed previously; the debug simulator build timed out type-checking it.
+  Extracted a shared `contextRow` helper used by both rows.
+
 ## 2026-08-21 — Annual chart compiler simplification — 2.25.6 (255)
 
 - Precomputed annual chart bars before entering the Swift Charts builder so
