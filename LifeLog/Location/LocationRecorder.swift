@@ -80,12 +80,11 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     private var diagnosticsRecorder = LocationDiagnosticsRecorder()
     private let placeResolutionCoordinator = PlaceResolutionCoordinator()
     private var context: ModelContext?
-    private var serviceSession: CLServiceSession?
-    private var serviceSessionRequirement: CLServiceSession.AuthorizationRequirement?
-    /// Distinguishes one session from its replacement, so a finished stream only ever
-    /// clears its own session. See `releaseServiceSession(generation:)`.
-    private var serviceSessionGeneration = 0
-    private var diagnosticTask: Task<Void, Never>?
+    /// The `CLServiceSession` that keeps Core Location delivering -- see
+    /// `LocationServiceSessionController`'s own doc comment for the boundary:
+    /// this recorder still interprets every diagnostic, the controller only
+    /// owns whether a session needs rebuilding and keeps its stream running.
+    private let serviceSessionController = LocationServiceSessionController()
     private var identifyingVisits: Set<ObjectIdentifier> = []
     /// MapKit and reverse geocoding are a single resolution attempt. A noisy stream
     /// of location fixes must not turn one unresolved stay into a request per fix.
@@ -199,11 +198,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         placeMonitor = nil
         monitoredPlaces = [:]
         manager.allowsBackgroundLocationUpdates = false
-        diagnosticTask?.cancel()
-        diagnosticTask = nil
-        serviceSession?.invalidate()
-        serviceSession = nil
-        serviceSessionRequirement = nil
+        serviceSessionController.invalidate()
         confirmationSession.cancel()
     }
 
@@ -220,54 +215,16 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     }
 
     /// Holds the session that keeps Core Location delivering, rebuilding it whenever
-    /// there is not a live one.
-    ///
-    /// The guard used to compare the requirement alone, which made a dead session
-    /// permanent: `serviceSessionRequirement` stayed `.always` after a session ended —
-    /// its diagnostic stream finishing or throwing, typically once authorization was
-    /// refused — so every later `startBackgroundWorkflow()` matched the stale
-    /// requirement and returned without creating a replacement. Background recording
-    /// then stayed off no matter how many times it was restarted, and only a relaunch
-    /// (which builds a fresh recorder) brought it back. Checking that a session
-    /// actually exists, and clearing it when its stream ends, lets a restart restart.
+    /// `LocationServiceSessionController` says there is not a live one. See that
+    /// type's doc comment for why a dead session must not be assumed live.
     private func holdServiceSession(requiring requirement: CLServiceSession.AuthorizationRequirement) {
-        guard LocationRecoveryCoordinator.shouldRebuildServiceSession(
-            held: serviceSessionRequirement, hasLiveSession: serviceSession != nil, required: requirement
-        ) else { return }
-        diagnosticTask?.cancel()
-        serviceSession?.invalidate()
-
-        let session = CLServiceSession(authorization: requirement)
-        serviceSessionGeneration += 1
-        let generation = serviceSessionGeneration
-        serviceSession = session
-        serviceSessionRequirement = requirement
-        diagnosticTask = Task { [weak self, session] in
-            do {
-                for try await diagnostic in session.diagnostics {
-                    guard !Task.isCancelled else { return }
-                    self?.handle(diagnostic)
-                }
-            } catch is CancellationError {
-                return
-            } catch {
+        serviceSessionController.hold(
+            requiring: requirement,
+            onDiagnostic: { [weak self] diagnostic in self?.handle(diagnostic) },
+            onStreamFailure: { [weak self] in
                 self?.lastError = "Location permission status couldn't be refreshed."
             }
-            // Reached only when this session's stream is finished for good. A
-            // cancelled task is a deliberate replacement and returns above, so it
-            // never releases the newer session out from under itself.
-            guard !Task.isCancelled else { return }
-            self?.releaseServiceSession(generation: generation)
-        }
-    }
-
-    /// Drops the cached session once its stream has ended, so the next
-    /// `holdServiceSession` builds a new one. The generation check means a session
-    /// that has already been replaced cannot clear its successor.
-    private func releaseServiceSession(generation: Int) {
-        guard generation == serviceSessionGeneration else { return }
-        serviceSession = nil
-        serviceSessionRequirement = nil
+        )
     }
 
     private func handle(_ diagnostic: CLServiceSession.Diagnostic) {

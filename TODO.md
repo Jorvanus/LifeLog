@@ -217,18 +217,27 @@ A code-first audit on 2026-08-20. These are ranked interaction-path and ownershi
 improvements, not a request for blanket rewrites or cosmetic file splitting.
 
 - [ ] **Continue splitting `LocationRecorder` at its existing component seams.**
-  The confirmation state machine and monitored-region synchronisation moved out
-  2026-08-22: `ArrivalConfirmationSession` (`LocationRecordingComponents.swift`)
-  now owns the live-location burst's samples, pending arrival, task lifecycle,
-  and waiters — previously five separate stored properties on the recorder
-  mutated from four methods — and `GeofenceMonitor.plan(wanted:
-  monitoredIdentifiers:)` is a pure diff extracted from
-  `refreshMonitoredRegions`'s inline add/remove loop. Nine new tests cover both
-  directly; the full arrival/incremental-resolution suite passed unmodified.
-  At ~1,170 lines the recorder still owns service-session lifetime, delegate
-  adaptation, raw evidence, visit mutation, Saved Place caching, reverse
-  geocoding, Wi-Fi sampling, and diagnostics — real further-splitting
-  opportunity remains at the same seams, just not picked yet.
+  Three seams moved out 2026-08-22: `ArrivalConfirmationSession` owns the
+  live-location burst's samples, pending arrival, task lifecycle, and
+  waiters (previously five stored properties mutated from four methods);
+  `GeofenceMonitor.plan(wanted:monitoredIdentifiers:)` is a pure diff
+  extracted from `refreshMonitoredRegions`'s inline add/remove loop; and
+  `LocationServiceSessionController` owns the `CLServiceSession` that keeps
+  Core Location delivering -- which requirement it holds, its diagnostic
+  stream, and the generation bookkeeping that stops a just-replaced
+  session's stream-ended callback from clearing its successor (previously
+  four stored properties: `serviceSession`, `serviceSessionRequirement`,
+  `serviceSessionGeneration`, `diagnosticTask`). The full arrival/
+  incremental-resolution suite passed unmodified after each.
+  At ~1,126 lines the recorder still owns delegate adaptation, raw
+  evidence, visit mutation, Saved Place caching, reverse geocoding, Wi-Fi
+  sampling, and diagnostics. Of these, Saved Place caching (`savedPlaceCache`,
+  `loadSavedPlaceCache`, `nearestSavedPlace`) and reverse geocoding
+  (`reverseGeocode`, `markUnknown`, tied to `identifyPlace`'s Maps-lookup
+  flow) look like the next-clearest seams; visit mutation (`createVisit`,
+  `closeVisit`, `closeMonitoredVisit`) is the largest but is also the part
+  most entangled with the others (Saved Place lookup, place identification,
+  Wi-Fi anchoring all happen inline in `createVisit`), so it is likely last.
 
 ## Deliberately not priorities
 

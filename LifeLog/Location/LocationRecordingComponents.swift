@@ -246,6 +246,84 @@ final class ArrivalConfirmationSession {
     }
 }
 
+/// Owns the `CLServiceSession` that keeps Core Location delivering: which
+/// requirement it currently holds, its diagnostic stream, and the generation
+/// bookkeeping that stops a stream ending for a just-replaced session from
+/// clearing its successor.
+///
+/// `LocationRecorder` still decides what each diagnostic means for
+/// `lastError`/`Diagnostics` -- this collaborator only owns whether a session
+/// needs rebuilding and keeps its stream running. Previously four separate
+/// stored properties (`serviceSession`, `serviceSessionRequirement`,
+/// `serviceSessionGeneration`, `diagnosticTask`) read and written from three
+/// different methods.
+@MainActor
+final class LocationServiceSessionController {
+    private var session: CLServiceSession?
+    private var requirement: CLServiceSession.AuthorizationRequirement?
+    private var generation = 0
+    private var diagnosticTask: Task<Void, Never>?
+
+    /// Rebuilds the session only when `LocationRecoveryCoordinator.
+    /// shouldRebuildServiceSession` says the held one cannot be assumed to
+    /// still be serving `requirement` -- see that function's own doc comment
+    /// for why a session whose stream already ended must not be treated as
+    /// live. `onDiagnostic` runs for every diagnostic the new session's
+    /// stream delivers; `onStreamFailure` only when the stream throws, not
+    /// when it is cancelled by a deliberate replacement.
+    func hold(requiring requirement: CLServiceSession.AuthorizationRequirement,
+             onDiagnostic: @escaping (CLServiceSession.Diagnostic) -> Void,
+             onStreamFailure: @escaping () -> Void) {
+        guard LocationRecoveryCoordinator.shouldRebuildServiceSession(
+            held: self.requirement, hasLiveSession: session != nil, required: requirement
+        ) else { return }
+        diagnosticTask?.cancel()
+        session?.invalidate()
+
+        let newSession = CLServiceSession(authorization: requirement)
+        generation += 1
+        let currentGeneration = generation
+        session = newSession
+        self.requirement = requirement
+        diagnosticTask = Task { [weak self, newSession] in
+            do {
+                for try await diagnostic in newSession.diagnostics {
+                    guard !Task.isCancelled else { return }
+                    onDiagnostic(diagnostic)
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                onStreamFailure()
+            }
+            // Reached only when this session's stream is finished for good. A
+            // cancelled task is a deliberate replacement and returns above, so
+            // it never releases the newer session out from under itself.
+            guard !Task.isCancelled else { return }
+            self?.release(generation: currentGeneration)
+        }
+    }
+
+    /// Drops the cached session once its stream has ended, so the next `hold`
+    /// builds a new one. The generation check means a session that has
+    /// already been replaced cannot clear its successor.
+    private func release(generation: Int) {
+        guard generation == self.generation else { return }
+        session = nil
+        requirement = nil
+    }
+
+    /// Tears the session down without waiting for its stream to end on its
+    /// own -- background logging turned off.
+    func invalidate() {
+        diagnosticTask?.cancel()
+        diagnosticTask = nil
+        session?.invalidate()
+        session = nil
+        requirement = nil
+    }
+}
+
 /// Tracks the newest Maps request for a visit. A correction can invalidate its token,
 /// ensuring a late response cannot publish after a newer choice.
 @MainActor

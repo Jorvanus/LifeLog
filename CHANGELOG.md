@@ -1,3 +1,20 @@
+## 2026-08-22 — Split LocationRecorder's service-session lifetime out
+
+- Extracted `LocationServiceSessionController` (`LocationRecordingComponents.swift`):
+  owns the `CLServiceSession` that keeps Core Location delivering -- which
+  requirement it holds, its diagnostic stream, and the generation bookkeeping
+  that stops a just-replaced session's stream-ended callback from clearing
+  its successor. Previously four stored properties (`serviceSession`,
+  `serviceSessionRequirement`, `serviceSessionGeneration`, `diagnosticTask`)
+  read and written from three different methods. `LocationRecorder` still
+  decides what each diagnostic means for `lastError`/`Diagnostics`; the
+  controller only owns whether a session needs rebuilding and keeps its
+  stream running. `LocationRecorder` is down to ~1,126 lines (1,200 before
+  this and the confirmation/region-sync split earlier today). Full suite
+  (679 tests) passes unmodified; verified live in the simulator that
+  location recording, permissions, and the recorder-backed screens still
+  work.
+
 ## 2026-08-22 — Actionable-warning-clean build
 
 - Fixed every actionable compiler warning: `openAppleHealth()`/`openAppSettings()`
