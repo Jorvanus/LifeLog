@@ -1,3 +1,19 @@
+## 2026-08-22 — Match Year's Sleep/Workouts chart colours to the rest of the page
+
+- Prompted by a screenshot: the Movement/Sleep/Workouts chart used a flat
+  blue for every tab, which didn't match "How the year was spent" a few
+  cards up on the same Year screen, where Sleep draws in slate
+  (`#3E5A76`) and Fitness in pink (`#FF2D55`). Same colour, different
+  meaning in two places on one page. `AnnualHealthChart` in
+  `YearInsightsView.swift` now takes a `color` parameter; `AnnualHealthVisual`
+  supplies `insightColor(for: "Sleep")` / `insightColor(for: "Fitness")` for
+  those two tabs, matching the established category colours exactly since
+  both come from the same `CategoryPalette`. Movement stays plain blue --
+  it blends steps/walking/energy/exercise, none of which map to a single
+  category, so borrowing one of their colours would be arbitrary rather
+  than meaningful. Clean build, full `LifeLogTests` suite passes, dead-code
+  scan clean.
+
 ## 2026-08-22 — Remove the duplicate legend from "How the year was spent"
 
 - Prompted by a screenshot: the chart showed two legends stacked on top of

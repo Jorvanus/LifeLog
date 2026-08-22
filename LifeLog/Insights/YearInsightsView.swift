@@ -284,6 +284,22 @@ private struct AnnualHealthVisual: View {
 
     private var primarySeries: AnnualHealthSeries? { visibleSeries.first }
 
+    /// Sleep and Workouts each already have an established colour elsewhere on
+    /// this same Year screen -- "How the year was spent" draws Sleep and
+    /// Fitness in these exact colours -- so this chart uses them too rather
+    /// than a flat blue that means nothing next to that one. Movement blends
+    /// several unrelated metrics (steps, walking, energy, exercise) that don't
+    /// map to a single category, so it keeps a neutral colour instead of
+    /// borrowing one that would only be correct for whichever metric happens
+    /// to be first.
+    private var chartColor: Color {
+        switch selection {
+        case .movement: return .blue
+        case .sleep: return insightColor(for: "Sleep")
+        case .workouts: return insightColor(for: "Fitness")
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Movement and wellbeing").font(.headline)
@@ -303,7 +319,7 @@ private struct AnnualHealthVisual: View {
             } else if let primarySeries {
                 Text("\(primarySeries.title) · Apple Health")
                     .font(.headline)
-                AnnualHealthChart(months: months, series: primarySeries)
+                AnnualHealthChart(months: months, series: primarySeries, color: chartColor)
                 HStack(spacing: 18) {
                     AnnualHealthSummary(title: "Annual average", value: averageText(for: primarySeries))
                     AnnualHealthSummary(title: "Highest month", value: highestText(for: primarySeries))
@@ -333,6 +349,7 @@ private struct AnnualHealthVisual: View {
 private struct AnnualHealthChart: View {
     let months: [AnnualInsights.Month]
     let series: AnnualHealthSeries
+    let color: Color
 
     private var points: [AnnualHealthPoint] { series.points(months: months) }
     private var axisLabels: [String] {
@@ -344,7 +361,7 @@ private struct AnnualHealthChart: View {
     var body: some View {
         Chart(points) { point in
             BarMark(x: .value("Month", point.label), y: .value(series.title, point.value))
-                .foregroundStyle(.blue.gradient)
+                .foregroundStyle(color.gradient)
         }
         .chartXAxis {
             AxisMarks(values: axisLabels) { value in
