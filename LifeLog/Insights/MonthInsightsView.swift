@@ -26,6 +26,7 @@ struct MonthInsightsView: View {
     let comparisonSubtitle: String
     let heroMetrics: [MonthlyHeroMetric]
     let monthDays: [MonthlyInsights.Day]
+    let health: MonthlyInsights.HealthMetrics
     let periodTitle: String
     let analysisInterval: DateInterval
     let segments: [InsightSegment]
@@ -33,12 +34,14 @@ struct MonthInsightsView: View {
     let onOpenCategory: (String) -> Void
     let onOpenComparison: (MonthlyInsights.ActivityChange) -> Void
     let onSelectDay: (Date) -> Void
+    @State private var selectedHealthSection: HealthChartSection = .movement
 
     var body: some View {
         heroSection
         changesSection
         balanceSection
         placesSection
+        healthSection
         calendarSection
     }
 
@@ -117,6 +120,12 @@ struct MonthInsightsView: View {
             .accessibilityIdentifier("insights-month-places")
     }
 
+    private var healthSection: some View {
+        MonthHealthVisual(health: health, selection: $selectedHealthSection)
+            .padding(20).lifeCard()
+            .accessibilityIdentifier("insights-month-wellbeing")
+    }
+
     private var calendarSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Month at a glance").font(.headline)
@@ -125,6 +134,114 @@ struct MonthInsightsView: View {
         }
         .padding(20).lifeCard()
         .accessibilityIdentifier("insights-month-calendar")
+    }
+}
+
+/// Mirrors Year's `AnnualHealthVisual`, one bar per day of the month instead
+/// of per month of the year -- same picker, same three sections, same
+/// category-matched colours. Kept as its own type (not a generic "period"
+/// wrapper around Year's) since the two differ in exactly the small ways
+/// that would otherwise need a pile of parameters: axis labelling density,
+/// per-bar units ("km/day" vs. "km/month"), and the average/highest copy.
+private struct MonthHealthVisual: View {
+    let health: MonthlyInsights.HealthMetrics
+    @Binding var selection: HealthChartSection
+
+    private var axis: [HealthChartAxisPoint] {
+        health.days.map { HealthChartAxisPoint(id: $0, label: dayLabel($0)) }
+    }
+
+    /// Up to 31 daily bars can't each carry a label the way Year's twelve
+    /// monthly ones can -- thinned to roughly weekly ticks, always including
+    /// the final day so the axis doesn't end mid-gap.
+    private var axisLabels: [String] {
+        let points = axis
+        return points.enumerated().compactMap { index, point in
+            index.isMultiple(of: 5) || index == points.count - 1 ? point.label : nil
+        }
+    }
+
+    private var series: [HealthChartSeries] {
+        let movement: [HealthChartSeries] = [
+            HealthChartSeries(id: "steps", title: "Steps", unit: "steps/day", values: health.dailySteps, integerValues: true),
+            HealthChartSeries(id: "walking", title: "Walking/running", unit: "km/day", values: health.dailyWalkingKilometres, integerValues: false),
+            HealthChartSeries(id: "energy", title: "Active energy", unit: "kcal/day", values: health.dailyActiveEnergy, integerValues: true),
+            HealthChartSeries(id: "exercise", title: "Exercise", unit: "min/day", values: health.dailyExerciseMinutes, integerValues: true)
+        ]
+        switch selection {
+        case .movement: return movement
+        case .sleep: return [HealthChartSeries(id: "sleep", title: "Average sleep", unit: "h/night", values: health.dailySleepHours, integerValues: false)]
+        case .workouts: return [HealthChartSeries(id: "workouts", title: "Workout duration", unit: "min/day", values: health.dailyWorkoutMinutes, integerValues: true)]
+        }
+    }
+
+    private var visibleSeries: [HealthChartSeries] {
+        let available = series.filter(\.hasData)
+        if selection == .movement, let first = available.first {
+            return [first]
+        }
+        return available
+    }
+
+    private var primarySeries: HealthChartSeries? { visibleSeries.first }
+
+    /// Matches Year's `AnnualHealthVisual.chartColor` exactly -- see its
+    /// comment for why Sleep/Workouts borrow the established category
+    /// colours and Movement stays neutral.
+    private var chartColor: Color {
+        switch selection {
+        case .movement: return .blue
+        case .sleep: return insightColor(for: "Sleep")
+        case .workouts: return insightColor(for: "Fitness")
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Movement and wellbeing").font(.headline)
+            Text("Apple Health")
+                .font(.subheadline).foregroundStyle(.secondary)
+            Picker("Health summary", selection: $selection) {
+                ForEach(HealthChartSection.allCases) { section in
+                    Text(section.rawValue).tag(section)
+                }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("month-health-picker")
+
+            if !health.healthDataAvailable {
+                ContentUnavailableView("Apple Health is not connected", systemImage: "heart.slash",
+                                       description: Text("Connect Apple Health to add movement, sleep, and workout summaries for this month."))
+            } else if let primarySeries {
+                Text("\(primarySeries.title) · Apple Health")
+                    .font(.headline)
+                HealthBarChart(series: primarySeries, points: primarySeries.points(axis: axis), axisLabels: axisLabels,
+                              color: chartColor, periodAdjective: "Daily", accessibilityIdentifier: "month-health-chart")
+                HStack(spacing: 18) {
+                    HealthChartSummary(title: "Monthly average", value: averageText(for: primarySeries))
+                    HealthChartSummary(title: "Highest day", value: highestText(for: primarySeries))
+                }
+                ForEach(visibleSeries.dropFirst()) { item in
+                    HealthChartSummaryRow(series: item, averageLabel: "daily average")
+                }
+            } else {
+                ContentUnavailableView("No \(selection.rawValue.lowercased()) data", systemImage: "chart.xyaxis.line",
+                                       description: Text("There is no usable \(selection.rawValue.lowercased()) data from Apple Health for this month."))
+            }
+        }
+    }
+
+    private func averageText(for series: HealthChartSeries) -> String {
+        let values = series.values.compactMap { $0 }
+        return series.formatted(values.isEmpty ? 0 : values.reduce(0, +) / Double(values.count))
+    }
+
+    private func highestText(for series: HealthChartSeries) -> String {
+        series.formatted(series.values.compactMap { $0 }.max() ?? 0)
+    }
+
+    private func dayLabel(_ date: Date) -> String {
+        "\(Calendar.current.component(.day, from: date))"
     }
 }
 

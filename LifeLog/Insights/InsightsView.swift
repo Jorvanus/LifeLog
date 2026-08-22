@@ -242,6 +242,10 @@ struct InsightsView: View {
                 guard window == .year else { return }
                 await reloadAnnualHealth()
             }
+            .task(id: monthDailyHealthKey) {
+                guard window == .month else { return }
+                await reloadMonthDailyHealth()
+            }
             .task(id: healthSummaryKey) {
                 guard window != .year else { return }
                 await reloadHealthSummary()
@@ -256,6 +260,10 @@ struct InsightsView: View {
     }
 
     private var annualKey: String {
+        "\(window.rawValue)-\(insightsScope.rawValue)-\(interval.start.timeIntervalSinceReferenceDate)-\(aggregationGeneration)"
+    }
+
+    private var monthDailyHealthKey: String {
         "\(window.rawValue)-\(insightsScope.rawValue)-\(interval.start.timeIntervalSinceReferenceDate)-\(aggregationGeneration)"
     }
 
@@ -490,7 +498,7 @@ struct InsightsView: View {
                 monthAverageNightlySleep: healthState.monthAverageNightlySleep, monthSteps: healthState.monthSteps,
                 openCategory: openCategory, openSleep: openSleep
             ),
-            monthDays: periodLoader.monthDays,
+            monthDays: periodLoader.monthDays, health: healthState.monthDailyHealth,
             periodTitle: periodTitle, analysisInterval: periodLoader.snapshot.analysisInterval,
             segments: periodLoader.snapshot.segments,
             now: periodLoader.snapshot.generatedAt, onOpenCategory: openCategory, onOpenComparison: openComparison,
@@ -714,6 +722,12 @@ struct InsightsView: View {
             retrospectives: retrospectives, aggregationGeneration: aggregationGeneration, context: context,
             isStillCurrent: { requestKey == annualKey }
         )
+    }
+
+    private func reloadMonthDailyHealth() async {
+        let requestKey = monthDailyHealthKey
+        await healthState.reloadMonthDailyHealth(activityData: activityData, monthInterval: interval, now: now,
+                                                  scope: insightsScope, isStillCurrent: { requestKey == monthDailyHealthKey })
     }
 
     /// Builds every pushed destination fresh from the current `snapshot` rather than

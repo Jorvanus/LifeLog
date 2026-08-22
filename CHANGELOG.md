@@ -1,3 +1,44 @@
+## 2026-08-22 — Add the Movement/Sleep/Workouts chart to Month insights too
+
+- Prompted by a follow-up to the Year colour-consistency change: "How about
+  Month too?" Year's "Movement and wellbeing" card (Steps/Walking/Active
+  energy/Exercise under Movement, plus Sleep and Workouts tabs, one bar per
+  month) had no Month equivalent -- Month only showed the flat Health
+  overview grid, not this per-period breakdown.
+
+  Extracted the reusable half of Year's chart machinery -- axis points,
+  series, the bar chart itself, and the two summary views -- into a new
+  shared `HealthPeriodChart.swift` (`HealthChartAxisPoint`, `HealthChartSeries`,
+  `HealthBarChart`, `HealthChartSummary`, `HealthChartSummaryRow`, and the
+  `HealthChartSection` picker enum, all previously private to
+  `YearInsightsView.swift` and Year-only). `YearInsightsView.swift`'s
+  `AnnualHealthVisual` now builds on these instead of its own private copies;
+  behaviour and every accessibility identifier there are unchanged.
+
+  Added `MonthHealthVisual` in `MonthInsightsView.swift` -- the same picker,
+  same three sections, same category-matched colours -- but one bar per
+  *day* of the month instead of per month of the year, with units adjusted
+  accordingly ("km/day" instead of "km/month", "Highest day" instead of
+  "Highest month", etc.) and axis labels thinned to roughly weekly ticks
+  since up to 31 daily bars can't each carry a label the way twelve monthly
+  ones can. New `MonthlyInsights.HealthMetrics` (mirrors `AnnualInsights.
+  HealthMetrics`, day-bucketed instead of month-bucketed) and
+  `InsightsHealthState.reloadMonthDailyHealth`, which builds it the same
+  way `reloadAnnualHealth` already does -- one `healthSummary`/`stepCount`
+  pair per bucket -- just at day rather than month granularity. Wired into
+  `InsightsView.swift` behind a new `.task(id:)` gated to `window == .month`,
+  alongside Year's existing `annualKey`/`reloadAnnualHealth` pattern.
+
+  Needed a manual `project.pbxproj` edit to add the new file to the build
+  target -- this project doesn't use Xcode's synchronized-folder file
+  references, so a new file on disk isn't picked up automatically.
+
+  Clean build, full `LifeLogTests` suite passes, dead-code scan clean. Live
+  simulator verification wasn't possible -- Month's segmented Day/Week/
+  Month/Year control has been consistently untappable via synthetic
+  simulator taps all session (same issue noted on the Year color-consistency
+  and duplicate-legend commits), so this was verified by code review only.
+
 ## 2026-08-22 — Match Year's Sleep/Workouts chart colours to the rest of the page
 
 - Prompted by a screenshot: the Movement/Sleep/Workouts chart used a flat
@@ -161,6 +202,10 @@
 ## 2026-08-22 — App Store asset workspace
 
 - Added a dedicated, privacy-safe workspace for synthetic App Store screenshots, current submission requirements, and App Review material.
+
+## 2026-08-22 — Daily Insights redesign mockup
+
+- Added a generated product-design concept for a refreshed Daily Insights screen, grounded in LifeLog’s existing Apple Health, places, movement, routine, habit, comparison, and unlogged-time capabilities.
 
 ## 2026-08-22 — Show heart-rate recovery per workout, not as a period average
 

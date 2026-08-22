@@ -55,6 +55,26 @@ struct MonthlyInsights {
         var id: String { day.map { "day-\($0.id.timeIntervalSinceReferenceDate)" } ?? "blank-\(index)" }
     }
 
+    /// Mirrors `AnnualInsights.HealthMetrics`, one bucket per day of the month
+    /// instead of per month of the year -- see `InsightsHealthState.
+    /// reloadMonthDailyHealth`, which builds it the same way
+    /// `reloadAnnualHealth` builds the annual version, just at day rather
+    /// than month granularity.
+    struct HealthMetrics {
+        let days: [Date]
+        let dailySleepHours: [Double?]
+        let dailySteps: [Double?]
+        let dailyWalkingKilometres: [Double?]
+        let dailyActiveEnergy: [Double?]
+        let dailyExerciseMinutes: [Double?]
+        let dailyWorkoutMinutes: [Double?]
+        let healthDataAvailable: Bool
+
+        static let empty = Self(days: [], dailySleepHours: [], dailySteps: [], dailyWalkingKilometres: [],
+                                dailyActiveEnergy: [], dailyExerciseMinutes: [], dailyWorkoutMinutes: [],
+                                healthDataAvailable: false)
+    }
+
     static let minimumLoggedHours = 8.0
     /// The values themselves live on `InsightsPeriodComparison` now — the one
     /// shared threshold every hours-based comparison across Insights agrees

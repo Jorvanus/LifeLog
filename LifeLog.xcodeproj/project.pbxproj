@@ -218,6 +218,7 @@
 		D5C08A3DBF3CDC7F869C25BF /* InsightsPeriodLoaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E4DDF07243EB3838664E2A /* InsightsPeriodLoaderTests.swift */; };
 		D6BB66E3CF15FC3D4AC678CE /* ActivityDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98C72A01A9290E364CC44885 /* ActivityDetailView.swift */; };
 		D7037C6AB663211E385D4C5E /* HealthOverviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 854A18292D6BFFE0A17C7E02 /* HealthOverviewView.swift */; };
+		DE09BCE56B9E4F44883CE47A /* HealthPeriodChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFE84F1A86624487B619130A /* HealthPeriodChart.swift */; };
 		D7DEFA4C7F04D4A8B736517B /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C31C3F7604678F860CD993D5 /* OnboardingView.swift */; };
 		D805C29650B5CBCB5B1FC827 /* TravelInsightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E6D117C5049043C7F7F1819 /* TravelInsightsView.swift */; };
 		DA9BD62DE7EA595C5B1FEB81 /* ActivityLocationPolicy+Journeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A716AF078F297D148033EA /* ActivityLocationPolicy+Journeys.swift */; };
@@ -419,6 +420,7 @@
 		82B02AABD0DC4FAFF6637625 /* TimelineDaySelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineDaySelection.swift; sourceTree = "<group>"; };
 		82B6B555AB59BE55254C608F /* HealthKitTypeCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitTypeCatalogTests.swift; sourceTree = "<group>"; };
 		854A18292D6BFFE0A17C7E02 /* HealthOverviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthOverviewView.swift; sourceTree = "<group>"; };
+		BFE84F1A86624487B619130A /* HealthPeriodChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthPeriodChart.swift; sourceTree = "<group>"; };
 		865B4510743A0C7EEFCF612F /* InferenceEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InferenceEngine.swift; sourceTree = "<group>"; };
 		86930351BA999975C9D617AD /* InsightsTrendAggregator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsTrendAggregator.swift; sourceTree = "<group>"; };
 		88FAD07EDA233A5EFCAC0C15 /* FailureInjectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FailureInjectionTests.swift; sourceTree = "<group>"; };
@@ -934,6 +936,7 @@
 				DD5448F08196921A97130795 /* DayInsightsView.swift */,
 				688154B57F1039547BF1241F /* DayTimelineBar.swift */,
 				854A18292D6BFFE0A17C7E02 /* HealthOverviewView.swift */,
+				BFE84F1A86624487B619130A /* HealthPeriodChart.swift */,
 				C2AD932407C1E26E6683F452 /* HealthTrendsView.swift */,
 				996F407A8C4AF7A27700A9CE /* InsightDrillDownViews.swift */,
 				5F8B03A7AEF921E180499A4C /* InsightRecordingQualityCard.swift */,
@@ -1167,6 +1170,7 @@
 				9686C60B3CC378B719ED577B /* HealthInsightsSummary.swift in Sources */,
 				41854CFA66912DBBD6B5211E /* HealthKitTypeCatalog.swift in Sources */,
 				D7037C6AB663211E385D4C5E /* HealthOverviewView.swift in Sources */,
+				DE09BCE56B9E4F44883CE47A /* HealthPeriodChart.swift in Sources */,
 				B3210B38B33812DE49390A06 /* HealthTrendsView.swift in Sources */,
 				DD828F1E680547BCC0CC0002 /* InferenceEngine.swift in Sources */,
 				BD197A29C9CE98CA1307F047 /* InsightDrillDownViews.swift in Sources */,

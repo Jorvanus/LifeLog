@@ -11,14 +11,6 @@ private enum YearPlaceSection: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-private enum AnnualHealthSection: String, CaseIterable, Identifiable {
-    case movement = "Movement"
-    case sleep = "Sleep"
-    case workouts = "Workouts"
-
-    var id: String { rawValue }
-}
-
 private struct YearPlaceStoryCard: View {
     let insights: AnnualInsights
     @Binding var selection: YearPlaceSection
@@ -142,7 +134,7 @@ struct YearInsightsView: View {
     var placesLoading: Bool = false
     @State private var selectedGroup: String?
     @State private var selectedPlaceSection: YearPlaceSection = .mostTime
-    @State private var selectedHealthSection: AnnualHealthSection = .movement
+    @State private var selectedHealthSection: HealthChartSection = .movement
 
     var body: some View {
         VStack(spacing: 22) {
@@ -228,53 +220,36 @@ struct YearInsightsView: View {
     }
 }
 
-private struct AnnualHealthPoint: Identifiable {
-    let id: Date
-    let label: String
-    let value: Double
-}
-
-private struct AnnualHealthSeries: Identifiable {
-    let id: String
-    let title: String
-    let unit: String
-    let values: [Double?]
-    let integerValues: Bool
-
-    var hasData: Bool { values.contains { $0 != nil } }
-
-    func points(months: [AnnualInsights.Month]) -> [AnnualHealthPoint] {
-        months.enumerated().compactMap { index, month in
-            guard values.indices.contains(index), let value = values[index] else { return nil }
-            return AnnualHealthPoint(id: month.id, label: month.label, value: value)
-        }
-    }
-
-    func formatted(_ value: Double) -> String {
-        integerValues ? "\(Int(value.rounded()).formatted()) \(unit)" : "\(String(format: "%.1f", value)) \(unit)"
-    }
-}
-
 private struct AnnualHealthVisual: View {
     let months: [AnnualInsights.Month]
     let health: AnnualInsights.HealthMetrics
-    @Binding var selection: AnnualHealthSection
+    @Binding var selection: HealthChartSection
 
-    private var series: [AnnualHealthSeries] {
-        let movement: [AnnualHealthSeries] = [
-            AnnualHealthSeries(id: "steps", title: "Steps", unit: "steps/day", values: health.monthlySteps, integerValues: true),
-            AnnualHealthSeries(id: "walking", title: "Walking/running", unit: "km/month", values: health.monthlyWalkingKilometres, integerValues: false),
-            AnnualHealthSeries(id: "energy", title: "Active energy", unit: "kcal/month", values: health.monthlyActiveEnergy, integerValues: true),
-            AnnualHealthSeries(id: "exercise", title: "Exercise", unit: "min/month", values: health.monthlyExerciseMinutes, integerValues: true)
-        ]
-        switch selection {
-        case .movement: return movement
-        case .sleep: return [AnnualHealthSeries(id: "sleep", title: "Average sleep", unit: "h/night", values: health.monthlySleepHours, integerValues: false)]
-        case .workouts: return [AnnualHealthSeries(id: "workouts", title: "Workout duration", unit: "min/month", values: health.monthlyWorkoutMinutes, integerValues: true)]
+    private var axis: [HealthChartAxisPoint] {
+        months.map { HealthChartAxisPoint(id: $0.id, label: $0.label) }
+    }
+
+    private var axisLabels: [String] {
+        months.enumerated().compactMap { index, month in
+            months.count <= 6 || index.isMultiple(of: 2) ? month.label : nil
         }
     }
 
-    private var visibleSeries: [AnnualHealthSeries] {
+    private var series: [HealthChartSeries] {
+        let movement: [HealthChartSeries] = [
+            HealthChartSeries(id: "steps", title: "Steps", unit: "steps/day", values: health.monthlySteps, integerValues: true),
+            HealthChartSeries(id: "walking", title: "Walking/running", unit: "km/month", values: health.monthlyWalkingKilometres, integerValues: false),
+            HealthChartSeries(id: "energy", title: "Active energy", unit: "kcal/month", values: health.monthlyActiveEnergy, integerValues: true),
+            HealthChartSeries(id: "exercise", title: "Exercise", unit: "min/month", values: health.monthlyExerciseMinutes, integerValues: true)
+        ]
+        switch selection {
+        case .movement: return movement
+        case .sleep: return [HealthChartSeries(id: "sleep", title: "Average sleep", unit: "h/night", values: health.monthlySleepHours, integerValues: false)]
+        case .workouts: return [HealthChartSeries(id: "workouts", title: "Workout duration", unit: "min/month", values: health.monthlyWorkoutMinutes, integerValues: true)]
+        }
+    }
+
+    private var visibleSeries: [HealthChartSeries] {
         let available = series.filter(\.hasData)
         if selection == .movement, let first = available.first {
             return [first]
@@ -282,7 +257,7 @@ private struct AnnualHealthVisual: View {
         return available
     }
 
-    private var primarySeries: AnnualHealthSeries? { visibleSeries.first }
+    private var primarySeries: HealthChartSeries? { visibleSeries.first }
 
     /// Sleep and Workouts each already have an established colour elsewhere on
     /// this same Year screen -- "How the year was spent" draws Sleep and
@@ -306,7 +281,7 @@ private struct AnnualHealthVisual: View {
             Text("Apple Health")
                 .font(.subheadline).foregroundStyle(.secondary)
             Picker("Health summary", selection: $selection) {
-                ForEach(AnnualHealthSection.allCases) { section in
+                ForEach(HealthChartSection.allCases) { section in
                     Text(section.rawValue).tag(section)
                 }
             }
@@ -319,13 +294,14 @@ private struct AnnualHealthVisual: View {
             } else if let primarySeries {
                 Text("\(primarySeries.title) · Apple Health")
                     .font(.headline)
-                AnnualHealthChart(months: months, series: primarySeries, color: chartColor)
+                HealthBarChart(series: primarySeries, points: primarySeries.points(axis: axis), axisLabels: axisLabels,
+                              color: chartColor, periodAdjective: "Monthly", accessibilityIdentifier: "year-health-chart")
                 HStack(spacing: 18) {
-                    AnnualHealthSummary(title: "Annual average", value: averageText(for: primarySeries))
-                    AnnualHealthSummary(title: "Highest month", value: highestText(for: primarySeries))
+                    HealthChartSummary(title: "Annual average", value: averageText(for: primarySeries))
+                    HealthChartSummary(title: "Highest month", value: highestText(for: primarySeries))
                 }
                 ForEach(visibleSeries.dropFirst()) { item in
-                    AnnualHealthSummaryRow(series: item)
+                    HealthChartSummaryRow(series: item, averageLabel: "monthly average")
                 }
             } else {
                 ContentUnavailableView("No \(selection.rawValue.lowercased()) data", systemImage: "chart.xyaxis.line",
@@ -335,83 +311,13 @@ private struct AnnualHealthVisual: View {
         }
     }
 
-    private func averageText(for series: AnnualHealthSeries) -> String {
+    private func averageText(for series: HealthChartSeries) -> String {
         let values = series.values.compactMap { $0 }
         return series.formatted(values.isEmpty ? 0 : values.reduce(0, +) / Double(values.count))
     }
 
-    private func highestText(for series: AnnualHealthSeries) -> String {
+    private func highestText(for series: HealthChartSeries) -> String {
         series.formatted(series.values.compactMap { $0 }.max() ?? 0)
     }
 
-}
-
-private struct AnnualHealthChart: View {
-    let months: [AnnualInsights.Month]
-    let series: AnnualHealthSeries
-    let color: Color
-
-    private var points: [AnnualHealthPoint] { series.points(months: months) }
-    private var axisLabels: [String] {
-        months.enumerated().compactMap { index, month in
-            months.count <= 6 || index.isMultiple(of: 2) ? month.label : nil
-        }
-    }
-
-    var body: some View {
-        Chart(points) { point in
-            BarMark(x: .value("Month", point.label), y: .value(series.title, point.value))
-                .foregroundStyle(color.gradient)
-        }
-        .chartXAxis {
-            AxisMarks(values: axisLabels) { value in
-                AxisValueLabel {
-                    if let label = value.as(String.self) {
-                        Text(label).font(.caption2).minimumScaleFactor(0.75).fixedSize()
-                    }
-                }
-            }
-        }
-        .chartYAxis { AxisMarks(position: .leading) }
-        .frame(height: 150)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Monthly \(series.title) from Apple Health")
-        .accessibilityValue(points.map { "\($0.label), \(series.formatted($0.value))" }.joined(separator: ". "))
-        .accessibilityIdentifier("year-health-chart")
-    }
-}
-
-private struct AnnualHealthSummary: View {
-    let title: String
-    let value: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(title).font(.caption).foregroundStyle(.secondary)
-            Text(value).font(.subheadline.bold().monospacedDigit())
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(title), \(value), Apple Health")
-    }
-}
-
-private struct AnnualHealthSummaryRow: View {
-    let series: AnnualHealthSeries
-
-    private var average: Double {
-        let values = series.values.compactMap { $0 }
-        return values.isEmpty ? 0 : values.reduce(0, +) / Double(values.count)
-    }
-
-    var body: some View {
-        HStack {
-            Text("\(series.title) · Apple Health").font(.subheadline)
-            Spacer()
-            Text(series.formatted(average))
-                .font(.subheadline.bold().monospacedDigit())
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(series.title), Apple Health, monthly average \(series.formatted(average))")
-    }
 }

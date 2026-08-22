@@ -20,6 +20,7 @@ final class InsightsHealthState {
     private(set) var healthSummary: HealthInsightsSummary?
     private(set) var previousHealthSummary: HealthInsightsSummary?
     private(set) var annualHealth = AnnualInsights.HealthMetrics.empty
+    private(set) var monthDailyHealth = MonthlyInsights.HealthMetrics.empty
 
     /// Day's steps and last night's sleep, over `dayInterval` (already capped
     /// at `now` for today by the caller, same as every other period fetch here).
@@ -149,5 +150,55 @@ final class InsightsHealthState {
                                                     monthlyWorkoutMinutes: workouts,
                                                     monthlyStandHours: stand,
                                                     healthDataAvailable: hasHealthData)
+    }
+
+    /// Month's daily points -- the same idea as `reloadAnnualHealth`'s twelve
+    /// monthly points, just one `healthSummary`/`stepCount` pair per day of
+    /// the month instead of per month of the year. Sleep and steps need no
+    /// per-bucket averaging the way the annual version divides by days in the
+    /// month: each bucket here already *is* one day.
+    func reloadMonthDailyHealth(activityData: ActivityDataService, monthInterval: DateInterval, now: Date,
+                                scope: InsightsScope, isStillCurrent: () -> Bool) async {
+        guard scope.includesHealthData else {
+            monthDailyHealth = .empty
+            return
+        }
+        let calendar = Calendar.current
+        var days: [Date] = []
+        var sleep: [Double?] = []
+        var steps: [Double?] = []
+        var walking: [Double?] = []
+        var energy: [Double?] = []
+        var exercise: [Double?] = []
+        var workouts: [Double?] = []
+        var cursor = monthInterval.start
+        var hasHealthData = false
+        while cursor < monthInterval.end {
+            guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
+            days.append(cursor)
+            let dayEnd = min(next, min(monthInterval.end, now))
+            if dayEnd <= cursor {
+                sleep.append(nil)
+                steps.append(nil)
+                walking.append(nil); energy.append(nil); exercise.append(nil); workouts.append(nil)
+            } else {
+                let day = DateInterval(start: cursor, end: dayEnd)
+                let summary = await activityData.healthSummary(for: day)
+                let daySteps = await activityData.stepCount(for: day)
+                guard !Task.isCancelled, isStillCurrent() else { return }
+                sleep.append(summary?.sleep.map { $0.totalSleep / 3_600 })
+                steps.append(daySteps)
+                walking.append(summary?.walkingRunningMeters.map { $0 / 1_000 })
+                energy.append(summary?.activeEnergyKilocalories)
+                exercise.append(summary?.exerciseMinutes)
+                workouts.append(summary.flatMap { $0.workouts.isEmpty ? nil : $0.workoutMinutes })
+                hasHealthData = hasHealthData || summary?.hasData == true
+            }
+            cursor = next
+        }
+        monthDailyHealth = MonthlyInsights.HealthMetrics(days: days, dailySleepHours: sleep, dailySteps: steps,
+                                                          dailyWalkingKilometres: walking, dailyActiveEnergy: energy,
+                                                          dailyExerciseMinutes: exercise, dailyWorkoutMinutes: workouts,
+                                                          healthDataAvailable: hasHealthData)
     }
 }
