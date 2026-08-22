@@ -197,86 +197,12 @@ public App Store listing.
   the repair as a measured safety net until a test reproduces the race and the
   counter remains zero across real use.
 
-- [x] **"One thing from today" showed "5h 27m more on sleep — Compared with the
-  previous day" when the honest comparison was "1h 33m less."** Root cause found
-  and fixed 2026-08-22, confirmed against a fresh backup/screenshot pair taken at
-  the same moment (`LifeLog-Backup-1787354271.json`, 09:17:51). Not the
-  categorisation pipeline, the elapsed-window pairing, or `DayHighlight`/
-  `InsightsSnapshot`'s comparison math — all three were already confirmed sound
-  in the prior investigation pass, and `highlightKey`'s staleness
-  (`InsightsView.swift`, fixed earlier the same day) was real but not sufficient
-  on its own. The actual bug was one layer up, in `InsightsPeriodLoader.reload`'s
-  SwiftData fetch: its predicate was `visit.arrival >= fetchStart && visit.arrival
-  < fetchEnd`, but `InsightsSnapshot.makeSegments` selects and clips candidates
-  with `Visit.overlaps` (`arrival < range.end && (departure ?? now) > range.start`)
-  — a *laxer* lower bound that also admits a visit whose `arrival` predates the
-  range but that hadn't departed yet by the time the range started. The manual
-  sleep entry for the previous night (2026-08-20 23:46 → 07:00 local) arrived 14
-  minutes before the previous comparison window's own midnight boundary, so the
-  fetch dropped it entirely — not clipped, *absent*. `makeComparisons` then read
-  the previous period's missing "Sleep" category as `0` rather than the ~7h it
-  actually was, so `delta = 5.443 - 0 = +5.443h`, and the sign flipped from "less"
-  to "more" because the previous total didn't shrink, it vanished. The existing
-  "active visit supplement" query already patched this exact class of bug for a
-  still-*open* multi-day stay (`departure == nil`); it just never covered a
-  *completed* visit straddling the same boundary. Generalized that supplement's
-  predicate to `visit.arrival < fetchStart && (visit.departure ?? farFuture) >
-  fetchStart` (`InsightsPeriodLoader.swift`) — matching `Visit.overlaps`'s
-  semantics exactly, for either an open or a completed visit. Note: SwiftData's
-  `#Predicate` macro cannot translate a forced-unwrap (`departure! > fetchStart`)
-  to SQL and throws `unsupportedPredicate` at fetch time; the surrounding `catch`
-  swallowed that silently on the first attempt, so the fetch never actually
-  changed until the predicate was rewritten with `??` instead. Regression test:
-  `LifeLogTests/InsightsPeriodLoaderTests.swift` — inserts a completed visit
-  straddling a fetch boundary into an in-memory `ModelContainer`, confirmed to
-  fail against the pre-fix predicate and pass against the fix.
-
 ## Distribution readiness — new priority
 
 Concrete work that was explicitly out of scope while LifeLog was private-only.
 The scope for now is a small TestFlight group, not a public App Store listing —
 this is about a tester not being confused or losing trust in their own data, not
 about marketing copy, ratings prompts, or broad-market onboarding.
-
-- [x] **Distinguish "still syncing" from "confirmed nothing" for Health data,
-  starting with sleep.** Found 2026-08-22: HealthKit repeatedly returned zero
-  sleep samples across several queries right after wake-up (`Sleep evidence
-  rebuilt: 0 measured, 0 in-bed session(s)`, logged from
-  `ActivityDataService.swift`), because the Watch's overnight sleep hadn't
-  finished syncing to the phone yet — the same data appeared correctly a few
-  minutes later, confirmed against the Health app directly. The owner knew to
-  wait; a first-time tester won't, and Settings' "Add sleep manually" prompt
-  ("What can this add? A sleep entry when Apple Health has no usable sleep
-  evidence") is sitting right there inviting exactly the wrong move at exactly
-  the wrong moment — a manual entry that becomes a duplicate once the real
-  Watch data lands. Fixed 2026-08-22: added `SleepEvidenceState` (`SleepEvidence.swift`),
-  a pure `.stillSyncing`/`.confirmedEmpty` split keyed on how long the current
-  streak of empty queries has run (45-minute grace period), persisted across
-  imports via `sleepEvidenceEmptySinceKey`. `updateSleepEvidenceStatus` in
-  `ActivityDataService.swift` now only reaches "confirmed empty" after that
-  window elapses, and is no longer called at all on a motion-only refresh
-  (it previously overwrote sleep status with a false "empty" on those too).
-  Settings' "Add sleep manually" button still works during the sync window —
-  a real no-Watch night is a legitimate reason to use it — but now confirms
-  first ("Health may still be syncing... Wait / Add Anyway") instead of
-  inviting the duplicate silently. Related to the duplicate-sleep item above:
-  this removes one more source feeding that bug, not just a symptom next to it.
-
-- [ ] **Write a real privacy policy and host it somewhere linkable.** TestFlight
-  external testing requires a privacy policy URL for Apple's Beta App Review,
-  even for a small group. Needs to accurately describe what LifeLog actually
-  does: on-device-only storage, no server, exactly what Health/Location/Motion
-  data it reads and why, and that diagnostics are redacted by default (already
-  true, see the 2026-08-20 changelog entry) but can include real personal data
-  when someone explicitly turns on detailed diagnostics for their own
-  troubleshooting.
-
-- [ ] **Audit UI copy and defaults for "the owner already knows this"
-  assumptions.** Look for onboarding gaps, permission-request copy, and error
-  states written for someone who already understands why LifeLog wants Always
-  location, or why sleep might briefly show as missing (see above). A focused
-  pass through first launch, the permission-request flow, and Settings —
-  not the whole app at once.
 
 - [ ] **Confirm the Xcode Cloud release workflow is reliably distribution-clean.**
   The Archive action's Distribution Preparation and the TestFlight Internal
@@ -290,35 +216,6 @@ about marketing copy, ratings prompts, or broad-market onboarding.
 A code-first audit on 2026-08-20. These are ranked interaction-path and ownership
 improvements, not a request for blanket rewrites or cosmetic file splitting.
 
-- [ ] **Calculate Activity Detail statistics once per meaningful input change.**
-  `ActivityDetailView.statistics` runs `ActivityStatistics.make` over as many as
-  5,000 candidate visits, while the view reads that computed property throughout its
-  chart, comparison, places, totals, usage text, merge copy, and delete copy. Swift
-  does not memoize computed properties, so a render can repeat the same filters,
-  maps, day bucketing, place grouping, and sorts many times. Prepare one immutable
-  statistics value for `(activity identity, candidate generation, window, now)` and
-  pass it into the sections that render it; do not use ad-hoc `@State` without an
-  explicit invalidation rule. Instrument the calculation count and retain a large
-  activity-history performance fixture.
-
-- [ ] **Move Diagnostics' archive summaries off live, whole-model `@Query`s.**
-  `DiagnosticsView` loads every `automatic` and `automatic-superseded` visit merely to
-  count provisional, approximate, duplicate, and resolution-inspectable rows; opening
-  `LocationResolutionChoicesView` loads those same two collections again and filters
-  them in Swift. Use store predicates/counts or an isolated reader that returns small
-  Sendable summaries, and fetch only rows with candidate/explanation payloads when the
-  detail screen is opened (paged if the real archive warrants it). Keep the deliberately
-  capped diagnostic-event and 500-row location-journal queries simple.
-
-- [ ] **Delete the confirmed dead production declarations and the one decorative
-  empty section.** `InsightsPlacesMap` has no construction site anywhere in the app or
-  tests, and `MonthlyInsights.definedCategory(for:)` has no call site. Remove both,
-  plus the `Section { EmptyView() }` used only to host the Groups footer; attach that
-  explanation without manufacturing an empty row. Do not churn the superficially
-  similar empty alert-button closures or Ask LifeLog's `.idle` `EmptyView`: those are
-  real SwiftUI API/state branches, not dead calls. Add a lightweight repeatable
-  declaration-reference check so future abandoned helpers are found during tidying.
-
 - [ ] **Return the app target to an actionable-warning-clean build.** A clean Swift 6
   build currently reports that the global `openAppleHealth()`/`openAppSettings()`
   helpers call main-actor-isolated `UIApplication` APIs from a nonisolated context;
@@ -329,15 +226,19 @@ improvements, not a request for blanket rewrites or cosmetic file splitting.
   "no AppIntents.framework dependency" metadata message as expected for this app,
   not as a warning to silence with unused framework linkage.
 
-- [ ] **Continue splitting `LocationRecorder` at its existing component seams.** At
-  1,181 lines it still owns service-session lifetime, delegate adaptation, arrival
-  confirmation, raw evidence, visit mutation, Saved Place caching, region monitoring,
-  reverse geocoding, Wi-Fi sampling, and diagnostics. Preserve the observable recorder
-  as the UI-facing facade, but move the confirmation state machine and monitored-region
-  synchronisation behind narrow collaborators like the types already established in
-  `LocationRecordingComponents.swift`. This is a maintainability refactor, not a new
-  recorder rewrite: keep callback ordering and persistence boundaries covered by the
-  existing arrival/incremental-resolution tests.
+- [ ] **Continue splitting `LocationRecorder` at its existing component seams.**
+  The confirmation state machine and monitored-region synchronisation moved out
+  2026-08-22: `ArrivalConfirmationSession` (`LocationRecordingComponents.swift`)
+  now owns the live-location burst's samples, pending arrival, task lifecycle,
+  and waiters — previously five separate stored properties on the recorder
+  mutated from four methods — and `GeofenceMonitor.plan(wanted:
+  monitoredIdentifiers:)` is a pure diff extracted from
+  `refreshMonitoredRegions`'s inline add/remove loop. Nine new tests cover both
+  directly; the full arrival/incremental-resolution suite passed unmodified.
+  At ~1,170 lines the recorder still owns service-session lifetime, delegate
+  adaptation, raw evidence, visit mutation, Saved Place caching, reverse
+  geocoding, Wi-Fi sampling, and diagnostics — real further-splitting
+  opportunity remains at the same seams, just not picked yet.
 
 ## Deliberately not priorities
 
