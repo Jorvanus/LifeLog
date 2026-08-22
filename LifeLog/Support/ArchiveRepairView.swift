@@ -95,7 +95,7 @@ struct ArchiveRepairView: View {
                     .accessibilityIdentifier("repair-clean")
             } else {
                 if findings.runawayStays > 0 {
-                    LabeledContent("Runaway stays", value: "\(findings.runawayStays)")
+                    LabeledContent("Stays that never closed", value: "\(findings.runawayStays)")
                         .accessibilityIdentifier("repair-runaway-count")
                     LabeledContent("Time they claim",
                                    value: formattedDuration(findings.runawayHours * 3600))
@@ -143,7 +143,7 @@ struct ArchiveRepairView: View {
             // story for runaways, so it is stated rather than left to be inferred
             // from two numbers that do not match.
             if findings.runawayStays > findings.runawayStaysClosable {
-                Text("\(findings.runawayStays - findings.runawayStaysClosable) runaway stays have no visit at a different place to close them against. Those are left unchanged for you to edit by hand.")
+                Text("\(findings.runawayStays - findings.runawayStaysClosable) stays that never closed have no later visit at a different place to close them against. Those are left unchanged for you to edit by hand.")
             }
             // Same shape as the runaway note above: the gap between "found" and
             // "fillable" is a longer-than-a-day cutoff or a live-tracked
@@ -242,7 +242,7 @@ struct ArchiveRepairView: View {
                 return
             } catch {
                 await MainActor.run {
-                    message = "(error.localizedDescription) Nothing was repaired."
+                    message = "\(error.localizedDescription) Nothing was repaired."
                     creatingBackup = false
                 }
                 return

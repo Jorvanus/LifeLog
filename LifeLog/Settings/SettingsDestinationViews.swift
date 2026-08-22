@@ -396,7 +396,7 @@ private struct DestinationStateSummary: View {
                 .foregroundStyle(.green)
         } else {
             VStack(alignment: .leading, spacing: 6) {
-                Label("\(state.recordCount) records currently block restore", systemImage: "exclamationmark.triangle.fill")
+                Label("\(state.recordCount) existing records — erase them below before restoring", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
                 LabeledContent("Visits", value: "\(state.visits)")
                 LabeledContent("Saved Places", value: "\(state.savedPlaces)")
@@ -431,7 +431,7 @@ struct DataRecoverySettingsView: View {
                 }
                     .accessibilityIdentifier("journal-storage-link")
                 NavigationLink { ArchiveRepairView() } label: {
-                    SettingsHubRow(title: "Review archive repairs", detail: "Imported runaway stays and eligible routine gaps", symbol: "bandage")
+                    SettingsHubRow(title: "Review archive repairs", detail: "Fix stays that never ended, or fill in unlogged time", symbol: "bandage")
                 }
                     .accessibilityIdentifier("archive-repair-link")
             } header: {

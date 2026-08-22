@@ -1,3 +1,50 @@
+## 2026-08-22 — Plain-language pass on Data & Recovery / Archive Repair copy
+
+- Prompted by a first-pass audit of user-facing copy for TestFlight
+  readiness (LifeLog has been a private single-user app until now, and
+  several screens assumed the reader already knew the internal vocabulary).
+  Four fixes from that audit, in order of how they were found:
+
+  1. `ArchiveRepairView.swift:245` — a missing `\` meant a repair failure
+     showed the literal text `(error.localizedDescription) Nothing was
+     repaired.` on screen instead of the actual error. Fixed the
+     interpolation.
+  2. `SettingsDestinationViews.swift:434` — the Data & Recovery hub's
+     "Review archive repairs" row read "Imported runaway stays and eligible
+     routine gaps," internal resolver terms with no definition anywhere a
+     stranger would see first. Now "Fix stays that never ended, or fill in
+     unlogged time."
+  3. `ArchiveRepairView.swift:97-98,146` — the repair screen's own summary
+     used "Runaway stays" as a bare count label and "runaway stays have no
+     visit at a different place to close them against" in a footer, before
+     the (already well-written) toggle further down ever explains the term.
+     Reworded both to "Stays that never closed" / "stays that never closed
+     have no later visit...".
+  4. `SettingsDestinationViews.swift:399` — found live while testing the
+     above: "26 records currently block restore" reads as an error when
+     it's actually just "you have existing data here, and Restore replaces
+     an empty destination rather than merging into one." Reworded to
+     "26 existing records — erase them below before restoring," so the
+     label states the reason and the fix in one line instead of requiring
+     the separate footer below it to piece together why.
+
+  None of these needed a decision or a design tradeoff -- ambiguity was
+  removed, not added, and every changed string was already backed by an
+  explanation elsewhere on the same screen (a footer, a toggle detail) that
+  just wasn't reachable from the confusing label itself. Accessibility
+  identifiers were left untouched throughout, since none of these were
+  test-visible strings. Full `LifeLogTests` suite passes; the first three
+  fixes were verified live in the simulator (the fourth is a one-line
+  string literal with no logic changed and no test coverage to break, and
+  simulator navigation in this session became unreliable partway through --
+  not re-attempted given the low risk).
+  This was a first pass, not exhaustive -- the audit also flagged
+  "Geofence" as a bare, undefined section header in two places
+  (`TimelineView.swift:379`, `VisitEditor.swift:303`) and some
+  Diagnostics-screen summary language ("Duplicate callbacks resolved" and
+  others in `DiagnosticsView.swift`) as lower-priority follow-ups, not yet
+  addressed.
+
 ## 2026-08-22 — Merge same-place automatic stays across a manual row in the gap
 
 - `coalesceAdjacentAutomaticStays` (`ActivityLocationPolicy+Reconciliation.swift`)
