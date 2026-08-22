@@ -44,7 +44,7 @@ public App Store listing.
   but CoreLocation's own `.visitDeparture` for the parking-spot stay did not fire
   until 07:26:27 (device already home), and no Core Motion automotive sample
   existed yet to bound the stay against (motion import is throttled to once every
-  6 hours, `ActivityDataService.swift:720`). The parking-spot stay's departure
+  6 hours, `ActivityDataService.swift:778`). The parking-spot stay's departure
   defaulted to the next visit's arrival, so the entire ~15-minute drive read as
   "Visiting" the parking spot instead of commuting. Even once the motion sample
   does import, `boundStay`'s guard (`departure <= movement.end`,
@@ -53,7 +53,7 @@ public App Store listing.
   either way. Waiting on the owner to recheck the same day's data after the next
   motion refresh before touching this: `boundStay`/`extendStay` have already caused
   a nine-day repair loop from an earlier tuning attempt (see the comment at
-  `ActivityLocationPolicy+Journeys.swift:114`), so a next change here needs a real
+  `ActivityLocationPolicy+Journeys.swift:96`), so a next change here needs a real
   before/after on-device comparison, not just reasoning about the code.
 
 - [ ] **`extendStay`'s location-journal check is landed diagnostics-only; flip
@@ -72,7 +72,7 @@ public App Store listing.
   `false` (`ActivityLocationPolicy+Journeys.swift:101`), so today this only
   *logs* what it would have refused ("Would have held ... Extending anyway (dry
   run)."). Given `boundStay`/`extendStay` already caused a nine-day repair loop
-  from an earlier tuning attempt (`ActivityLocationPolicy+Journeys.swift:114`),
+  from an earlier tuning attempt (`ActivityLocationPolicy+Journeys.swift:96`),
   do not flip it on first read of the code -- let the dry-run logging run for a
   week or two of real mornings, compare its "would have refused" decisions
   against what the owner actually remembers happening, and only then flip the
@@ -94,7 +94,7 @@ public App Store listing.
      defined at `ActivityLocationPolicy+Journeys.swift:16`) from the stay's
      coordinate.
   3. Thread a `context: ModelContext?` into `extendStay` (the call site,
-     `boundStays(around:stays:context:now:)` at line 227, already carries one)
+     `boundStays(around:stays:context:now:)` at line 267, already carries one)
      and refuse to extend a candidate when `showsDeparture` is true for its gap.
      With diagnostics off or the journal empty for that window, the query finds
      nothing and today's behaviour is unchanged -- this is strictly more
@@ -105,10 +105,10 @@ public App Store listing.
      the 21 August case replayed with real `geofence-exit`/`live-location-sample`
      rows showing distance past 250 m (must **not** extend).
   5. Given `boundStay`/`extendStay` already caused a nine-day repair loop from an
-     earlier tuning attempt (`ActivityLocationPolicy+Journeys.swift:114`), land
+     earlier tuning attempt (`ActivityLocationPolicy+Journeys.swift:96`), land
      this diagnostics-only first -- log what it *would* have decided differently
      (same pattern as the existing "Journey ... bounded/held/changed nothing"
-     logging at line 261) for a week or two of real mornings, and compare
+     logging at line 318) for a week or two of real mornings, and compare
      against what the owner actually remembers, before letting it mutate
      `stay.departure` live.
 
