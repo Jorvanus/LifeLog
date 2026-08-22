@@ -20,6 +20,7 @@ struct ActivityDetailView: View {
     @Query private var candidates: [Visit]
     @State private var window: Window = .week
     @State private var now = Date.now
+    @State private var statisticsCache = ActivityStatisticsCache()
     /// Held in state rather than read inline, so adopting updates this page in place
     /// instead of leaving the offer sitting there once it has been taken.
     @State private var isAdopted = true
@@ -74,12 +75,22 @@ struct ActivityDetailView: View {
         _candidates = Query(VisitHistoryQuery.activity(named: name))
     }
 
-    private var statistics: ActivityStatistics {
-        ActivityStatistics.make(activity: activityName, visits: candidates,
-                                days: window.days, now: now)
+    /// Rebuilds only when the activity, candidate set, window, or `now` actually
+    /// change -- see `ActivityStatisticsCache`. Computed once per `body` call and
+    /// threaded into every section that reads it, rather than each section
+    /// re-triggering its own lookup.
+    private func currentStatistics() -> ActivityStatistics {
+        let key = "\(NameKey.matching(activityName))|\(candidates.count)|"
+            + "\(InsightsAggregationActor.shared.currentGeneration())|"
+            + "\(window.days)|\(now.timeIntervalSinceReferenceDate)"
+        return statisticsCache.statistics(key: key) {
+            ActivityStatistics.make(activity: activityName, visits: candidates,
+                                    days: window.days, now: now)
+        }
     }
 
     var body: some View {
+        let statistics = currentStatistics()
         List {
             // First, because it is the only thing on this screen that needs doing. The
             // row that led here says the label is not an activity yet; until this
@@ -94,16 +105,16 @@ struct ActivityDetailView: View {
                 ContentUnavailableView("Nothing recorded yet", systemImage: "chart.line.uptrend.xyaxis",
                                        description: Text("When your timeline uses “\(activityName)”, its history appears here."))
             } else {
-                overTime
-                comparison
-                places
-                totals
+                overTime(statistics)
+                comparison(statistics)
+                places(statistics)
+                totals(statistics)
                 history
-                usage
+                usage(statistics)
             }
             if isAdopted {
                 mergeSection
-                deletion
+                deletion(statistics)
             }
         }
         .navigationTitle(activityName)
@@ -146,7 +157,7 @@ struct ActivityDetailView: View {
             Button("Delete anyway", role: .destructive) { delete() }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text(deletionWarning)
+            Text(deletionWarning(statistics))
         }
         .confirmationDialog("Merge into “\(mergeTarget?.name ?? "")”?", isPresented: Binding(
             get: { mergeTarget != nil }, set: { if !$0 { mergeTarget = nil } }),
@@ -211,7 +222,7 @@ struct ActivityDetailView: View {
         }
     }
 
-    private var overTime: some View {
+    private func overTime(_ statistics: ActivityStatistics) -> some View {
         Section {
             Picker("Period", selection: $window) {
                 ForEach(Window.allCases) { Text($0.rawValue).tag($0) }
@@ -230,7 +241,7 @@ struct ActivityDetailView: View {
         }
     }
 
-    private var comparison: some View {
+    private func comparison(_ statistics: ActivityStatistics) -> some View {
         Section {
             LabeledContent("This \(window.rawValue)", value: formattedDuration(statistics.currentPeriodTime))
             LabeledContent("Previous \(window.rawValue)", value: formattedDuration(statistics.previousPeriodTime))
@@ -251,7 +262,7 @@ struct ActivityDetailView: View {
         }
     }
 
-    private var places: some View {
+    private func places(_ statistics: ActivityStatistics) -> some View {
         Section("Top locations") {
             ForEach(statistics.places.prefix(8)) { place in
                 LabeledContent(place.name, value: "\(place.occasions)")
@@ -259,7 +270,7 @@ struct ActivityDetailView: View {
         }
     }
 
-    private var totals: some View {
+    private func totals(_ statistics: ActivityStatistics) -> some View {
         Section("Totals") {
             LabeledContent("Total occasions", value: "\(statistics.occasions)")
             LabeledContent("Total time", value: formattedDuration(statistics.totalTime))
@@ -295,7 +306,7 @@ struct ActivityDetailView: View {
         }
     }
 
-    @ViewBuilder private var usage: some View {
+    @ViewBuilder private func usage(_ statistics: ActivityStatistics) -> some View {
         Section {
             if let first = statistics.firstUsed {
                 Text(usageSentence(occasions: statistics.occasions, first: first))
@@ -328,7 +339,7 @@ struct ActivityDetailView: View {
         }
     }
 
-    private var deletion: some View {
+    private func deletion(_ statistics: ActivityStatistics) -> some View {
         Section {
             Button("Delete Activity", role: .destructive) { confirmingDelete = true }
                 .accessibilityIdentifier("delete-activity")
@@ -470,7 +481,7 @@ struct ActivityDetailView: View {
         dismiss()
     }
 
-    private var deletionWarning: String {
+    private func deletionWarning(_ statistics: ActivityStatistics) -> String {
         "“\(activityName)” is used by \(statistics.occasions) \(statistics.occasions == 1 ? "visit" : "visits"). Deleting does not change those visits, but Insights will count them as Other until the activity exists again. Changing its group instead keeps the history counted."
     }
 }

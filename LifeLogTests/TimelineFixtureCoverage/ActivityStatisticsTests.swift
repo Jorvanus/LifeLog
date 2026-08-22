@@ -151,4 +151,63 @@ struct ActivityStatisticsTests {
         #expect(stats.firstUsed == nil)
         #expect(stats.changeFraction == nil)
     }
+
+    /// `ActivityDetailView` used to read this uncached, and reads it from its chart,
+    /// comparison, places, totals, usage, merge-dialog, and delete-footer sections --
+    /// as many as eight full recomputations of the same value on one render. This
+    /// fixture is the size of a real candidate fetch: `VisitHistoryQuery.activity`'s
+    /// own 5,000-row limit.
+    @Test("The activity-detail cache computes once per render regardless of read count")
+    func cacheComputesOncePerRenderRegardlessOfReadCount() {
+        let calendar = TimelineFixtureBuilders.gregorianCalendar()
+        let now = TimelineFixtureBuilders.referenceDate()
+        let visits = (0..<5_000).map { index -> Visit in
+            let start = now.addingTimeInterval(-Double(index) * 900)
+            return Visit(arrival: start, departure: start.addingTimeInterval(600),
+                         latitude: -23.37, longitude: 150.51,
+                         placeName: "Place \(index % 40)",
+                         inferredActivity: index.isMultiple(of: 2) ? "Beers" : "Coffee",
+                         source: "imported-journal")
+        }
+        let cache = ActivityStatisticsCache()
+        let key = "beers|\(visits.count)|0|7|\(now.timeIntervalSinceReferenceDate)"
+
+        var results: [ActivityStatistics] = []
+        for _ in 0..<8 {
+            results.append(cache.statistics(key: key) {
+                ActivityStatistics.make(activity: "Beers", visits: visits, days: 7, now: now, calendar: calendar)
+            })
+        }
+
+        #expect(cache.calculationCount == 1)
+        #expect(results.allSatisfy { $0.occasions == results[0].occasions })
+    }
+
+    @Test("The activity-detail cache recomputes only when the key actually changes")
+    func cacheRecomputesOnlyWhenKeyChanges() {
+        let now = TimelineFixtureBuilders.referenceDate()
+        let visits = [Visit(arrival: now, departure: now.addingTimeInterval(3_600),
+                            latitude: -23.37, longitude: 150.51, placeName: "O'Dowds",
+                            inferredActivity: "Beers", source: "manual")]
+        let cache = ActivityStatisticsCache()
+        let build = { ActivityStatistics.make(activity: "Beers", visits: visits, now: now) }
+
+        _ = cache.statistics(key: "beers|1|0|7|1", build: build)
+        #expect(cache.calculationCount == 1)
+
+        _ = cache.statistics(key: "beers|1|0|7|1", build: build)
+        #expect(cache.calculationCount == 1, "An unchanged key must not recompute")
+
+        // Candidate generation is the one dimension that can change with the visits
+        // array itself unchanged -- a mutation elsewhere in the archive bumping
+        // `InsightsAggregationActor`'s shared counter.
+        _ = cache.statistics(key: "beers|1|1|7|1", build: build)
+        #expect(cache.calculationCount == 2, "A changed candidate generation must recompute")
+
+        _ = cache.statistics(key: "beers|1|1|30|1", build: build)
+        #expect(cache.calculationCount == 3, "A changed window must recompute")
+
+        _ = cache.statistics(key: "beers|1|1|30|2", build: build)
+        #expect(cache.calculationCount == 4, "A changed now must recompute")
+    }
 }
