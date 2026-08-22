@@ -259,6 +259,34 @@ struct ActivityStatistics: Sendable {
     }
 }
 
+/// Main-actor cache for one activity's statistics, mirroring `InsightsSnapshotCache`'s
+/// key/rebuild shape.
+///
+/// `ActivityDetailView` reads the same statistics value throughout its chart,
+/// comparison, places, totals, usage, merge, and delete copy -- as many as eight
+/// separate reads of an O(candidates × days) pass over as many as 5,000 candidate
+/// visits, since Swift does not memoize computed properties. This cache rebuilds
+/// only when the tuple that actually determines the result changes: the activity
+/// identity, the candidate count and shared invalidation generation (bumped by
+/// every visit mutation, import, merge, or delete -- see `InsightsAggregationActor`),
+/// the selected window, and `now`. `calculationCount` exists so a test can assert
+/// the expensive pass ran once per meaningful change, not once per read.
+@MainActor
+final class ActivityStatisticsCache {
+    private(set) var calculationCount = 0
+    private var key: String?
+    private var value = ActivityStatistics.empty
+
+    func statistics(key: String, build: () -> ActivityStatistics) -> ActivityStatistics {
+        if self.key == key { return value }
+        calculationCount += 1
+        let rebuilt = build()
+        self.key = key
+        value = rebuilt
+        return rebuilt
+    }
+}
+
 /// Archive-wide activity totals are useful, but never worth blocking a tab switch
 /// for. `Visit` stays inside this actor; only the small, Sendable row summaries
 /// cross back to SwiftUI.

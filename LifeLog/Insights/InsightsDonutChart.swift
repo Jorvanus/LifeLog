@@ -1,5 +1,4 @@
 import SwiftUI
-import MapKit
 import Charts
 
 /// The day's ring, and the small map of where it was spent. Both are driven
@@ -92,29 +91,13 @@ struct InsightsDonutChart: View {
                 )
                 .cornerRadius(6)
                 .foregroundStyle(slice.color.opacity(hasSelection && !selected ? 0.2 : 1))
-                .annotation(position: .overlay) {
-                    // The legend under the ring is gone, so a wedge with no label is now
-                    // an unidentifiable colour rather than a colour with a key beside it.
-                    // Anything worth a wedge gets its icon; only the wider ones have room
-                    // for the duration underneath as well.
-                    let share = slice.hours / max(totalHours, 1)
-                    if !hasSelection && share > Self.iconLabelShare {
-                        VStack(spacing: 2) {
-                            Image(systemName: slice.symbol)
-                            if share > Self.fullLabelShare {
-                                Text(formatHours(slice.hours)).font(.caption.bold())
-                            }
-                        }
-                        .foregroundStyle(.white)
-                    }
-                }
             }
             .chartLegend(.hidden)
             // Keep the binding for the selected data value, but forward each tap through
             // ChartProxy, which handles the polar-to-data-angle conversion.
             .chartAngleSelection(value: $selectedAngle)
             .chartOverlay { proxy in
-                GeometryReader { _ in
+                GeometryReader { geometry in
                     Rectangle()
                         .fill(.clear)
                         .contentShape(Rectangle())
@@ -142,6 +125,52 @@ struct InsightsDonutChart: View {
                             }
                         }
                         .accessibilityIdentifier("insights-donut-tap-target")
+                    // Icon/duration labels, positioned by hand rather than through
+                    // `SectorMark.annotation`, which anchored noticeably closer to the
+                    // outer edge than the ring visually reads as centred -- most
+                    // noticeable on wedges away from 12 o'clock ("the side pieces"). A
+                    // second, invisible angle-encoded mark to host the annotation at a
+                    // different radius was tried first and rejected: Swift Charts sums
+                    // every angle-encoded mark into the same full-circle total, so a
+                    // second mark per slice halved every wedge's angular width. Plain
+                    // trigonometry against the plot area has no such side effect and
+                    // matches the same 12-o'clock-start, clockwise convention already
+                    // proven correct by the tap handling above.
+                    //
+                    // 0.72, not the ring's literal radius midpoint (~0.755 between the
+                    // 0.56/0.95 inner/outer ratios): an annular wedge's outer arc is
+                    // longer than its inner one, so the linear midpoint reads as
+                    // outer-biased -- confirmed on-device, where 0.755 landed
+                    // indistinguishably close to the default this replaced. 0.68 was
+                    // tried first and read as too far toward the inner edge.
+                    if let plotFrame = proxy.plotFrame {
+                        let plotRect = geometry[plotFrame]
+                        let center = CGPoint(x: plotRect.midX, y: plotRect.midY)
+                        let midRadius = min(plotRect.width, plotRect.height) / 2 * 0.72
+                        let total = slices.reduce(0) { $0 + $1.hours }
+                        ForEach(slices) { slice in
+                            let share = slice.hours / max(totalHours, 1)
+                            if focusedSlice == nil && share > Self.iconLabelShare, total > 0 {
+                                let cumulativeBefore = slices.prefix(while: { $0.id != slice.id })
+                                    .reduce(0) { $0 + $1.hours }
+                                let midFraction = (cumulativeBefore + slice.hours / 2) / total
+                                let midAngle = 2 * .pi * midFraction
+                                let point = CGPoint(
+                                    x: center.x + midRadius * sin(midAngle),
+                                    y: center.y - midRadius * cos(midAngle)
+                                )
+                                VStack(spacing: 2) {
+                                    Image(systemName: slice.symbol)
+                                    if share > Self.fullLabelShare {
+                                        Text(formatHours(slice.hours)).font(.caption.bold())
+                                    }
+                                }
+                                .foregroundStyle(.white)
+                                .position(point)
+                                .allowsHitTesting(false)
+                            }
+                        }
+                    }
                 }
             }
             .onChange(of: selectedAngle) { _, angle in
@@ -397,30 +426,5 @@ struct InsightsDonutChart: View {
 
     private func timeLabel(_ date: Date) -> String {
         date.formatted(date: .omitted, time: .shortened)
-    }
-}
-
-struct InsightsPlacesMap: View {
-    let places: [PlaceTotal]
-    let region: MKCoordinateRegion
-    let onSelectPlace: (PlaceTotal) -> Void
-    @State private var selectedName: String?
-
-    var body: some View {
-        Map(initialPosition: .region(region), selection: $selectedName) {
-            ForEach(places) { place in
-                // Always-visible labels overlap as soon as nearby places share a map.
-                // Native markers retain the name in their tap callout without covering
-                // the location and automatically use the platform's map interaction.
-                Marker(place.name, coordinate: place.coordinate)
-                    .tint(.blue)
-                    .tag(place.name)
-            }
-        }
-        .mapStyle(.standard(pointsOfInterest: .excludingAll))
-        .onChange(of: selectedName) { _, name in
-            guard let name, let place = places.first(where: { $0.name == name }) else { return }
-            onSelectPlace(place)
-        }
     }
 }

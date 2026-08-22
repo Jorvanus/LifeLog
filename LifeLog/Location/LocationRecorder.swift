@@ -1,5 +1,4 @@
 import CoreLocation
-import MapKit
 import SwiftData
 import Observation
 
@@ -80,41 +79,30 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     private var diagnosticsRecorder = LocationDiagnosticsRecorder()
     private let placeResolutionCoordinator = PlaceResolutionCoordinator()
     private var context: ModelContext?
-    private var serviceSession: CLServiceSession?
-    private var serviceSessionRequirement: CLServiceSession.AuthorizationRequirement?
-    /// Distinguishes one session from its replacement, so a finished stream only ever
-    /// clears its own session. See `releaseServiceSession(generation:)`.
-    private var serviceSessionGeneration = 0
-    private var diagnosticTask: Task<Void, Never>?
+    /// The `CLServiceSession` that keeps Core Location delivering -- see
+    /// `LocationServiceSessionController`'s own doc comment for the boundary:
+    /// this recorder still interprets every diagnostic, the controller only
+    /// owns whether a session needs rebuilding and keeps its stream running.
+    private let serviceSessionController = LocationServiceSessionController()
     private var identifyingVisits: Set<ObjectIdentifier> = []
     /// MapKit and reverse geocoding are a single resolution attempt. A noisy stream
     /// of location fixes must not turn one unresolved stay into a request per fix.
     private var placeLookupAttempts: [ObjectIdentifier: [Date]] = [:]
-    private static let placeLookupCooldown: TimeInterval = 5 * 60
-    private static let maximumPlaceLookupAttempts = 3
-    private(set) var savedPlaceCache: [SavedPlace] = []
+    /// See `SavedPlaceCache`'s own doc comment for the boundary: this recorder
+    /// still decides when to reload it and what a failure means for
+    /// `lastError`, the cache only owns the fetch and the nearest-match lookup.
+    private let placeCache = SavedPlaceCache()
+    var savedPlaceCache: [SavedPlace] { placeCache.places }
     private var placeMonitor: CLMonitor?
     private var placeMonitorTask: Task<Void, Never>?
     private var monitoredPlaces: [String: MonitoredPlaces.Ranked] = [:]
-    private struct PendingArrival {
-        let coordinate: CLLocationCoordinate2D?
-        let arrival: Date
-        let callbackType: LocationCallbackType
-        let accuracy: CLLocationAccuracy
-    }
-
-    private var liveLocationBurstTask: Task<Void, Never>?
-    private var liveLocationBurstTimeoutTask: Task<Void, Never>?
-    private var locationConfirmation: ArrivalConfirmationEngine?
-    private var pendingArrival: PendingArrival?
-    /// Resumed whenever a live location confirmation cycle ends, by
-    /// `cancelLocationConfirmation()` — the one place every ending path
-    /// (normal finish, disabled logging, a CLVisit preempting an in-flight
-    /// check) already passes through. `refreshCurrentLocation(awaiting:)`
-    /// appends here instead of polling `locationConfirmation`, so a caller
-    /// (Timeline's pull-to-refresh) can show a spinner for exactly as long as
-    /// the GPS burst actually runs rather than guessing a fixed delay.
-    private var locationConfirmationContinuations: [CheckedContinuation<Void, Never>] = []
+    /// The live-location confirmation burst's own state machine -- samples,
+    /// the pending arrival they confirm, task lifecycle, and awaiters. See
+    /// `ArrivalConfirmationSession`'s own doc comment for the boundary: this
+    /// recorder still interprets every sample and performs the resulting
+    /// mutation, the session only tracks whether a burst is running and what
+    /// it found.
+    private let confirmationSession = ArrivalConfirmationSession()
     var authorization: CLAuthorizationStatus = .notDetermined
     /// Whether iOS is fuzzing this app's location fixes to city-block scale (the
     /// user-controlled "Precise Location" toggle). Read once at init and refreshed
@@ -198,9 +186,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             return
         }
         beginLocationConfirmation()
-        await withCheckedContinuation { continuation in
-            locationConfirmationContinuations.append(continuation)
-        }
+        await confirmationSession.awaitCompletion()
     }
 
     func disableBackgroundLogging() {
@@ -213,12 +199,8 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         placeMonitor = nil
         monitoredPlaces = [:]
         manager.allowsBackgroundLocationUpdates = false
-        diagnosticTask?.cancel()
-        diagnosticTask = nil
-        serviceSession?.invalidate()
-        serviceSession = nil
-        serviceSessionRequirement = nil
-        cancelLocationConfirmation()
+        serviceSessionController.invalidate()
+        confirmationSession.cancel()
     }
 
     private func startBackgroundWorkflow() {
@@ -234,54 +216,16 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     }
 
     /// Holds the session that keeps Core Location delivering, rebuilding it whenever
-    /// there is not a live one.
-    ///
-    /// The guard used to compare the requirement alone, which made a dead session
-    /// permanent: `serviceSessionRequirement` stayed `.always` after a session ended —
-    /// its diagnostic stream finishing or throwing, typically once authorization was
-    /// refused — so every later `startBackgroundWorkflow()` matched the stale
-    /// requirement and returned without creating a replacement. Background recording
-    /// then stayed off no matter how many times it was restarted, and only a relaunch
-    /// (which builds a fresh recorder) brought it back. Checking that a session
-    /// actually exists, and clearing it when its stream ends, lets a restart restart.
+    /// `LocationServiceSessionController` says there is not a live one. See that
+    /// type's doc comment for why a dead session must not be assumed live.
     private func holdServiceSession(requiring requirement: CLServiceSession.AuthorizationRequirement) {
-        guard LocationRecoveryCoordinator.shouldRebuildServiceSession(
-            held: serviceSessionRequirement, hasLiveSession: serviceSession != nil, required: requirement
-        ) else { return }
-        diagnosticTask?.cancel()
-        serviceSession?.invalidate()
-
-        let session = CLServiceSession(authorization: requirement)
-        serviceSessionGeneration += 1
-        let generation = serviceSessionGeneration
-        serviceSession = session
-        serviceSessionRequirement = requirement
-        diagnosticTask = Task { [weak self, session] in
-            do {
-                for try await diagnostic in session.diagnostics {
-                    guard !Task.isCancelled else { return }
-                    self?.handle(diagnostic)
-                }
-            } catch is CancellationError {
-                return
-            } catch {
+        serviceSessionController.hold(
+            requiring: requirement,
+            onDiagnostic: { [weak self] diagnostic in self?.handle(diagnostic) },
+            onStreamFailure: { [weak self] in
                 self?.lastError = "Location permission status couldn't be refreshed."
             }
-            // Reached only when this session's stream is finished for good. A
-            // cancelled task is a deliberate replacement and returns above, so it
-            // never releases the newer session out from under itself.
-            guard !Task.isCancelled else { return }
-            self?.releaseServiceSession(generation: generation)
-        }
-    }
-
-    /// Drops the cached session once its stream has ended, so the next
-    /// `holdServiceSession` builds a new one. The generation check means a session
-    /// that has already been replaced cannot clear its successor.
-    private func releaseServiceSession(generation: Int) {
-        guard generation == serviceSessionGeneration else { return }
-        serviceSession = nil
-        serviceSessionRequirement = nil
+        )
     }
 
     private func handle(_ diagnostic: CLServiceSession.Diagnostic) {
@@ -290,7 +234,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         } else if diagnostic.authorizationRestricted {
             lastError = "Location access is restricted on this device."
         } else if diagnostic.alwaysAuthorizationDenied, isBackgroundLoggingEnabled {
-            lastError = "Always Location access is required to record visits in the background."
+            lastError = "Always Location access was turned off, so LifeLog can only record visits while it's open. Re-enable it in iPhone Settings to resume background recording."
         } else if diagnostic.insufficientlyInUse {
             lastError = "Open LifeLog before starting background location logging."
         }
@@ -408,7 +352,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                                       timestamp: sample.timestamp)
             recordLocationEvidence(location, callbackType: .locationUpdate)
         case .failure(let failure):
-            cancelLocationConfirmation()
+            confirmationSession.cancel()
             lastError = "Location updates are temporarily unavailable."
             diagnosticsRecorder.record(context, failure.diagnosticMessage, "warning")
         }
@@ -438,14 +382,10 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     private func beginLocationConfirmation(pendingArrival: PendingArrival? = nil) {
         // A CLVisit arrival supersedes an in-flight launch check: it carries a
         // historical arrival to preserve once the phone confirms it is still nearby.
-        if let pendingArrival, self.pendingArrival == nil, locationConfirmation != nil {
-            cancelLocationConfirmation()
-        }
-        guard locationConfirmation == nil else { return }
-
-        locationConfirmation = .init()
-        self.pendingArrival = pendingArrival
-        liveLocationBurstTask = Task { [weak self] in
+        // `begin` returns false when a burst is already running and this call
+        // folded into it instead, in which case no new tasks are started.
+        guard confirmationSession.begin(pendingArrival: pendingArrival) else { return }
+        let burstTask = Task { [weak self] in
             do {
                 for try await update in CLLocationUpdate.liveUpdates() {
                     guard !Task.isCancelled else { return }
@@ -457,7 +397,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 self?.finishLocationConfirmation(reason: "stream failed")
             }
         }
-        liveLocationBurstTimeoutTask = Task { [weak self] in
+        let timeoutTask = Task { [weak self] in
             do {
                 try await Task.sleep(for: LocationArrivalConfirmation.timeout)
                 guard !Task.isCancelled else { return }
@@ -468,6 +408,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 return
             }
         }
+        confirmationSession.attach(burstTask: burstTask, timeoutTask: timeoutTask)
     }
 
     private func receiveLiveLocationUpdate(_ update: CLLocationUpdate) {
@@ -484,24 +425,22 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
               location.horizontalAccuracy >= 0,
               location.horizontalAccuracy <= 1_000,
               abs(location.timestamp.timeIntervalSinceNow) <= 5 * 60,
-              var confirmation = locationConfirmation else { return }
+              confirmationSession.isActive, let startedAt = confirmationSession.startedAt else { return }
 
-        confirmation.append(location: location, stationary: update.stationary)
-        locationConfirmation = confirmation
+        let sampleCount = confirmationSession.append(location: location, stationary: update.stationary)
         Diagnostics.record(context, subsystem: "Core Location",
-                           message: "Live location sample \(confirmation.samples.count)/\(LocationArrivalConfirmation.maximumSamples): stationary=\(update.stationary), accuracy=\(Int(location.horizontalAccuracy.rounded())) m, elapsed=\(Int(Date.now.timeIntervalSince(confirmation.startedAt).rounded())) s.",
+                           message: "Live location sample \(sampleCount)/\(LocationArrivalConfirmation.maximumSamples): stationary=\(update.stationary), accuracy=\(Int(location.horizontalAccuracy.rounded())) m, elapsed=\(Int(Date.now.timeIntervalSince(startedAt).rounded())) s.",
                            severity: "info")
         recordLocationEvidence(location, callbackType: .liveLocationSample)
-        if confirmation.hasReachedSampleLimit {
+        if confirmationSession.hasReachedSampleLimit {
             finishLocationConfirmation(reason: "sample limit")
         }
     }
 
     private func finishLocationConfirmation(reason: String) {
-        guard let confirmation = locationConfirmation else { return }
-        let arrival = pendingArrival
-        cancelLocationConfirmation()
-        guard let location = confirmation.confirmedLocation else {
+        guard let outcome = confirmationSession.finish() else { return }
+        let arrival = outcome.pendingArrival
+        guard let location = outcome.confirmedLocation else {
             // A CLVisit arrival already carries Core Location's own coordinate — its
             // motion-fused engine decided the phone had stopped before `didVisit` was
             // ever called. The live burst here exists to catch a *stale* CLVisit
@@ -512,7 +451,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             // Silence is not disproof, so a pending CLVisit arrival stands on its own
             // evidence instead. There is nothing to fall back to for the launch-time
             // check (no `arrival`), which keeps its stricter, evidence-required rule.
-            if let arrival, confirmation.samples.isEmpty {
+            if let arrival, outcome.sampleCount == 0 {
                 HardwareValidation.recordFirst(
                     .liveBurstBackgroundFallback, context: context,
                     message: "A background live-location burst produced no samples; the CLVisit arrival was used instead of being discarded."
@@ -527,18 +466,15 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 return
             }
             Diagnostics.record(context, subsystem: "Core Location",
-                               message: "Live location confirmation \(reason) without stationary evidence (\(confirmation.samples.count) sample(s))\(arrival == nil ? "" : "; samples disagreed with the pending arrival, discarding it").",
+                               message: "Live location confirmation \(reason) without stationary evidence (\(outcome.sampleCount) sample(s))\(arrival == nil ? "" : "; samples disagreed with the pending arrival, discarding it").",
                                severity: "info")
             return
         }
-        if let expected = arrival?.coordinate {
-            let expectedLocation = CLLocation(latitude: expected.latitude, longitude: expected.longitude)
-            let tolerance = max(150, max(arrival?.accuracy ?? 0, location.horizontalAccuracy) * 2)
-            guard expectedLocation.distance(from: location) <= tolerance else {
-                Diagnostics.record(context, subsystem: "Core Location",
-                                   message: "A visit arrival did not match its live confirmation.")
-                return
-            }
+        guard LiveConfirmationMatch.matches(expected: arrival?.coordinate, expectedAccuracy: arrival?.accuracy ?? 0,
+                                            confirmed: location.coordinate, confirmedAccuracy: location.horizontalAccuracy) else {
+            Diagnostics.record(context, subsystem: "Core Location",
+                               message: "A visit arrival did not match its live confirmation.")
+            return
         }
         recordLocationEvidence(location, callbackType: .liveLocationConfirmed, transition: .created)
         if let arrival {
@@ -549,18 +485,6 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         }
     }
 
-    private func cancelLocationConfirmation() {
-        liveLocationBurstTask?.cancel()
-        liveLocationBurstTask = nil
-        liveLocationBurstTimeoutTask?.cancel()
-        liveLocationBurstTimeoutTask = nil
-        locationConfirmation = nil
-        pendingArrival = nil
-        let waiters = locationConfirmationContinuations
-        locationConfirmationContinuations = []
-        for waiter in waiters { waiter.resume() }
-    }
-
     private func createVisit(at coordinate: CLLocationCoordinate2D, arrival: Date,
                              callbackType: LocationCallbackType = .visitArrival,
                              accuracy: CLLocationAccuracy = -1) {
@@ -569,7 +493,8 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         let safeArrival = min(arrival, .now)
         var inferredDeparture: Date?
         var usedWiFiAnchor = false
-        if let duplicate = recentDuplicateLocation(at: coordinate, arrival: safeArrival, context: context) {
+        if let duplicate = VisitArrivalMerge.duplicateMatch(coordinate: coordinate, arrival: safeArrival,
+                                                            in: recentAutomaticVisits(context: context)) {
             // Core Location can replay the same arrival after a visit was closed. Keep
             // the original record and update its bounds instead of creating a new card.
             duplicate.arrival = min(duplicate.arrival, safeArrival)
@@ -586,10 +511,11 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                                        durationMs: Int((Date.now.timeIntervalSince(callbackStartedAt) * 1000).rounded()))
             return
         }
-        if let latest = latestLocationVisit(in: context), latest.departure == nil {
-            let existingLocation = CLLocation(latitude: latest.latitude, longitude: latest.longitude)
-            let incomingLocation = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
-            if existingLocation.distance(from: incomingLocation) <= 150 {
+        if let latest = latestLocationVisit(in: context), latest.departure == nil,
+           let outcome = VisitArrivalMerge.outcome(for: latest, coordinate: coordinate, arrival: safeArrival,
+                                                   wifiObservation: WiFiAnchor.loadObservation()) {
+            switch outcome {
+            case .mergeIntoOpen:
                 // A later CLVisit callback often has a more accurate, earlier arrival than
                 // the one-shot sample used to make the current location visible immediately.
                 latest.arrival = min(latest.arrival, safeArrival)
@@ -604,58 +530,37 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 Diagnostics.locationMetric(context, operation: "callback_to_save",
                                            durationMs: Int((Date.now.timeIntervalSince(callbackStartedAt) * 1000).rounded()))
                 return
-            }
-            if safeArrival < latest.arrival {
+            case .boundNewVisitDeparture(let departure):
                 // CLVisit callbacks can be delayed and delivered after a newer
                 // one-shot current-location visit. This is historical evidence,
                 // not a new current stay, so bound it at the newer arrival.
-                inferredDeparture = latest.arrival
-            } else {
+                inferredDeparture = departure
+            case .closeOpenVisit(let departure, let anchorUsed):
                 // Core Location did not see the departure, so this timestamp is the
-                // next arrival standing in for it. If the phone was observed off the
-                // stay's own Wi-Fi before then, that moment is the better answer.
-                let anchored = WiFiAnchor.departure(for: WiFiAnchor.loadObservation(),
-                                                    arrival: latest.arrival,
-                                                    fallback: safeArrival)
-                usedWiFiAnchor = anchored != nil
-                latest.departure = max(latest.arrival, anchored ?? safeArrival)
+                // next arrival standing in for it, unless a Wi-Fi absence observed
+                // before then is the better answer.
+                usedWiFiAnchor = anchorUsed
+                latest.departure = departure
                 // The stay is closed, so its network observation belongs to nothing now.
                 WiFiAnchor.save(nil)
             }
         }
 
-        let saved = nearestSavedPlace(to: coordinate)
-        if let saved {
-            let distance = CLLocation(latitude: saved.latitude, longitude: saved.longitude)
+        let saved = placeCache.nearest(to: coordinate)
+        let savedDistance = saved.map { place in
+            CLLocation(latitude: place.latitude, longitude: place.longitude)
                 .distance(from: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude))
+        }
+        if let savedDistance {
             Diagnostics.locationMetric(context, operation: "saved_place_match",
-                                       distanceMeters: Int(distance.rounded()))
+                                       distanceMeters: Int(savedDistance.rounded()))
         }
-        let name = saved?.name ?? Visit.identifyingPlaceName
         let learned = saved.flatMap { learnedActivity(forPlaceName: $0.name, arrival: safeArrival) }
-        let activity = InferenceEngine.activity(placeName: name,
-                                                defaultActivity: saved?.defaultActivity ?? learned,
-                                                arrival: safeArrival)
-        let item = Visit(arrival: safeArrival, departure: inferredDeparture,
-                         latitude: coordinate.latitude, longitude: coordinate.longitude,
-                         placeName: name, inferredActivity: activity,
-                         recognitionConfidence: saved == nil ? nil : "learned",
-                         mapsIdentifier: saved?.mapsIdentifier,
-                         placeFieldProvenance: saved == nil ? nil : "saved-place",
-                         resolutionExplanation: saved == nil ? nil : LocationResolutionExplanation.savedPlace.rawValue)
-        if let saved {
-            let distance = CLLocation(latitude: saved.latitude, longitude: saved.longitude)
-                .distance(from: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude))
-            item.locationResolutionCandidates = .init(
-                chosen: PlaceSuggestion(name: saved.name, latitude: saved.latitude, longitude: saved.longitude,
-                                        suggestedActivity: saved.defaultActivity, distance: distance,
-                                        mapsIdentifier: saved.mapsIdentifier),
-                rejected: []
-            )
-        }
+        let item = VisitArrivalFactory.makeVisit(coordinate: coordinate, arrival: safeArrival, departure: inferredDeparture,
+                                                 saved: saved, savedDistance: savedDistance, learnedActivity: learned)
         context.insert(item)
         _ = PlaceScoreLifecycle.rescore(
-            item, stage: .arrival, context: context, savedPlaces: savedPlaceCache,
+            item, stage: .arrival, context: context, savedPlaces: placeCache.places,
             accuracy: accuracy, geofenceTriggered: callbackType == .geofenceEntry
         )
         WiFiAnchor.save(nil)
@@ -693,27 +598,31 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         if saved == nil { identifyPlace(item) }
     }
 
-    private func recentDuplicateLocation(at coordinate: CLLocationCoordinate2D, arrival: Date,
-                                         context: ModelContext) -> Visit? {
+    /// Feeds `VisitArrivalMerge.duplicateMatch`. Required in spirit, not merely best
+    /// effort: this fetch's empty result means "create a brand new Visit", so a
+    /// swallowed fetch error and a real absence of duplicates look identical and both
+    /// create one. There is nothing to retry a location callback from, so the fetch
+    /// still proceeds as "no duplicate found" -- but logged, not silent, so a
+    /// resulting duplicate visit is diagnosable instead of a mystery.
+    private func recentAutomaticVisits(context: ModelContext) -> [Visit] {
         var descriptor = FetchDescriptor<Visit>(
             predicate: #Predicate { $0.source == "automatic" },
             sortBy: [SortDescriptor(\.arrival, order: .reverse)]
         )
         descriptor.fetchLimit = 30
-        // Required in spirit, not merely best effort: this fetch's nil result
-        // means "create a brand new Visit", so a swallowed fetch error and a
-        // real absence of duplicates look identical and both create one. There
-        // is nothing to retry a location callback from, so the fetch still
-        // proceeds as "no duplicate found" -- but logged, not silent, so a
-        // resulting duplicate visit is diagnosable instead of a mystery.
-        let recent = fetchLogging(descriptor, context: context, operation: "recent duplicate location lookup")
-        let incoming = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
-        return recent.first { visit in
-            let recorded = CLLocation(latitude: visit.latitude, longitude: visit.longitude)
-            let sameArrival = abs(visit.arrival.timeIntervalSince(arrival)) <= 60
-            let sameOpenStay = visit.departure == nil
-            return recorded.distance(from: incoming) <= 60 && (sameArrival || sameOpenStay)
-        }
+        return fetchLogging(descriptor, context: context, operation: "recent duplicate location lookup")
+    }
+
+    /// Feeds `ActivityLocationPolicy.matchDeparture`, which owns the actual matching
+    /// decision (and has its own dedicated test coverage in `DepartureMatchingTests`) --
+    /// this only owns the fetch behind it.
+    private func departureCandidates(context: ModelContext) -> [Visit] {
+        var descriptor = FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.source == "automatic" || $0.source == "manual" },
+            sortBy: [SortDescriptor(\.arrival, order: .reverse)]
+        )
+        descriptor.fetchLimit = 50
+        return fetchLogging(descriptor, context: context, operation: "departure candidate lookup")
     }
 
     private func closeVisit(at coordinate: CLLocationCoordinate2D, arrival: Date, departure: Date,
@@ -721,12 +630,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                             accuracy: CLLocationAccuracy = -1) {
         guard let context else { return }
         let resolutionStartedAt = Date.now
-        var descriptor = FetchDescriptor<Visit>(
-            predicate: #Predicate { $0.source == "automatic" || $0.source == "manual" },
-            sortBy: [SortDescriptor(\.arrival, order: .reverse)]
-        )
-        descriptor.fetchLimit = 50
-        let candidates = fetchLogging(descriptor, context: context, operation: "departure candidate lookup")
+        let candidates = departureCandidates(context: context)
         guard let matched = ActivityLocationPolicy.matchDeparture(
                 coordinate: coordinate, arrival: min(arrival, .now),
                 departure: min(departure, .now), visits: candidates
@@ -743,7 +647,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         matched.departure = max(matched.arrival, min(departure, .now))
         matched.locationResolutionExplanation = .coordinateTime
         _ = PlaceScoreLifecycle.rescore(
-            matched, stage: .departure, context: context, savedPlaces: savedPlaceCache,
+            matched, stage: .departure, context: context, savedPlaces: placeCache.places,
             accuracy: accuracy
         )
         reconcileActivity(with: matched, context: context)
@@ -767,15 +671,11 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         // updates. Do not reintroduce speed here: a missing or stale speed is exactly
         // why one-shot launch fixes used to manufacture visits.
         guard let context else { return }
-        if let current = latestLocationVisit(in: context), current.departure == nil {
-            let recorded = CLLocation(latitude: current.latitude, longitude: current.longitude)
-            // Scale the duplicate threshold with GPS uncertainty so indoor drift does not
-            // split one stay into several uncategorised locations.
-            let tolerance = max(150, location.horizontalAccuracy * 2)
-            if recorded.distance(from: location) <= tolerance {
-                if current.needsCategorisation { identifyPlace(current) }
-                return
-            }
+        if let current = latestLocationVisit(in: context), current.departure == nil,
+           VisitArrivalMerge.matchesCurrentlyOpenVisit(current, confirmedLocation: location.coordinate,
+                                                        confirmedAccuracy: location.horizontalAccuracy) {
+            if current.needsCategorisation { identifyPlace(current) }
+            return
         }
         createVisit(at: location.coordinate, arrival: location.timestamp, accuracy: location.horizontalAccuracy)
     }
@@ -814,17 +714,15 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     private func loadSavedPlaceCache() {
         guard let context else { return }
         let startedAt = Date.now
-        do {
-            savedPlaceCache = try context.fetch(FetchDescriptor<SavedPlace>())
+        switch placeCache.reload(context: context) {
+        case .success(let count):
             Diagnostics.locationMetric(context, operation: "saved_place_index_refresh",
                                        durationMs: Int((Date.now.timeIntervalSince(startedAt) * 1000).rounded()),
-                                       candidateCount: savedPlaceCache.count)
-        } catch {
-            // Keep the previous cache on failure (e.g. if background store is locked under NSFileProtectionComplete).
-            // Overwriting with [] would cause known places to resolve as unknown and trigger redundant Maps lookups.
+                                       candidateCount: count)
+        case .failure(let error):
             lastError = "Failed to read Saved Places: \(error.localizedDescription)"
             Diagnostics.record(context, subsystem: "LocationRecorder",
-                               message: "Failed to read Saved Places cache; retaining previous cache (\(savedPlaceCache.count) item(s)). Error: \(error.localizedDescription)",
+                               message: "Failed to read Saved Places cache; retaining previous cache (\(placeCache.places.count) item(s)). Error: \(error.localizedDescription)",
                                severity: "warning")
         }
     }
@@ -886,15 +784,15 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         let visits = fetchLogging(FetchDescriptor<Visit>(
             predicate: #Predicate { $0.source == "automatic" || $0.source == "manual" }
         ), context: context, operation: "monitored region visit lookup")
-        let ranked = MonitoredPlaces.prioritised(savedPlaceCache, visits: visits, limit: .max)
-        let wanted = GeofenceMonitor.desired(savedPlaceCache, visits: visits)
+        let ranked = MonitoredPlaces.prioritised(placeCache.places, visits: visits, limit: .max)
+        let wanted = GeofenceMonitor.desired(placeCache.places, visits: visits)
         let wantedByID = Dictionary(uniqueKeysWithValues: wanted.map { ($0.identifier, $0) })
+        let plan = GeofenceMonitor.plan(wanted: wanted, monitoredIdentifiers: Set(await placeMonitor.identifiers))
 
-        for identifier in await placeMonitor.identifiers where wantedByID[identifier] == nil {
+        for identifier in plan.toRemove {
             await placeMonitor.remove(identifier)
         }
-        let existing = Set(await placeMonitor.identifiers)
-        for place in wanted where !existing.contains(place.identifier) {
+        for place in plan.toAdd {
             let condition = CLMonitor.CircularGeographicCondition(center: place.coordinate,
                                                                   radius: place.radius)
             await placeMonitor.add(condition, identifier: place.identifier)
@@ -936,11 +834,11 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     /// inferred from wherever the person turned up next.
     private func closeMonitoredVisit(named name: String, at departure: Date,
                                      coordinate: CLLocationCoordinate2D? = nil) {
-        guard let context, let open = latestLocationVisit(in: context), open.departure == nil,
-              open.placeName.caseInsensitiveCompare(name) == .orderedSame else { return }
+        guard let context, let open = latestLocationVisit(in: context),
+              GeofenceMonitor.matchesExit(open: open, name: name) else { return }
         open.departure = max(open.arrival, min(departure, .now))
         _ = PlaceScoreLifecycle.rescore(
-            open, stage: .departure, context: context, savedPlaces: savedPlaceCache,
+            open, stage: .departure, context: context, savedPlaces: placeCache.places,
             geofenceTriggered: true
         )
         WiFiAnchor.save(nil)
@@ -962,15 +860,6 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         }
     }
 
-    private func nearestSavedPlace(to coordinate: CLLocationCoordinate2D) -> SavedPlace? {
-        let current = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
-        return savedPlaceCache
-            .compactMap { place -> (SavedPlace, CLLocationDistance)? in
-                let distance = current.distance(from: CLLocation(latitude: place.latitude, longitude: place.longitude))
-                return distance <= min(max(place.radius, 25), 500) ? (place, distance) : nil
-            }
-            .min { $0.1 < $1.1 }?.0
-    }
 
     /// What this place has meant at this hour before, weighted toward the
     /// person's own corrections and confirmations over automatic guesses and
@@ -996,10 +885,8 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         let identity = ObjectIdentifier(visit)
         let now = Date.now
         let attempts = placeLookupAttempts[identity, default: []]
-        guard !identifyingVisits.contains(identity),
-              attempts.count < Self.maximumPlaceLookupAttempts,
-              attempts.last.map({ now.timeIntervalSince($0) >= Self.placeLookupCooldown }) ?? true
-        else { return }
+        guard PlaceLookupThrottle.shouldAttempt(isAlreadyInFlight: identifyingVisits.contains(identity),
+                                                priorAttempts: attempts, now: now) else { return }
         identifyingVisits.insert(identity)
         placeLookupAttempts[identity, default: []].append(now)
         let lookupToken = placeResolutionCoordinator.begin(for: visit)
@@ -1025,7 +912,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                       visit.needsCategorisation else { return }
                 visit.placeSuggestions = result.suggestions
                 guard let evaluation = PlaceScoreLifecycle.rescore(
-                    visit, stage: .mapsLookup, context: context, savedPlaces: self.savedPlaceCache,
+                    visit, stage: .mapsLookup, context: context, savedPlaces: self.placeCache.places,
                     accuracy: accuracy, geofenceTriggered: false
                 ) else { return }
                 visit.recognitionConfidence = evaluation.breakdown.confidence
@@ -1044,21 +931,15 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                     confidence: evaluation.breakdown.confidence,
                     fallback: result.suggestions.isEmpty ? "reverse geocoding" : nil,
                     context: context)
-                if PlaceScoreLifecycle.canSuggest(for: visit, evaluation: evaluation), let match = evaluation.selected,
-                   !Visit.isPlaceholderName(match.name) {
-                    visit.placeName = match.name
-                    visit.inferredActivity = match.suggestedActivity
-                    visit.mapsIdentifier = match.mapsIdentifier
-                    visit.placeFieldProvenance = match.mapsIdentifier == nil ? "name-fallback" : "maps"
-                    visit.locationResolutionExplanation = match.mapsIdentifier == nil ? .coordinateTime : .mapsIdentifier
-                    cache(match, for: visit, context: context)
-                } else if let likely = evaluation.selected {
-                    visit.placeName = likely.name
-                    visit.inferredActivity = likely.suggestedActivity
-                    visit.mapsIdentifier = likely.mapsIdentifier
-                    visit.placeFieldProvenance = likely.mapsIdentifier == nil ? "name-fallback" : "maps"
-                    visit.locationResolutionExplanation = likely.mapsIdentifier == nil ? .coordinateTime : .mapsIdentifier
-                } else {
+                switch PlaceScoreLifecycle.mapsLookupResolution(for: visit, evaluation: evaluation) {
+                case .apply(let suggestion, let learn):
+                    visit.placeName = suggestion.name
+                    visit.inferredActivity = suggestion.suggestedActivity
+                    visit.mapsIdentifier = suggestion.mapsIdentifier
+                    visit.placeFieldProvenance = suggestion.mapsIdentifier == nil ? "name-fallback" : "maps"
+                    visit.locationResolutionExplanation = suggestion.mapsIdentifier == nil ? .coordinateTime : .mapsIdentifier
+                    if learn { cache(suggestion, for: visit, context: context) }
+                case .fallbackToReverseGeocode:
                     reverseGeocode(visit)
                     return
                 }
@@ -1088,33 +969,40 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         }
     }
 
+    /// `PlaceLookupService.reverseGeocode` owns the MapKit request and the
+    /// raw name extraction; this decides what a resolved, empty, or
+    /// unavailable answer means for the visit and performs the mutation.
     private func reverseGeocode(_ visit: Visit) {
         let location = CLLocation(latitude: visit.latitude, longitude: visit.longitude)
         Task { @MainActor [weak self] in
-            guard let self, let context = self.context,
-                  let request = MKReverseGeocodingRequest(location: location) else { return }
+            guard let self, let context = self.context else { return }
             do {
-                let mapItems = try await request.mapItems
+                let outcome = try await PlaceLookupService.reverseGeocode(at: location)
                 guard visit.needsCategorisation else { return }
-                guard let item = mapItems.first else {
-                    markUnknown(visit, context: context)
+                switch outcome {
+                case .unavailable:
+                    // MapKit could not even build a request for this coordinate --
+                    // nothing to act on. The visit stays exactly as it was, and
+                    // `identifyRecentUnknown` can retry it from a later, closer callback.
                     return
+                case .notFound:
+                    markUnknown(visit, context: context)
+                case .resolved(let name):
+                    visit.placeName = name
+                    visit.recognitionConfidence = "low"
+                    visit.placeFieldProvenance = "name-fallback"
+                    visit.locationResolutionExplanation = .lowConfidence
+                    LocationDiagnostics.record(.promoted, subject: "Unnamed stay",
+                                               reason: "no Maps match; reverse geocoding supplied a name",
+                                               evidence: visit.placeName, context: context)
+                    visit.inferredActivity = InferenceEngine.activity(
+                        placeName: visit.placeName,
+                        defaultActivity: learnedActivity(forPlaceName: visit.placeName, arrival: visit.arrival),
+                        arrival: visit.arrival
+                    )
+                    guard self.finalizeMutation(.coreLocationArrival,
+                                                change: .init(affectedVisit: visit, coordinate: visit.coordinate), context: context) else { return }
                 }
-                let resolvedName = item.name ?? item.address?.shortAddress ?? item.address?.fullAddress ?? Visit.unknownPlaceName
-                visit.placeName = TextSafety.clean(resolvedName, maximumLength: 120)
-                visit.recognitionConfidence = "low"
-                visit.placeFieldProvenance = "name-fallback"
-                visit.locationResolutionExplanation = .lowConfidence
-                LocationDiagnostics.record(.promoted, subject: "Unnamed stay",
-                                           reason: "no Maps match; reverse geocoding supplied a name",
-                                           evidence: visit.placeName, context: context)
-                visit.inferredActivity = InferenceEngine.activity(
-                    placeName: visit.placeName,
-                    defaultActivity: learnedActivity(forPlaceName: visit.placeName, arrival: visit.arrival),
-                    arrival: visit.arrival
-                )
-                guard self.finalizeMutation(.coreLocationArrival,
-                                            change: .init(affectedVisit: visit, coordinate: visit.coordinate), context: context) else { return }
             } catch {
                 Diagnostics.record(context, subsystem: "MapKit",
                                    message: "Reverse geocoding failed; the visit remains available for manual labeling.")

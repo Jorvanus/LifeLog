@@ -1,17 +1,24 @@
 # LifeLog — code roadmap
 
 Rebuilt from a repository-wide audit of `main` at `9f65bfe` on 2026-08-19 and
-updated after a second dead-code and interaction-path audit on 2026-08-20. This is an
-open-work list, not a record of shipped features. The previous roadmap (from
-2026-08-16) was mostly completed since — backup manifest/versioning, Settings'
-status-led redesign, the maintenance coordinator, the archive-wide-fetch contract,
-activity-catalogue durability, staging-file hardening, and the `VisitEditor`/Timeline
-ownership seams all landed — so it was rebuilt rather than amended.
+updated after a second dead-code and interaction-path audit on 2026-08-20, and
+reframed on 2026-08-22 as LifeLog begins moving toward TestFlight distribution to a
+small group of trusted testers. This is an open-work list, not a record of shipped
+features. The previous roadmap (from 2026-08-16) was mostly completed since —
+backup manifest/versioning, Settings' status-led redesign, the maintenance
+coordinator, the archive-wide-fetch contract, activity-catalogue durability,
+staging-file hardening, and the `VisitEditor`/Timeline ownership seams all landed —
+so it was rebuilt rather than amended.
 
-LifeLog is a private app for one iPhone 17 Pro Max, owned and used by one person.
-Correct history, predictable background ingestion, responsive access to the archive,
-and code that can be changed safely outrank App Store preparation or speculative
-integrations.
+LifeLog was built as a private app for one iPhone 17 Pro Max, owned and used by one
+person, and that history still shows in places that assume whoever is using it
+already knows how it works. Correct history, predictable background ingestion,
+responsive access to the archive, and code that can be changed safely remain the
+top priorities — they matter more, not less, once someone other than the author
+depends on the app behaving right without being able to ask why it didn't.
+Distribution-readiness work (see below) is now genuinely in scope rather than
+deliberately deferred, though the scope for now is a small TestFlight group, not a
+public App Store listing.
 
 ## Correctness and recovery — still open
 
@@ -60,26 +67,28 @@ integrations.
   `ActivityLocationPolicy+Journeys.swift:114`), so a next change here needs a real
   before/after on-device comparison, not just reasoning about the code.
 
-- [ ] **`extendStay` cannot tell "still getting ready" from "already gone" apart,
-  and a real commute got shrunk from ~21 minutes to a displayed 7 as a result.**
-  Confirmed against the real archive 2026-08-21/22: Core Location logged
-  `geofence-exit` and `visit-departure` for Home at 08:26:24/08:27:08 (raw
-  samples then show steady movement to 9.4 km away by 08:41), but the Home
-  `Visit`'s persisted departure reads 08:40:31 -- matching a `health-walking`
-  record that starts then. `extendStay` (`ActivityLocationPolicy+Journeys.swift:96`)
-  reached Home's departure forward across the entire real drive because nothing
-  in `stays`/`activities` occupied the gap, which is the *only* evidence it ever
-  consults. The same pattern, same ~13-14 minute gap, is also the shape of the
-  legitimate case already covered by
-  `OverlapResolutionTests.stayHoldsUntilTheWalkThatLeftIt` (Home closed
-  2026-08-08 07:02:44, a `health-workout` walk began 07:16:22, and extending was
-  correct -- they really were still home). A same-source-type, same-duration fix
-  attempted 2026-08-22 (excluding all HealthKit-sourced movement from
-  `extendStay`) was reverted before landing because it cannot tell these two
-  cases apart either -- it would have silently broken the tested, correct case
-  to fix the broken one. Neither `health-walking` nor `health-workout` records
-  carry coordinates, so the source type alone is not enough signal.
-  **Design sketch for a real fix, not yet started:**
+- [ ] **`extendStay`'s location-journal check is landed diagnostics-only; flip
+  `enforceLocationJournalDepartureCheck` once a real trial period backs it up.**
+  Steps 1-4 of the design (below) shipped in `e8eea4f` "Dry-run extendStay
+  location-journal check; unblock test suite" (2026-08-22): `LocationJournal.
+  showsDeparture(fromStayAt:in:beyond:context:)` exists, `extendStay` threads a
+  `context` and refuses via `extensionRefusedByLocationEvidence` when the
+  journal shows a real departure inside the gap, and both required
+  `OverlapResolutionTests` fixtures pass -- the legitimate "still getting
+  ready" case (no location evidence) still extends, and the actual 2026-08-21
+  commute (real `geofence-exit`/`live-location-sample` rows, Home shrunk from a
+  real ~21-minute departure to a displayed 7) gets refused. Verified again
+  2026-08-22: full suite (679 tests) green.
+  What's left is step 5 only: `enforceLocationJournalDepartureCheck` is still
+  `false` (`ActivityLocationPolicy+Journeys.swift:101`), so today this only
+  *logs* what it would have refused ("Would have held ... Extending anyway (dry
+  run)."). Given `boundStay`/`extendStay` already caused a nine-day repair loop
+  from an earlier tuning attempt (`ActivityLocationPolicy+Journeys.swift:114`),
+  do not flip it on first read of the code -- let the dry-run logging run for a
+  week or two of real mornings, compare its "would have refused" decisions
+  against what the owner actually remembers happening, and only then flip the
+  flag to `true` and remove the dry-run branch in `boundStays`.
+  **Original design, for reference:**
   1. `LocationJournal` (`Diagnostics/LocationJournal.swift`) already has exactly
      the missing signal -- `geofence-exit`/`visit-departure` rows carry real
      coordinates and `distanceFromCurrentVisit` -- but only when
@@ -114,6 +123,73 @@ integrations.
      against what the owner actually remembers, before letting it mutate
      `stay.departure` live.
 
+- [ ] **Finish `VisitMutationService`'s live-object restore coverage.** Fixing
+  `VisitMutationServiceTests.failedMutationDoesNotPublishPartialState()`
+  (2026-08-22) found that `context.rollback()` does not revert an
+  already-mutated property on a live, already-fetched model object -- confirmed
+  directly against this SDK: the persisted store is correctly left untouched,
+  but the same object reference (even re-fetched through the same context)
+  keeps reading the failed edit indefinitely. `perform`/`finalize` now take an
+  explicit `restore: () -> Void` closure to cover this, wired through every
+  real interactive call site (`VisitEditor`, `PlacesView` x3,
+  `PlaceHistoryView`, `SavedPlaceLearning.applyIgnored`,
+  `VisitLocationChooser.merge`) plus `SavedPlaceLearning.upsert`'s own internal
+  failure path for the `SavedPlace` it mutates. Two gaps remain, deliberately
+  left rather than rushed alongside that fix:
+  1. `LocationRecorder.swift`'s eight `finalizeMutation` call sites (Core
+     Location arrival/departure callbacks) each mutate a `Visit` directly
+     before calling it, the same shape `VisitEditor` had -- none carry a
+     `restore` closure yet. Lower visibility than an open editor (no UI is
+     usually bound to the exact visit a background callback just touched), but
+     the same class of bug. Needs its own pass through that file rather than
+     the drive-by treatment the interactive call sites got.
+  2. `SavedPlaceLearning.apply(_:context:)` bulk-relabels every `Visit` inside
+     a place's radius and calls `ActivityLocationPolicy.reconcileResolutionStates`
+     -- a failure partway through that loop leaves whichever visits it already
+     touched unrestored. `upsert` now rolls back and restores the `SavedPlace`
+     itself on failure, but not the individual visits `apply` reached first.
+
+- [ ] **Audit the full test suite for correctness, not just for passing.**
+  Fixing the eight pre-existing failures surfaced 2026-08-22 (`ActivityMergeTests`,
+  `ArchiveModelFieldCoverageTests`, `ExportFileStagingTests`,
+  `GapSuggestionViewModelTests`, `LocalBackupTests`, `TravelConstructionTests`,
+  `VisitMutationServiceTests`, `ActivityArtworkBoundsTests` -- all now green)
+  turned up real, previously-invisible bugs behind several of them: a shared
+  static (`ActivityCatalog.cached`) leaking between tests that swap
+  `ActivityCatalog.storage` by hand instead of through `withStorage`
+  (`ActivityMergeTests.swift`, and the same pattern independently in
+  `ActivityLinkingCatchUpTests.swift`), a real product bug in
+  `ArchiveRepairActor.gapSuggestionContext` (a 30-minute gap floor meant for one
+  caller's list silently applied to a different caller with no floor at all),
+  and the `VisitMutationService` gap above. A test suite that was silently
+  wrong in several unrelated places for an unknown stretch of time is reason
+  enough to look at the rest on purpose rather than only when something happens
+  to fail: read through what's left for other tests asserting something that
+  no longer matches intent (stale fixtures, wrong expected values) or masking a
+  real bug behind a coincidentally-passing assertion, the same shape every one
+  of these turned out to be.
+  Separately, the `LifeLogUITests` target reported 36 of 60 tests failing in
+  the same 2026-08-22 run, spread across every unrelated screen (Accessibility,
+  Insights, Settings, Timeline) with generic "element didn't appear" failures
+  -- that breadth points at the sandboxed simulator session lacking something a
+  real run needs (permission state, animation timing), not 36 independent
+  regressions. Re-run on-device or in a normal interactive simulator session to
+  get a trustworthy count before including UI tests in this audit.
+
+- [ ] **Re-enable place geofence monitoring (`CLMonitor`) once Apple fixes it.**
+  Disabled 2026-08-21 after a confirmed, reproducible crash loop on the owner's
+  iPhone 17 Pro Max on iOS 27.0 beta (`24A5418b`): `CLMonitor`'s own initializer
+  raised an uncaught assertion in
+  `+[CLMonitor _requestMonitorWithConfiguration:locationManager:completion:]` on
+  every single launch, three times in a row, unchanged by a fresh monitor
+  identifier or a 500 ms delay before construction — ruling out stale on-disk
+  state or a launch-timing race in LifeLog's own code. A Feedback Assistant
+  report was filed with Apple 2026-08-21, referencing matching reports already on
+  the Apple Developer Forums (threads 802143, 771001). `placeMonitoringDisabledPendingAppleFix`
+  (`LocationRecorder.swift:855`) is the single flag to flip back once a build
+  confirms it no longer reproduces; re-test on-device (install fresh, not over a
+  prior build) before trusting it, the same way this bug was first found.
+
 - [ ] **Find and eliminate the source of recurring duplicate sleep before removing
   `SleepSessionRepair`.** It has found duplicates after the original arrival-window
   bug was fixed, including around erase/restore and live Health sync. Serialize
@@ -121,64 +197,174 @@ integrations.
   the repair as a measured safety net until a test reproduces the race and the
   counter remains zero across real use.
 
+## Distribution readiness — new priority
+
+Concrete work that was explicitly out of scope while LifeLog was private-only.
+The scope for now is a small TestFlight group, not a public App Store listing —
+this is about a tester not being confused or losing trust in their own data, not
+about marketing copy, ratings prompts, or broad-market onboarding.
+
+- [ ] **Confirm the Xcode Cloud release workflow is reliably distribution-clean.**
+  The Archive action's Distribution Preparation and the TestFlight Internal
+  Testing post-action are configured and have shipped one build successfully
+  (2.25.11); worth a second confirmed clean build before trusting that
+  pipeline, since the first attempts hit both a missing Distribution
+  Preparation setting and a missing `NSHealthUpdateUsageDescription` key.
+
 ## Efficiency and tidiness — still open
 
 A code-first audit on 2026-08-20. These are ranked interaction-path and ownership
 improvements, not a request for blanket rewrites or cosmetic file splitting.
 
-- [ ] **Calculate Activity Detail statistics once per meaningful input change.**
-  `ActivityDetailView.statistics` runs `ActivityStatistics.make` over as many as
-  5,000 candidate visits, while the view reads that computed property throughout its
-  chart, comparison, places, totals, usage text, merge copy, and delete copy. Swift
-  does not memoize computed properties, so a render can repeat the same filters,
-  maps, day bucketing, place grouping, and sorts many times. Prepare one immutable
-  statistics value for `(activity identity, candidate generation, window, now)` and
-  pass it into the sections that render it; do not use ad-hoc `@State` without an
-  explicit invalidation rule. Instrument the calculation count and retain a large
-  activity-history performance fixture.
+- [ ] **Continue splitting `LocationRecorder` at its existing component seams.**
+  Eight seams moved out 2026-08-22, each behind the same boundary: the
+  recorder still decides what a result means and performs the Visit
+  mutation, the collaborator only owns the mechanics.
+  `ArrivalConfirmationSession` (the live-location burst's samples, pending
+  arrival, task lifecycle, waiters -- previously five stored properties
+  mutated from four methods); `GeofenceMonitor.plan(wanted:monitoredIdentifiers:)`
+  (a pure diff extracted from `refreshMonitoredRegions`'s inline add/remove
+  loop); `LocationServiceSessionController` (the `CLServiceSession` that
+  keeps Core Location delivering, its diagnostic stream, and the generation
+  bookkeeping that stops a just-replaced session's stream-ended callback
+  from clearing its successor -- previously four stored properties:
+  `serviceSession`, `serviceSessionRequirement`, `serviceSessionGeneration`,
+  `diagnosticTask`); `SavedPlaceCache` (the in-memory Saved Place fetch, its
+  keep-previous-on-failure behaviour, and the nearest-match lookup
+  `createVisit`/`closeVisit`/`identifyPlace` all read inline -- previously a
+  bare stored array reloaded and read directly from six places);
+  `PlaceLookupService.reverseGeocode(at:)` (the `MKReverseGeocodingRequest`
+  call and raw name extraction, returning a three-case outcome --
+  `.resolved`/`.notFound`/`.unavailable` -- so the recorder's existing
+  three-way handling of "found a name," "found nothing," and "MapKit
+  couldn't even build the request" carried over exactly); `VisitArrivalMerge`
+  (the arrival-merge decision at the top of `createVisit` -- duplicate
+  detection plus the previous-open-visit proximity-merge, historical-
+  evidence-bound, or WiFi-anchored-close decision -- returned as a pure
+  `OpenVisitOutcome` the recorder switches on and performs);
+  `GeofenceMonitor.matchesExit(open:name:)` (the guard `closeMonitoredVisit`
+  used to check inline -- the open stay must still be open and must be the
+  same place the `CLMonitor` exit fired for, or a stale/out-of-order event
+  would close the wrong stay); and `VisitArrivalFactory.makeVisit(...)` (the
+  `Visit` construction `createVisit` used to build inline once no merge or
+  close applied -- name/activity/confidence/provenance from the Saved Place
+  match and learned-activity guess, plus the `locationResolutionCandidates`
+  audit entry -- returned as a plain, uninserted `Visit` the recorder still
+  inserts, rescores, reconciles, enriches, and journals). That last split
+  also removed a pre-existing duplicate: the Saved Place distance used to be
+  computed twice (once for the `saved_place_match` diagnostic, again for
+  `locationResolutionCandidates`) and is now computed once and threaded
+  through. The full arrival/incremental-resolution suite, plus new unit
+  tests for each collaborator testable without live Core Location/MapKit,
+  passed unmodified after every step; reverse geocoding has no new tests,
+  matching `PlaceLookupService.nearbyPlaces`'s existing untested status --
+  both need a live MapKit response that isn't mockable, so this is a
+  pre-existing gap the split didn't create or close.
+  At ~1,098 lines the recorder still owns delegate adaptation, raw
+  evidence, `createVisit`'s remaining orchestration (insert, rescore,
+  sample Wi-Fi, reconcile activity, enrich imported visits, finalize,
+  journal, kick off `identifyPlace`), `closeVisit`, `closeMonitoredVisit`'s
+  mutation, Wi-Fi sampling, and diagnostics -- all of it sequential calls
+  into already-extracted collaborators or `VisitMutationService`/
+  `PlaceScoreLifecycle`/`ActivityLocationPolicy` elsewhere in the app,
+  rather than a self-contained decision the collaborator-decides/recorder-
+  performs pattern can lift out. `closeVisit`'s departure-candidate matching
+  (`ActivityLocationPolicy.matchDeparture`) is already a separate pure
+  function the recorder only calls. Absent a new seam appearing, this file
+  is probably close to done for this pass -- further shrinkage would mean
+  moving orchestration around rather than separating a decision from its
+  mechanics, which is a different (and much lower-value) kind of change.
 
-- [ ] **Move Diagnostics' archive summaries off live, whole-model `@Query`s.**
-  `DiagnosticsView` loads every `automatic` and `automatic-superseded` visit merely to
-  count provisional, approximate, duplicate, and resolution-inspectable rows; opening
-  `LocationResolutionChoicesView` loads those same two collections again and filters
-  them in Swift. Use store predicates/counts or an isolated reader that returns small
-  Sendable summaries, and fetch only rows with candidate/explanation payloads when the
-  detail screen is opened (paged if the real archive warrants it). Keep the deliberately
-  capped diagnostic-event and 500-row location-journal queries simple.
+  Checked `closeVisit` directly on 2026-08-22 in case it held one more
+  seam: it does not. `ActivityLocationPolicy.matchDeparture` -- the actual
+  "which stored arrival does this departure belong to" decision -- was
+  already a standalone pure function with its own dedicated test file
+  (`DepartureMatchingTests`) well before this splitting effort started;
+  `closeVisit` only calls it. The one thing worth doing was naming its
+  fetch (`departureCandidates(context:)`, mirroring `recentAutomaticVisits`)
+  instead of leaving it inline, for consistency with every other method
+  here -- not a decision extraction, since there was no decision left in
+  the recorder to extract. Recorder at 1,105 lines (up from 1,098: the
+  named fetch adds a doc comment and signature `createVisit`'s split
+  didn't need). This closes out the visit-mutation methods as a source of
+  further seams; the recorder's remaining size is orchestration, not
+  undivided decisions.
 
-- [ ] **Delete the confirmed dead production declarations and the one decorative
-  empty section.** `InsightsPlacesMap` has no construction site anywhere in the app or
-  tests, and `MonthlyInsights.definedCategory(for:)` has no call site. Remove both,
-  plus the `Section { EmptyView() }` used only to host the Groups footer; attach that
-  explanation without manufacturing an empty row. Do not churn the superficially
-  similar empty alert-button closures or Ask LifeLog's `.idle` `EmptyView`: those are
-  real SwiftUI API/state branches, not dead calls. Add a lightweight repeatable
-  declaration-reference check so future abandoned helpers are found during tidying.
+  Three more seams found and moved out 2026-08-22, past the visit-mutation
+  methods this time: `PlaceScoreLifecycle.mapsLookupResolution(for:
+  evaluation:)` (in `PlaceScoreLifecycle.swift`, alongside the existing
+  `canSuggest` it builds on) collapses `identifyPlace`'s two near-identical
+  `if`/`else if` branches -- both set the same five `Visit` fields from
+  whichever suggestion each one bound (`match` vs. `likely`) and differed
+  only in whether learning happened -- into one `MapsLookupResolution`
+  (`.apply(PlaceSuggestion, learn: Bool)` / `.fallbackToReverseGeocode`) the
+  recorder switches on; a real duplication removed, not just code moved.
+  `PlaceLookupThrottle.shouldAttempt(isAlreadyInFlight:priorAttempts:now:)`
+  is the rate-limit guard `identifyPlace` used to check inline (already in
+  flight, attempt cap, cooldown since the last attempt) -- also absorbed
+  the `placeLookupCooldown`/`maximumPlaceLookupAttempts` constants that used
+  to live on the recorder. `LiveConfirmationMatch.matches(expected:
+  expectedAccuracy:confirmed:confirmedAccuracy:)` is the accuracy-scaled
+  distance-tolerance check `finishLocationConfirmation` used to run inline
+  to decide whether a live-location burst's result actually matches the
+  arrival it was confirming (nil `expected` -- a bare launch check -- always
+  matches). All three followed the same collaborator-decides/recorder-
+  performs boundary as everything before them, and all three got direct
+  unit tests (`mapsLookupResolution`'s alongside `canSuggest`'s existing
+  tests in `PlaceScoringAndEvidenceTests`; the other two in
+  `LocationArrivalConfirmationTests`).
+  One test-writing pitfall hit along the way, worth flagging for whoever
+  writes the next one: `#expect(!Foo.bar(a: .init(...), b: 10,
+                                         c: .init(...), d: 10))` -- a
+  negated multi-line `#expect` whose arguments use bare `.init(...)`
+  shorthand -- intermittently misreported the call's result in Swift
+  Testing's diagnostic output on this toolchain (Xcode from this session;
+  exact version not pinned down) when run as part of the full suite, though
+  never in isolation. Binding the arguments to local `let`s first and
+  passing those to the call made it disappear reliably; the underlying
+  function was always correct (verified independently with a throwaway
+  debug test and a standalone `swift` script). Prefer named locals over
+  inline `.init(...)` in any `#expect(!...)` that spans multiple lines
+  until this is understood, rather than chasing a phantom bug in the
+  function under test.
+  Recorder now at 1,092 lines (down from 1,105). Full `LifeLogTests` suite
+  (713+ tests) passes; verified live in the simulator after a clean
+  install. Genuinely running low on undivided decisions now -- these three
+  were found by rereading the whole file end to end looking for anything
+  matching the pattern, not from an obvious remaining seam the way the
+  visit-mutation methods were. The next pass, if one happens, should expect
+  diminishing returns and might turn up nothing.
 
-- [ ] **Return the app target to an actionable-warning-clean build.** A clean Swift 6
-  build currently reports that the global `openAppleHealth()`/`openAppSettings()`
-  helpers call main-actor-isolated `UIApplication` APIs from a nonisolated context;
-  make their UI isolation explicit. It also reports four unnecessary `await`s around
-  `InsightsAggregationActor.shared.currentGeneration()` in `PlaceHistoryView`; remove
-  them if the generation accessor is intentionally synchronous, or restore a real
-  isolation boundary if it is meant to serialize with aggregation. Treat Xcode's
-  "no AppIntents.framework dependency" metadata message as expected for this app,
-  not as a warning to silence with unused framework linkage.
-
-- [ ] **Continue splitting `LocationRecorder` at its existing component seams.** At
-  1,181 lines it still owns service-session lifetime, delegate adaptation, arrival
-  confirmation, raw evidence, visit mutation, Saved Place caching, region monitoring,
-  reverse geocoding, Wi-Fi sampling, and diagnostics. Preserve the observable recorder
-  as the UI-facing facade, but move the confirmation state machine and monitored-region
-  synchronisation behind narrow collaborators like the types already established in
-  `LocationRecordingComponents.swift`. This is a maintainability refactor, not a new
-  recorder rewrite: keep callback ordering and persistence boundaries covered by the
-  existing arrival/incremental-resolution tests.
+  One more found immediately after, on a second full reread:
+  `VisitArrivalMerge.matchesCurrentlyOpenVisit(_:confirmedLocation:
+  confirmedAccuracy:)` -- `seedConfirmedCurrentVisit`'s own GPS-accuracy-
+  scaled tolerance check (is a bare launch/pull-to-refresh confirmation
+  already the currently open stay, so re-attempt identifying it instead of
+  creating a new one). Distinct from `outcome`'s `.mergeIntoOpen` case,
+  which uses a fixed 150m threshold for a different decision (merge arrival
+  times vs. close-and-create) -- this one scales with `confirmedAccuracy`
+  and only ever chooses between identify-in-place and create-new, never a
+  merge. `seedConfirmedCurrentVisit` had no direct test before this, since
+  it is private and only reachable through a live `CLLocationUpdate`
+  callback; the extracted decision now has three (close, far, and a
+  tolerance-scaling case) in `LocationArrivalConfirmationTests`.
+  Recorder now at 1,088 lines. Full `LifeLogTests` suite passes; verified
+  live in the simulator after a clean install.
+  Reread the whole file a third time after this and found nothing further:
+  `recordAuthorizationChange` and `handle(_ diagnostic:)` branch on
+  Core Location state but the branching *is* the mutation (setting
+  `lastError`/writing a diagnostic directly, no separable decision within
+  them); `finishLocationConfirmation`'s zero-sample fallback
+  (`arrival != nil && sampleCount == 0`) and `identifyRecentUnknown`'s
+  250m radius filter are single-line conditions not worth a named
+  collaborator on their own. This really does look like the end of this
+  effort for now -- the next attempt should expect nothing left to find.
 
 ## Deliberately not priorities
 
-- App Store metadata, public privacy policy, consumer onboarding, and generalized
-  release work while LifeLog remains a private personal app.
+- Public App Store marketing, ratings/review prompts, broad-market accessibility
+  localization, and other public-listing-specific work — in scope once TestFlight
+  distribution to trusted testers is solid, not before.
 - Cloud sync, a website, or multi-user infrastructure before local restore is complete
   and demonstrably atomic.
 - Broad medical-data collection, diagnoses, or correlations presented without enough

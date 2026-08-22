@@ -251,12 +251,4 @@ struct MonthlyInsights {
                         color: insightColor(for: group))
             }
     }
-
-    /// Read the activity's live definition for ordinary visits so a user-edited
-    /// category affects the balance immediately. Synthetic commute segments have no
-    /// catalogue entry, so their already-resolved category is the correct source.
-    private static func definedCategory(for segment: InsightSegment) -> String {
-        guard segment.visit != nil else { return segment.category }
-        return ActivityCatalog.category(for: segment.activity)
-    }
 }

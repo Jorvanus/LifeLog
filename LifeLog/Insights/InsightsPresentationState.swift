@@ -89,8 +89,17 @@ final class InsightsPresentationState {
         if let steps = todaySteps ?? healthSummary?.steps, steps > 0 {
             metrics.append(.init(id: "day-metric-steps", icon: "shoeprints.fill", title: "Steps", value: Int(steps).formatted()))
         }
-        if let lastNightSleep, lastNightSleep.totalSleep > 0 {
-            metrics.append(.init(id: "day-metric-sleep", icon: "bed.double.fill", title: "Last night’s sleep", value: formatHours(lastNightSleep.totalSleep / 3600)))
+        // Prefer the already-reconciled Sleep visit's own hours -- the same total the
+        // donut wedge and Timeline card show -- over a fresh, independent HealthKit
+        // query. Both used to run their own query against the same night and could
+        // disagree by a minute (a different padded fetch window landing on a
+        // different edge sample), showing two different numbers for what a person
+        // reasonably expects to be the same fact. Only fall back to the live query
+        // when sleep has not been reconciled into a visit for today yet.
+        let segmentSleepHours = daySegments.filter(\.isSleep).reduce(0) { $0 + $1.hours }
+        let sleepHours = segmentSleepHours > 0.01 ? segmentSleepHours : (lastNightSleep.map { $0.totalSleep / 3600 } ?? 0)
+        if sleepHours > 0.01 {
+            metrics.append(.init(id: "day-metric-sleep", icon: "bed.double.fill", title: "Last night’s sleep", value: formatHours(sleepHours)))
         }
         if let exercise = healthSummary?.exerciseMinutes, exercise > 0 {
             metrics.append(.init(id: "day-metric-exercise", icon: "figure.run", title: "Exercise", value: "\(Int(exercise.rounded())) min"))
@@ -333,7 +342,19 @@ final class InsightsPresentationState {
         // available. Still computed for every window, unread the rest of the
         // time; the underlying fetches already run off the main actor and are
         // bounded, so this is left alone rather than gating it on `window`.
-        let ordered = variedHighlights(found, interval: interval)
+        //
+        // `found` is otherwise plain append order (steps, sleep, activity, leading
+        // place, retrospectives, year-over-year), and steps is appended first and
+        // almost always non-nil once a month of history exists -- including its own
+        // honest "about the same" filler when nothing actually moved. Left as
+        // append order, that filler structurally won `highlights.first` on most
+        // days regardless of whether sleep or activity had a far bigger, genuinely
+        // noteworthy swing that same day. `isNotable` (false only for that filler
+        // and sleep's equivalent) moves any real finding ahead of it while leaving
+        // relative order untouched within each tier -- `filter` is stable, so this
+        // is a partition, not a re-sort by some new priority scheme.
+        let ordered = variedHighlights(found.filter(\.isNotable) + found.filter { !$0.isNotable },
+                                       interval: interval)
         highlights = window == .day ? Array(ordered.prefix(3)) : ordered
     }
 

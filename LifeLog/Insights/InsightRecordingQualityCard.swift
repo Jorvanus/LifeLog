@@ -16,11 +16,20 @@ struct InsightRecordingQualityCard: View {
 
     private var coveragePercent: Int { Int((quality.coverage * 100).rounded()) }
 
+    /// A low percentage this early just means little time has elapsed to log yet,
+    /// not a pattern of gaps -- see `InsightsRecordingQuality.isEarlyInObservation`.
+    private var qualitySummary: String {
+        if quality.isEarlyInObservation {
+            return "LifeLog only recently started recording on this iPhone, so there's not much of \(periodTitle.lowercased()) to measure yet. This fills in as visits are confirmed."
+        }
+        return "\(coveragePercent)% of \(periodTitle.lowercased()) has a record. The rest is a gap LifeLog has no evidence for, not a quiet day."
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Recording quality").font(.headline)
-                Text("\(coveragePercent)% of \(periodTitle.lowercased()) has a record. The rest is a gap LifeLog has no evidence for, not a quiet day.")
+                Text(qualitySummary)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }

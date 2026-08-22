@@ -160,4 +160,25 @@ enum PlaceScoreLifecycle {
             evaluation.breakdown.total >= suggestionThreshold &&
             evaluation.selected != nil
     }
+
+    /// What a Maps-lookup score means for `visit`: nothing was selected at all, so
+    /// fall back to reverse geocoding; or a candidate was selected, applied either
+    /// way, and additionally learned toward a future Saved Place only when the
+    /// score clears `canSuggest`'s bar and the name isn't a placeholder.
+    ///
+    /// `LocationRecorder.identifyPlace` used to work this out as two near-identical
+    /// `if`/`else if` branches that set the same five `Visit` fields from whichever
+    /// suggestion each one bound (`match` vs. `likely`) and differed only in
+    /// whether learning happened -- collapsed here since both branches were always
+    /// the same suggestion (`evaluation.selected`) under a different name.
+    static func mapsLookupResolution(for visit: Visit, evaluation: PlaceScoreEvaluation) -> MapsLookupResolution {
+        guard let selected = evaluation.selected else { return .fallbackToReverseGeocode }
+        let learn = canSuggest(for: visit, evaluation: evaluation) && !Visit.isPlaceholderName(selected.name)
+        return .apply(selected, learn: learn)
+    }
+}
+
+enum MapsLookupResolution: Equatable {
+    case apply(PlaceSuggestion, learn: Bool)
+    case fallbackToReverseGeocode
 }

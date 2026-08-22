@@ -38,6 +38,11 @@ enum InsightsRecordingQuality {
         let provisionalRows: [ProvisionalRow]
         let daysBelowThreshold: [DayCoverage]
         let threshold: Double
+        /// True for roughly the first day LifeLog has been able to record anything on
+        /// this device. A low coverage percentage is expected and uninformative here --
+        /// there just hasn't been much elapsed time to log yet -- so the card reads
+        /// this instead of the same wording it uses once a real pattern of gaps exists.
+        let isEarlyInObservation: Bool
 
         var gapCount: Int { gaps.count }
         /// Nothing to say yet about an empty or entirely future period -- not the
@@ -46,14 +51,20 @@ enum InsightsRecordingQuality {
     }
 
     static let defaultThreshold = 0.5
+    /// How long a low coverage percentage is attributed to "just started," not a
+    /// real gap. Matches the day someone is most likely to open Insights minutes
+    /// after installing and see almost none of the elapsed period logged yet.
+    static let earlyObservationWindow: TimeInterval = 24 * 60 * 60
 
     static func make(segments: [InsightSegment], visits: [Visit], interval: DateInterval, now: Date,
-                     threshold: Double = defaultThreshold) -> Presentation {
+                     observationStart: Date? = nil, threshold: Double = defaultThreshold) -> Presentation {
+        let isEarlyInObservation = observationStart.map { now.timeIntervalSince($0) < earlyObservationWindow } ?? false
         let cappedEnd = min(interval.end, now)
         guard cappedEnd > interval.start else {
             return Presentation(coverage: 1, loggedHours: 0, totalHours: 0, gaps: [],
                                 totalGapHours: 0, longestGap: nil, provisionalRows: [],
-                                daysBelowThreshold: [], threshold: threshold)
+                                daysBelowThreshold: [], threshold: threshold,
+                                isEarlyInObservation: isEarlyInObservation)
         }
         let elapsed = DateInterval(start: interval.start, end: cappedEnd)
         let totalHours = elapsed.duration / 3600
@@ -82,7 +93,8 @@ enum InsightsRecordingQuality {
             coverage: totalHours > 0 ? min(1, loggedHours / totalHours) : 1,
             loggedHours: loggedHours, totalHours: totalHours, gaps: gaps,
             totalGapHours: totalGapHours, longestGap: gaps.first,
-            provisionalRows: provisional, daysBelowThreshold: below, threshold: threshold
+            provisionalRows: provisional, daysBelowThreshold: below, threshold: threshold,
+            isEarlyInObservation: isEarlyInObservation
         )
     }
 

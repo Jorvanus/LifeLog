@@ -447,7 +447,21 @@ struct TimelineView: View {
             // Ended, so "now" is the end of that day: an unclosed stay must not be
             // measured against the present or it would run for years.
             let rows = TimelineView.rows(from: visits, day: interval, now: interval.end)
-            if rows.isEmpty {
+            // A day that ended before LifeLog ever started observing this iPhone reads
+            // identically to a real gap in someone's own recorded history unless this
+            // distinguishes them — the same "before LifeLog existed" boundary Insights
+            // already excludes from coverage and gap reporting (RecordingObservation).
+            if rows.isEmpty, let observationStart = RecordingObservation.startedAt(),
+               interval.end <= observationStart {
+                VStack(spacing: 14) {
+                    Image(systemName: "clock.badge.questionmark").font(.largeTitle).foregroundStyle(.secondary)
+                    Text("Before LifeLog was on this iPhone").font(.headline)
+                    Text("This day is outside LifeLog's recorded history, not a gap in it. Move to another day, or tap the date to jump.")
+                        .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity).padding(32).lifeCard()
+                .accessibilityIdentifier("empty-day-before-lifelog")
+            } else if rows.isEmpty {
                 VStack(spacing: 14) {
                     Image(systemName: "calendar").font(.largeTitle).foregroundStyle(.secondary)
                     Text("Nothing recorded on this day").font(.headline)

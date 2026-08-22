@@ -1,8 +1,10 @@
 # LifeLog
 
-A private, native iOS location diary. It records Apple `CLVisit` events and significant location changes, recognizes saved places, infers a likely activity, accepts corrections, and charts time by activity.
+A native iOS location diary. It records Apple `CLVisit` events and significant location changes, recognizes saved places, infers a likely activity, accepts corrections, and charts time by activity.
 
 LifeLog can also import sleep, Apple Watch workouts, Watch walking, and iPhone motion classifications. These add Sleeping, Walking, Running, Cycling, and Travelling entries to the timeline and Insights dashboard.
+
+LifeLog began as a private app for its owner's own iPhone and is now moving toward wider distribution — first a small TestFlight group of trusted testers, with the App Store a possible later step. It still asks for real trust: it records where you go and imports sensitive Health data, all kept in local, on-device storage.
 
 ## Open the project
 
@@ -42,11 +44,18 @@ just regenerate.
 - Location visits take priority over passive device activity: movement inside a destination does not create a second Timeline card. Measured sleep and a deliberately started workout remain visible because they are direct evidence, not a passive movement guess.
 - Timeline opens on today but can jump to any archived day without loading the complete archive. Insights supports day, week, month, and year windows.
 - Connect Apple Health and Motion Activity from LifeLog Settings. Routine Health refresh uses a bounded window sized to the gap since the last import (2–30 days), manual Health re-import reads 30 days, and iPhone motion history reads the most recent 7 days.
+- HealthKit's own sync from an Apple Watch to a phone can lag behind what the Health app shows by minutes after waking — a fresh sleep query returning nothing does not always mean nothing was tracked. See `TODO.md` for the UI work this still needs.
+
+## Distribution
+
+Xcode Cloud builds `main` on every push as compile-only CI, and a separate,
+manually-triggered "Release to TestFlight" workflow archives and uploads to
+TestFlight's internal testing group. Day-to-day work happens on a feature branch
+(Xcode Cloud is scoped to only ever build `main`, both for CI and for manual
+Release starts); `main` only gets pushed to when a change is actually meant to
+reach testers. See `AGENTS.md` for the version-bump and changelog conventions
+every shipped change follows.
 
 ## Next milestones
 
-See `TODO.md`, which is the audited live list. The near-term priorities are proving
-the rebuilt sleep/no-Watch path on real hardware, adding explicit archive search,
-and completing location-quality and hardware validation. The test targets currently
-cover location replay and invariants, Saved Place learning, archive/Insights
-aggregation, migrations, import recovery, and UI reachability.
+See `TODO.md`, which is the audited live list. The near-term priorities are location-timing correctness bugs found against the real archive (a commute duration undercount, a still-open drive/parking-spot duration bug), re-enabling place geofence monitoring once Apple fixes a confirmed CoreLocation crash, and — new as LifeLog moves toward distribution — generalizing UX and diagnostics defaults that currently assume whoever is using the app already knows how it works, plus the basic TestFlight-readiness work (a real privacy policy, a second confirmed clean release build) that was previously out of scope. The test targets currently cover location replay and invariants, Saved Place learning, archive/Insights aggregation, migrations, import recovery, and UI reachability.

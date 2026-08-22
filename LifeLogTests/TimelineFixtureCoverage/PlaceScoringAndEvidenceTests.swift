@@ -159,6 +159,62 @@ struct PlaceScoringAndEvidenceTests {
         #expect(PlaceScoreLifecycle.canSuggest(for: visit, evaluation: departureScore) == false)
     }
 
+    // MARK: - PlaceScoreLifecycle.mapsLookupResolution
+
+    private func breakdown(total: Int) -> PlaceScoreBreakdown {
+        PlaceScoreBreakdown(recordedAt: base, total: total, savedPlaceGeofence: 0, poiDistance: 0,
+                            poiCategory: 0, dwellDuration: 0, horizontalAccuracy: 0, recurrence: 0,
+                            timeOfDay: 0, priorCorrections: 0, selectedPlaceName: nil, mapsIdentifier: nil)
+    }
+
+    @Test("Nothing selected falls back to reverse geocoding regardless of score")
+    func mapsLookupResolutionFallsBackWithNoCandidate() {
+        let visit = Visit(arrival: base, latitude: -23.37, longitude: 150.51)
+        let evaluation = PlaceScoreEvaluation(selected: nil, breakdown: breakdown(total: 90))
+        #expect(PlaceScoreLifecycle.mapsLookupResolution(for: visit, evaluation: evaluation) == .fallbackToReverseGeocode)
+    }
+
+    @Test("A high-confidence candidate on an unresolved visit is applied and learned")
+    func mapsLookupResolutionAppliesAndLearnsAboveThreshold() {
+        let visit = Visit(arrival: base, latitude: -23.37, longitude: 150.51)
+        let suggestion = PlaceSuggestion(name: "Corner Cafe", latitude: -23.37, longitude: 150.51,
+                                         suggestedActivity: "Eating", distance: 20, mapsIdentifier: "cafe-id")
+        let evaluation = PlaceScoreEvaluation(selected: suggestion, breakdown: breakdown(total: 90))
+        #expect(PlaceScoreLifecycle.mapsLookupResolution(for: visit, evaluation: evaluation)
+                == .apply(suggestion, learn: true))
+    }
+
+    @Test("A below-threshold candidate is still applied, but not learned")
+    func mapsLookupResolutionAppliesWithoutLearningBelowThreshold() {
+        let visit = Visit(arrival: base, latitude: -23.37, longitude: 150.51)
+        let suggestion = PlaceSuggestion(name: "Corner Cafe", latitude: -23.37, longitude: 150.51,
+                                         suggestedActivity: "Eating", distance: 20, mapsIdentifier: "cafe-id")
+        let evaluation = PlaceScoreEvaluation(selected: suggestion, breakdown: breakdown(total: 40))
+        #expect(PlaceScoreLifecycle.mapsLookupResolution(for: visit, evaluation: evaluation)
+                == .apply(suggestion, learn: false))
+    }
+
+    @Test("A placeholder-named candidate is applied but never learned, even above threshold")
+    func mapsLookupResolutionNeverLearnsAPlaceholderName() {
+        let visit = Visit(arrival: base, latitude: -23.37, longitude: 150.51)
+        let suggestion = PlaceSuggestion(name: Visit.unknownPlaceName, latitude: -23.37, longitude: 150.51,
+                                         suggestedActivity: "Visiting", distance: 20, mapsIdentifier: nil)
+        let evaluation = PlaceScoreEvaluation(selected: suggestion, breakdown: breakdown(total: 90))
+        #expect(PlaceScoreLifecycle.mapsLookupResolution(for: visit, evaluation: evaluation)
+                == .apply(suggestion, learn: false))
+    }
+
+    @Test("An already-confirmed visit is applied but never learned, even above threshold")
+    func mapsLookupResolutionNeverLearnsOnAConfirmedVisit() {
+        let visit = Visit(arrival: base, latitude: -23.37, longitude: 150.51,
+                          recognitionConfidence: "confirmed")
+        let suggestion = PlaceSuggestion(name: "Corner Cafe", latitude: -23.37, longitude: 150.51,
+                                         suggestedActivity: "Eating", distance: 20, mapsIdentifier: "cafe-id")
+        let evaluation = PlaceScoreEvaluation(selected: suggestion, breakdown: breakdown(total: 90))
+        #expect(PlaceScoreLifecycle.mapsLookupResolution(for: visit, evaluation: evaluation)
+                == .apply(suggestion, learn: false))
+    }
+
     @Test("Place score survives the existing candidate payload")
     func storesPlaceScoreAlongsideCandidates() {
         let visit = Visit(arrival: base, latitude: -23.37, longitude: 150.51)

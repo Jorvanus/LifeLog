@@ -55,22 +55,36 @@ final class InsightsPeriodLoader {
         do {
             archiveHasAnyVisits = ((try? context.fetchCount(FetchDescriptor<Visit>())) ?? 0) > 0
             var fetched = scope.filtering(try context.fetch(descriptor))
-            // Preserve a current multi-day location whose arrival predates the comparison
-            // range without widening the main archive query.
+            // Preserve any visit whose arrival predates the comparison range but that
+            // overlaps it anyway -- a still-open multi-day location (no departure yet)
+            // or a completed one, such as an overnight sleep entry that started before
+            // local midnight and runs past it -- without widening the main archive
+            // query. `visit.arrival >= fetchStart` alone drops these entirely, even
+            // though `Visit.overlaps` (what `InsightsSnapshot.makeSegments` actually
+            // filters and clips by) would count them: the previous period's total then
+            // silently loses that visit's hours, and `makeComparisons` reads the
+            // missing category as zero instead of what it actually was.
             do {
-                let activeDescriptor = FetchDescriptor<Visit>(
-                    predicate: #Predicate { $0.departure == nil },
+                // `??` rather than `== nil || departure! > fetchStart`: SwiftData's
+                // Predicate macro cannot translate a forced unwrap to SQL and throws
+                // `unsupportedPredicate` at fetch time, which this same `catch` would
+                // otherwise swallow silently.
+                let farFuture = Date.distantFuture
+                let overlapDescriptor = FetchDescriptor<Visit>(
+                    predicate: #Predicate { visit in
+                        visit.arrival < fetchStart && (visit.departure ?? farFuture) > fetchStart
+                    },
                     sortBy: [SortDescriptor(\.arrival)]
                 )
                 let existingIDs = Set(fetched.map { ObjectIdentifier($0) })
-                fetched.append(contentsOf: try context.fetch(activeDescriptor).filter(scope.includes).filter {
+                fetched.append(contentsOf: try context.fetch(overlapDescriptor).filter(scope.includes).filter {
                     !existingIDs.contains(ObjectIdentifier($0))
                 })
             } catch {
-                // The period data is still valid if the optional-date supplement is
+                // The period data is still valid if the boundary-overlap supplement is
                 // unavailable on a particular protected-store/runtime combination.
                 Diagnostics.record(error, context: context, subsystem: "Insights",
-                                   operation: "active visit supplement", severity: "info")
+                                   operation: "boundary overlap supplement", severity: "info")
             }
             visits = fetched.sorted { $0.arrival < $1.arrival }
         } catch {

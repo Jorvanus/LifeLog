@@ -206,7 +206,7 @@ struct ArchiveModelFieldCoverageTests {
 
         let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
         let decoded = try decoder.decode(LifeLogBackup.self, from: data)
-        #expect(decoded.version == 3)
+        #expect(decoded.version == LifeLogBackup.currentVersion)
         // The manifest, present unconditionally on every backup this build writes.
         let manifest = try #require(decoded.manifest)
         #expect(manifest.recordCounts.visits == 1)

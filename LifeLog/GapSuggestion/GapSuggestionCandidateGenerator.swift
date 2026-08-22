@@ -298,7 +298,14 @@ extension ArchiveRepairActor {
     /// — so a caller can treat "gap disappeared" and "stale request" the same way.
     func gapSuggestionContext(gapStart: Date, gapEnd: Date, now: Date = .now) throws -> GapSuggestionContext? {
         let visits = try modelContext.fetch(FetchDescriptor<Visit>())
-        guard let gap = ArchiveRepair.unloggedGaps(in: visits, now: now)
+        // `minimumHours: 0`, unlike `fillSingleGap`'s use of the 30-minute-floored
+        // `fillableGaps`: this is reached not only from the floor-gated "unlogged
+        // gaps" list but also from Insights' own day-breakdown drill-down, whose
+        // `.unlogged` segments (`InsightsSnapshot.makeSegments`) carry no minimum
+        // duration at all. A real, short, tappable gap from there must still be
+        // findable here by its exact bounds, not silently invisible because it
+        // fell under a floor meant for a *different* caller's list.
+        guard let gap = ArchiveRepair.unloggedGaps(in: visits, now: now, minimumHours: 0)
             .first(where: { $0.start == gapStart && $0.end == gapEnd }) else { return nil }
         let savedPlaces = try modelContext.fetch(FetchDescriptor<SavedPlace>())
         return GapSuggestionContextBuilder.build(gapStart: gap.start, gapEnd: gap.end, before: gap.before,

@@ -1,4 +1,5 @@
 import CoreLocation
+import SwiftData
 import Testing
 @testable import LifeLog
 
@@ -149,6 +150,407 @@ struct LocationArrivalConfirmationTests {
         #expect(LocationRecoveryCoordinator.shouldRebuildServiceSession(
             held: nil, hasLiveSession: false, required: .always
         ))
+    }
+
+    // MARK: - GeofenceMonitor.plan
+
+    private func rankedPlace(_ name: String, latitude: Double = -27.47, longitude: Double = 153.03) -> MonitoredPlaces.Ranked {
+        .init(name: name, latitude: latitude, longitude: longitude, radius: 100, visits: 1, lastVisit: .now)
+    }
+
+    @Test("A region synchronisation plan adds everything wanted when nothing is monitored yet")
+    func planAddsEverythingFromEmpty() {
+        let wanted = [rankedPlace("Home"), rankedPlace("Work")]
+        let plan = GeofenceMonitor.plan(wanted: wanted, monitoredIdentifiers: [])
+        #expect(Set(plan.toAdd.map(\.identifier)) == Set(wanted.map(\.identifier)))
+        #expect(plan.toRemove.isEmpty)
+    }
+
+    @Test("A region synchronisation plan changes nothing once the monitored set already matches")
+    func planIsEmptyWhenAlreadySynchronised() {
+        let wanted = [rankedPlace("Home"), rankedPlace("Work")]
+        let plan = GeofenceMonitor.plan(wanted: wanted, monitoredIdentifiers: Set(wanted.map(\.identifier)))
+        #expect(plan.toAdd.isEmpty)
+        #expect(plan.toRemove.isEmpty)
+    }
+
+    @Test("A region synchronisation plan only touches what actually changed")
+    func planIsMinimalOnAMixedSet() {
+        let home = rankedPlace("Home")
+        let work = rankedPlace("Work")
+        let stale = "place|stale-gym|-27.50000,153.05000"
+        // Home is already monitored and still wanted -- neither added nor removed.
+        // Work is wanted but not yet monitored -- added. `stale` is monitored but no
+        // longer wanted -- removed.
+        let plan = GeofenceMonitor.plan(wanted: [home, work], monitoredIdentifiers: [home.identifier, stale])
+        #expect(plan.toAdd.map(\.identifier) == [work.identifier])
+        #expect(plan.toRemove == [stale])
+    }
+
+    @Test("A geofence exit only closes a stay that is still open at the same place")
+    func matchesExitRequiresOpenAndSamePlace() {
+        let open = Visit(arrival: .now, latitude: -27.47, longitude: 153.03,
+                         placeName: "Home", inferredActivity: "Visiting")
+        #expect(GeofenceMonitor.matchesExit(open: open, name: "Home"))
+        #expect(GeofenceMonitor.matchesExit(open: open, name: "home"), "the match is case-insensitive")
+        #expect(!GeofenceMonitor.matchesExit(open: open, name: "Work"), "a different place must not close this stay")
+
+        let closed = Visit(arrival: .now.addingTimeInterval(-3600), departure: .now, latitude: -27.47, longitude: 153.03,
+                           placeName: "Home", inferredActivity: "Visiting")
+        #expect(!GeofenceMonitor.matchesExit(open: closed, name: "Home"),
+               "an already-closed stay must not be closed a second time by a stale event")
+    }
+
+    // MARK: - ArrivalConfirmationSession
+
+    private func stationarySample(_ offset: TimeInterval) -> CLLocation {
+        CLLocation(coordinate: .init(latitude: -27.47, longitude: 153.03),
+                   altitude: 0, horizontalAccuracy: 12, verticalAccuracy: 12,
+                   timestamp: Date.now.addingTimeInterval(offset))
+    }
+
+    @Test("A session folds a second begin into the running burst instead of starting another")
+    @MainActor
+    func sessionFoldsRepeatedBeginIntoRunningBurst() {
+        let session = ArrivalConfirmationSession()
+        #expect(session.begin(pendingArrival: nil))
+        #expect(session.isActive)
+        #expect(!session.begin(pendingArrival: nil), "a second begin while one is active must fold in, not restart")
+    }
+
+    @Test("A CLVisit arrival supersedes an in-flight launch check")
+    @MainActor
+    func sessionArrivalSupersedesBareLaunchCheck() {
+        let session = ArrivalConfirmationSession()
+        #expect(session.begin(pendingArrival: nil))
+        let arrival = PendingArrival(coordinate: .init(latitude: -27.47, longitude: 153.03),
+                                     arrival: .now, callbackType: .visitArrival, accuracy: 10)
+        #expect(session.begin(pendingArrival: arrival), "an arrival must cancel and restart the bare launch check")
+        #expect(session.pendingArrival?.arrival == arrival.arrival)
+    }
+
+    @Test("A finished session reports its samples' outcome and becomes inactive")
+    @MainActor
+    func sessionFinishReportsOutcomeAndClears() {
+        let session = ArrivalConfirmationSession()
+        _ = session.begin(pendingArrival: nil)
+        _ = session.append(location: stationarySample(0), stationary: false)
+        _ = session.append(location: stationarySample(1), stationary: true)
+        let count = session.append(location: stationarySample(2), stationary: true)
+        #expect(count == 3)
+
+        let outcome = session.finish()
+        #expect(outcome?.confirmedLocation != nil)
+        #expect(outcome?.sampleCount == 3)
+        #expect(!session.isActive)
+        // A finished session can begin again immediately.
+        #expect(session.begin(pendingArrival: nil))
+    }
+
+    @Test("Cancelling an inactive-again session is a no-op, not an outcome")
+    @MainActor
+    func sessionFinishIsNilWhenNothingIsActive() {
+        let session = ArrivalConfirmationSession()
+        #expect(session.finish() == nil)
+    }
+
+    @Test("A waiter resumes when the session finishes, not before")
+    @MainActor
+    func sessionAwaiterResumesOnFinish() async {
+        let session = ArrivalConfirmationSession()
+        _ = session.begin(pendingArrival: nil)
+        let waiter = Task { await session.awaitCompletion() }
+        // Give the waiter a chance to register before the session ends.
+        await Task.yield()
+        session.cancel()
+        await waiter.value
+    }
+
+    // MARK: - VisitArrivalMerge
+
+    @Test("A duplicate match requires proximity and either a matching arrival or an open stay")
+    func duplicateMatchRequiresProximityAndTiming() {
+        let arrival = Date.now
+        let coordinate = CLLocationCoordinate2D(latitude: -27.47, longitude: 153.03)
+        let sameArrivalFarAway = Visit(arrival: arrival, latitude: -27.60, longitude: 153.10,
+                                       placeName: "Elsewhere", inferredActivity: "Visiting")
+        let closeButDifferentTimeAndClosed = Visit(arrival: arrival.addingTimeInterval(10 * 60),
+                                                    departure: arrival.addingTimeInterval(20 * 60),
+                                                    latitude: -27.47, longitude: 153.03,
+                                                    placeName: "Closed", inferredActivity: "Visiting")
+        let closeAndSameArrival = Visit(arrival: arrival.addingTimeInterval(30),
+                                        latitude: -27.4701, longitude: 153.0301,
+                                        placeName: "Match", inferredActivity: "Visiting")
+
+        #expect(VisitArrivalMerge.duplicateMatch(coordinate: coordinate, arrival: arrival,
+                                                  in: [sameArrivalFarAway, closeButDifferentTimeAndClosed]) == nil)
+        #expect(VisitArrivalMerge.duplicateMatch(coordinate: coordinate, arrival: arrival,
+                                                  in: [closeAndSameArrival]) === closeAndSameArrival)
+    }
+
+    @Test("A duplicate match also fires for a close, still-open stay regardless of arrival time")
+    func duplicateMatchFiresForOpenStayEvenWithDifferentArrival() {
+        let coordinate = CLLocationCoordinate2D(latitude: -27.47, longitude: 153.03)
+        let openStay = Visit(arrival: Date.now.addingTimeInterval(-3600), latitude: -27.4701, longitude: 153.0301,
+                             placeName: "Open", inferredActivity: "Visiting")
+        #expect(VisitArrivalMerge.duplicateMatch(coordinate: coordinate, arrival: .now, in: [openStay]) === openStay)
+    }
+
+    @Test("A close arrival merges into the currently open stay")
+    func outcomeMergesWhenClose() {
+        let openVisit = Visit(arrival: Date.now.addingTimeInterval(-600), latitude: -27.47, longitude: 153.03,
+                              placeName: "Home", inferredActivity: "Visiting")
+        let outcome = VisitArrivalMerge.outcome(for: openVisit, coordinate: .init(latitude: -27.4701, longitude: 153.0301),
+                                                arrival: .now, wifiObservation: nil)
+        #expect(outcome == .mergeIntoOpen)
+    }
+
+    @Test("A far, earlier arrival bounds the new visit's departure instead of closing the open stay")
+    func outcomeBoundsNewVisitWhenArrivalIsOlder() {
+        let latestArrival = Date.now
+        let openVisit = Visit(arrival: latestArrival, latitude: -27.47, longitude: 153.03,
+                              placeName: "Home", inferredActivity: "Visiting")
+        let outcome = VisitArrivalMerge.outcome(for: openVisit, coordinate: .init(latitude: -27.60, longitude: 153.10),
+                                                arrival: latestArrival.addingTimeInterval(-3600), wifiObservation: nil)
+        #expect(outcome == .boundNewVisitDeparture(latestArrival))
+    }
+
+    @Test("A far, newer arrival closes the open stay at its own timestamp with no Wi-Fi evidence")
+    func outcomeClosesOpenVisitWithoutWiFiAnchor() {
+        let openArrival = Date.now.addingTimeInterval(-3600)
+        let openVisit = Visit(arrival: openArrival, latitude: -27.47, longitude: 153.03,
+                              placeName: "Home", inferredActivity: "Visiting")
+        let newArrival = Date.now
+        let outcome = VisitArrivalMerge.outcome(for: openVisit, coordinate: .init(latitude: -27.60, longitude: 153.10),
+                                                arrival: newArrival, wifiObservation: nil)
+        #expect(outcome == .closeOpenVisit(departure: newArrival, usedWiFiAnchor: false))
+    }
+
+    @Test("A Wi-Fi absence observed before the next arrival sharpens the close")
+    func outcomeClosesOpenVisitWithWiFiAnchor() {
+        let openArrival = Date.now.addingTimeInterval(-3600)
+        let openVisit = Visit(arrival: openArrival, latitude: -27.47, longitude: 153.03,
+                              placeName: "Home", inferredActivity: "Visiting")
+        let absentAt = openArrival.addingTimeInterval(1800)
+        let observation = WiFiAnchor.Observation(networkHash: "abc", lastSeen: openArrival, firstAbsent: absentAt)
+        let newArrival = Date.now
+        let outcome = VisitArrivalMerge.outcome(for: openVisit, coordinate: .init(latitude: -27.60, longitude: 153.10),
+                                                arrival: newArrival, wifiObservation: observation)
+        #expect(outcome == .closeOpenVisit(departure: absentAt, usedWiFiAnchor: true))
+    }
+
+    @Test("Nothing open produces no outcome")
+    func outcomeIsNilWithNoOpenVisit() {
+        #expect(VisitArrivalMerge.outcome(for: nil, coordinate: .init(latitude: -27.47, longitude: 153.03),
+                                          arrival: .now, wifiObservation: nil) == nil)
+    }
+
+    @Test("A confirmed location close to the currently open visit matches it")
+    func matchesCurrentlyOpenVisitWhenClose() {
+        let open = Visit(arrival: .now.addingTimeInterval(-600), latitude: -27.47, longitude: 153.03,
+                         placeName: "Home", inferredActivity: "Visiting")
+        #expect(VisitArrivalMerge.matchesCurrentlyOpenVisit(open, confirmedLocation: .init(latitude: -27.4701, longitude: 153.0301),
+                                                            confirmedAccuracy: 10))
+    }
+
+    @Test("A confirmed location far from the currently open visit does not match it")
+    func matchesCurrentlyOpenVisitWhenFar() {
+        let open = Visit(arrival: .now.addingTimeInterval(-600), latitude: -27.47, longitude: 153.03,
+                         placeName: "Home", inferredActivity: "Visiting")
+        #expect(!VisitArrivalMerge.matchesCurrentlyOpenVisit(open, confirmedLocation: .init(latitude: -27.60, longitude: 153.10),
+                                                             confirmedAccuracy: 10))
+    }
+
+    @Test("Poor GPS accuracy widens the match tolerance past the 150m floor")
+    func matchesCurrentlyOpenVisitToleranceScalesWithAccuracy() {
+        // ~350m away -- outside the 150m floor, but within a poor-accuracy-scaled tolerance.
+        let open = Visit(arrival: .now.addingTimeInterval(-600), latitude: -27.47, longitude: 153.03,
+                         placeName: "Home", inferredActivity: "Visiting")
+        let confirmedLocation = CLLocationCoordinate2D(latitude: -27.4732, longitude: 153.03)
+        #expect(!VisitArrivalMerge.matchesCurrentlyOpenVisit(open, confirmedLocation: confirmedLocation, confirmedAccuracy: 10),
+               "the 150m floor alone must not cover a ~350m gap")
+        #expect(VisitArrivalMerge.matchesCurrentlyOpenVisit(open, confirmedLocation: confirmedLocation, confirmedAccuracy: 200),
+               "poor accuracy must widen the tolerance enough to cover it")
+    }
+
+    // MARK: - VisitArrivalFactory
+
+    @Test("With no Saved Place match, the visit is unidentified and placeless")
+    func makeVisitWithNoSavedPlaceIsIdentifying() {
+        let coordinate = CLLocationCoordinate2D(latitude: -27.47, longitude: 153.03)
+        let item = VisitArrivalFactory.makeVisit(coordinate: coordinate, arrival: .now, departure: nil,
+                                                  saved: nil, savedDistance: nil, learnedActivity: nil)
+        #expect(item.placeName == Visit.identifyingPlaceName)
+        #expect(item.recognitionConfidence == nil)
+        #expect(item.mapsIdentifier == nil)
+        #expect(item.placeFieldProvenance == nil)
+        #expect(item.resolutionExplanation == nil)
+        #expect(item.locationResolutionCandidates == nil)
+    }
+
+    @Test("A Saved Place match names the visit and records it as a resolution candidate")
+    func makeVisitWithSavedPlaceIsLearnedAndCandidateRecorded() {
+        let coordinate = CLLocationCoordinate2D(latitude: -27.47, longitude: 153.03)
+        let saved = SavedPlace(name: "Home", latitude: -27.4701, longitude: 153.0301,
+                               defaultActivity: "Sleeping", mapsIdentifier: "maps-123")
+        let item = VisitArrivalFactory.makeVisit(coordinate: coordinate, arrival: .now, departure: nil,
+                                                  saved: saved, savedDistance: 25, learnedActivity: nil)
+        #expect(item.placeName == "Home")
+        #expect(item.inferredActivity == "Sleeping")
+        #expect(item.recognitionConfidence == "learned")
+        #expect(item.mapsIdentifier == "maps-123")
+        #expect(item.placeFieldProvenance == "saved-place")
+        #expect(item.resolutionExplanation == LocationResolutionExplanation.savedPlace.rawValue)
+        #expect(item.locationResolutionCandidates?.chosen?.name == "Home")
+        #expect(item.locationResolutionCandidates?.chosen?.distance == 25)
+        #expect(item.locationResolutionCandidates?.rejected.isEmpty == true)
+    }
+
+    @Test("A learned activity is only used when the Saved Place has none of its own")
+    func makeVisitPrefersSavedPlaceActivityOverLearned() {
+        let coordinate = CLLocationCoordinate2D(latitude: -27.47, longitude: 153.03)
+        let savedWithDefault = SavedPlace(name: "Home", latitude: -27.47, longitude: 153.03, defaultActivity: "Sleeping")
+        let item = VisitArrivalFactory.makeVisit(coordinate: coordinate, arrival: .now, departure: nil,
+                                                  saved: savedWithDefault, savedDistance: 10, learnedActivity: "Working")
+        #expect(item.inferredActivity == "Sleeping", "the Saved Place's own default activity wins over a learned guess")
+    }
+
+    @Test("The new visit's departure is whatever the caller inferred, unset when nothing was")
+    func makeVisitCarriesTheInferredDeparture() {
+        let coordinate = CLLocationCoordinate2D(latitude: -27.47, longitude: 153.03)
+        let departure = Date.now
+        let item = VisitArrivalFactory.makeVisit(coordinate: coordinate, arrival: .now.addingTimeInterval(-3600),
+                                                  departure: departure, saved: nil, savedDistance: nil, learnedActivity: nil)
+        #expect(item.departure == departure)
+    }
+
+    // MARK: - LiveConfirmationMatch
+
+    @Test("A bare launch check with no expected coordinate always matches")
+    func liveConfirmationMatchesWithNoExpectation() {
+        #expect(LiveConfirmationMatch.matches(expected: nil, expectedAccuracy: 0,
+                                              confirmed: .init(latitude: -27.47, longitude: 153.03),
+                                              confirmedAccuracy: 10))
+    }
+
+    @Test("A confirmation close to its expected arrival matches")
+    func liveConfirmationMatchesWhenClose() {
+        #expect(LiveConfirmationMatch.matches(expected: .init(latitude: -27.47, longitude: 153.03), expectedAccuracy: 10,
+                                              confirmed: .init(latitude: -27.4701, longitude: 153.0301), confirmedAccuracy: 10))
+    }
+
+    @Test("A confirmation far from its expected arrival does not match")
+    func liveConfirmationRejectsWhenFar() {
+        let expected = CLLocationCoordinate2D(latitude: -27.47, longitude: 153.03)
+        let confirmed = CLLocationCoordinate2D(latitude: -27.60, longitude: 153.10)
+        let result = LiveConfirmationMatch.matches(expected: expected, expectedAccuracy: 10,
+                                                    confirmed: confirmed, confirmedAccuracy: 10)
+        let distance = CLLocation(latitude: expected.latitude, longitude: expected.longitude)
+            .distance(from: CLLocation(latitude: confirmed.latitude, longitude: confirmed.longitude))
+        #expect(!result, "distance=\(distance) result=\(result)")
+    }
+
+    @Test("Tolerance widens with whichever side's accuracy is worse")
+    func liveConfirmationToleranceScalesWithWorseAccuracy() {
+        // ~500m away -- outside the 150m floor, but within a 2x300m accuracy-scaled tolerance.
+        let expected = CLLocationCoordinate2D(latitude: -27.47, longitude: 153.03)
+        let confirmed = CLLocationCoordinate2D(latitude: -27.4745, longitude: 153.03)
+        #expect(!LiveConfirmationMatch.matches(expected: expected, expectedAccuracy: 10,
+                                               confirmed: confirmed, confirmedAccuracy: 10),
+               "the 150m floor alone must not cover a ~500m gap")
+        #expect(LiveConfirmationMatch.matches(expected: expected, expectedAccuracy: 300,
+                                              confirmed: confirmed, confirmedAccuracy: 10),
+               "a poor expected-side accuracy must widen the tolerance enough to cover it")
+    }
+
+    // MARK: - PlaceLookupThrottle
+
+    @Test("A lookup already in flight is never attempted again")
+    func throttleRefusesWhileInFlight() {
+        #expect(!PlaceLookupThrottle.shouldAttempt(isAlreadyInFlight: true, priorAttempts: [], now: .now))
+    }
+
+    @Test("A lookup with no prior attempts is always allowed")
+    func throttleAllowsTheFirstAttempt() {
+        #expect(PlaceLookupThrottle.shouldAttempt(isAlreadyInFlight: false, priorAttempts: [], now: .now))
+    }
+
+    @Test("A lookup at the attempt cap is refused even with the cooldown satisfied")
+    func throttleRefusesAtTheAttemptCap() {
+        let now = Date.now
+        let longAgo = now.addingTimeInterval(-PlaceLookupThrottle.cooldown * 10)
+        let attempts = Array(repeating: longAgo, count: PlaceLookupThrottle.maximumAttempts)
+        #expect(!PlaceLookupThrottle.shouldAttempt(isAlreadyInFlight: false, priorAttempts: attempts, now: now))
+    }
+
+    @Test("A lookup within the cooldown of its last attempt is refused")
+    func throttleRefusesWithinCooldown() {
+        let now = Date.now
+        let recent = now.addingTimeInterval(-PlaceLookupThrottle.cooldown / 2)
+        #expect(!PlaceLookupThrottle.shouldAttempt(isAlreadyInFlight: false, priorAttempts: [recent], now: now))
+    }
+
+    @Test("A lookup past its last attempt's cooldown, under the cap, is allowed")
+    func throttleAllowsAfterCooldownUnderTheCap() {
+        let now = Date.now
+        let past = now.addingTimeInterval(-PlaceLookupThrottle.cooldown - 1)
+        #expect(PlaceLookupThrottle.shouldAttempt(isAlreadyInFlight: false, priorAttempts: [past], now: now))
+    }
+
+    // MARK: - SavedPlaceCache
+
+    @Test("The nearest place wins, and one outside every radius is not a match")
+    @MainActor
+    func cacheFindsTheNearestPlaceWithinRadius() throws {
+        let context = try makeSavedPlaceContext()
+        // ~0.0002 degrees is roughly 22 m at this latitude, comfortably inside
+        // both places' 100 m radius but clearly farther than the exact match.
+        let nearer = SavedPlace(name: "Nearer Cafe", latitude: -27.4700, longitude: 153.0300, radius: 100)
+        let farther = SavedPlace(name: "Farther Cafe", latitude: -27.4702, longitude: 153.0302, radius: 100)
+        let outOfRange = SavedPlace(name: "Distant Cafe", latitude: -27.60, longitude: 153.10, radius: 100)
+        [nearer, farther, outOfRange].forEach(context.insert)
+        try context.save()
+
+        let cache = SavedPlaceCache()
+        _ = cache.reload(context: context)
+        let match = cache.nearest(to: .init(latitude: -27.47, longitude: 153.03))
+
+        #expect(match?.name == "Nearer Cafe")
+    }
+
+    @Test("Nothing within any radius is not a match")
+    @MainActor
+    func cacheReturnsNilWhenNothingIsInRange() throws {
+        let context = try makeSavedPlaceContext()
+        context.insert(SavedPlace(name: "Distant Cafe", latitude: -27.60, longitude: 153.10, radius: 100))
+        try context.save()
+
+        let cache = SavedPlaceCache()
+        _ = cache.reload(context: context)
+
+        #expect(cache.nearest(to: .init(latitude: -27.47, longitude: 153.03)) == nil)
+    }
+
+    @Test("Reload reports the fetched place count")
+    @MainActor
+    func cacheReloadReportsCount() throws {
+        let context = try makeSavedPlaceContext()
+        context.insert(SavedPlace(name: "Home", latitude: -27.47, longitude: 153.03))
+        context.insert(SavedPlace(name: "Work", latitude: -27.46, longitude: 153.04))
+        try context.save()
+
+        let cache = SavedPlaceCache()
+        let result = cache.reload(context: context)
+
+        #expect(try result.get() == 2)
+        #expect(cache.places.count == 2)
+    }
+
+    @MainActor
+    private func makeSavedPlaceContext() throws -> ModelContext {
+        let container = try ModelContainer(for: Visit.self, SavedPlace.self, VisitCorrection.self, DiagnosticEvent.self,
+                                           configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        return ModelContext(container)
     }
 }
 

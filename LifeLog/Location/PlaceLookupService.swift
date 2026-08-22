@@ -199,4 +199,30 @@ enum PlaceLookupService {
         }
     }
 
+    /// The last resort when `nearbyPlaces` found no named point of interest:
+    /// the postal address MapKit's own reverse-geocoder returns for the exact
+    /// coordinate. Uncached, unlike `nearbyPlaces` -- this only ever runs once
+    /// `nearbyPlaces` has already come back empty for the same arrival, so
+    /// there is no repeated-callback storm here to amortise.
+    ///
+    /// Three outcomes deliberately stay distinct rather than collapsing to
+    /// `String?`: `.unavailable` (MapKit could not even build the request for
+    /// this coordinate) leaves an unresolved visit exactly as it was, since
+    /// there is nothing here to act on; `.notFound` (a real, empty answer) is
+    /// the caller's cue to fall back to marking the place unknown; `.resolved`
+    /// carries the name, already cleaned to the same length limit every other
+    /// place name observes.
+    enum ReverseGeocodeOutcome: Sendable, Equatable {
+        case resolved(String)
+        case notFound
+        case unavailable
+    }
+
+    static func reverseGeocode(at location: CLLocation) async throws -> ReverseGeocodeOutcome {
+        guard let request = MKReverseGeocodingRequest(location: location) else { return .unavailable }
+        let mapItems = try await request.mapItems
+        guard let item = mapItems.first else { return .notFound }
+        let resolvedName = item.name ?? item.address?.shortAddress ?? item.address?.fullAddress ?? Visit.unknownPlaceName
+        return .resolved(TextSafety.clean(resolvedName, maximumLength: 120))
+    }
 }

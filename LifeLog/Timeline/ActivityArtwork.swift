@@ -34,9 +34,7 @@ struct ActivityIcon: View {
         // The catalogue is the user's source of truth. Keyword inference remains a
         // useful fallback for imported labels that have not been adopted yet, but it
         // must not override an icon chosen in Activities.
-        if let definition = ActivityCatalog.load().first(where: {
-            $0.matchesSnapshot(activity)
-        }) {
+        if ActivityCatalog.load().contains(where: { $0.matchesSnapshot(activity) }) {
             return ActivityCatalog.symbol(for: activity)
         }
         if text.contains("travel") || text.contains("transit") { return "car.fill" }

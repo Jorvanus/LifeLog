@@ -30,6 +30,21 @@ struct PlaceVisitOccurrence: Sendable, Hashable {
     let departure: Date?
 }
 
+/// Diagnostics' four archive-derived counts. `needsReview`, `placeScoreBreakdown`,
+/// and the resolution candidate/explanation presence are all `Visit` computed
+/// properties that decode a raw payload column, so a store predicate alone
+/// cannot answer any of them -- this is why `resolutionInspectableCount` still
+/// requires reading the automatic visits themselves, not just counting them.
+struct DiagnosticsSummary: Sendable, Equatable {
+    let provisionalCount: Int
+    let supersededCount: Int
+    let approximateVisitCount: Int
+    let resolutionInspectableCount: Int
+
+    static let empty = DiagnosticsSummary(provisionalCount: 0, supersededCount: 0,
+                                          approximateVisitCount: 0, resolutionInspectableCount: 0)
+}
+
 struct PlaceHistoryEntry: Identifiable, Sendable, Hashable {
     let stableID: UUID
     let arrival: Date
@@ -51,8 +66,8 @@ struct PlaceHistoryEntry: Identifiable, Sendable, Hashable {
 ///   validation, an attended rename/merge, or an archive statistic with a named
 ///   result. Each route uses an isolated actor, exposes in-progress/cancellation in
 ///   its owning screen, and carries the 32,000-row fixture before it is accepted.
-/// - `activityUsage`, `placeSummaries`, `completeReviewQueue`, and
-///   `historicalPlaceNames` are the statistics exceptions here; they check
+/// - `activityUsage`, `placeSummaries`, `completeReviewQueue`, `diagnosticsSummary`,
+///   and `historicalPlaceNames` are the statistics exceptions here; they check
 ///   cancellation, return Sendable summaries, and cache by store generation.
 ///   `search`, day history, and detail lookups stay bounded.
 /// - Launch, Settings setup, ordinary navigation, and a single-day correction must
@@ -64,6 +79,7 @@ actor VisitArchiveReader {
     private var usageCache: (generation: Int, counts: [String: Int])?
     private var placeSummaryCache: (generation: Int, summaries: [PlaceHistorySummary], itemCount: Int)?
     private var reviewQueueCache: (generation: Int, result: ReviewQueue.PreparedResult, itemCount: Int)?
+    private var diagnosticsSummaryCache: (generation: Int, summary: DiagnosticsSummary)?
     /// Keyed on the year boundary and scope too, not just generation: Year's own
     /// date navigation changes `before` far more often than the store itself
     /// changes, and the Insights source-scope picker can change `scope` without
@@ -132,6 +148,56 @@ actor VisitArchiveReader {
         let result = ReviewQueue.prepare(visits: visits, now: now)
         reviewQueueCache = (generation, result, visits.count)
         return (result, visits.count)
+    }
+
+    /// Diagnostics' four counts, off the interaction path. `DiagnosticsView` and
+    /// `LocationResolutionChoicesView` each used to keep two whole-model
+    /// `@Query`s (`automatic` and `automatic-superseded` visits) alive on the
+    /// main actor just to be counted or filtered in Swift -- a live, continuously
+    /// re-observing fetch of the entire automatic-visit archive for a screen that
+    /// shows only totals until a detail link is tapped. `supersededCount` and the
+    /// superseded half of `resolutionInspectableCount` are store-side counts,
+    /// since `source`, `resolutionExplanation`, and `candidateData` are all raw
+    /// stored columns; `provisionalCount`, `approximateVisitCount`, and the
+    /// automatic half of `resolutionInspectableCount` still require the automatic
+    /// visits themselves, since `needsReview`, `placeScoreBreakdown`, and the
+    /// resolution candidate/explanation accessors all decode a payload column.
+    func diagnosticsSummary(generation: Int) throws -> DiagnosticsSummary {
+        if let diagnosticsSummaryCache, diagnosticsSummaryCache.generation == generation {
+            return diagnosticsSummaryCache.summary
+        }
+        try Task.checkCancellation()
+        let automatic = try modelContext.fetch(FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.source == "automatic" }
+        ))
+        try Task.checkCancellation()
+        let supersededCount = try modelContext.fetchCount(FetchDescriptor<Visit>(
+            predicate: #Predicate { $0.source == "automatic-superseded" }
+        ))
+        let supersededWithPayload = try modelContext.fetchCount(FetchDescriptor<Visit>(
+            predicate: #Predicate { visit in
+                visit.source == "automatic-superseded"
+                    && (visit.resolutionExplanation != nil || visit.candidateData != nil)
+            }
+        ))
+        try Task.checkCancellation()
+        var provisionalCount = 0
+        var approximateVisitCount = 0
+        var resolutionInspectableCount = supersededWithPayload
+        for visit in automatic {
+            if visit.needsReview { provisionalCount += 1 }
+            if LocationQuality.isApproximate(recordedAccuracyMeters: visit.placeScoreBreakdown?.accuracyMeters) {
+                approximateVisitCount += 1
+            }
+            if visit.locationResolutionCandidates != nil || visit.locationResolutionExplanation != nil {
+                resolutionInspectableCount += 1
+            }
+        }
+        let summary = DiagnosticsSummary(provisionalCount: provisionalCount, supersededCount: supersededCount,
+                                         approximateVisitCount: approximateVisitCount,
+                                         resolutionInspectableCount: resolutionInspectableCount)
+        diagnosticsSummaryCache = (generation, summary)
+        return summary
     }
 
     /// Backs the explicit archive search screen. Deliberately uncached: a search

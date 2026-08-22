@@ -134,7 +134,8 @@ final class HealthUIFacade {
     var lastImport: Date?
     var lastError: String?
     var progress: ActivityImportProgress?
-    var sleepEvidenceStatus: String = "No sleep evidence imported yet"
+    var sleepEvidenceState: SleepEvidenceState = .notYetChecked
+    var sleepEvidenceStatus: String { sleepEvidenceState.statusText }
 
     var isImporting: Bool { progress?.isActive == true }
 }

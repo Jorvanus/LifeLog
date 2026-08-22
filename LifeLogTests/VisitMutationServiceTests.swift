@@ -69,10 +69,20 @@ struct VisitMutationServiceTests {
                                                                object: nil, queue: nil) { _ in invalidations += 1 }
         defer { NotificationCenter.default.removeObserver(observer) }
 
-        let result = VisitMutationService.perform(context: context, kind: .visitEdit) {
+        // `context.rollback()` alone cannot undo `placeName` already being written
+        // to this live object -- confirmed directly against this SDK: the
+        // persisted store is correctly left untouched, but the in-memory property
+        // on this same reference does not revert on its own. `restore` is how a
+        // caller that mutates a model before calling `perform` actually delivers
+        // the "no partial state" guarantee this test is named for; every real
+        // caller (VisitEditor, PlacesView, ...) now supplies one the same way.
+        let snapshot = original.mutableSnapshot
+        let result = VisitMutationService.perform(context: context, kind: .visitEdit, mutate: {
             original.placeName = "Unsaved replacement"
             throw TestFailure.expected
-        }
+        }, restore: {
+            original.restore(snapshot)
+        })
 
         #expect(!result.committed)
         #expect(invalidations == 0)

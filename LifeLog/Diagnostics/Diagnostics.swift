@@ -355,6 +355,11 @@ enum Diagnostics {
         /// `VisitArchiveReader`, cached by generation, and reduced to Sendable rows.
         /// This budget is measured against the standard 32,000-row fixture.
         static let reviewQueuePreparation: TimeInterval = 2.0
+        /// Diagnostics' four archive-derived counts (`VisitArchiveReader.diagnosticsSummary`),
+        /// prepared the same way as the review queue above -- one scan of the automatic
+        /// visits, cached by generation, reduced to a Sendable summary. Same budget for
+        /// the same reason: measured against the standard 32,000-row fixture.
+        static let diagnosticsSummary: TimeInterval = 2.0
 
         static func insights(window: InsightWindow) -> TimeInterval {
             switch window {

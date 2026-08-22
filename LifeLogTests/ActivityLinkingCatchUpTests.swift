@@ -27,8 +27,12 @@ struct ActivityLinkingCatchUpTests {
         let defaults = UserDefaults(suiteName: defaultsSuite)!
         defer { defaults.removePersistentDomain(forName: defaultsSuite) }
         let previousStorage = ActivityCatalog.storage
+        let previousCached = ActivityCatalog.load()
         ActivityCatalog.storage = defaults
-        defer { ActivityCatalog.storage = previousStorage }
+        defer {
+            ActivityCatalog.storage = previousStorage
+            ActivityCatalog.save(previousCached)
+        }
         if !seed.isEmpty { ActivityCatalog.save(seed) }
         return try await body()
     }

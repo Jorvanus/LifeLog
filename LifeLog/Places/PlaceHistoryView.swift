@@ -64,14 +64,14 @@ struct PlaceHistoryView: View {
 
     private func load() async {
         let startedAt = Date.now
-        let generation = await InsightsAggregationActor.shared.currentGeneration()
+        let generation = InsightsAggregationActor.shared.currentGeneration()
         let reader = reader ?? VisitArchiveReader(modelContainer: context.container)
         self.reader = reader
         do {
             let result = try await reader.placeSummaries(generation: generation)
             // Do not publish a value assembled from an older store after an import,
             // correction, or restore landed while this actor was reading it.
-            let currentGeneration = await InsightsAggregationActor.shared.currentGeneration()
+            let currentGeneration = InsightsAggregationActor.shared.currentGeneration()
             guard !Task.isCancelled, generation == currentGeneration else { return }
             summaries = result.summaries
             loading = false
@@ -284,11 +284,11 @@ struct PlaceHistoryDetail: View {
     }
 
     private func reloadInBackground() async {
-        let generation = await InsightsAggregationActor.shared.currentGeneration()
+        let generation = InsightsAggregationActor.shared.currentGeneration()
         let reader = reader ?? VisitArchiveReader(modelContainer: context.container)
         self.reader = reader
         guard let entries = try? await reader.placeEntries(named: placeName) else { return }
-        let currentGeneration = await InsightsAggregationActor.shared.currentGeneration()
+        let currentGeneration = InsightsAggregationActor.shared.currentGeneration()
         guard !Task.isCancelled, generation == currentGeneration else { return }
         matching = entries
         if renamedPlace.isEmpty { renamedPlace = placeName }
@@ -307,7 +307,11 @@ struct PlaceHistoryDetail: View {
     private func apply() {
         let activity = TextSafety.clean(replacement, maximumLength: 80)
         guard !activity.isEmpty else { return }
-        let result = VisitMutationService.perform(context: context, kind: .bulkHistoricalCorrection) {
+        // Only the visits `mutate` actually touches need restoring; collected here
+        // so `restore` can undo exactly them (see `VisitMutationService.perform`'s
+        // doc comment for why `context.rollback()` alone cannot).
+        var touched: [(visit: Visit, snapshot: Visit.MutableSnapshot)] = []
+        let result = VisitMutationService.perform(context: context, kind: .bulkHistoricalCorrection, mutate: {
             var changed = 0
             var placeDescriptor = FetchDescriptor<SavedPlace>(
                 predicate: #Predicate { $0.name == placeName }
@@ -323,13 +327,16 @@ struct PlaceHistoryDetail: View {
             for visit in entries where
                 (NameKey.same(visit.placeName, placeName) || visit.mapsIdentifier == mapsIdentifier) &&
                 VisitRecognitionConfidence(rawValue: visit.recognitionConfidence) != .confirmed {
+                touched.append((visit, visit.mutableSnapshot))
                 visit.userActivity = activity
                 changed += 1
             }
             // A per-visit correction record for each row would add thousands of
             // rows for a single action, so the full audit records one aggregate result.
             return .init(changedCount: changed)
-        }
+        }, restore: {
+            for (visit, snapshot) in touched { visit.restore(snapshot) }
+        })
         if result.committed {
             reload()
             let changed = result.changedCount

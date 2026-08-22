@@ -737,6 +737,12 @@ private extension LocationDetailView {
             actionFailed = true
             return
         }
+        // `context.delete(source)` below needs no snapshot -- `rollback()` already
+        // correctly undoes a still-pending delete -- but each renamed visit's
+        // `placeName` does: it's an already-mutated property on a live,
+        // already-persisted object, which `rollback()` alone cannot revert (see
+        // `VisitMutationService.perform`'s doc comment).
+        let touched = matching.map { ($0, $0.mutableSnapshot) }
         for visit in matching {
             visit.placeName = target.name
         }
@@ -744,7 +750,10 @@ private extension LocationDetailView {
         let mutation = VisitMutationService.finalize(
             context: context,
             kind: .savedPlaceChange,
-            change: .init(changedCount: matching.count + 1)
+            change: .init(changedCount: matching.count + 1),
+            restore: {
+                for (visit, snapshot) in touched { visit.restore(snapshot) }
+            }
         )
         guard mutation.committed else { actionFailed = true; return }
         name = target.name

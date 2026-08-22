@@ -66,12 +66,13 @@ struct ActivityGroupsView: View {
                             .accessibilityIdentifier("group-menu-\(group)")
                         }
                     }
+                } footer: {
+                    // Attached to the last group's real section rather than a
+                    // manufactured empty one just to hold a footer.
+                    if group == groups.last {
+                        Text("An activity belongs to one group, set when you open the activity. Renaming a group brings its activities with it; deleting one moves them to \(ActivityCatalog.fallbackCategory), where they are still counted.")
+                    }
                 }
-            }
-            Section {
-                EmptyView()
-            } footer: {
-                Text("An activity belongs to one group, set when you open the activity. Renaming a group brings its activities with it; deleting one moves them to \(ActivityCatalog.fallbackCategory), where they are still counted.")
             }
         }
         .navigationTitle("Groups")

@@ -92,9 +92,24 @@ extension ActivityLocationPolicy {
     /// after a departure the person is almost certainly still there, hours after it they
     /// could be anywhere, and "must have been home" would then be a guess wearing the
     /// clothes of a measurement.
-    @discardableResult
-    nonisolated static func extendStay(upTo movement: DateInterval, stays: [Visit],
-                                       activities: [Visit]) -> Bool {
+    /// Landed diagnostics-only first, on purpose: `boundStay`/`extendStay` already
+    /// caused a nine-day repair loop from an earlier tuning attempt (see above), so
+    /// this logs what `showsDeparture` would have refused for a real trial period
+    /// before it is trusted to actually hold a stay closed. Flip once logged
+    /// decisions have been compared against a few real mornings, not on first read
+    /// of the code.
+    nonisolated static let enforceLocationJournalDepartureCheck = false
+
+    /// The stay `extendStay` would reach forward to meet `movement`, before any
+    /// location-journal check. Split out so `boundStays` can ask the same question
+    /// for dry-run logging without duplicating the selection rule, and without
+    /// `extendStay` itself needing to touch `Diagnostics` (which is `@MainActor`;
+    /// this stays `nonisolated` so reconciliation can run off the main actor).
+    /// Internal rather than private: tests exercise the location-evidence decision
+    /// directly, independent of `enforceLocationJournalDepartureCheck`'s current
+    /// value, the same reason `boundStays` itself is internal rather than private.
+    nonisolated static func candidateToExtend(upTo movement: DateInterval, stays: [Visit],
+                                                       activities: [Visit]) -> Visit? {
         let candidates = stays.filter { stay in
             guard stay.visitSource == .automatic, let departure = stay.departure else { return false }
             guard departure < movement.start,
@@ -122,8 +137,33 @@ extension ActivityLocationPolicy {
                     && (other.departure ?? other.arrival) > departure
             }
         }
-        guard let stay = candidates.max(by: { ($0.departure ?? $0.arrival) < ($1.departure ?? $1.arrival) })
+        return candidates.max(by: { ($0.departure ?? $0.arrival) < ($1.departure ?? $1.arrival) })
+    }
+
+    /// Whether the location journal shows `stay` was already away, beyond
+    /// `departureRadius`, sometime between its recorded departure and `movement`
+    /// starting -- the evidence `extendStay`'s own occupancy check cannot see,
+    /// because neither a HealthKit walking/workout record nor silence itself carries
+    /// coordinates. `nil` when there is nothing to check (no context, or the stay has
+    /// no departure yet).
+    nonisolated static func extensionRefusedByLocationEvidence(
+        for stay: Visit, upTo movement: DateInterval, context: ModelContext?
+    ) -> Bool {
+        guard let context, let departure = stay.departure else { return false }
+        return LocationJournal.showsDeparture(fromStayAt: stay.coordinate,
+                                              in: DateInterval(start: departure, end: movement.start),
+                                              beyond: departureRadius, context: context)
+    }
+
+    @discardableResult
+    nonisolated static func extendStay(upTo movement: DateInterval, stays: [Visit],
+                                       activities: [Visit], context: ModelContext? = nil) -> Bool {
+        guard let stay = candidateToExtend(upTo: movement, stays: stays, activities: activities)
         else { return false }
+        if enforceLocationJournalDepartureCheck,
+           extensionRefusedByLocationEvidence(for: stay, upTo: movement, context: context) {
+            return false
+        }
         stay.departure = movement.start
         return true
     }
@@ -252,8 +292,22 @@ extension ActivityLocationPolicy {
             // departure either lands after this journey began, or before it. Try to pull
             // it back first, and only reach forward when there was nothing to pull.
             let bounded = boundStay(departedWith: interval, stays: stays)
+            // Computed on the unmutated stays, before extendStay can change anything,
+            // so the dry-run log reflects what was actually decided rather than a
+            // stale re-evaluation against a departure that has already moved.
+            if !bounded, let context, record.arrival > now.addingTimeInterval(-24 * 60 * 60),
+               let candidate = candidateToExtend(upTo: interval, stays: stays, activities: consideredActivities),
+               extensionRefusedByLocationEvidence(for: candidate, upTo: interval, context: context) {
+                Diagnostics.record(context, subsystem: "Timeline",
+                                   message: "Would have held \(candidate.placeName) open until "
+                                          + "\(interval.start.formatted(date: .omitted, time: .shortened)), but "
+                                          + "the location journal shows a real departure inside that gap. "
+                                          + (enforceLocationJournalDepartureCheck
+                                             ? "Not extending." : "Extending anyway (dry run)."),
+                                   severity: "info")
+            }
             let extended = bounded ? false : extendStay(upTo: interval, stays: stays,
-                                                        activities: consideredActivities)
+                                                        activities: consideredActivities, context: context)
             // Reported for recent journeys only, and only when a context is driving this,
             // so the log says what happened to today's records without writing hundreds
             // of lines about months of history. Everything else about this pass has been

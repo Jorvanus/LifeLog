@@ -21,7 +21,7 @@ struct RecordingStatusSection: View {
     }
 
     var body: some View {
-        Section("Recording status") {
+        Section {
             SettingsStatusRow(title: "Location", value: locationStatus,
                                symbol: "location.fill", isProblem: recorder.authorization == .denied || recorder.authorization == .restricted)
             SettingsStatusRow(title: "Motion", value: activityData.ui.motionStatus,
@@ -38,6 +38,10 @@ struct RecordingStatusSection: View {
                     .foregroundStyle(.orange)
                     .accessibilityIdentifier("settings-recording-issue")
             }
+        } header: {
+            Text("Recording status")
+        } footer: {
+            Text("Orange means a permission needs attention. Open Recording or Apple Health below to see why and fix it.")
         }
         .accessibilityIdentifier("recording-status-section")
     }
@@ -169,8 +173,8 @@ struct RecordingSettingsView: View {
         switch recorder.authorization {
         case .notDetermined: "Enable location access to start recording visits."
         case .authorizedAlways: "Always Location access lets LifeLog record arrivals and departures when it is not open."
-        case .authorizedWhenInUse: "Enable background logging to ask iOS for Always Location access."
-        case .denied: "Location access is off. Open iPhone Settings to allow LifeLog to identify visits."
+        case .authorizedWhenInUse: "Right now LifeLog can only record while it's open. Turn on Background location logging below to let it notice arrivals and departures automatically, the same Always access apps like Maps or Find My use — iOS will ask you to confirm."
+        case .denied: "Location access is off, so LifeLog can't identify where visits happened. Open iPhone Settings → Privacy & Security → Location Services → LifeLog to turn it back on."
         case .restricted: "Location access is restricted by this iPhone’s settings."
         @unknown default: "Location access controls whether LifeLog can identify where visits happened."
         }
@@ -231,10 +235,24 @@ private struct LocationRecordingControls: View {
 struct AppleHealthSettingsView: View {
     let activityData: ActivityDataService
     @Binding var addingManualSleep: Bool
+    @State private var confirmingManualSleepDuringSync = false
+
+    private var isSleepStillSyncing: Bool {
+        if case .stillSyncing = activityData.ui.sleepEvidenceState { return true }
+        return false
+    }
+
+    private var manualSleepFootnote: String {
+        let whatItAdds = "A sleep entry when Apple Health has no usable sleep evidence; "
+            + "LifeLog never infers sleep from a stationary phone."
+        guard isSleepStillSyncing else { return "What can this add? \(whatItAdds)" }
+        return "Apple Health may still be syncing last night's sleep from your Watch. "
+            + "What can this add? \(whatItAdds)"
+    }
 
     var body: some View {
         Form {
-            Section("Connection") {
+            Section {
                 SettingsStatusRow(title: "Connection", value: activityData.ui.authorizationStatus,
                                   symbol: "heart.fill", isProblem: activityData.ui.authorizationStatus != "Connected")
                 SettingsStatusRow(title: "Sleep evidence", value: activityData.ui.sleepEvidenceStatus,
@@ -248,6 +266,10 @@ struct AppleHealthSettingsView: View {
                     Button("Open Apple Health", action: openAppleHealth)
                         .accessibilityIdentifier("open-health")
                 }
+            } header: {
+                Text("Connection")
+            } footer: {
+                Text("iOS only shows Apple Health's permission prompt once per type, so a status other than \"Connected\" usually means one was never granted, not that something broke. Open Apple Health above, or check the Health app directly under Sharing → Apps → LifeLog.")
             }
             Section("Import") {
                 if !activityData.ui.isImporting {
@@ -261,14 +283,26 @@ struct AppleHealthSettingsView: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
             Section("Sleep") {
-                Button("Add sleep manually") { addingManualSleep = true }
-                    .accessibilityIdentifier("add-manual-sleep")
-                Text("What can this add? A sleep entry when Apple Health has no usable sleep evidence; LifeLog never infers sleep from a stationary phone.")
+                Button("Add sleep manually") {
+                    if isSleepStillSyncing {
+                        confirmingManualSleepDuringSync = true
+                    } else {
+                        addingManualSleep = true
+                    }
+                }
+                .accessibilityIdentifier("add-manual-sleep")
+                Text(manualSleepFootnote)
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
         .navigationTitle("Apple Health")
         .navigationBarTitleDisplayMode(.inline)
+        .alert("Health may still be syncing", isPresented: $confirmingManualSleepDuringSync) {
+            Button("Wait", role: .cancel) { }
+            Button("Add Anyway") { addingManualSleep = true }
+        } message: {
+            Text("An Apple Watch can take a while to hand off last night's sleep. Adding an entry now could create a duplicate once the real data arrives.")
+        }
     }
 }
 
@@ -428,7 +462,7 @@ struct DataRecoverySettingsView: View {
                 if let destinationState {
                     DestinationStateSummary(state: destinationState)
                 } else if destinationStateFailed {
-                    Label("Couldn’t check the restore destination", systemImage: "exclamationmark.triangle.fill")
+                    Label("Couldn’t check the restore destination. Reopen this screen to try again.", systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                 } else {
                     HStack { ProgressView(); Text("Checking destination…").foregroundStyle(.secondary) }
@@ -536,11 +570,13 @@ struct AboutSettingsView: View {
     }
 }
 
+@MainActor
 private func openAppleHealth() {
     guard let healthURL = URL(string: "x-apple-health://") else { return }
     UIApplication.shared.open(healthURL) { opened in if !opened { openAppSettings() } }
 }
 
+@MainActor
 private func openAppSettings() {
     guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
     UIApplication.shared.open(settingsURL)

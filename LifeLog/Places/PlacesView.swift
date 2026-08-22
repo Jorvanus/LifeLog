@@ -190,10 +190,11 @@ private struct LocationReviewQueueList: View {
             mutationFailureMessage = "LifeLog couldn't find this location. Refresh the queue and try again."
             return
         }
-        let mutation = VisitMutationService.perform(context: context, kind: .ignoreChange) {
+        let snapshot = visit.mutableSnapshot
+        let mutation = VisitMutationService.perform(context: context, kind: .ignoreChange, mutate: {
             visit.isIgnored = true
             return .init(affectedVisit: visit)
-        }
+        }, restore: { visit.restore(snapshot) })
         if mutation.committed {
             result = ReviewQueue.PreparedResult(rows: result.rows.filter { $0.id != row.id })
         } else {
@@ -251,10 +252,11 @@ private struct LocationVisitList: View {
                         }
                         Spacer()
                         Button("Restore") {
-                            let result = VisitMutationService.perform(context: context, kind: .ignoreChange) {
+                            let snapshot = visit.mutableSnapshot
+                            let result = VisitMutationService.perform(context: context, kind: .ignoreChange, mutate: {
                                 visit.isIgnored = false
                                 return .init(affectedVisit: visit)
-                            }
+                            }, restore: { visit.restore(snapshot) })
                             if !result.committed {
                                 mutationFailureMessage = result.failureDescription
                                     ?? "LifeLog couldn't update this location."
@@ -453,6 +455,12 @@ private struct SavedPlaceEditor: View {
     }
 
     private func save() {
+        // Doesn't go through `VisitMutationService`, so nothing rolls this back
+        // automatically on failure -- and `context.rollback()` wouldn't be enough
+        // by itself anyway (see `VisitMutationService.perform`'s doc comment):
+        // it discards the pending save, not an already-written property on this
+        // same live `place` reference.
+        let snapshot = place.mutableSnapshot
         place.name = nameDraft
         place.latitude = latitudeDraft
         place.longitude = longitudeDraft
@@ -465,6 +473,8 @@ private struct SavedPlaceEditor: View {
             recorder.invalidateSavedPlaceCache()
             dismiss()
         } catch {
+            context.rollback()
+            place.restore(snapshot)
             saveFailed = true
         }
     }
