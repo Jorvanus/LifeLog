@@ -1,3 +1,22 @@
+## 2026-08-22 — Move Routine stability after each period's own content
+
+- Prompted by a flow review: Week and Month both put Routine Stability
+  second, ahead of `WeekInsightsView`/`MonthInsightsView` themselves. But
+  Routine Stability is season-wide -- it reads identically regardless of
+  which week or month is selected -- while the reason someone opens Week or
+  Month at all is to see what happened in *that* period. Leading with the
+  unchanging seasonal card ahead of the period-specific one had it
+  backwards, especially now that the redesigned card (see above) is denser.
+
+  Reordered `InsightsView.swift`'s `weekLayout` and `monthLayout`: Recording
+  Quality still leads (an established, separate call -- a data-trust warning
+  belongs ahead of any chart, decorative or not), then each period's own
+  content, then Routine Stability, then the donut/health-setup sections that
+  were already demoted. Year's layout doesn't show Routine Stability at all
+  currently -- left alone; whether it belongs there is a separate question
+  from this reordering. Presentation-only change, no data-model touch;
+  clean build, full `LifeLogTests` suite passes, dead-code scan clean.
+
 ## 2026-08-22 — Redesign Routine stability from a data table into takeaways
 
 - Prompted by feedback on a screenshot: the card was twelve rows of "arrives

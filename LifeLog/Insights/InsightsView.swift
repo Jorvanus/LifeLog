@@ -446,10 +446,12 @@ struct InsightsView: View {
     /// one: the seven days at a glance, a scorecard, what actually changed
     /// against a rolling baseline (not just the single preceding week), and a
     /// commute summary when there's a real one to show. The donut stays
-    /// reachable but demoted, same as Day.
+    /// reachable but demoted, same as Day. Routine Stability is season-wide,
+    /// not week-specific -- it reads the same regardless of which week is
+    /// selected -- so it comes after the week's own content, not ahead of the
+    /// one section that actually answers why this screen was opened.
     @ViewBuilder private var weekLayout: some View {
         recordingQualitySection
-        routineStabilitySection
         WeekInsightsView(
             weekDays: periodLoader.weekDays, now: now, selectedDate: anchorDate,
             yourWeekMetrics: presentationState.weeklyYourWeekMetrics(
@@ -468,17 +470,19 @@ struct InsightsView: View {
             routineChanges: presentationState.weekRoutineChanges(interval: interval, snapshot: periodLoader.snapshot, now: now),
             onSelectDay: { date in anchorDate = date; window = .day }
         )
+        routineStabilitySection
         donutSection
         healthSetupSection
     }
 
     /// Month answers "what changed in my life this month?" rather than presenting
     /// the same long-term sections as Year. These cards all read the same resolved
-    /// current/previous segments as the donut.
+    /// current/previous segments as the donut. Routine Stability is season-wide
+    /// (see `weekLayout`'s note), so it follows the month's own content rather
+    /// than leading it.
     @ViewBuilder private var monthLayout: some View {
         let insights = presentationState.monthlyInsights(snapshot: periodLoader.snapshot, window: window, now: now)
         recordingQualitySection
-        routineStabilitySection
         MonthInsightsView(
             insights: insights, comparisonSubtitle: insights.comparisonSubtitle,
             heroMetrics: presentationState.monthlyHeroMetrics(
@@ -492,6 +496,7 @@ struct InsightsView: View {
             now: periodLoader.snapshot.generatedAt, onOpenCategory: openCategory, onOpenComparison: openComparison,
             onSelectDay: { date in anchorDate = date; window = .day }
         )
+        routineStabilitySection
         healthSetupSection
     }
 
