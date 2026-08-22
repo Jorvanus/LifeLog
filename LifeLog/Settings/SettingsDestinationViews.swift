@@ -231,6 +231,20 @@ private struct LocationRecordingControls: View {
 struct AppleHealthSettingsView: View {
     let activityData: ActivityDataService
     @Binding var addingManualSleep: Bool
+    @State private var confirmingManualSleepDuringSync = false
+
+    private var isSleepStillSyncing: Bool {
+        if case .stillSyncing = activityData.ui.sleepEvidenceState { return true }
+        return false
+    }
+
+    private var manualSleepFootnote: String {
+        let whatItAdds = "A sleep entry when Apple Health has no usable sleep evidence; "
+            + "LifeLog never infers sleep from a stationary phone."
+        guard isSleepStillSyncing else { return "What can this add? \(whatItAdds)" }
+        return "Apple Health may still be syncing last night's sleep from your Watch. "
+            + "What can this add? \(whatItAdds)"
+    }
 
     var body: some View {
         Form {
@@ -261,14 +275,26 @@ struct AppleHealthSettingsView: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
             Section("Sleep") {
-                Button("Add sleep manually") { addingManualSleep = true }
-                    .accessibilityIdentifier("add-manual-sleep")
-                Text("What can this add? A sleep entry when Apple Health has no usable sleep evidence; LifeLog never infers sleep from a stationary phone.")
+                Button("Add sleep manually") {
+                    if isSleepStillSyncing {
+                        confirmingManualSleepDuringSync = true
+                    } else {
+                        addingManualSleep = true
+                    }
+                }
+                .accessibilityIdentifier("add-manual-sleep")
+                Text(manualSleepFootnote)
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
         .navigationTitle("Apple Health")
         .navigationBarTitleDisplayMode(.inline)
+        .alert("Health may still be syncing", isPresented: $confirmingManualSleepDuringSync) {
+            Button("Wait", role: .cancel) { }
+            Button("Add Anyway") { addingManualSleep = true }
+        } message: {
+            Text("An Apple Watch can take a while to hand off last night's sleep. Adding an entry now could create a duplicate once the real data arrives.")
+        }
     }
 }
 

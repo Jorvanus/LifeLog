@@ -93,6 +93,9 @@ final class ActivityDataService {
     private var sleepPatternCache: [String: SleepPatternBaseline?] = [:]
     private let sleepAnchorKey = "LifeLog.HealthKit.sleepAnchor.v1"
     private let workoutAnchorKey = "LifeLog.HealthKit.workoutAnchor.v1"
+    /// When the current streak of empty sleep queries first began, so a same-morning
+    /// sync delay can be told apart from a confirmed absence. See `SleepEvidenceState`.
+    private let sleepEvidenceEmptySinceKey = "LifeLog.HealthKit.sleepEvidenceEmptySince.v1"
 
     private var usesUITestHealthFixture: Bool {
         InternalLaunchArguments.contains("-ui-test-health-connected")
@@ -118,7 +121,7 @@ final class ActivityDataService {
     var importProgress: ActivityImportProgress? { get { ui.progress } set { ui.progress = newValue } }
     /// Evidence wording is intentionally narrower than Health authorisation: HealthKit
     /// does not reveal read denials, but a successful query can say what arrived.
-    var sleepEvidenceStatus: String { get { ui.sleepEvidenceStatus } set { ui.sleepEvidenceStatus = newValue } }
+    private var sleepEvidenceState: SleepEvidenceState { get { ui.sleepEvidenceState } set { ui.sleepEvidenceState = newValue } }
 
     var isImporting: Bool { ui.isImporting }
 
@@ -920,7 +923,9 @@ final class ActivityDataService {
                 lastImport = .now
                 UserDefaults.standard.set(lastImport, forKey: "LifeLog.HealthLastSuccessfulImport")
                 if !records.isEmpty || !deletedSampleIDs.isEmpty { invalidateHealthSummaryCache() }
-                updateSleepEvidenceStatus(rebuiltSleepRecords)
+                // A motion-only refresh never queried sleep at all; rebuiltSleepRecords
+                // would be empty regardless, and must not be read as a sleep result.
+                if healthDays != nil { updateSleepEvidenceStatus(rebuiltSleepRecords) }
                 importProgress = ActivityImportProgress(state: .complete, title: "Import complete",
                                                         completed: records.count, total: records.count)
                 importTask = nil
@@ -991,16 +996,26 @@ final class ActivityDataService {
     private func updateSleepEvidenceStatus(_ records: [ActivityImportRecord]) {
         let measured = records.filter { SleepEvidence.isMeasured($0.source) }.count
         let inBed = records.filter { $0.source == SleepEvidence.inBedSource }.count
-        if measured > 0 {
-            sleepEvidenceStatus = "Measured sleep imported"
+        let defaults = UserDefaults.standard
+        let (state, emptySince) = SleepEvidenceState.afterQuery(
+            measured: measured, inBed: inBed,
+            emptySince: defaults.object(forKey: sleepEvidenceEmptySinceKey) as? Date,
+            now: .now)
+        if let emptySince {
+            defaults.set(emptySince, forKey: sleepEvidenceEmptySinceKey)
+        } else {
+            defaults.removeObject(forKey: sleepEvidenceEmptySinceKey)
+        }
+        sleepEvidenceState = state
+        switch state {
+        case .measured:
             HardwareValidation.recordFirst(.measuredSleep, context: context,
                 message: "HealthKit delivered measured sleep and LifeLog rebuilt the overnight session.")
-        } else if inBed > 0 {
-            sleepEvidenceStatus = "Estimated time in bed imported"
+        case .estimatedTimeInBed:
             HardwareValidation.recordFirst(.estimatedTimeInBed, context: context,
                 message: "HealthKit delivered time-in-bed evidence without measured sleep.")
-        } else {
-            sleepEvidenceStatus = "No recent measured sleep — wear Watch or add it manually"
+        case .notYetChecked, .stillSyncing, .confirmedEmpty:
+            break
         }
         Diagnostics.record(context, subsystem: "HealthKit",
                            message: "Sleep evidence rebuilt: \(measured) measured, \(inBed) in-bed session(s).",

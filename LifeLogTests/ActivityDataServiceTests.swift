@@ -63,4 +63,41 @@ struct ActivityDataServiceTests {
             for: DateInterval(start: now.addingTimeInterval(1), duration: 86_400)
         ))
     }
+
+    @Test("Measured sleep clears any empty streak and reports measured")
+    func measuredSleepClearsEmptyStreak() {
+        let result = SleepEvidenceState.afterQuery(measured: 1, inBed: 0, emptySince: now.addingTimeInterval(-3600), now: now)
+        #expect(result.state == .measured)
+        #expect(result.emptySince == nil)
+    }
+
+    @Test("In-bed-only evidence clears any empty streak and reports estimated time in bed")
+    func inBedOnlyClearsEmptyStreak() {
+        let result = SleepEvidenceState.afterQuery(measured: 0, inBed: 1, emptySince: now.addingTimeInterval(-3600), now: now)
+        #expect(result.state == .estimatedTimeInBed)
+        #expect(result.emptySince == nil)
+    }
+
+    @Test("First empty query starts a streak and reads as still syncing, not confirmed empty")
+    func firstEmptyQueryIsStillSyncing() {
+        let result = SleepEvidenceState.afterQuery(measured: 0, inBed: 0, emptySince: nil, now: now)
+        #expect(result.state == .stillSyncing(emptySince: now))
+        #expect(result.emptySince == now)
+    }
+
+    @Test("An empty query within the grace period stays still syncing")
+    func emptyQueryWithinGracePeriodStaysStillSyncing() {
+        let emptySince = now.addingTimeInterval(-44 * 60)
+        let result = SleepEvidenceState.afterQuery(measured: 0, inBed: 0, emptySince: emptySince, now: now)
+        #expect(result.state == .stillSyncing(emptySince: emptySince))
+        #expect(result.emptySince == emptySince)
+    }
+
+    @Test("An empty query past the grace period is confirmed empty")
+    func emptyQueryPastGracePeriodIsConfirmedEmpty() {
+        let emptySince = now.addingTimeInterval(-46 * 60)
+        let result = SleepEvidenceState.afterQuery(measured: 0, inBed: 0, emptySince: emptySince, now: now)
+        #expect(result.state == .confirmedEmpty)
+        #expect(result.emptySince == emptySince)
+    }
 }

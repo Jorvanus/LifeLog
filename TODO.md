@@ -236,7 +236,7 @@ The scope for now is a small TestFlight group, not a public App Store listing �
 this is about a tester not being confused or losing trust in their own data, not
 about marketing copy, ratings prompts, or broad-market onboarding.
 
-- [ ] **Distinguish "still syncing" from "confirmed nothing" for Health data,
+- [x] **Distinguish "still syncing" from "confirmed nothing" for Health data,
   starting with sleep.** Found 2026-08-22: HealthKit repeatedly returned zero
   sleep samples across several queries right after wake-up (`Sleep evidence
   rebuilt: 0 measured, 0 in-bed session(s)`, logged from
@@ -247,11 +247,18 @@ about marketing copy, ratings prompts, or broad-market onboarding.
   ("What can this add? A sleep entry when Apple Health has no usable sleep
   evidence") is sitting right there inviting exactly the wrong move at exactly
   the wrong moment — a manual entry that becomes a duplicate once the real
-  Watch data lands. Needs a distinct UI state for "checked recently and found
-  nothing yet" versus "confirmed empty after a reasonable wait," so the
-  manual-entry prompt doesn't fire during the plausible sync window. Directly
-  related to the duplicate-sleep item above: this removes one more source
-  feeding that bug, not just a symptom next to it.
+  Watch data lands. Fixed 2026-08-22: added `SleepEvidenceState` (`SleepEvidence.swift`),
+  a pure `.stillSyncing`/`.confirmedEmpty` split keyed on how long the current
+  streak of empty queries has run (45-minute grace period), persisted across
+  imports via `sleepEvidenceEmptySinceKey`. `updateSleepEvidenceStatus` in
+  `ActivityDataService.swift` now only reaches "confirmed empty" after that
+  window elapses, and is no longer called at all on a motion-only refresh
+  (it previously overwrote sleep status with a false "empty" on those too).
+  Settings' "Add sleep manually" button still works during the sync window —
+  a real no-Watch night is a legitimate reason to use it — but now confirms
+  first ("Health may still be syncing... Wait / Add Anyway") instead of
+  inviting the duplicate silently. Related to the duplicate-sleep item above:
+  this removes one more source feeding that bug, not just a symptom next to it.
 
 - [ ] **Write a real privacy policy and host it somewhere linkable.** TestFlight
   external testing requires a privacy policy URL for Apple's Beta App Review,
