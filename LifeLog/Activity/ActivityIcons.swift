@@ -63,7 +63,7 @@ enum ActivityIcons {
             "person.crop.circle.badge.plus", "person.2.circle.fill", "person.badge.plus",
             "figure.2", "figure.2.and.child.holdinghands", "figure.and.child.holdinghands",
             "pawprint.fill", "pawprint.circle.fill", "dog.fill", "cat.fill", "bird.fill",
-            "fish.fill", "tortoise.fill", "hare.fill", "rabbit.fill", "ant.fill",
+            "fish.fill", "tortoise.fill", "hare.fill", "ant.fill",
             "ladybug.fill", "lizard.fill", "hand.wave.fill"
         ]),
         Group(name: "Other", symbols: [

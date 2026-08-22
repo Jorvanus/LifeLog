@@ -47,16 +47,24 @@ enum SavedPlaceLearning {
             }
         ))
         let location = CLLocation(latitude: place.latitude, longitude: place.longitude)
-        let result = VisitMutationService.perform(context: context, kind: .savedPlaceChange) {
+        // Only the visits actually touched need restoring, and only `mutate` itself
+        // knows which those turn out to be -- collected here so `restore` can undo
+        // exactly them if the mutation fails partway through or the resolver/save
+        // step after it does.
+        var touched: [(visit: Visit, snapshot: Visit.MutableSnapshot)] = []
+        let result = VisitMutationService.perform(context: context, kind: .savedPlaceChange, mutate: {
             var changed = 0
             for visit in visits where ActivityLocationPolicy.isLocationVisit(visit) && isLocated(visit) {
                 guard location.distance(from: CLLocation(latitude: visit.latitude, longitude: visit.longitude)) <= place.radius,
                       visit.isIgnored != ignored else { continue }
+                touched.append((visit, visit.mutableSnapshot))
                 visit.isIgnored = ignored
                 changed += 1
             }
             return .init(changedCount: changed)
-        }
+        }, restore: {
+            for (visit, snapshot) in touched { visit.restore(snapshot) }
+        })
         guard result.committed else {
             throw SavedPlaceLearningError.mutationFailed(result.failureDescription)
         }
@@ -184,6 +192,13 @@ enum SavedPlaceLearning {
 
         let place: SavedPlace
         let change: Change
+        // Snapshotted only for the `existing` (already-persisted) branch: a freshly
+        // `context.insert`-ed place has no prior state to protect, and `rollback()`
+        // already correctly discards a still-pending insert (confirmed directly
+        // against this SDK, unlike a mutated *existing* live object's properties --
+        // see `VisitMutationService.perform`'s doc comment for why those need an
+        // explicit snapshot/restore rather than `rollback()` alone).
+        let existingSnapshot = existing?.mutableSnapshot
         if let existing {
             // A visit's own activity is evidence about that one visit, not a
             // restatement of what an already-named place is *for* — confirming a
@@ -215,8 +230,20 @@ enum SavedPlaceLearning {
             change = .created
         }
 
-        try apply(place, context: context)
-        try context.save()
+        do {
+            // `apply` also relabels every Visit within the place's radius -- a
+            // failure partway through that bulk pass is a known, narrower residual
+            // gap this rollback does not reach: those individual visits are not
+            // snapshotted here. Left for a dedicated pass rather than threading
+            // per-visit restoration through `apply`'s own bulk loop in the same
+            // change that fixed `VisitMutationService.perform`'s own contract.
+            try apply(place, context: context)
+            try context.save()
+        } catch {
+            context.rollback()
+            if let existingSnapshot { existing?.restore(existingSnapshot) }
+            throw error
+        }
         InsightsInvalidation.invalidate(reason: "Saved Place correction", context: context)
         return Result(place: place, change: change)
     }

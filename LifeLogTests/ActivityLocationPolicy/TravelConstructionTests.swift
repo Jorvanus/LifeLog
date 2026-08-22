@@ -336,13 +336,16 @@ struct TravelConstructionTests {
         let homeAgain = ActivityLocationPolicyFixtures.stay("Home", from: 90, to: 200, latitude: -23.37, longitude: 150.51)
         #expect(CommuteDetection.commutes(in: [home, homeAgain], savedPlaces: homeWorkPlaces, now: now).isEmpty)
 
-        // A real errand between the two ends still ends at Work, so it is still a
-        // commute — just from the shops rather than from home.
+        // A real errand between the two ends is a brief waypoint stop, not a new
+        // origin: it gets absorbed into the same Home->Work commute as its own
+        // step, exactly like `CommuteDetectionTests.briefWaypointStopChainsTheCommute`
+        // pins for a Work->ALDI->Home trip. The commute still starts at Home's own
+        // departure, not the shop's.
         let shops = ActivityLocationPolicyFixtures.stay("Gracemere Shopping World", from: 65, to: 85,
                          latitude: -23.44, longitude: 150.46)
         let shopsToWork = CommuteDetection.commutes(in: [home, shops, work], savedPlaces: homeWorkPlaces, now: now)
         #expect(shopsToWork.count == 1)
-        #expect(shopsToWork.first?.start == shops.departure)
+        #expect(shopsToWork.first?.start == home.departure)
         #expect(shopsToWork.first?.direction == .toWork)
     }
 

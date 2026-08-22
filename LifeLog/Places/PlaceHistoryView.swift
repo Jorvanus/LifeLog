@@ -307,7 +307,11 @@ struct PlaceHistoryDetail: View {
     private func apply() {
         let activity = TextSafety.clean(replacement, maximumLength: 80)
         guard !activity.isEmpty else { return }
-        let result = VisitMutationService.perform(context: context, kind: .bulkHistoricalCorrection) {
+        // Only the visits `mutate` actually touches need restoring; collected here
+        // so `restore` can undo exactly them (see `VisitMutationService.perform`'s
+        // doc comment for why `context.rollback()` alone cannot).
+        var touched: [(visit: Visit, snapshot: Visit.MutableSnapshot)] = []
+        let result = VisitMutationService.perform(context: context, kind: .bulkHistoricalCorrection, mutate: {
             var changed = 0
             var placeDescriptor = FetchDescriptor<SavedPlace>(
                 predicate: #Predicate { $0.name == placeName }
@@ -323,13 +327,16 @@ struct PlaceHistoryDetail: View {
             for visit in entries where
                 (NameKey.same(visit.placeName, placeName) || visit.mapsIdentifier == mapsIdentifier) &&
                 VisitRecognitionConfidence(rawValue: visit.recognitionConfidence) != .confirmed {
+                touched.append((visit, visit.mutableSnapshot))
                 visit.userActivity = activity
                 changed += 1
             }
             // A per-visit correction record for each row would add thousands of
             // rows for a single action, so the full audit records one aggregate result.
             return .init(changedCount: changed)
-        }
+        }, restore: {
+            for (visit, snapshot) in touched { visit.restore(snapshot) }
+        })
         if result.committed {
             reload()
             let changed = result.changedCount

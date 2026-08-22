@@ -485,11 +485,17 @@ struct VisitEditor: View {
     }
 
     private func learnPlace() {
+        // Snapshotted before `sanitizeVisit()` writes the drafts into `visit` --
+        // `persistChanges` restores this exact state if anything downstream fails,
+        // since `context.rollback()` alone cannot undo an already-mutated live
+        // property (see `VisitMutationService.perform`'s doc comment).
+        let snapshot = visit.mutableSnapshot
         sanitizeVisit()
         do {
-            try persistChanges(forceLearning: true)
+            try persistChanges(forceLearning: true, restoreOnFailure: snapshot)
             dismiss()
         } catch {
+            visit.restore(snapshot)
             saveFailed = true
         }
     }
@@ -510,11 +516,13 @@ struct VisitEditor: View {
     }
 
     private func saveAndDismiss() {
+        let snapshot = visit.mutableSnapshot
         sanitizeVisit()
         do {
-            try persistChanges(forceLearning: false)
+            try persistChanges(forceLearning: false, restoreOnFailure: snapshot)
             dismiss()
         } catch {
+            visit.restore(snapshot)
             saveFailed = true
         }
     }
@@ -664,7 +672,7 @@ struct VisitEditor: View {
         }
     }
 
-    private func persistChanges(forceLearning: Bool) throws {
+    private func persistChanges(forceLearning: Bool, restoreOnFailure snapshot: Visit.MutableSnapshot) throws {
         let corrected = correctionBaseline.map { $0 != currentSnapshot } ?? false
         // A walk or workout carries no coordinate, so Saved Place learning cannot
         // reach it and its confidence would stay "device" — which is exactly what the
@@ -720,7 +728,8 @@ struct VisitEditor: View {
             change: .init(
                 affectedVisit: visit,
                 placeScoreAlreadyApplied: corrected || forceLearning
-            )
+            ),
+            restore: { [visit] in visit.restore(snapshot) }
         )
         guard mutation.committed else {
             throw VisitEditorMutationError.failed(mutation.failureDescription)

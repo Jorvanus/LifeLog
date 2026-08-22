@@ -121,53 +121,58 @@ public App Store listing.
      against what the owner actually remembers, before letting it mutate
      `stay.departure` live.
 
-- [ ] **Seven pre-existing unit test failures, surfaced 2026-08-22 and not yet
-  investigated.** The `LifeLogTests` target could not compile at all before
-  2026-08-22 (a Swift 6.3.3 SILGen crash on a keypath over `[any
-  VersionedSchema.Type]` in `SchemaFingerprintTests.swift`, now fixed with an
-  explicit closure in place of the keypath literal), so nobody could see these.
-  None touch anything changed that day; each needs its own look:
-  1. `ActivityMergeTests.seedingStabilizesLoadIDs()` --
-     `ActivityCatalog.load().first { $0.name == "Work" } → nil`
-     (`ActivityMergeTests.swift:124`): seeding isn't producing a "Work" entry
-     repeated `load()` calls can find.
-  2. `ArchiveModelFieldCoverageTests.fullArchiveRoundTrips()` --
-     `(decoded.version → 4) == 3` (`ArchiveModelFieldCoverageTests.swift:209`):
-     either a real round-trip bug or a fixture left at the previous schema
-     version after an unrelated bump -- worth checking which before assuming
-     either.
-  3. `ExportFileStagingTests.writesProtectedStagingFile()` --
-     `attributes[.protectionKey] as? FileProtectionType → nil` where `.complete`
-     was expected (`ExportFileStagingTests.swift:18`): could be a real
-     regression in the staging write, or the simulator/sandbox here not
-     reporting file protection classes the way a device does -- needs a device
-     check before concluding either way.
-  4. `GapSuggestionViewModelTests.sleepWalkingWorkoutOffersHomeWithoutAppleIntelligence()`
-     -- "Expected a Home draft, got .idle" (`GapSuggestionViewModelTests.swift:102`):
-     the short Sleep-to-walking-workout gap case that should bypass Apple
-     Intelligence and still offer Home is instead resolving to no suggestion.
-  5. `LocalBackupTests.negativeAccuracyLocationEventRestores()` -- restoring a
-     backup throws `NSCocoaErrorDomain Code=259 "the file couldn't be opened
-     because it isn't in the correct format"` (`LocalBackupTests.swift:344`):
-     the fixture this test builds to prove a negative-accuracy location event
-     survives restore may itself be malformed, or restore is rejecting
-     something it shouldn't.
-  6. `TravelConstructionTests.commutesRequireBothEnds()` --
-     `(shopsToWork.first?.start → 09:00:00) == (shops.departure → 09:25:00)`
-     (`TravelConstructionTests.swift:345`): a constructed commute's start time
-     doesn't match the departure it should be anchored to.
-  7. `VisitMutationServiceTests.failedMutationDoesNotPublishPartialState()` --
-     `(original.placeName → "Unsaved replacement") == "Home"`
-     (`VisitMutationServiceTests.swift:79`): a failed mutation's rollback is
-     leaving the replacement name visible instead of restoring "Home", which
-     is exactly the partial-state leak this test exists to catch.
+- [ ] **Finish `VisitMutationService`'s live-object restore coverage.** Fixing
+  `VisitMutationServiceTests.failedMutationDoesNotPublishPartialState()`
+  (2026-08-22) found that `context.rollback()` does not revert an
+  already-mutated property on a live, already-fetched model object -- confirmed
+  directly against this SDK: the persisted store is correctly left untouched,
+  but the same object reference (even re-fetched through the same context)
+  keeps reading the failed edit indefinitely. `perform`/`finalize` now take an
+  explicit `restore: () -> Void` closure to cover this, wired through every
+  real interactive call site (`VisitEditor`, `PlacesView` x3,
+  `PlaceHistoryView`, `SavedPlaceLearning.applyIgnored`,
+  `VisitLocationChooser.merge`) plus `SavedPlaceLearning.upsert`'s own internal
+  failure path for the `SavedPlace` it mutates. Two gaps remain, deliberately
+  left rather than rushed alongside that fix:
+  1. `LocationRecorder.swift`'s eight `finalizeMutation` call sites (Core
+     Location arrival/departure callbacks) each mutate a `Visit` directly
+     before calling it, the same shape `VisitEditor` had -- none carry a
+     `restore` closure yet. Lower visibility than an open editor (no UI is
+     usually bound to the exact visit a background callback just touched), but
+     the same class of bug. Needs its own pass through that file rather than
+     the drive-by treatment the interactive call sites got.
+  2. `SavedPlaceLearning.apply(_:context:)` bulk-relabels every `Visit` inside
+     a place's radius and calls `ActivityLocationPolicy.reconcileResolutionStates`
+     -- a failure partway through that loop leaves whichever visits it already
+     touched unrestored. `upsert` now rolls back and restores the `SavedPlace`
+     itself on failure, but not the individual visits `apply` reached first.
+
+- [ ] **Audit the full test suite for correctness, not just for passing.**
+  Fixing the eight pre-existing failures surfaced 2026-08-22 (`ActivityMergeTests`,
+  `ArchiveModelFieldCoverageTests`, `ExportFileStagingTests`,
+  `GapSuggestionViewModelTests`, `LocalBackupTests`, `TravelConstructionTests`,
+  `VisitMutationServiceTests`, `ActivityArtworkBoundsTests` -- all now green)
+  turned up real, previously-invisible bugs behind several of them: a shared
+  static (`ActivityCatalog.cached`) leaking between tests that swap
+  `ActivityCatalog.storage` by hand instead of through `withStorage`
+  (`ActivityMergeTests.swift`, and the same pattern independently in
+  `ActivityLinkingCatchUpTests.swift`), a real product bug in
+  `ArchiveRepairActor.gapSuggestionContext` (a 30-minute gap floor meant for one
+  caller's list silently applied to a different caller with no floor at all),
+  and the `VisitMutationService` gap above. A test suite that was silently
+  wrong in several unrelated places for an unknown stretch of time is reason
+  enough to look at the rest on purpose rather than only when something happens
+  to fail: read through what's left for other tests asserting something that
+  no longer matches intent (stale fixtures, wrong expected values) or masking a
+  real bug behind a coincidentally-passing assertion, the same shape every one
+  of these turned out to be.
   Separately, the `LifeLogUITests` target reported 36 of 60 tests failing in
-  the same run, spread across every unrelated screen (Accessibility, Insights,
-  Settings, Timeline) with generic "element didn't appear" failures -- that
-  breadth points at the sandboxed simulator session lacking something a real
-  run needs (permission state, animation timing), not 36 independent
-  regressions. Re-run on-device or in a normal interactive simulator session
-  before trusting that count.
+  the same 2026-08-22 run, spread across every unrelated screen (Accessibility,
+  Insights, Settings, Timeline) with generic "element didn't appear" failures
+  -- that breadth points at the sandboxed simulator session lacking something a
+  real run needs (permission state, animation timing), not 36 independent
+  regressions. Re-run on-device or in a normal interactive simulator session to
+  get a trustworthy count before including UI tests in this audit.
 
 - [ ] **Re-enable place geofence monitoring (`CLMonitor`) once Apple fixes it.**
   Disabled 2026-08-21 after a confirmed, reproducible crash loop on the owner's

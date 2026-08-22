@@ -350,7 +350,12 @@ struct LocalBackupTests {
                       arrival: base.addingTimeInterval(-1800), departure: base, latitude: 0, longitude: 0,
                       accuracy: -1, distanceFromCurrentVisit: nil, transition: "closed", visitArrival: base.addingTimeInterval(-1800))
             ],
-            activityDefinitions: [], activityDefinitionRecords: nil,
+            // `nil` here reads as a pre-V4 document and `restore` rejects it as
+            // corrupt (`LocalBackupService.swift`'s activityDefinitionRecords
+            // guard) -- unlike the other fixtures in this file that also pass
+            // `nil`, this is the one test that expects `restore` to actually
+            // succeed rather than short-circuit on an earlier validation error.
+            activityDefinitions: [], activityDefinitionRecords: [],
             preferences: [:], manifest: nil)
         let data = try JSONEncoder.lifeLogBackup.encode(backup)
 

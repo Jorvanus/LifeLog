@@ -43,10 +43,17 @@ struct ActivityMergeTests {
 
         // `ActivityCatalog.withStorage` takes a synchronous closure, but merging
         // awaits a background actor — so the swap is done by hand here, with the
-        // same restore-on-exit `withStorage` itself relies on.
+        // same restore-on-exit `withStorage` itself relies on. That means restoring
+        // `cached` too, not just `storage` -- `save(_:)` below overwrites the same
+        // process-wide static every other test's `load()` reads from, so leaving it
+        // stomped bleeds into whichever test happens to run next.
         let previousStorage = ActivityCatalog.storage
+        let previousCached = ActivityCatalog.load()
         ActivityCatalog.storage = defaults
-        defer { ActivityCatalog.storage = previousStorage }
+        defer {
+            ActivityCatalog.storage = previousStorage
+            ActivityCatalog.save(previousCached)
+        }
 
         ActivityCatalog.save([source, target])
         _ = try ActivityIdentityMigration.adoptLegacyDefinitions(context: context, definitions: [source, target])
@@ -95,8 +102,12 @@ struct ActivityMergeTests {
         let activity = ActivityDefinition(name: "Doctor", category: "Healthcare", symbol: "cross.case.fill")
 
         let previousStorage = ActivityCatalog.storage
+        let previousCached = ActivityCatalog.load()
         ActivityCatalog.storage = defaults
-        defer { ActivityCatalog.storage = previousStorage }
+        defer {
+            ActivityCatalog.storage = previousStorage
+            ActivityCatalog.save(previousCached)
+        }
 
         ActivityCatalog.save([activity])
         let moved = try await ActivityCatalog.mergeActivity(activity, into: activity, context: context)
