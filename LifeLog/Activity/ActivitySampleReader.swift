@@ -167,6 +167,7 @@ actor ActivitySampleReader {
         steps: [HealthQuantityFixture], walking: [HealthQuantityFixture],
         energy: [HealthQuantityFixture], exercise: [HealthQuantityFixture],
         stand: [HealthQuantityFixture], workouts: [HealthWorkoutFixture],
+        heartRateRecovery: [HealthQuantityFixture],
         stepsTotal: Double?, walkingTotal: Double?, energyTotal: Double?,
         exerciseTotal: Double?, standTotal: Double?
     ) {
@@ -176,6 +177,13 @@ actor ActivitySampleReader {
         async let exercise = safeQuantityFixtures(in: interval, identifier: .appleExerciseTime, unit: .minute())
         async let stand = safeQuantityFixtures(in: interval, identifier: .appleStandTime, unit: .hour())
         async let workouts = safeWorkoutFixtures(in: interval)
+        // Padded past `interval.end`: recovery is scored a minute or so after a
+        // workout ends, so a workout finishing right at the period boundary has
+        // its recovery sample land just outside it.
+        async let heartRateRecovery = safeQuantityFixtures(
+            in: DateInterval(start: interval.start, end: interval.end.addingTimeInterval(15 * 60)),
+            identifier: .heartRateRecoveryOneMinute, unit: .heartRateUnit()
+        )
         // The raw fixtures above are kept for `activeStepDays`' day-by-day presence
         // check, which genuinely needs per-sample granularity across a multi-day
         // window. The *totals* Health overview actually displays must not be a
@@ -189,7 +197,7 @@ actor ActivitySampleReader {
         async let energyTotal = quantityCumulativeSum(in: interval, identifier: .activeEnergyBurned, unit: .kilocalorie())
         async let exerciseTotal = quantityCumulativeSum(in: interval, identifier: .appleExerciseTime, unit: .minute())
         async let standTotal = quantityCumulativeSum(in: interval, identifier: .appleStandTime, unit: .hour())
-        return await (steps, walking, energy, exercise, stand, workouts,
+        return await (steps, walking, energy, exercise, stand, workouts, heartRateRecovery,
                       stepsTotal, walkingTotal, energyTotal, exerciseTotal, standTotal)
     }
 

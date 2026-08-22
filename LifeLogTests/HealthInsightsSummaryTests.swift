@@ -131,18 +131,16 @@ struct HealthInsightsSummaryTests {
     func healthSignals() {
         let resting = HealthQuantityFixture(id: id, start: interval.start, end: interval.end, value: 60)
         let walking = HealthQuantityFixture(id: UUID(), start: interval.start, end: interval.end, value: 110)
-        let recovery = HealthQuantityFixture(id: UUID(), start: interval.start, end: interval.end, value: 35)
         let breathing = HealthQuantityFixture(id: UUID(), start: interval.start, end: interval.end, value: 15)
         let summary = HealthInsightsAggregation.summary(
             steps: [], walkingRunningMeters: [], activeEnergyKilocalories: [], exerciseMinutes: [],
             standHours: [], workouts: [], sleep: nil, interval: interval,
             calendar: Calendar(identifier: .gregorian), restingHeartRate: [resting, resting],
-            walkingHeartRate: [walking], heartRateRecovery: [recovery], respiratoryRate: [breathing],
+            walkingHeartRate: [walking], respiratoryRate: [breathing],
             now: interval.end
         )
         #expect(summary.restingHeartRateBPM == 60)
         #expect(summary.walkingHeartRateBPM == 110)
-        #expect(summary.heartRateRecoveryBPM == 35)
         #expect(summary.respiratoryRate == 15)
         #expect(summary.hasData)
         // The duplicate `resting` sample (same id) must not inflate the count any
@@ -150,8 +148,65 @@ struct HealthInsightsSummaryTests {
         // deduplicated list.
         #expect(summary.restingHeartRateSampleCount == 1)
         #expect(summary.walkingHeartRateSampleCount == 1)
-        #expect(summary.heartRateRecoverySampleCount == 1)
         #expect(summary.respiratoryRateSampleCount == 1)
+    }
+
+    @Test("A heart-rate-recovery sample attaches to the workout it followed, not a period average")
+    func heartRateRecoveryAttachesToItsWorkout() {
+        let workoutEnd = interval.start.addingTimeInterval(30 * 60)
+        let workout = HealthWorkoutFixture(id: UUID(), type: "Running", start: interval.start,
+                                           end: workoutEnd, distanceMeters: 5_000)
+        // Two minutes after the workout ends -- well within the matching window.
+        let recovery = HealthQuantityFixture(id: UUID(), start: workoutEnd.addingTimeInterval(2 * 60),
+                                             end: workoutEnd.addingTimeInterval(2 * 60), value: 28)
+        let summary = HealthInsightsAggregation.summary(
+            steps: [], walkingRunningMeters: [], activeEnergyKilocalories: [], exerciseMinutes: [],
+            standHours: [], workouts: [workout], sleep: nil, interval: interval,
+            calendar: Calendar(identifier: .gregorian), heartRateRecovery: [recovery],
+            now: interval.end
+        )
+        #expect(summary.workouts.first?.heartRateRecoveryBPM == 28)
+    }
+
+    @Test("A recovery sample outside the matching window, or with no workout at all, is dropped")
+    func heartRateRecoveryIgnoresUnmatchedSamples() {
+        let workoutEnd = interval.start.addingTimeInterval(30 * 60)
+        let workout = HealthWorkoutFixture(id: UUID(), type: "Running", start: interval.start,
+                                           end: workoutEnd, distanceMeters: 5_000)
+        // 20 minutes after the workout ends -- past the matching window.
+        let tooLate = HealthQuantityFixture(id: UUID(), start: workoutEnd.addingTimeInterval(20 * 60),
+                                            end: workoutEnd.addingTimeInterval(20 * 60), value: 28)
+        let summary = HealthInsightsAggregation.summary(
+            steps: [], walkingRunningMeters: [], activeEnergyKilocalories: [], exerciseMinutes: [],
+            standHours: [], workouts: [workout], sleep: nil, interval: interval,
+            calendar: Calendar(identifier: .gregorian), heartRateRecovery: [tooLate],
+            now: interval.end
+        )
+        #expect(summary.workouts.first?.heartRateRecoveryBPM == nil)
+    }
+
+    @Test("Each workout claims its own closest recovery sample when several are close together")
+    func heartRateRecoveryMatchesTheClosestWorkout() {
+        let firstEnd = interval.start.addingTimeInterval(30 * 60)
+        let secondEnd = firstEnd.addingTimeInterval(20 * 60)
+        let first = HealthWorkoutFixture(id: UUID(), type: "Running", start: interval.start,
+                                         end: firstEnd, distanceMeters: 5_000)
+        let second = HealthWorkoutFixture(id: UUID(), type: "Cycling", start: firstEnd.addingTimeInterval(5 * 60),
+                                          end: secondEnd, distanceMeters: 10_000)
+        // One minute after each workout's own end -- each sample belongs to the
+        // workout it immediately follows, not whichever one is scanned first.
+        let firstRecovery = HealthQuantityFixture(id: UUID(), start: firstEnd.addingTimeInterval(60),
+                                                   end: firstEnd.addingTimeInterval(60), value: 30)
+        let secondRecovery = HealthQuantityFixture(id: UUID(), start: secondEnd.addingTimeInterval(60),
+                                                    end: secondEnd.addingTimeInterval(60), value: 22)
+        let summary = HealthInsightsAggregation.summary(
+            steps: [], walkingRunningMeters: [], activeEnergyKilocalories: [], exerciseMinutes: [],
+            standHours: [], workouts: [first, second], sleep: nil, interval: interval,
+            calendar: Calendar(identifier: .gregorian), heartRateRecovery: [firstRecovery, secondRecovery],
+            now: interval.end
+        )
+        #expect(summary.workouts.first { $0.type == "Running" }?.heartRateRecoveryBPM == 30)
+        #expect(summary.workouts.first { $0.type == "Cycling" }?.heartRateRecoveryBPM == 22)
     }
 
     @Test("Month changes require absolute and relative movement")

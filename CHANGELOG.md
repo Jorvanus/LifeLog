@@ -1,3 +1,60 @@
+## 2026-08-22 — Show heart-rate recovery per workout, not as a period average
+
+- Builds the first of the two new correlation cards the 2026-08-22 Insights
+  deep-dive ranked as most feasible: heart-rate recovery after a workout.
+
+  Building it surfaced a real gap the deep-dive's own read of the code
+  missed: `HealthSignalsSection` (Resting/Walking heart rate, one-minute
+  recovery, Respiratory rate) was already wired up end-to-end in the UI,
+  but `ActivityDataService.healthSummary(for:)` never actually queried or
+  passed any of that data through -- `HealthInsightsAggregation.summary`'s
+  `restingHeartRate:`/`walkingHeartRate:`/`heartRateRecovery:`/
+  `respiratoryRate:` parameters all default to `[]`, and production code
+  was calling it without supplying any of them. The whole section only
+  ever rendered for the UI-test fixture, never for a real person. Fixed
+  the two signals this card actually needs: `ActivitySampleReader.
+  healthInsightsFixtures` now also queries `.heartRateRecoveryOneMinute`
+  (already an authorized type; the query was simply never wired up), and
+  `ActivityDataService.healthSummary` now passes it through. Resting/
+  walking heart rate and respiratory rate remain unwired -- out of scope
+  for this card, left as a known follow-up.
+
+  Recovery itself moved off being a flat period average onto each
+  individual workout it measured, on purpose: a hard run and a gentle walk
+  recover completely differently, and averaging them together (the
+  previous design, from the same-day soundness-fix commit) would have
+  described neither -- arguably a soundness problem in its own right, not
+  just a missing-data one. `HealthInsightsSummary.Workout` now carries its
+  own `heartRateRecoveryBPM: Double?`, correlated in
+  `HealthInsightsAggregation.heartRateRecoveryByWorkout` by timing: Apple
+  scores recovery within a minute or so of a workout ending, and a sample
+  has no explicit workout reference to match by, so the closest
+  same-or-later workout within a 15-minute window claims it -- and a
+  sample's closest workout wins it, not whichever workout happened to be
+  checked first, so two workouts close together can't have an earlier
+  one's reading misattributed to the later one. `HealthWorkoutsSection`
+  shows "Recovered N bpm in the first minute" under whichever workouts
+  have one, and a single explanatory footnote ("needs a supported workout
+  tracked on Apple Watch") only when *no* workout in the period has a
+  reading at all -- a partial pattern (some workouts show it, some don't)
+  is already self-explanatory and doesn't need repeating per row.
+  The now-redundant flat `heartRateRecoveryBPM`/`heartRateRecoverySampleCount`
+  fields (added earlier today for the soundness fix, before this
+  per-workout design existed) were removed from `HealthInsightsSummary`
+  rather than kept alongside the new per-workout version.
+
+  4 new/updated unit tests in `HealthInsightsSummaryTests.swift`: a sample
+  within the matching window attaches to its workout, one outside the
+  window is dropped, and two workouts close together each claim their own
+  closest sample rather than the nearer one winning both. Full
+  `LifeLogTests` suite passes; clean build with no new warnings. Verified
+  live in the simulator (`-ui-test-health-connected`): "Workouts from
+  Apple Health" now shows "Walking · 40m · 4.1 km / Recovered 26 bpm in
+  the first minute," and the flat "One-minute recovery" row is
+  confirmed gone from "Heart and breathing signals."
+
+  Sleep-duration-on-exercise-days (the second ranked card) is not started.
+
 ## 2026-08-22 — Fix four Insights statistical-soundness gaps
 
 - Prompted by a deep-dive audit into whether Insights shows genuinely sound

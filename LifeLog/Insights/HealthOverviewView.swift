@@ -79,7 +79,7 @@ struct HealthOverviewDetailView: View {
                     HealthWorkoutsSection(workouts: summary.workouts)
                 }
                 if summary.restingHeartRateBPM != nil || summary.walkingHeartRateBPM != nil ||
-                    summary.heartRateRecoveryBPM != nil || summary.respiratoryRate != nil {
+                    summary.respiratoryRate != nil {
                     HealthSignalsSection(summary: summary)
                 }
                 NavigationLink {
@@ -257,13 +257,23 @@ private struct HealthSleepConsistencyLine: View {
 private struct HealthWorkoutsSection: View {
     let workouts: [HealthInsightsSummary.Workout]
 
+    private var anyRecovered: Bool { workouts.contains { $0.heartRateRecoveryBPM != nil } }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Workouts from Apple Health").font(.headline)
             ForEach(workouts.prefix(8)) { workout in
                 HealthDetailRow(title: workout.type,
                                 value: "\(healthDuration(workout.duration))\(workout.distanceMeters.map { " · \(healthDistance($0))" } ?? "")",
-                                icon: "figure.run.circle.fill")
+                                icon: "figure.run.circle.fill",
+                                detail: workout.heartRateRecoveryBPM.map { "Recovered \(Int($0.rounded())) bpm in the first minute" })
+            }
+            // Only worth explaining the absence when it's total -- if some
+            // workouts show a recovery reading and others don't, the pattern
+            // (only Watch-tracked, supported types get one) speaks for itself.
+            if !anyRecovered {
+                Text("Heart-rate recovery needs a supported workout tracked on Apple Watch.")
+                    .font(.footnote).foregroundStyle(.secondary)
             }
         }
         .padding(20).lifeCard()
@@ -296,10 +306,6 @@ private struct HealthSignalsSection: View {
             if let value = summary.walkingHeartRateBPM {
                 HealthDetailRow(title: "Walking heart rate", value: "\(Int(value.rounded())) bpm", icon: "figure.walk",
                                 detail: readingCountLabel(summary.walkingHeartRateSampleCount))
-            }
-            if let value = summary.heartRateRecoveryBPM {
-                HealthDetailRow(title: "One-minute recovery", value: "\(Int(value.rounded())) bpm recovered", icon: "arrow.down.heart.fill",
-                                detail: readingCountLabel(summary.heartRateRecoverySampleCount))
             }
             if let value = summary.respiratoryRate {
                 HealthDetailRow(title: "Respiratory rate", value: "\(Int(value.rounded())) breaths/min", icon: "wind",

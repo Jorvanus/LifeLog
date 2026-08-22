@@ -236,10 +236,15 @@ about marketing copy, ratings prompts, or broad-market onboarding.
   clutter" against what LifeLog's data model can actually support today
   (only sleep and workouts are persisted; steps/energy/HR/HRV/VO2max are
   live-queried per screen and never stored):
-  1. **HR recovery after a workout** — `.heartRateRecoveryOneMinute` is
-     already authorized and queried, near-zero new plumbing. Only fires
-     for Watch-recognized workout sessions, not casual walks — needs an
-     explicit empty state for everyone else.
+  1. **HR recovery after a workout — shipped 2026-08-22** (see CHANGELOG).
+     Building it found that `HealthSignalsSection`'s other three rows
+     (resting/walking heart rate, respiratory rate) were *also* silently
+     unwired in production the same way recovery was -- `ActivityDataService.
+     healthSummary` never passed real samples for any of the four, only
+     recovery got fixed as part of this card. Those three still show "no
+     data" for a real person; wiring them up (the same
+     `ActivitySampleReader.healthInsightsFixtures` pattern this card just
+     added for recovery) is worth its own small pass.
   2. **Sleep duration on exercise days vs. non-exercise days** — both
      halves already exist as resolved segments; close to a re-aggregation
      rather than a new feature. Needs the same min-sample gating the rest

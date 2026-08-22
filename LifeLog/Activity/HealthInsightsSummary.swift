@@ -8,6 +8,14 @@ struct HealthInsightsSummary: Equatable, Sendable {
         let type: String
         let duration: TimeInterval
         let distanceMeters: Double?
+        // The one-minute heart-rate recovery Apple scored for this specific
+        // workout, when it has one. Deliberately per-workout rather than a
+        // period average: a hard run and a gentle walk recover completely
+        // differently, and blending them into one number would describe
+        // neither. Nil is a real, expected answer -- recovery needs a
+        // supported workout type tracked with a paired Watch, so plenty of
+        // real workouts never get one.
+        let heartRateRecoveryBPM: Double?
 
         var minutes: Double { duration / 60 }
     }
@@ -19,7 +27,6 @@ struct HealthInsightsSummary: Equatable, Sendable {
     let standHours: Double?
     let restingHeartRateBPM: Double?
     let walkingHeartRateBPM: Double?
-    let heartRateRecoveryBPM: Double?
     let respiratoryRate: Double?
     // How many distinct readings each average above was computed from. A period
     // average built from one reading and one built from thirty look identical as
@@ -27,7 +34,6 @@ struct HealthInsightsSummary: Equatable, Sendable {
     // stable trend either way.
     let restingHeartRateSampleCount: Int
     let walkingHeartRateSampleCount: Int
-    let heartRateRecoverySampleCount: Int
     let respiratoryRateSampleCount: Int
     let workouts: [Workout]
     let sleep: SleepSummary?
@@ -46,7 +52,7 @@ struct HealthInsightsSummary: Equatable, Sendable {
     var hasData: Bool {
         steps != nil || walkingRunningMeters != nil || activeEnergyKilocalories != nil ||
         exerciseMinutes != nil || standHours != nil || restingHeartRateBPM != nil ||
-        walkingHeartRateBPM != nil || heartRateRecoveryBPM != nil || respiratoryRate != nil ||
+        walkingHeartRateBPM != nil || respiratoryRate != nil ||
         !workouts.isEmpty || sleep != nil
     }
 
@@ -54,9 +60,9 @@ struct HealthInsightsSummary: Equatable, Sendable {
                             activeEnergyKilocalories: nil, exerciseMinutes: nil,
                             standHours: nil,
                             restingHeartRateBPM: nil, walkingHeartRateBPM: nil,
-                            heartRateRecoveryBPM: nil, respiratoryRate: nil,
+                            respiratoryRate: nil,
                             restingHeartRateSampleCount: 0, walkingHeartRateSampleCount: 0,
-                            heartRateRecoverySampleCount: 0, respiratoryRateSampleCount: 0,
+                            respiratoryRateSampleCount: 0,
                             workouts: [], sleep: nil,
                             activeStepDays: 0, elapsedDays: 0,
                             source: "Apple Health", lastSuccessfulImport: nil)
@@ -151,12 +157,14 @@ enum HealthInsightsAggregation {
         }
         func sampleCount(_ values: [HealthQuantityFixture]) -> Int { unique(values).count }
         let uniqueSteps = unique(steps)
+        let recoveryByWorkout = heartRateRecoveryByWorkout(unique(heartRateRecovery), workouts: workouts)
         let distinctWorkouts = Dictionary(grouping: workouts, by: \.id).compactMap { $0.value.first }
             .filter { $0.end > interval.start && $0.start < interval.end }
             .map { workout in
                 HealthInsightsSummary.Workout(id: workout.id, type: workout.type,
                                               duration: max(0, workout.end.timeIntervalSince(workout.start)),
-                                              distanceMeters: workout.distanceMeters)
+                                              distanceMeters: workout.distanceMeters,
+                                              heartRateRecoveryBPM: recoveryByWorkout[workout.id])
             }
         let elapsedEnd = max(interval.start, min(interval.end, now))
         let dayDifference = calendar.dateComponents([.day], from: calendar.startOfDay(for: interval.start),
@@ -171,11 +179,9 @@ enum HealthInsightsAggregation {
             standHours: standHoursTotal ?? total(standHours),
             restingHeartRateBPM: average(restingHeartRate),
             walkingHeartRateBPM: average(walkingHeartRate),
-            heartRateRecoveryBPM: average(heartRateRecovery),
             respiratoryRate: average(respiratoryRate),
             restingHeartRateSampleCount: sampleCount(restingHeartRate),
             walkingHeartRateSampleCount: sampleCount(walkingHeartRate),
-            heartRateRecoverySampleCount: sampleCount(heartRateRecovery),
             respiratoryRateSampleCount: sampleCount(respiratoryRate),
             workouts: distinctWorkouts,
             sleep: sleep,
@@ -184,5 +190,34 @@ enum HealthInsightsAggregation {
             source: "Apple Health",
             lastSuccessfulImport: lastSuccessfulImport
         )
+    }
+
+    /// Apple scores one-minute heart-rate recovery immediately after a
+    /// supported workout ends, so a sample's own start date sits within a few
+    /// minutes of that workout's end -- never before it. Matching by timing
+    /// rather than an explicit workout reference because `HKQuantitySample`
+    /// carries no such link; this window is generous enough to survive
+    /// HealthKit's own save latency without reaching into an unrelated later
+    /// workout.
+    ///
+    /// A sample's closest-preceding workout wins it, not the other way
+    /// around: two workouts close together must not let an earlier one's
+    /// recovery sample also get claimed by the later one just because it
+    /// asked first.
+    private static let heartRateRecoveryMatchWindow: TimeInterval = 15 * 60
+
+    private static func heartRateRecoveryByWorkout(_ samples: [HealthQuantityFixture],
+                                                    workouts: [HealthWorkoutFixture]) -> [UUID: Double] {
+        var best: [UUID: (value: Double, gap: TimeInterval)] = [:]
+        for sample in samples {
+            guard let closest = workouts
+                .filter({ sample.start >= $0.end && sample.start <= $0.end.addingTimeInterval(heartRateRecoveryMatchWindow) })
+                .min(by: { sample.start.timeIntervalSince($0.end) < sample.start.timeIntervalSince($1.end) })
+            else { continue }
+            let gap = sample.start.timeIntervalSince(closest.end)
+            if let existing = best[closest.id], existing.gap <= gap { continue }
+            best[closest.id] = (sample.value, gap)
+        }
+        return best.mapValues { $0.value }
     }
 }
