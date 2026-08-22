@@ -201,7 +201,7 @@ struct InsightsView: View {
                 .presentationDetents([.medium])
             }
             .task {
-                aggregationGeneration = await InsightsAggregationActor.shared.currentGeneration()
+                aggregationGeneration = InsightsAggregationActor.shared.currentGeneration()
                 reloadInsights(reason: .initial)
             }
             .task(id: sleepRefreshKey) {
@@ -214,12 +214,12 @@ struct InsightsView: View {
                 let queryInterval = DateInterval(start: interval.start, end: queryEnd)
                 _ = await activityData.refreshSleep(for: queryInterval, context: context)
                 guard !Task.isCancelled else { return }
-                aggregationGeneration = await InsightsAggregationActor.shared.currentGeneration()
+                aggregationGeneration = InsightsAggregationActor.shared.currentGeneration()
                 reloadInsights()
             }
             .onReceive(NotificationCenter.default.publisher(for: InsightsInvalidation.notification)) { _ in
                 Task {
-                    aggregationGeneration = await InsightsAggregationActor.shared.currentGeneration()
+                    aggregationGeneration = InsightsAggregationActor.shared.currentGeneration()
                     reloadInsights(reason: .storeGenerationChanged)
                 }
             }

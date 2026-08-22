@@ -160,11 +160,11 @@ struct ActivitiesView: View {
     private func refreshUsage() {
         usageTask?.cancel()
         usageTask = Task {
-            let generation = await InsightsAggregationActor.shared.currentGeneration()
+            let generation = InsightsAggregationActor.shared.currentGeneration()
             let reader = reader ?? VisitArchiveReader(modelContainer: context.container)
             self.reader = reader
             guard let counts = try? await reader.activityUsage(generation: generation) else { return }
-            let currentGeneration = await InsightsAggregationActor.shared.currentGeneration()
+            let currentGeneration = InsightsAggregationActor.shared.currentGeneration()
             guard !Task.isCancelled, generation == currentGeneration else { return }
             usage = counts
         }

@@ -570,11 +570,13 @@ struct AboutSettingsView: View {
     }
 }
 
+@MainActor
 private func openAppleHealth() {
     guard let healthURL = URL(string: "x-apple-health://") else { return }
     UIApplication.shared.open(healthURL) { opened in if !opened { openAppSettings() } }
 }
 
+@MainActor
 private func openAppSettings() {
     guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
     UIApplication.shared.open(settingsURL)

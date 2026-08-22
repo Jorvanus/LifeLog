@@ -216,16 +216,6 @@ about marketing copy, ratings prompts, or broad-market onboarding.
 A code-first audit on 2026-08-20. These are ranked interaction-path and ownership
 improvements, not a request for blanket rewrites or cosmetic file splitting.
 
-- [ ] **Return the app target to an actionable-warning-clean build.** A clean Swift 6
-  build currently reports that the global `openAppleHealth()`/`openAppSettings()`
-  helpers call main-actor-isolated `UIApplication` APIs from a nonisolated context;
-  make their UI isolation explicit. It also reports four unnecessary `await`s around
-  `InsightsAggregationActor.shared.currentGeneration()` in `PlaceHistoryView`; remove
-  them if the generation accessor is intentionally synchronous, or restore a real
-  isolation boundary if it is meant to serialize with aggregation. Treat Xcode's
-  "no AppIntents.framework dependency" metadata message as expected for this app,
-  not as a warning to silence with unused framework linkage.
-
 - [ ] **Continue splitting `LocationRecorder` at its existing component seams.**
   The confirmation state machine and monitored-region synchronisation moved out
   2026-08-22: `ArrivalConfirmationSession` (`LocationRecordingComponents.swift`)

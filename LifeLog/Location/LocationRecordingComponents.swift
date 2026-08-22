@@ -183,7 +183,7 @@ final class ArrivalConfirmationSession {
     /// create its `Task`s (via `attach`) when this is `true`.
     @discardableResult
     func begin(pendingArrival: PendingArrival?) -> Bool {
-        if let pendingArrival, self.pendingArrival == nil, engine != nil {
+        if pendingArrival != nil, self.pendingArrival == nil, engine != nil {
             cancel()
         }
         guard engine == nil else { return false }

@@ -1,3 +1,17 @@
+## 2026-08-22 — Actionable-warning-clean build
+
+- Fixed every actionable compiler warning: `openAppleHealth()`/`openAppSettings()`
+  now declare `@MainActor` explicitly instead of relying on always being called
+  from one; nine unnecessary `await`s around the already-synchronous
+  `InsightsAggregationActor.shared.currentGeneration()` removed from
+  `InsightsView`, `ActivitiesView`, and `PlaceHistoryView`, matching every other
+  call site in the app, which already called it synchronously; an unused
+  binding in `ActivityArtwork`'s icon lookup rewritten as the boolean test it
+  actually was; and an unused local in `ArrivalConfirmationSession.begin`
+  (introduced earlier today) fixed the same way. Xcode's "no AppIntents.framework
+  dependency" metadata message is the one expected message left — it fires
+  because LifeLog has no App Intents, not because anything needs fixing.
+
 ## 2026-08-22 — Split LocationRecorder's confirmation and region-sync state machines out
 
 - `LocationRecorder` held five separate stored properties for the live-location

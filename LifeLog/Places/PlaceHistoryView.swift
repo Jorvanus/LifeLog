@@ -64,14 +64,14 @@ struct PlaceHistoryView: View {
 
     private func load() async {
         let startedAt = Date.now
-        let generation = await InsightsAggregationActor.shared.currentGeneration()
+        let generation = InsightsAggregationActor.shared.currentGeneration()
         let reader = reader ?? VisitArchiveReader(modelContainer: context.container)
         self.reader = reader
         do {
             let result = try await reader.placeSummaries(generation: generation)
             // Do not publish a value assembled from an older store after an import,
             // correction, or restore landed while this actor was reading it.
-            let currentGeneration = await InsightsAggregationActor.shared.currentGeneration()
+            let currentGeneration = InsightsAggregationActor.shared.currentGeneration()
             guard !Task.isCancelled, generation == currentGeneration else { return }
             summaries = result.summaries
             loading = false
@@ -284,11 +284,11 @@ struct PlaceHistoryDetail: View {
     }
 
     private func reloadInBackground() async {
-        let generation = await InsightsAggregationActor.shared.currentGeneration()
+        let generation = InsightsAggregationActor.shared.currentGeneration()
         let reader = reader ?? VisitArchiveReader(modelContainer: context.container)
         self.reader = reader
         guard let entries = try? await reader.placeEntries(named: placeName) else { return }
-        let currentGeneration = await InsightsAggregationActor.shared.currentGeneration()
+        let currentGeneration = InsightsAggregationActor.shared.currentGeneration()
         guard !Task.isCancelled, generation == currentGeneration else { return }
         matching = entries
         if renamedPlace.isEmpty { renamedPlace = placeName }
