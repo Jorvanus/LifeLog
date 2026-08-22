@@ -129,6 +129,13 @@ enum GeofenceMonitor {
         let toAdd = wanted.filter { !monitoredIdentifiers.contains($0.identifier) }
         return (toAdd, Array(toRemove))
     }
+
+    /// Whether a geofence exit named `name` is the departure for `open`. Guards
+    /// against a stale or out-of-order `CLMonitor` event closing the wrong stay --
+    /// `open` must still be open, and must be the same place the exit fired for.
+    static func matchesExit(open: Visit, name: String) -> Bool {
+        open.departure == nil && open.placeName.caseInsensitiveCompare(name) == .orderedSame
+    }
 }
 
 /// A confirmed or pending arrival's evidence, carried from the callback that

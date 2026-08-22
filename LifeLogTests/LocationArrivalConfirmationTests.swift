@@ -187,6 +187,20 @@ struct LocationArrivalConfirmationTests {
         #expect(plan.toRemove == [stale])
     }
 
+    @Test("A geofence exit only closes a stay that is still open at the same place")
+    func matchesExitRequiresOpenAndSamePlace() {
+        let open = Visit(arrival: .now, latitude: -27.47, longitude: 153.03,
+                         placeName: "Home", inferredActivity: "Visiting")
+        #expect(GeofenceMonitor.matchesExit(open: open, name: "Home"))
+        #expect(GeofenceMonitor.matchesExit(open: open, name: "home"), "the match is case-insensitive")
+        #expect(!GeofenceMonitor.matchesExit(open: open, name: "Work"), "a different place must not close this stay")
+
+        let closed = Visit(arrival: .now.addingTimeInterval(-3600), departure: .now, latitude: -27.47, longitude: 153.03,
+                           placeName: "Home", inferredActivity: "Visiting")
+        #expect(!GeofenceMonitor.matchesExit(open: closed, name: "Home"),
+               "an already-closed stay must not be closed a second time by a stale event")
+    }
+
     // MARK: - ArrivalConfirmationSession
 
     private func stationarySample(_ offset: TimeInterval) -> CLLocation {

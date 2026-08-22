@@ -853,8 +853,8 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     /// inferred from wherever the person turned up next.
     private func closeMonitoredVisit(named name: String, at departure: Date,
                                      coordinate: CLLocationCoordinate2D? = nil) {
-        guard let context, let open = latestLocationVisit(in: context), open.departure == nil,
-              open.placeName.caseInsensitiveCompare(name) == .orderedSame else { return }
+        guard let context, let open = latestLocationVisit(in: context),
+              GeofenceMonitor.matchesExit(open: open, name: name) else { return }
         open.departure = max(open.arrival, min(departure, .now))
         _ = PlaceScoreLifecycle.rescore(
             open, stage: .departure, context: context, savedPlaces: placeCache.places,

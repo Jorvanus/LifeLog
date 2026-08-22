@@ -1,3 +1,29 @@
+## 2026-08-22 — Split LocationRecorder's geofence-exit match out
+
+- Extracted `GeofenceMonitor.matchesExit(open:name:)`: the guard
+  `closeMonitoredVisit` used to check inline before closing a stay on a
+  `CLMonitor` region-exit event -- the open visit must still be open, and
+  must be the same place the exit fired for, or a stale or out-of-order
+  event would close the wrong stay. Pure and case-insensitive, matching the
+  inline check it replaced exactly. `LocationRecorder` still performs the
+  fetch, the mutation (set departure, rescore, clear the Wi-Fi anchor,
+  reconcile activity, finalize, journal), and the diagnostics -- this only
+  decides whether the exit applies. Two unit tests cover it: open/same-place
+  matches (case-insensitively), a different place does not, and an
+  already-closed stay does not match a second time.
+  `closeMonitoredVisit` was the smallest and most self-contained of the
+  remaining visit-mutation methods, picked as a confidence-builder before
+  `createVisit` itself; there was little else to pull out of it beyond this
+  one guard. `LocationRecorder` is effectively unchanged in size (1,115
+  lines) since the extraction is a one-line guard rewrite, not a structural
+  move.
+  Full `LifeLogTests` suite passes (unit tests only; the UI-test suite was
+  not re-run this pass since nothing in its path changed). Verified live in
+  the simulator: fresh install launches without crashing, Timeline renders.
+  `createVisit`'s remaining bulk still has no obvious next seam -- see the
+  `TODO.md` entry, updated again with this split's reasoning for treating
+  the file as close to done for now.
+
 ## 2026-08-22 — Split LocationRecorder's arrival-merge decision out
 
 - Extracted `VisitArrivalMerge` (`LocationRecordingComponents.swift`): the
