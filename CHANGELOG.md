@@ -1,3 +1,63 @@
+## 2026-08-22 — Split three more LocationRecorder decisions out
+
+- Extracted three more seams from `LocationRecorder`, found by rereading the
+  whole file for anything past the visit-mutation methods matching the
+  established pattern (a bounded decision entangled with mechanics).
+
+  `PlaceScoreLifecycle.mapsLookupResolution(for:evaluation:)`
+  (`PlaceScoreLifecycle.swift`, next to `canSuggest`): `identifyPlace`'s
+  Maps-lookup handling had two near-identical `if`/`else if` branches that
+  set the same five `Visit` fields (`placeName`, `inferredActivity`,
+  `mapsIdentifier`, `placeFieldProvenance`, `locationResolutionExplanation`)
+  from whichever suggestion each one bound (`match` in the `canSuggest`
+  branch, `likely` in the other) and differed only in whether
+  `cache(_:for:context:)` ran afterward. Both were always
+  `evaluation.selected` under a different name. Collapsed into
+  `MapsLookupResolution` (`.apply(PlaceSuggestion, learn: Bool)` /
+  `.fallbackToReverseGeocode`), so `identifyPlace` now sets those five
+  fields once and switches only on whether to learn. This is a real
+  duplication removed, not just code relocated.
+
+  `PlaceLookupThrottle.shouldAttempt(isAlreadyInFlight:priorAttempts:now:)`
+  (`LocationRecordingComponents.swift`): the rate-limit guard
+  `identifyPlace` used to check inline -- already in flight, attempt cap,
+  cooldown since the last attempt -- pulled out as a pure decision. Also
+  absorbed the `placeLookupCooldown`/`maximumPlaceLookupAttempts` constants
+  off the recorder.
+
+  `LiveConfirmationMatch.matches(expected:expectedAccuracy:confirmed:
+  confirmedAccuracy:)` (`LocationRecordingComponents.swift`): the accuracy-
+  scaled distance-tolerance check `finishLocationConfirmation` used to run
+  inline to decide whether a live-location burst's confirmed location
+  actually matches the arrival it was confirming. A nil `expected` (a bare
+  launch check with nothing to confirm against) always matches.
+
+  All three follow the same collaborator-decides/recorder-performs boundary
+  as every earlier split. New unit tests for all three: `mapsLookupResolution`
+  alongside `canSuggest`'s existing coverage in `PlaceScoringAndEvidenceTests`
+  (five cases -- no candidate, above threshold, below threshold, placeholder
+  name, already-confirmed visit); the other two in
+  `LocationArrivalConfirmationTests` (five throttle cases, four match cases).
+
+  Hit one test-writing pitfall worth flagging: a negated multi-line
+  `#expect(!Foo.bar(a: .init(...), ...))` using bare `.init(...)` argument
+  shorthand intermittently misreported the call's result in Swift Testing's
+  diagnostics when run as part of the full suite (never in isolation) --
+  chased it with a throwaway debug test and a standalone `swift` script,
+  both confirming the function itself was always correct. Binding the
+  arguments to local `let`s before the call made the flake disappear for
+  good. Left a note in `TODO.md` for whoever writes the next `#expect(!...)`
+  spanning multiple lines.
+
+  `LocationRecorder` is down to 1,092 lines (from 1,105). Full
+  `LifeLogTests` suite (713+ tests) passes. Verified live in the simulator:
+  fresh install launches without crashing, Timeline renders.
+  This was a deliberately thorough pass -- rereading the whole file rather
+  than following an obvious next method -- and turned up meaningfully less
+  than the visit-mutation methods did. The next pass should expect
+  diminishing returns and might find nothing at all; see the updated
+  `TODO.md` entry.
+
 ## 2026-08-22 — Checked closeVisit for a further split; found none to make
 
 - Investigated `closeVisit` as the next candidate in the `LocationRecorder`

@@ -290,6 +290,51 @@ improvements, not a request for blanket rewrites or cosmetic file splitting.
   further seams; the recorder's remaining size is orchestration, not
   undivided decisions.
 
+  Three more seams found and moved out 2026-08-22, past the visit-mutation
+  methods this time: `PlaceScoreLifecycle.mapsLookupResolution(for:
+  evaluation:)` (in `PlaceScoreLifecycle.swift`, alongside the existing
+  `canSuggest` it builds on) collapses `identifyPlace`'s two near-identical
+  `if`/`else if` branches -- both set the same five `Visit` fields from
+  whichever suggestion each one bound (`match` vs. `likely`) and differed
+  only in whether learning happened -- into one `MapsLookupResolution`
+  (`.apply(PlaceSuggestion, learn: Bool)` / `.fallbackToReverseGeocode`) the
+  recorder switches on; a real duplication removed, not just code moved.
+  `PlaceLookupThrottle.shouldAttempt(isAlreadyInFlight:priorAttempts:now:)`
+  is the rate-limit guard `identifyPlace` used to check inline (already in
+  flight, attempt cap, cooldown since the last attempt) -- also absorbed
+  the `placeLookupCooldown`/`maximumPlaceLookupAttempts` constants that used
+  to live on the recorder. `LiveConfirmationMatch.matches(expected:
+  expectedAccuracy:confirmed:confirmedAccuracy:)` is the accuracy-scaled
+  distance-tolerance check `finishLocationConfirmation` used to run inline
+  to decide whether a live-location burst's result actually matches the
+  arrival it was confirming (nil `expected` -- a bare launch check -- always
+  matches). All three followed the same collaborator-decides/recorder-
+  performs boundary as everything before them, and all three got direct
+  unit tests (`mapsLookupResolution`'s alongside `canSuggest`'s existing
+  tests in `PlaceScoringAndEvidenceTests`; the other two in
+  `LocationArrivalConfirmationTests`).
+  One test-writing pitfall hit along the way, worth flagging for whoever
+  writes the next one: `#expect(!Foo.bar(a: .init(...), b: 10,
+                                         c: .init(...), d: 10))` -- a
+  negated multi-line `#expect` whose arguments use bare `.init(...)`
+  shorthand -- intermittently misreported the call's result in Swift
+  Testing's diagnostic output on this toolchain (Xcode from this session;
+  exact version not pinned down) when run as part of the full suite, though
+  never in isolation. Binding the arguments to local `let`s first and
+  passing those to the call made it disappear reliably; the underlying
+  function was always correct (verified independently with a throwaway
+  debug test and a standalone `swift` script). Prefer named locals over
+  inline `.init(...)` in any `#expect(!...)` that spans multiple lines
+  until this is understood, rather than chasing a phantom bug in the
+  function under test.
+  Recorder now at 1,092 lines (down from 1,105). Full `LifeLogTests` suite
+  (713+ tests) passes; verified live in the simulator after a clean
+  install. Genuinely running low on undivided decisions now -- these three
+  were found by rereading the whole file end to end looking for anything
+  matching the pattern, not from an obvious remaining seam the way the
+  visit-mutation methods were. The next pass, if one happens, should expect
+  diminishing returns and might turn up nothing.
+
 ## Deliberately not priorities
 
 - Public App Store marketing, ratings/review prompts, broad-market accessibility

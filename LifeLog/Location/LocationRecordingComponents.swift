@@ -148,6 +148,24 @@ struct PendingArrival: Sendable {
     let accuracy: CLLocationAccuracy
 }
 
+/// Whether a live-location burst's confirmed location is close enough to the
+/// arrival it was confirming to trust it -- the check `finishLocationConfirmation`
+/// used to run inline once a burst produced a confirmed location at all. Tolerance
+/// scales with whichever side's accuracy is worse, since a coarse expected fix or a
+/// coarse confirmation both widen how far "the same place" can land.
+enum LiveConfirmationMatch {
+    /// `expected` is nil for a bare launch check with nothing to confirm against,
+    /// which always matches.
+    static func matches(expected: CLLocationCoordinate2D?, expectedAccuracy: CLLocationAccuracy,
+                        confirmed: CLLocationCoordinate2D, confirmedAccuracy: CLLocationAccuracy) -> Bool {
+        guard let expected else { return true }
+        let expectedLocation = CLLocation(latitude: expected.latitude, longitude: expected.longitude)
+        let confirmedLocation = CLLocation(latitude: confirmed.latitude, longitude: confirmed.longitude)
+        let tolerance = max(150, max(expectedAccuracy, confirmedAccuracy) * 2)
+        return expectedLocation.distance(from: confirmedLocation) <= tolerance
+    }
+}
+
 /// Owns the live-location confirmation burst's state machine independently of
 /// `CLLocationManager`: the pure `ArrivalConfirmationEngine`'s samples, the
 /// pending arrival they are confirming (if any), the burst and timeout tasks'
@@ -328,6 +346,26 @@ final class LocationServiceSessionController {
         session?.invalidate()
         session = nil
         requirement = nil
+    }
+}
+
+/// Whether `LocationRecorder.identifyPlace` should start another Maps/reverse-
+/// geocoding attempt for a visit. MapKit and reverse geocoding are a single
+/// resolution attempt; a noisy stream of location fixes must not turn one
+/// unresolved stay into a lookup per fix, so an attempt already in flight and a
+/// per-visit attempt cap with a cooldown between attempts both hold it back.
+///
+/// `LocationRecorder` still owns the actual bookkeeping this reads (`identifyingVisits`,
+/// `placeLookupAttempts`) and records a new attempt when this says to proceed; this
+/// only decides whether to.
+enum PlaceLookupThrottle {
+    static let cooldown: TimeInterval = 5 * 60
+    static let maximumAttempts = 3
+
+    static func shouldAttempt(isAlreadyInFlight: Bool, priorAttempts: [Date], now: Date) -> Bool {
+        !isAlreadyInFlight &&
+            priorAttempts.count < maximumAttempts &&
+            (priorAttempts.last.map { now.timeIntervalSince($0) >= cooldown } ?? true)
     }
 }
 

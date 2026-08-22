@@ -396,6 +396,79 @@ struct LocationArrivalConfirmationTests {
         #expect(item.departure == departure)
     }
 
+    // MARK: - LiveConfirmationMatch
+
+    @Test("A bare launch check with no expected coordinate always matches")
+    func liveConfirmationMatchesWithNoExpectation() {
+        #expect(LiveConfirmationMatch.matches(expected: nil, expectedAccuracy: 0,
+                                              confirmed: .init(latitude: -27.47, longitude: 153.03),
+                                              confirmedAccuracy: 10))
+    }
+
+    @Test("A confirmation close to its expected arrival matches")
+    func liveConfirmationMatchesWhenClose() {
+        #expect(LiveConfirmationMatch.matches(expected: .init(latitude: -27.47, longitude: 153.03), expectedAccuracy: 10,
+                                              confirmed: .init(latitude: -27.4701, longitude: 153.0301), confirmedAccuracy: 10))
+    }
+
+    @Test("A confirmation far from its expected arrival does not match")
+    func liveConfirmationRejectsWhenFar() {
+        let expected = CLLocationCoordinate2D(latitude: -27.47, longitude: 153.03)
+        let confirmed = CLLocationCoordinate2D(latitude: -27.60, longitude: 153.10)
+        let result = LiveConfirmationMatch.matches(expected: expected, expectedAccuracy: 10,
+                                                    confirmed: confirmed, confirmedAccuracy: 10)
+        let distance = CLLocation(latitude: expected.latitude, longitude: expected.longitude)
+            .distance(from: CLLocation(latitude: confirmed.latitude, longitude: confirmed.longitude))
+        #expect(!result, "distance=\(distance) result=\(result)")
+    }
+
+    @Test("Tolerance widens with whichever side's accuracy is worse")
+    func liveConfirmationToleranceScalesWithWorseAccuracy() {
+        // ~500m away -- outside the 150m floor, but within a 2x300m accuracy-scaled tolerance.
+        let expected = CLLocationCoordinate2D(latitude: -27.47, longitude: 153.03)
+        let confirmed = CLLocationCoordinate2D(latitude: -27.4745, longitude: 153.03)
+        #expect(!LiveConfirmationMatch.matches(expected: expected, expectedAccuracy: 10,
+                                               confirmed: confirmed, confirmedAccuracy: 10),
+               "the 150m floor alone must not cover a ~500m gap")
+        #expect(LiveConfirmationMatch.matches(expected: expected, expectedAccuracy: 300,
+                                              confirmed: confirmed, confirmedAccuracy: 10),
+               "a poor expected-side accuracy must widen the tolerance enough to cover it")
+    }
+
+    // MARK: - PlaceLookupThrottle
+
+    @Test("A lookup already in flight is never attempted again")
+    func throttleRefusesWhileInFlight() {
+        #expect(!PlaceLookupThrottle.shouldAttempt(isAlreadyInFlight: true, priorAttempts: [], now: .now))
+    }
+
+    @Test("A lookup with no prior attempts is always allowed")
+    func throttleAllowsTheFirstAttempt() {
+        #expect(PlaceLookupThrottle.shouldAttempt(isAlreadyInFlight: false, priorAttempts: [], now: .now))
+    }
+
+    @Test("A lookup at the attempt cap is refused even with the cooldown satisfied")
+    func throttleRefusesAtTheAttemptCap() {
+        let now = Date.now
+        let longAgo = now.addingTimeInterval(-PlaceLookupThrottle.cooldown * 10)
+        let attempts = Array(repeating: longAgo, count: PlaceLookupThrottle.maximumAttempts)
+        #expect(!PlaceLookupThrottle.shouldAttempt(isAlreadyInFlight: false, priorAttempts: attempts, now: now))
+    }
+
+    @Test("A lookup within the cooldown of its last attempt is refused")
+    func throttleRefusesWithinCooldown() {
+        let now = Date.now
+        let recent = now.addingTimeInterval(-PlaceLookupThrottle.cooldown / 2)
+        #expect(!PlaceLookupThrottle.shouldAttempt(isAlreadyInFlight: false, priorAttempts: [recent], now: now))
+    }
+
+    @Test("A lookup past its last attempt's cooldown, under the cap, is allowed")
+    func throttleAllowsAfterCooldownUnderTheCap() {
+        let now = Date.now
+        let past = now.addingTimeInterval(-PlaceLookupThrottle.cooldown - 1)
+        #expect(PlaceLookupThrottle.shouldAttempt(isAlreadyInFlight: false, priorAttempts: [past], now: now))
+    }
+
     // MARK: - SavedPlaceCache
 
     @Test("The nearest place wins, and one outside every radius is not a match")

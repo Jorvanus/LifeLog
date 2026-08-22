@@ -88,8 +88,6 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     /// MapKit and reverse geocoding are a single resolution attempt. A noisy stream
     /// of location fixes must not turn one unresolved stay into a request per fix.
     private var placeLookupAttempts: [ObjectIdentifier: [Date]] = [:]
-    private static let placeLookupCooldown: TimeInterval = 5 * 60
-    private static let maximumPlaceLookupAttempts = 3
     /// See `SavedPlaceCache`'s own doc comment for the boundary: this recorder
     /// still decides when to reload it and what a failure means for
     /// `lastError`, the cache only owns the fetch and the nearest-match lookup.
@@ -472,14 +470,11 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                                severity: "info")
             return
         }
-        if let expected = arrival?.coordinate {
-            let expectedLocation = CLLocation(latitude: expected.latitude, longitude: expected.longitude)
-            let tolerance = max(150, max(arrival?.accuracy ?? 0, location.horizontalAccuracy) * 2)
-            guard expectedLocation.distance(from: location) <= tolerance else {
-                Diagnostics.record(context, subsystem: "Core Location",
-                                   message: "A visit arrival did not match its live confirmation.")
-                return
-            }
+        guard LiveConfirmationMatch.matches(expected: arrival?.coordinate, expectedAccuracy: arrival?.accuracy ?? 0,
+                                            confirmed: location.coordinate, confirmedAccuracy: location.horizontalAccuracy) else {
+            Diagnostics.record(context, subsystem: "Core Location",
+                               message: "A visit arrival did not match its live confirmation.")
+            return
         }
         recordLocationEvidence(location, callbackType: .liveLocationConfirmed, transition: .created)
         if let arrival {
@@ -894,10 +889,8 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         let identity = ObjectIdentifier(visit)
         let now = Date.now
         let attempts = placeLookupAttempts[identity, default: []]
-        guard !identifyingVisits.contains(identity),
-              attempts.count < Self.maximumPlaceLookupAttempts,
-              attempts.last.map({ now.timeIntervalSince($0) >= Self.placeLookupCooldown }) ?? true
-        else { return }
+        guard PlaceLookupThrottle.shouldAttempt(isAlreadyInFlight: identifyingVisits.contains(identity),
+                                                priorAttempts: attempts, now: now) else { return }
         identifyingVisits.insert(identity)
         placeLookupAttempts[identity, default: []].append(now)
         let lookupToken = placeResolutionCoordinator.begin(for: visit)
@@ -942,21 +935,15 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                     confidence: evaluation.breakdown.confidence,
                     fallback: result.suggestions.isEmpty ? "reverse geocoding" : nil,
                     context: context)
-                if PlaceScoreLifecycle.canSuggest(for: visit, evaluation: evaluation), let match = evaluation.selected,
-                   !Visit.isPlaceholderName(match.name) {
-                    visit.placeName = match.name
-                    visit.inferredActivity = match.suggestedActivity
-                    visit.mapsIdentifier = match.mapsIdentifier
-                    visit.placeFieldProvenance = match.mapsIdentifier == nil ? "name-fallback" : "maps"
-                    visit.locationResolutionExplanation = match.mapsIdentifier == nil ? .coordinateTime : .mapsIdentifier
-                    cache(match, for: visit, context: context)
-                } else if let likely = evaluation.selected {
-                    visit.placeName = likely.name
-                    visit.inferredActivity = likely.suggestedActivity
-                    visit.mapsIdentifier = likely.mapsIdentifier
-                    visit.placeFieldProvenance = likely.mapsIdentifier == nil ? "name-fallback" : "maps"
-                    visit.locationResolutionExplanation = likely.mapsIdentifier == nil ? .coordinateTime : .mapsIdentifier
-                } else {
+                switch PlaceScoreLifecycle.mapsLookupResolution(for: visit, evaluation: evaluation) {
+                case .apply(let suggestion, let learn):
+                    visit.placeName = suggestion.name
+                    visit.inferredActivity = suggestion.suggestedActivity
+                    visit.mapsIdentifier = suggestion.mapsIdentifier
+                    visit.placeFieldProvenance = suggestion.mapsIdentifier == nil ? "name-fallback" : "maps"
+                    visit.locationResolutionExplanation = suggestion.mapsIdentifier == nil ? .coordinateTime : .mapsIdentifier
+                    if learn { cache(suggestion, for: visit, context: context) }
+                case .fallbackToReverseGeocode:
                     reverseGeocode(visit)
                     return
                 }
