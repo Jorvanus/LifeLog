@@ -1,3 +1,49 @@
+## 2026-08-22 — Sleep duration on exercise days vs. non-exercise days
+
+- Builds the second of the two new correlation cards the 2026-08-22 Insights
+  deep-dive ranked as most feasible, after HR recovery. Adds
+  `SleepExerciseComparison` (`ActivityDataService.swift`): buckets the same
+  28-day sleep window `HealthOverviewView` already loads by whether a
+  workout happened during the day the sleep session started, and averages
+  each side. A day's sleep session is attributed to whichever calendar day
+  it began on (a session starting at 10pm and ending after midnight still
+  counts as that evening's sleep), matching how `workoutDays` is built from
+  workout start times.
+
+  Gated the same way the rest of Insights already treats small samples:
+  `SleepExerciseComparison.minimumNightsPerGroup = 3` — fewer real nights on
+  either side and `make` returns `nil` rather than comparing a 2-night
+  average against a 20-night one as if they were equally reliable. Needed a
+  new `ActivitySampleReader.workoutDates(in:)` (workout *start times* only,
+  not full fixtures) since the existing `safeWorkoutFixtures` return type
+  carries more than this comparison needs.
+
+  Shown in `HealthOverviewView`'s sleep detail section as "Sleep on days you
+  exercised," deliberately not gated behind `showsPersonalPattern` (the
+  30-day-history gate the sleep-consistency baseline uses) since this
+  comparison has its own independent sample-size floor already. Worded as
+  "An observation, not a recommendation" — a rest day could explain either
+  direction just as easily as a workout could, and the card has no way to
+  rule that out.
+
+  3 new unit tests in `HealthInsightsSummaryTests.swift`: nights bucket by
+  the evening the sleep session started (not the morning it ended), and
+  fewer than three nights on either side reports no comparison at all. Full
+  `LifeLogTests` suite passes; clean build with no new warnings; dead-code
+  scan clean.
+
+  One test (`sleepExerciseComparisonBucketsByTheEveningItStartedOn`) hit the
+  same class of Swift Testing display flake seen earlier this session —
+  identical values reported as unequal, reproducing only when run alongside
+  the rest of the file, never alone. Binding to local `let`s (the earlier
+  fix) didn't help this time; rewriting the assertions around `try
+  #require(...)` to unwrap the optional once and compare the non-optional
+  fields directly did. Root cause in Swift Testing itself still unknown.
+
+## 2026-08-22 — App Store asset workspace
+
+- Added a dedicated, privacy-safe workspace for synthetic App Store screenshots, current submission requirements, and App Review material.
+
 ## 2026-08-22 — Show heart-rate recovery per workout, not as a period average
 
 - Builds the first of the two new correlation cards the 2026-08-22 Insights

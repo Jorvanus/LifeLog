@@ -195,6 +195,7 @@ private struct HealthSleepDetailSection: View {
     let interval: DateInterval
     let activityData: ActivityDataService
     @State private var baseline: SleepPatternBaseline?
+    @State private var exerciseComparison: SleepExerciseComparison?
 
     private var baselineStart: Date { Calendar.current.startOfDay(for: interval.start) }
     private var showsPersonalPattern: Bool { interval.duration <= 36 * 60 * 60 }
@@ -217,12 +218,22 @@ private struct HealthSleepDetailSection: View {
             if showsPersonalPattern {
                 HealthSleepConsistencyLine(sleep: sleep, baseline: baseline)
             }
+            if let exerciseComparison {
+                SleepExerciseComparisonLine(comparison: exerciseComparison)
+            }
         }
         .padding(20).lifeCard()
         .task(id: showsPersonalPattern ? baselineStart : .distantPast) {
             baseline = showsPersonalPattern
                 ? await activityData.sleepPatternBaseline(before: baselineStart)
                 : nil
+        }
+        // Not gated by `showsPersonalPattern`: this compares two groups of
+        // nights against each other, not the viewed period's own single
+        // session against a rolling average, so it means the same thing
+        // whichever period brought the person to this screen.
+        .task(id: baselineStart) {
+            exerciseComparison = await activityData.sleepExerciseComparison(before: baselineStart)
         }
         .accessibilityIdentifier("health-sleep-detail")
     }
@@ -251,6 +262,25 @@ private struct HealthSleepConsistencyLine: View {
                 }
             }
         }
+    }
+}
+
+private struct SleepExerciseComparisonLine: View {
+    let comparison: SleepExerciseComparison
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Sleep on days you exercised").font(.subheadline.weight(.semibold))
+            Text("\(healthDuration(comparison.averageSleepOnExerciseDays)) average over \(comparison.exerciseNights) nights with a workout, vs. \(healthDuration(comparison.averageSleepOnRestDays)) over \(comparison.restNights) nights without.")
+                .font(.footnote).foregroundStyle(.secondary)
+            // A workout and a good night's sleep sharing a cause -- a rest
+            // day, say -- explains a pattern here just as well as either one
+            // explaining the other, so this never claims more than what was
+            // recorded side by side.
+            Text("An observation, not a recommendation — a rest day could explain both just as easily as one explaining the other.")
+                .font(.caption2).foregroundStyle(.tertiary)
+        }
+        .accessibilityIdentifier("health-sleep-exercise-comparison")
     }
 }
 

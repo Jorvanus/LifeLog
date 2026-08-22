@@ -59,6 +59,50 @@ struct SleepPatternBaseline: Equatable, Sendable {
     }
 }
 
+/// How much a person slept on days a workout happened, against days one
+/// didn't, over a rolling window of recent nights. Describes only what was
+/// recorded -- never framed as cause and effect, since a workout and a good
+/// night's sleep can just as easily share a common cause (a day off work,
+/// say) as either explain the other.
+struct SleepExerciseComparison: Equatable, Sendable {
+    let exerciseNights: Int
+    let restNights: Int
+    let averageSleepOnExerciseDays: TimeInterval
+    let averageSleepOnRestDays: TimeInterval
+
+    var difference: TimeInterval { averageSleepOnExerciseDays - averageSleepOnRestDays }
+
+    /// Both groups need a real sample, not one or two nights standing in for
+    /// "days you exercise" -- the same spirit as `sleepPatternBaseline`'s own
+    /// `count >= 3` floor, applied to each side of the split rather than the
+    /// total.
+    static let minimumNightsPerGroup = 3
+
+    /// A sleep session's "day" is whichever calendar day it began on -- the
+    /// evening that led into it -- so a workout earlier that same day is what
+    /// gets correlated with that night's sleep, not the workout the following
+    /// morning might lead into instead.
+    static func make(sessions: [HealthSleepSession], workoutDays: Set<Date>,
+                     calendar: Calendar) -> SleepExerciseComparison? {
+        var exercise: [TimeInterval] = []
+        var rest: [TimeInterval] = []
+        for session in sessions {
+            let day = calendar.startOfDay(for: session.start)
+            if workoutDays.contains(day) {
+                exercise.append(session.duration)
+            } else {
+                rest.append(session.duration)
+            }
+        }
+        guard exercise.count >= minimumNightsPerGroup, rest.count >= minimumNightsPerGroup else { return nil }
+        return SleepExerciseComparison(
+            exerciseNights: exercise.count, restNights: rest.count,
+            averageSleepOnExerciseDays: exercise.reduce(0, +) / Double(exercise.count),
+            averageSleepOnRestDays: rest.reduce(0, +) / Double(rest.count)
+        )
+    }
+}
+
 @MainActor @Observable
 final class ActivityDataService {
     private let healthStore = HKHealthStore()
@@ -91,6 +135,7 @@ final class ActivityDataService {
     private var importCoordinator = IncrementalImportCoordinator()
     private var healthSummaryCache: [String: HealthInsightsSummary] = [:]
     private var sleepPatternCache: [String: SleepPatternBaseline?] = [:]
+    private var sleepExerciseComparisonCache: [String: SleepExerciseComparison?] = [:]
     private let sleepAnchorKey = "LifeLog.HealthKit.sleepAnchor.v1"
     private let workoutAnchorKey = "LifeLog.HealthKit.workoutAnchor.v1"
     /// When the current streak of empty sleep queries first began, so a same-morning
@@ -600,6 +645,32 @@ final class ActivityDataService {
         return baseline
     }
 
+    /// Reads a rolling window of nights and correlates each against whether a
+    /// workout happened the day leading into it. Intentionally on-demand from
+    /// the Health detail screen, the same as `sleepPatternBaseline`, and over a
+    /// longer window (28 days) than that 14-night baseline -- `SleepExerciseComparison.
+    /// minimumNightsPerGroup` needs a real sample on *both* sides of the split,
+    /// which a shorter window makes much less likely to reach for whichever side
+    /// happens to be the rarer one.
+    func sleepExerciseComparison(before day: Date, days: Int = 28) async -> SleepExerciseComparison? {
+        let calendar = Calendar.current
+        let end = calendar.startOfDay(for: day)
+        guard days > 0, let start = calendar.date(byAdding: .day, value: -days, to: end) else { return nil }
+        let interval = DateInterval(start: start, end: end)
+        let key = "sleep-exercise-\(HealthSummaryReader.cacheKey(for: interval))"
+        if let cached = sleepExerciseComparisonCache[key] { return cached }
+        let sessions = usesUITestHealthFixture
+            ? Self.uiTestSleepSessions(endingBefore: end, calendar: calendar)
+            : await sampleReader.sleepSessions(in: interval)
+        let workoutDates = usesUITestHealthFixture
+            ? Self.uiTestWorkoutDates(endingBefore: end, calendar: calendar)
+            : await sampleReader.workoutDates(in: interval)
+        let workoutDays = Set(workoutDates.map { calendar.startOfDay(for: $0) })
+        let comparison = SleepExerciseComparison.make(sessions: sessions, workoutDays: workoutDays, calendar: calendar)
+        sleepExerciseComparisonCache[key] = comparison
+        return comparison
+    }
+
     /// Reads the selected sleep session on demand so opening Insights does not add a
     /// HealthKit query to every chart render.
     func sleepSummary(for interval: DateInterval) async -> SleepSummary? {
@@ -684,6 +755,15 @@ final class ActivityDataService {
         }
     }
 
+    /// A workout on every third of the same 14 days `uiTestSleepSessions` covers --
+    /// enough of each (5 exercise nights, 9 rest nights) to clear `SleepExerciseComparison`'s
+    /// own per-group floor and exercise the comparison section in UI tests.
+    private static func uiTestWorkoutDates(endingBefore end: Date, calendar: Calendar) -> [Date] {
+        stride(from: 1, through: 13, by: 3).compactMap { offset in
+            calendar.date(byAdding: .day, value: -offset, to: end)?.addingTimeInterval(18 * 60 * 60)
+        }
+    }
+
     /// Daily averages for the Health Trends screen. HealthKit owns the raw
     /// samples; LifeLog only keeps the small, display-ready series in memory.
     func healthTrend(for metric: HealthTrendMetric, interval: DateInterval) async -> [HealthTrendPoint] {
@@ -702,6 +782,7 @@ final class ActivityDataService {
     private func invalidateHealthSummaryCache() {
         healthSummaryCache.removeAll(keepingCapacity: true)
         sleepPatternCache.removeAll(keepingCapacity: true)
+        sleepExerciseComparisonCache.removeAll(keepingCapacity: true)
         stepCache.removeAll(keepingCapacity: true)
     }
 

@@ -233,4 +233,51 @@ struct HealthInsightsSummaryTests {
 
         #expect(baseline.timingDifference(from: afterMidnight, calendar: calendar) == 30)
     }
+
+    // MARK: - SleepExerciseComparison
+
+    @Test("A sleep session's day is whichever calendar day it began on")
+    func sleepExerciseComparisonBucketsByTheEveningItStartedOn() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let day1 = calendar.date(from: DateComponents(year: 2026, month: 8, day: 1))!
+        func session(_ day: Date, startHour: Int, hours: Double) -> HealthSleepSession {
+            let start = calendar.date(byAdding: .hour, value: startHour, to: day)!
+            return HealthSleepSession(start: start, end: start.addingTimeInterval(hours * 3_600), duration: hours * 3_600)
+        }
+        // Three exercise nights at 9h, three rest nights at 7h.
+        let sessions = (0..<3).flatMap { offset -> [HealthSleepSession] in
+            let exerciseDay = calendar.date(byAdding: .day, value: offset * 2, to: day1)!
+            let restDay = calendar.date(byAdding: .day, value: offset * 2 + 1, to: day1)!
+            return [session(exerciseDay, startHour: 22, hours: 9), session(restDay, startHour: 22, hours: 7)]
+        }
+        let workoutDays = Set((0..<3).map { calendar.startOfDay(for: calendar.date(byAdding: .day, value: $0 * 2, to: day1)!) })
+
+        let comparison = try #require(SleepExerciseComparison.make(sessions: sessions, workoutDays: workoutDays, calendar: calendar))
+
+        #expect(comparison.exerciseNights == 3)
+        #expect(comparison.restNights == 3)
+        #expect(comparison.averageSleepOnExerciseDays == 9 * 3_600)
+        #expect(comparison.averageSleepOnRestDays == 7 * 3_600)
+        #expect(comparison.difference == 2 * 3_600)
+    }
+
+    @Test("Fewer than three nights on either side reports no comparison at all")
+    func sleepExerciseComparisonNeedsARealSampleOnBothSides() {
+        let calendar = Calendar(identifier: .gregorian)
+        let day1 = calendar.date(from: DateComponents(year: 2026, month: 8, day: 1))!
+        func session(_ offset: Int, hours: Double) -> HealthSleepSession {
+            let start = calendar.date(byAdding: .day, value: offset, to: day1)!.addingTimeInterval(22 * 3_600)
+            return HealthSleepSession(start: start, end: start.addingTimeInterval(hours * 3_600), duration: hours * 3_600)
+        }
+        // Four rest nights, but only two exercise nights -- one side never
+        // clears the floor, so nothing should be reported rather than a
+        // two-night "average" standing in for a real pattern.
+        let sessions = [session(0, hours: 9), session(1, hours: 9),
+                        session(2, hours: 7), session(3, hours: 7), session(4, hours: 7), session(5, hours: 7)]
+        let workoutDays: Set<Date> = [calendar.startOfDay(for: day1),
+                                      calendar.startOfDay(for: calendar.date(byAdding: .day, value: 1, to: day1)!)]
+
+        #expect(SleepExerciseComparison.make(sessions: sessions, workoutDays: workoutDays, calendar: calendar) == nil)
+    }
 }

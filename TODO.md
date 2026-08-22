@@ -245,11 +245,8 @@ about marketing copy, ratings prompts, or broad-market onboarding.
      data" for a real person; wiring them up (the same
      `ActivitySampleReader.healthInsightsFixtures` pattern this card just
      added for recovery) is worth its own small pass.
-  2. **Sleep duration on exercise days vs. non-exercise days** — both
-     halves already exist as resolved segments; close to a re-aggregation
-     rather than a new feature. Needs the same min-sample gating the rest
-     of Insights already uses, so a 2-day vs. 20-day split doesn't get
-     treated as an even comparison.
+  2. **Sleep duration on exercise days vs. non-exercise days — shipped
+     2026-08-22** (see CHANGELOG).
   Lower-ranked and not currently planned: walking HR vs. commute time
   (timestamp-granularity mismatch — Apple's walking HR is a daily rolling
   average, not tied to a specific walk), active energy on commute vs.

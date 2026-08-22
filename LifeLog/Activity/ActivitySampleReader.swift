@@ -229,6 +229,14 @@ actor ActivitySampleReader {
         (try? await workoutFixtures(in: interval)) ?? []
     }
 
+    /// Just the workout start times in the period -- for correlating another
+    /// metric (sleep, say) against "did a workout happen this day," which
+    /// doesn't need the full `HealthWorkoutFixture` (type, duration, distance)
+    /// the main Health-insights query already fetches for other purposes.
+    func workoutDates(in interval: DateInterval) async -> [Date] {
+        await safeWorkoutFixtures(in: interval).map(\.start)
+    }
+
     func healthTrendFixtures(for metric: HealthTrendMetric, in interval: DateInterval) async -> [HealthQuantityFixture] {
         (try? await quantityFixtures(in: interval, identifier: metric.identifier, unit: metric.unit)) ?? []
     }
