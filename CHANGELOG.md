@@ -1,3 +1,15 @@
+## 2026-08-22 — Add Routine stability to Year, after the year's own content
+
+- Year was the one scope missing this card entirely, despite Routine
+  Stability being season-wide -- the one period it describes most
+  naturally. Added `routineStabilitySection` to `yearLayout` in
+  `InsightsView.swift`, after `YearInsightsView`, matching the same
+  after-the-period's-own-content placement Week and Month now use (see
+  below). No change to `InsightsRoutineStability` itself -- it already
+  fetches over its own season window independent of which scope is
+  selected, so this is purely a "show it here too" change. Clean build,
+  full `LifeLogTests` suite passes, dead-code scan clean.
+
 ## 2026-08-22 — Move Routine stability after each period's own content
 
 - Prompted by a flow review: Week and Month both put Routine Stability

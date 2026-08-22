@@ -500,6 +500,9 @@ struct InsightsView: View {
         healthSetupSection
     }
 
+    /// Routine Stability is season-wide (see `weekLayout`'s note) -- Year is
+    /// the one scope it describes most naturally, yet it was missing here
+    /// entirely until now.
     @ViewBuilder private var yearLayout: some View {
         YearInsightsView(insights: presentationState.annualInsights, openGroup: { row in
             guard row.totalHours > 0, !row.foldedGroups.isEmpty else { return }
@@ -507,6 +510,7 @@ struct InsightsView: View {
         }, openPlace: { place in
             path.append(InsightsRoute.place(name: place.name))
         }, period: periodLoader.snapshot.analysisInterval, placesLoading: retrospectives.annualPlacesLoading)
+        routineStabilitySection
         healthSetupSection
     }
 
