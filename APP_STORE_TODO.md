@@ -108,8 +108,12 @@ The in-app explanation and App Store metadata must agree with the implementation
 
 ### Public documents and in-app access
 
-- [ ] Publish a stable HTTPS Privacy Policy URL before external TestFlight review.
-  It must identify:
+- [x] Publish a stable HTTPS Privacy Policy URL before external TestFlight review.
+  Live at https://jorvanus.github.io/LifeLog/ (GitHub Pages, served from
+  `docs/index.html` on `main`). Updated 2026-08-22 to add the diagnostics-report
+  section (redacted-by-default vs. opt-in detailed evidence), the explicit
+  HealthKit read-only/not-for-advertising-or-insurance statement, and how to
+  revoke Location/Motion/Health access. It must identify:
   - what location, motion, HealthKit, diagnostic, and backup data LifeLog reads;
   - when each source is collected and what feature uses it;
   - that HealthKit data is read-only and never used for advertising, marketing,
