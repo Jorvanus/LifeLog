@@ -1,3 +1,33 @@
+## 2026-08-22 — Redesign Routine stability from a data table into takeaways
+
+- Prompted by feedback on a screenshot: the card was twelve rows of "arrives
+  HH:MM (±NNN min)" per weekday, asking the reader to do the pattern-finding
+  themselves rather than telling them anything. Restructured
+  `InsightRoutineStabilityCard.swift` around three layers instead of one:
+
+  1. A plain-language headline per role/signal -- "Steadiest on Wednesdays —
+     home by 8:19pm, rarely more than 1h14m off," rather than a bare ± figure.
+     Picks the weekday with the smallest arrival spread and states it either
+     as a genuine "steadiest day" contrast (multiple qualifying days) or
+     plainly (only one). Sleep and commute get the same "give or take N"
+     phrasing instead of "±N min."
+  2. A visual range strip: one bar per weekday from typical arrival to
+     typical departure on a shared midnight-to-midnight axis, so the shape
+     of the week reads at a glance instead of requiring seven rows to be
+     mentally laid out by the reader. An overnight Home stay (departure
+     numerically before arrival, e.g. arrives 1:42pm, leaves 8:14am the next
+     day) draws as two pieces against opposite edges rather than backwards.
+  3. The original exact-times rows, unchanged, moved behind a collapsed
+     "Exact times" `DisclosureGroup` for anyone who wants the raw numbers.
+
+  The underlying `InsightsRoutineStability` model and its sample-size
+  gating are untouched -- this is presentation only. Clean build; full
+  `LifeLogTests` suite passes (no tests depended on the old row layout);
+  dead-code scan clean. Live simulator verification wasn't possible this
+  session -- coordinate-based simulator taps were unreliable throughout
+  (documented elsewhere in this session's work), so this was verified by
+  code review and the existing test coverage instead.
+
 ## 2026-08-22 — Sleep duration on exercise days vs. non-exercise days
 
 - Builds the second of the two new correlation cards the 2026-08-22 Insights
