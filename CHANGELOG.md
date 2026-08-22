@@ -1,3 +1,27 @@
+## 2026-08-22 — Checked closeVisit for a further split; found none to make
+
+- Investigated `closeVisit` as the next candidate in the `LocationRecorder`
+  split. It doesn't have one: `ActivityLocationPolicy.matchDeparture` --
+  "which stored arrival does this departure belong to" -- was already a
+  standalone pure function with its own dedicated test file
+  (`DepartureMatchingTests`), unrelated to and predating this splitting
+  effort. `closeVisit` only fetches candidates and calls it; there is no
+  decision left inline to lift into a collaborator.
+  Did the one thing actually worth doing: named the fetch
+  (`departureCandidates(context:)`) instead of leaving it inline, mirroring
+  `recentAutomaticVisits`'s naming and doc-comment style, so every
+  recorder method that feeds a decision elsewhere in the app now reads the
+  same way. Not a decision extraction -- a small consistency pass.
+  `LocationRecorder` is at 1,105 lines (up slightly from 1,098: the named
+  fetch's signature and doc comment cost a few lines `createVisit`'s prior
+  split didn't). Full `LifeLogTests` suite passes. Verified live in the
+  simulator: fresh install launches without crashing, Timeline renders.
+  This closes out the visit-mutation methods (`createVisit`, `closeVisit`,
+  `closeMonitoredVisit`) as a source of further seams -- see the updated
+  `TODO.md` entry. What remains in the recorder is orchestration across
+  already-extracted collaborators and existing services, not undivided
+  decisions the established pattern can lift out.
+
 ## 2026-08-22 — Split LocationRecorder's new-visit construction out
 
 - Extracted `VisitArrivalFactory.makeVisit(coordinate:arrival:departure:

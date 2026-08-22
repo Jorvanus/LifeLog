@@ -618,17 +618,24 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         return fetchLogging(descriptor, context: context, operation: "recent duplicate location lookup")
     }
 
-    private func closeVisit(at coordinate: CLLocationCoordinate2D, arrival: Date, departure: Date,
-                            callbackType: LocationCallbackType = .visitDeparture,
-                            accuracy: CLLocationAccuracy = -1) {
-        guard let context else { return }
-        let resolutionStartedAt = Date.now
+    /// Feeds `ActivityLocationPolicy.matchDeparture`, which owns the actual matching
+    /// decision (and has its own dedicated test coverage in `DepartureMatchingTests`) --
+    /// this only owns the fetch behind it.
+    private func departureCandidates(context: ModelContext) -> [Visit] {
         var descriptor = FetchDescriptor<Visit>(
             predicate: #Predicate { $0.source == "automatic" || $0.source == "manual" },
             sortBy: [SortDescriptor(\.arrival, order: .reverse)]
         )
         descriptor.fetchLimit = 50
-        let candidates = fetchLogging(descriptor, context: context, operation: "departure candidate lookup")
+        return fetchLogging(descriptor, context: context, operation: "departure candidate lookup")
+    }
+
+    private func closeVisit(at coordinate: CLLocationCoordinate2D, arrival: Date, departure: Date,
+                            callbackType: LocationCallbackType = .visitDeparture,
+                            accuracy: CLLocationAccuracy = -1) {
+        guard let context else { return }
+        let resolutionStartedAt = Date.now
+        let candidates = departureCandidates(context: context)
         guard let matched = ActivityLocationPolicy.matchDeparture(
                 coordinate: coordinate, arrival: min(arrival, .now),
                 departure: min(departure, .now), visits: candidates

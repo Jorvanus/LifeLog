@@ -275,6 +275,21 @@ improvements, not a request for blanket rewrites or cosmetic file splitting.
   moving orchestration around rather than separating a decision from its
   mechanics, which is a different (and much lower-value) kind of change.
 
+  Checked `closeVisit` directly on 2026-08-22 in case it held one more
+  seam: it does not. `ActivityLocationPolicy.matchDeparture` -- the actual
+  "which stored arrival does this departure belong to" decision -- was
+  already a standalone pure function with its own dedicated test file
+  (`DepartureMatchingTests`) well before this splitting effort started;
+  `closeVisit` only calls it. The one thing worth doing was naming its
+  fetch (`departureCandidates(context:)`, mirroring `recentAutomaticVisits`)
+  instead of leaving it inline, for consistency with every other method
+  here -- not a decision extraction, since there was no decision left in
+  the recorder to extract. Recorder at 1,105 lines (up from 1,098: the
+  named fetch adds a doc comment and signature `createVisit`'s split
+  didn't need). This closes out the visit-mutation methods as a source of
+  further seams; the recorder's remaining size is orchestration, not
+  undivided decisions.
+
 ## Deliberately not priorities
 
 - Public App Store marketing, ratings/review prompts, broad-market accessibility
