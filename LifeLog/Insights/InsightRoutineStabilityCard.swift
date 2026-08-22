@@ -15,7 +15,7 @@ struct InsightRoutineStabilityCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Routine stability").font(.headline)
+                Text("Your routine").font(.headline)
                 Text("Sample: \(sampleWindowText)")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)

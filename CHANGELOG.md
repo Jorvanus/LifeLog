@@ -1,3 +1,14 @@
+## 2026-08-22 — Rename "Routine stability" to "Your routine"
+
+- "Routine stability" read like a lab report heading, not something a
+  person would say about their own life. Changed the card's displayed
+  title in `InsightRoutineStabilityCard.swift` to "Your routine" -- plainer,
+  and matches what the card actually shows (when you're usually home/at
+  work, when you sleep). Left the type name (`InsightsRoutineStability`)
+  and internal comments alone; renaming those would be a separate,
+  higher-risk refactor for no user-facing benefit. Display-string-only
+  change; clean build.
+
 ## 2026-08-22 — Add Routine stability to Year, after the year's own content
 
 - Year was the one scope missing this card entirely, despite Routine
