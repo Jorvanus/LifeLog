@@ -67,26 +67,28 @@ public App Store listing.
   `ActivityLocationPolicy+Journeys.swift:114`), so a next change here needs a real
   before/after on-device comparison, not just reasoning about the code.
 
-- [ ] **`extendStay` cannot tell "still getting ready" from "already gone" apart,
-  and a real commute got shrunk from ~21 minutes to a displayed 7 as a result.**
-  Confirmed against the real archive 2026-08-21/22: Core Location logged
-  `geofence-exit` and `visit-departure` for Home at 08:26:24/08:27:08 (raw
-  samples then show steady movement to 9.4 km away by 08:41), but the Home
-  `Visit`'s persisted departure reads 08:40:31 -- matching a `health-walking`
-  record that starts then. `extendStay` (`ActivityLocationPolicy+Journeys.swift:96`)
-  reached Home's departure forward across the entire real drive because nothing
-  in `stays`/`activities` occupied the gap, which is the *only* evidence it ever
-  consults. The same pattern, same ~13-14 minute gap, is also the shape of the
-  legitimate case already covered by
-  `OverlapResolutionTests.stayHoldsUntilTheWalkThatLeftIt` (Home closed
-  2026-08-08 07:02:44, a `health-workout` walk began 07:16:22, and extending was
-  correct -- they really were still home). A same-source-type, same-duration fix
-  attempted 2026-08-22 (excluding all HealthKit-sourced movement from
-  `extendStay`) was reverted before landing because it cannot tell these two
-  cases apart either -- it would have silently broken the tested, correct case
-  to fix the broken one. Neither `health-walking` nor `health-workout` records
-  carry coordinates, so the source type alone is not enough signal.
-  **Design sketch for a real fix, not yet started:**
+- [ ] **`extendStay`'s location-journal check is landed diagnostics-only; flip
+  `enforceLocationJournalDepartureCheck` once a real trial period backs it up.**
+  Steps 1-4 of the design (below) shipped in `e8eea4f` "Dry-run extendStay
+  location-journal check; unblock test suite" (2026-08-22): `LocationJournal.
+  showsDeparture(fromStayAt:in:beyond:context:)` exists, `extendStay` threads a
+  `context` and refuses via `extensionRefusedByLocationEvidence` when the
+  journal shows a real departure inside the gap, and both required
+  `OverlapResolutionTests` fixtures pass -- the legitimate "still getting
+  ready" case (no location evidence) still extends, and the actual 2026-08-21
+  commute (real `geofence-exit`/`live-location-sample` rows, Home shrunk from a
+  real ~21-minute departure to a displayed 7) gets refused. Verified again
+  2026-08-22: full suite (679 tests) green.
+  What's left is step 5 only: `enforceLocationJournalDepartureCheck` is still
+  `false` (`ActivityLocationPolicy+Journeys.swift:101`), so today this only
+  *logs* what it would have refused ("Would have held ... Extending anyway (dry
+  run)."). Given `boundStay`/`extendStay` already caused a nine-day repair loop
+  from an earlier tuning attempt (`ActivityLocationPolicy+Journeys.swift:114`),
+  do not flip it on first read of the code -- let the dry-run logging run for a
+  week or two of real mornings, compare its "would have refused" decisions
+  against what the owner actually remembers happening, and only then flip the
+  flag to `true` and remove the dry-run branch in `boundStays`.
+  **Original design, for reference:**
   1. `LocationJournal` (`Diagnostics/LocationJournal.swift`) already has exactly
      the missing signal -- `geofence-exit`/`visit-departure` rows carry real
      coordinates and `distanceFromCurrentVisit` -- but only when
