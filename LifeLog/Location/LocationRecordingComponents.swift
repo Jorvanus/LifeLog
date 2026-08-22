@@ -331,6 +331,38 @@ final class LocationServiceSessionController {
     }
 }
 
+/// Builds the `Visit` a new arrival becomes, given what the Saved Place cache and
+/// learned-activity lookup already found. Pure -- constructs the model but never
+/// inserts it or touches SwiftData; `LocationRecorder` still owns insertion and
+/// every mutation that follows (rescoring, activity reconciliation, enrichment,
+/// journaling), the same boundary as every other collaborator here.
+enum VisitArrivalFactory {
+    static func makeVisit(coordinate: CLLocationCoordinate2D, arrival: Date, departure: Date?,
+                          saved: SavedPlace?, savedDistance: CLLocationDistance?,
+                          learnedActivity: String?) -> Visit {
+        let name = saved?.name ?? Visit.identifyingPlaceName
+        let activity = InferenceEngine.activity(placeName: name,
+                                                defaultActivity: saved?.defaultActivity ?? learnedActivity,
+                                                arrival: arrival)
+        let item = Visit(arrival: arrival, departure: departure,
+                         latitude: coordinate.latitude, longitude: coordinate.longitude,
+                         placeName: name, inferredActivity: activity,
+                         recognitionConfidence: saved == nil ? nil : "learned",
+                         mapsIdentifier: saved?.mapsIdentifier,
+                         placeFieldProvenance: saved == nil ? nil : "saved-place",
+                         resolutionExplanation: saved == nil ? nil : LocationResolutionExplanation.savedPlace.rawValue)
+        if let saved, let savedDistance {
+            item.locationResolutionCandidates = .init(
+                chosen: PlaceSuggestion(name: saved.name, latitude: saved.latitude, longitude: saved.longitude,
+                                        suggestedActivity: saved.defaultActivity, distance: savedDistance,
+                                        mapsIdentifier: saved.mapsIdentifier),
+                rejected: []
+            )
+        }
+        return item
+    }
+}
+
 /// Owns the in-memory Saved Place cache every location callback reads
 /// synchronously -- `createVisit`, `closeVisit`, and `identifyPlace` all score
 /// or match against it inline on the callback path, where a store fetch would

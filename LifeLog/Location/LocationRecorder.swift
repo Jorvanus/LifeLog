@@ -552,34 +552,17 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         }
 
         let saved = placeCache.nearest(to: coordinate)
-        if let saved {
-            let distance = CLLocation(latitude: saved.latitude, longitude: saved.longitude)
+        let savedDistance = saved.map { place in
+            CLLocation(latitude: place.latitude, longitude: place.longitude)
                 .distance(from: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude))
+        }
+        if let savedDistance {
             Diagnostics.locationMetric(context, operation: "saved_place_match",
-                                       distanceMeters: Int(distance.rounded()))
+                                       distanceMeters: Int(savedDistance.rounded()))
         }
-        let name = saved?.name ?? Visit.identifyingPlaceName
         let learned = saved.flatMap { learnedActivity(forPlaceName: $0.name, arrival: safeArrival) }
-        let activity = InferenceEngine.activity(placeName: name,
-                                                defaultActivity: saved?.defaultActivity ?? learned,
-                                                arrival: safeArrival)
-        let item = Visit(arrival: safeArrival, departure: inferredDeparture,
-                         latitude: coordinate.latitude, longitude: coordinate.longitude,
-                         placeName: name, inferredActivity: activity,
-                         recognitionConfidence: saved == nil ? nil : "learned",
-                         mapsIdentifier: saved?.mapsIdentifier,
-                         placeFieldProvenance: saved == nil ? nil : "saved-place",
-                         resolutionExplanation: saved == nil ? nil : LocationResolutionExplanation.savedPlace.rawValue)
-        if let saved {
-            let distance = CLLocation(latitude: saved.latitude, longitude: saved.longitude)
-                .distance(from: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude))
-            item.locationResolutionCandidates = .init(
-                chosen: PlaceSuggestion(name: saved.name, latitude: saved.latitude, longitude: saved.longitude,
-                                        suggestedActivity: saved.defaultActivity, distance: distance,
-                                        mapsIdentifier: saved.mapsIdentifier),
-                rejected: []
-            )
-        }
+        let item = VisitArrivalFactory.makeVisit(coordinate: coordinate, arrival: safeArrival, departure: inferredDeparture,
+                                                 saved: saved, savedDistance: savedDistance, learnedActivity: learned)
         context.insert(item)
         _ = PlaceScoreLifecycle.rescore(
             item, stage: .arrival, context: context, savedPlaces: placeCache.places,

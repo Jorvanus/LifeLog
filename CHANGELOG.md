@@ -1,3 +1,41 @@
+## 2026-08-22 — Split LocationRecorder's new-visit construction out
+
+- Extracted `VisitArrivalFactory.makeVisit(coordinate:arrival:departure:
+  saved:savedDistance:learnedActivity:)`: the `Visit` construction
+  `createVisit` used to build inline once neither the duplicate check nor
+  the open-visit merge/close applied -- deriving the place name, activity
+  (Saved Place default, else a learned guess, else `InferenceEngine`'s own
+  inference), recognition confidence, Maps identifier, field provenance,
+  resolution explanation, and the `locationResolutionCandidates` audit
+  entry, all from whatever the Saved Place cache and learned-activity
+  lookup already found. Pure: builds and returns the model but never
+  inserts it or touches SwiftData. `LocationRecorder` still owns the Saved
+  Place lookup and the learned-activity fetch that feed it, insertion,
+  rescoring, Wi-Fi sampling, activity reconciliation, imported-visit
+  enrichment, finalizing, and journaling -- everything the factory's result
+  needs done to it, not building the result itself.
+  Also fixed in passing: the Saved Place distance was computed twice in the
+  code being touched (once inline for the `saved_place_match` diagnostic,
+  again inline for `locationResolutionCandidates`) -- now computed once in
+  `createVisit` and passed to both the diagnostic and the factory. Same
+  value either way, just no longer redundant.
+  Four unit tests cover the factory directly: no Saved Place match leaves
+  the visit identifying and placeless with no resolution candidate; a
+  Saved Place match names the visit, sets `recognitionConfidence` to
+  `"learned"`, and records the match as the chosen candidate with its
+  distance; a Saved Place's own default activity wins over a learned guess
+  when both are present; and the caller-supplied inferred departure is
+  carried through unchanged.
+  `LocationRecorder` is down to 1,098 lines (from 1,115). Full
+  `LifeLogTests` suite passes (unit tests only, same rationale as the prior
+  entry). Verified live in the simulator: fresh install launches without
+  crashing, Timeline renders.
+  This was the last piece of `createVisit` with a clean, self-contained
+  decision to lift out; what remains is orchestration -- sequential calls
+  into collaborators and services that already exist elsewhere in the app.
+  See the updated `TODO.md` entry for why further splitting likely isn't
+  worth it without a new seam appearing.
+
 ## 2026-08-22 — Split LocationRecorder's geofence-exit match out
 
 - Extracted `GeofenceMonitor.matchesExit(open:name:)`: the guard

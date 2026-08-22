@@ -217,7 +217,7 @@ A code-first audit on 2026-08-20. These are ranked interaction-path and ownershi
 improvements, not a request for blanket rewrites or cosmetic file splitting.
 
 - [ ] **Continue splitting `LocationRecorder` at its existing component seams.**
-  Seven seams moved out 2026-08-22, each behind the same boundary: the
+  Eight seams moved out 2026-08-22, each behind the same boundary: the
   recorder still decides what a result means and performs the Visit
   mutation, the collaborator only owns the mechanics.
   `ArrivalConfirmationSession` (the live-location burst's samples, pending
@@ -241,32 +241,39 @@ improvements, not a request for blanket rewrites or cosmetic file splitting.
   (the arrival-merge decision at the top of `createVisit` -- duplicate
   detection plus the previous-open-visit proximity-merge, historical-
   evidence-bound, or WiFi-anchored-close decision -- returned as a pure
-  `OpenVisitOutcome` the recorder switches on and performs); and
+  `OpenVisitOutcome` the recorder switches on and performs);
   `GeofenceMonitor.matchesExit(open:name:)` (the guard `closeMonitoredVisit`
   used to check inline -- the open stay must still be open and must be the
   same place the `CLMonitor` exit fired for, or a stale/out-of-order event
-  would close the wrong stay). The full arrival/incremental-resolution
-  suite, plus new unit tests for each collaborator testable without live
-  Core Location/MapKit, passed unmodified after every step; reverse
-  geocoding has no new tests, matching `PlaceLookupService.nearbyPlaces`'s
-  existing untested status -- both need a live MapKit response that isn't
-  mockable, so this is a pre-existing gap the split didn't create or close.
-  At ~1,115 lines the recorder still owns delegate adaptation, raw evidence,
-  `createVisit`'s Visit construction and enrichment, `closeVisit`,
-  `closeMonitoredVisit`'s mutation (now just the guard's match, then set
-  departure/rescore/reconcile/finalize -- little left to extract there),
-  Wi-Fi sampling, and diagnostics. `closeVisit`'s departure-candidate
-  matching (`ActivityLocationPolicy.matchDeparture`) is already a separate
-  pure function the recorder only calls, so `closeVisit` itself likely
-  doesn't need further extraction either. The bulk of `createVisit` --
-  Saved Place lookup, `Visit` construction, place-score rescoring, activity
-  reconciliation, imported-visit enrichment, and kicking off `identifyPlace`
-  -- is still one large orchestration with no obvious next seam; the
-  pattern (collaborator decides, recorder performs) may not cleanly apply
-  to what's left, since most of it is calling other already-extracted
-  collaborators in sequence rather than one self-contained decision. At
-  this point the remaining file may simply be closer to its natural size
-  than further splitting seams.
+  would close the wrong stay); and `VisitArrivalFactory.makeVisit(...)` (the
+  `Visit` construction `createVisit` used to build inline once no merge or
+  close applied -- name/activity/confidence/provenance from the Saved Place
+  match and learned-activity guess, plus the `locationResolutionCandidates`
+  audit entry -- returned as a plain, uninserted `Visit` the recorder still
+  inserts, rescores, reconciles, enriches, and journals). That last split
+  also removed a pre-existing duplicate: the Saved Place distance used to be
+  computed twice (once for the `saved_place_match` diagnostic, again for
+  `locationResolutionCandidates`) and is now computed once and threaded
+  through. The full arrival/incremental-resolution suite, plus new unit
+  tests for each collaborator testable without live Core Location/MapKit,
+  passed unmodified after every step; reverse geocoding has no new tests,
+  matching `PlaceLookupService.nearbyPlaces`'s existing untested status --
+  both need a live MapKit response that isn't mockable, so this is a
+  pre-existing gap the split didn't create or close.
+  At ~1,098 lines the recorder still owns delegate adaptation, raw
+  evidence, `createVisit`'s remaining orchestration (insert, rescore,
+  sample Wi-Fi, reconcile activity, enrich imported visits, finalize,
+  journal, kick off `identifyPlace`), `closeVisit`, `closeMonitoredVisit`'s
+  mutation, Wi-Fi sampling, and diagnostics -- all of it sequential calls
+  into already-extracted collaborators or `VisitMutationService`/
+  `PlaceScoreLifecycle`/`ActivityLocationPolicy` elsewhere in the app,
+  rather than a self-contained decision the collaborator-decides/recorder-
+  performs pattern can lift out. `closeVisit`'s departure-candidate matching
+  (`ActivityLocationPolicy.matchDeparture`) is already a separate pure
+  function the recorder only calls. Absent a new seam appearing, this file
+  is probably close to done for this pass -- further shrinkage would mean
+  moving orchestration around rather than separating a decision from its
+  mechanics, which is a different (and much lower-value) kind of change.
 
 ## Deliberately not priorities
 

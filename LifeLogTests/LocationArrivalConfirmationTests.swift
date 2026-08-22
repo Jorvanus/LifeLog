@@ -345,6 +345,57 @@ struct LocationArrivalConfirmationTests {
                                           arrival: .now, wifiObservation: nil) == nil)
     }
 
+    // MARK: - VisitArrivalFactory
+
+    @Test("With no Saved Place match, the visit is unidentified and placeless")
+    func makeVisitWithNoSavedPlaceIsIdentifying() {
+        let coordinate = CLLocationCoordinate2D(latitude: -27.47, longitude: 153.03)
+        let item = VisitArrivalFactory.makeVisit(coordinate: coordinate, arrival: .now, departure: nil,
+                                                  saved: nil, savedDistance: nil, learnedActivity: nil)
+        #expect(item.placeName == Visit.identifyingPlaceName)
+        #expect(item.recognitionConfidence == nil)
+        #expect(item.mapsIdentifier == nil)
+        #expect(item.placeFieldProvenance == nil)
+        #expect(item.resolutionExplanation == nil)
+        #expect(item.locationResolutionCandidates == nil)
+    }
+
+    @Test("A Saved Place match names the visit and records it as a resolution candidate")
+    func makeVisitWithSavedPlaceIsLearnedAndCandidateRecorded() {
+        let coordinate = CLLocationCoordinate2D(latitude: -27.47, longitude: 153.03)
+        let saved = SavedPlace(name: "Home", latitude: -27.4701, longitude: 153.0301,
+                               defaultActivity: "Sleeping", mapsIdentifier: "maps-123")
+        let item = VisitArrivalFactory.makeVisit(coordinate: coordinate, arrival: .now, departure: nil,
+                                                  saved: saved, savedDistance: 25, learnedActivity: nil)
+        #expect(item.placeName == "Home")
+        #expect(item.inferredActivity == "Sleeping")
+        #expect(item.recognitionConfidence == "learned")
+        #expect(item.mapsIdentifier == "maps-123")
+        #expect(item.placeFieldProvenance == "saved-place")
+        #expect(item.resolutionExplanation == LocationResolutionExplanation.savedPlace.rawValue)
+        #expect(item.locationResolutionCandidates?.chosen?.name == "Home")
+        #expect(item.locationResolutionCandidates?.chosen?.distance == 25)
+        #expect(item.locationResolutionCandidates?.rejected.isEmpty == true)
+    }
+
+    @Test("A learned activity is only used when the Saved Place has none of its own")
+    func makeVisitPrefersSavedPlaceActivityOverLearned() {
+        let coordinate = CLLocationCoordinate2D(latitude: -27.47, longitude: 153.03)
+        let savedWithDefault = SavedPlace(name: "Home", latitude: -27.47, longitude: 153.03, defaultActivity: "Sleeping")
+        let item = VisitArrivalFactory.makeVisit(coordinate: coordinate, arrival: .now, departure: nil,
+                                                  saved: savedWithDefault, savedDistance: 10, learnedActivity: "Working")
+        #expect(item.inferredActivity == "Sleeping", "the Saved Place's own default activity wins over a learned guess")
+    }
+
+    @Test("The new visit's departure is whatever the caller inferred, unset when nothing was")
+    func makeVisitCarriesTheInferredDeparture() {
+        let coordinate = CLLocationCoordinate2D(latitude: -27.47, longitude: 153.03)
+        let departure = Date.now
+        let item = VisitArrivalFactory.makeVisit(coordinate: coordinate, arrival: .now.addingTimeInterval(-3600),
+                                                  departure: departure, saved: nil, savedDistance: nil, learnedActivity: nil)
+        #expect(item.departure == departure)
+    }
+
     // MARK: - SavedPlaceCache
 
     @Test("The nearest place wins, and one outside every radius is not a match")
