@@ -217,30 +217,41 @@ A code-first audit on 2026-08-20. These are ranked interaction-path and ownershi
 improvements, not a request for blanket rewrites or cosmetic file splitting.
 
 - [ ] **Continue splitting `LocationRecorder` at its existing component seams.**
-  Four seams moved out 2026-08-22: `ArrivalConfirmationSession` (the
-  live-location burst's samples, pending arrival, task lifecycle, waiters --
-  previously five stored properties mutated from four methods);
-  `GeofenceMonitor.plan(wanted:monitoredIdentifiers:)` (a pure diff extracted
-  from `refreshMonitoredRegions`'s inline add/remove loop);
-  `LocationServiceSessionController` (the `CLServiceSession` that keeps Core
-  Location delivering, its diagnostic stream, and the generation bookkeeping
-  that stops a just-replaced session's stream-ended callback from clearing
-  its successor -- previously four stored properties: `serviceSession`,
-  `serviceSessionRequirement`, `serviceSessionGeneration`, `diagnosticTask`);
-  and `SavedPlaceCache` (the in-memory Saved Place fetch, its keep-previous-
-  on-failure behaviour, and the nearest-match lookup `createVisit`/`closeVisit`/
-  `identifyPlace` all read inline -- previously a bare stored array reloaded
-  and read directly from six places). The full arrival/incremental-resolution
-  suite, plus new unit tests for each collaborator, passed unmodified after
-  every step.
-  At ~1,119 lines the recorder still owns delegate adaptation, raw evidence,
-  visit mutation, reverse geocoding, Wi-Fi sampling, and diagnostics. Reverse
-  geocoding (`reverseGeocode`, `markUnknown`, tied to `identifyPlace`'s
-  Maps-lookup flow) looks like the next-clearest seam; visit mutation
-  (`createVisit`, `closeVisit`, `closeMonitoredVisit`) is the largest but also
-  the most entangled with the others (Saved Place lookup, place
-  identification, Wi-Fi anchoring all happen inline in `createVisit`), so it
-  is likely last.
+  Five seams moved out 2026-08-22, each behind the same boundary: the
+  recorder still decides what a result means and performs the Visit
+  mutation, the collaborator only owns the mechanics.
+  `ArrivalConfirmationSession` (the live-location burst's samples, pending
+  arrival, task lifecycle, waiters -- previously five stored properties
+  mutated from four methods); `GeofenceMonitor.plan(wanted:monitoredIdentifiers:)`
+  (a pure diff extracted from `refreshMonitoredRegions`'s inline add/remove
+  loop); `LocationServiceSessionController` (the `CLServiceSession` that
+  keeps Core Location delivering, its diagnostic stream, and the generation
+  bookkeeping that stops a just-replaced session's stream-ended callback
+  from clearing its successor -- previously four stored properties:
+  `serviceSession`, `serviceSessionRequirement`, `serviceSessionGeneration`,
+  `diagnosticTask`); `SavedPlaceCache` (the in-memory Saved Place fetch, its
+  keep-previous-on-failure behaviour, and the nearest-match lookup
+  `createVisit`/`closeVisit`/`identifyPlace` all read inline -- previously a
+  bare stored array reloaded and read directly from six places); and
+  `PlaceLookupService.reverseGeocode(at:)` (the `MKReverseGeocodingRequest`
+  call and raw name extraction, returning a three-case outcome --
+  `.resolved`/`.notFound`/`.unavailable` -- so the recorder's existing
+  three-way handling of "found a name," "found nothing," and "MapKit
+  couldn't even build the request" carried over exactly). The full arrival/
+  incremental-resolution suite, plus new unit tests for each collaborator
+  testable without live Core Location/MapKit, passed unmodified after every
+  step; reverse geocoding has no new tests, matching `PlaceLookupService.
+  nearbyPlaces`'s existing untested status -- both need a live MapKit
+  response that isn't mockable, so this is a pre-existing gap the split
+  didn't create or close.
+  At ~1,125 lines (up slightly from splitting out `reverseGeocode`'s
+  three-way switch, though its actual MapKit surface area left the file) the
+  recorder still owns delegate adaptation, raw evidence, visit mutation,
+  Wi-Fi sampling, and diagnostics. Visit mutation (`createVisit`,
+  `closeVisit`, `closeMonitoredVisit`) is what remains as the one large
+  seam, and the most entangled with everything already extracted (Saved
+  Place lookup, place identification, and Wi-Fi anchoring all happen inline
+  in `createVisit`) -- likely the last and hardest piece.
 
 ## Deliberately not priorities
 

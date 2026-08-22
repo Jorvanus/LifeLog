@@ -1,3 +1,24 @@
+## 2026-08-22 — Split LocationRecorder's reverse geocoding out
+
+- Extracted `PlaceLookupService.reverseGeocode(at:)`: the `MKReverseGeocodingRequest`
+  call and raw name extraction (`item.name ?? shortAddress ?? fullAddress`,
+  cleaned to the same 120-character limit every other place name observes),
+  moved alongside the existing `nearbyPlaces` Maps lookup in the same service
+  file rather than staying inline in `LocationRecorder`. Returns a three-case
+  `ReverseGeocodeOutcome` (`.resolved`/`.notFound`/`.unavailable`) so the
+  recorder's existing three-way handling -- a name was found, MapKit
+  genuinely found nothing, or MapKit couldn't even build a request for this
+  coordinate -- carried over exactly rather than collapsing to `String?` and
+  losing the "nothing to act on yet" case. `LocationRecorder` no longer
+  imports MapKit at all; it still owns deciding what each outcome means for
+  the visit (mark unknown, or set the resolved name and re-infer the
+  activity) and performing the mutation.
+  No new tests: reverse geocoding needs a live `MKMapItem`/`MKAddress`
+  response that isn't mockable, the same reason `PlaceLookupService.
+  nearbyPlaces` has never had direct test coverage -- a pre-existing gap,
+  not one this split introduced. Full suite (682 tests) passes unmodified;
+  verified live in the simulator after a clean install.
+
 ## 2026-08-22 — Split LocationRecorder's Saved Place caching out
 
 - Extracted `SavedPlaceCache` (`LocationRecordingComponents.swift`): owns the

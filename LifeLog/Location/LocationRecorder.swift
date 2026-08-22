@@ -1,5 +1,4 @@
 import CoreLocation
-import MapKit
 import SwiftData
 import Observation
 
@@ -1007,33 +1006,40 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         }
     }
 
+    /// `PlaceLookupService.reverseGeocode` owns the MapKit request and the
+    /// raw name extraction; this decides what a resolved, empty, or
+    /// unavailable answer means for the visit and performs the mutation.
     private func reverseGeocode(_ visit: Visit) {
         let location = CLLocation(latitude: visit.latitude, longitude: visit.longitude)
         Task { @MainActor [weak self] in
-            guard let self, let context = self.context,
-                  let request = MKReverseGeocodingRequest(location: location) else { return }
+            guard let self, let context = self.context else { return }
             do {
-                let mapItems = try await request.mapItems
+                let outcome = try await PlaceLookupService.reverseGeocode(at: location)
                 guard visit.needsCategorisation else { return }
-                guard let item = mapItems.first else {
-                    markUnknown(visit, context: context)
+                switch outcome {
+                case .unavailable:
+                    // MapKit could not even build a request for this coordinate --
+                    // nothing to act on. The visit stays exactly as it was, and
+                    // `identifyRecentUnknown` can retry it from a later, closer callback.
                     return
+                case .notFound:
+                    markUnknown(visit, context: context)
+                case .resolved(let name):
+                    visit.placeName = name
+                    visit.recognitionConfidence = "low"
+                    visit.placeFieldProvenance = "name-fallback"
+                    visit.locationResolutionExplanation = .lowConfidence
+                    LocationDiagnostics.record(.promoted, subject: "Unnamed stay",
+                                               reason: "no Maps match; reverse geocoding supplied a name",
+                                               evidence: visit.placeName, context: context)
+                    visit.inferredActivity = InferenceEngine.activity(
+                        placeName: visit.placeName,
+                        defaultActivity: learnedActivity(forPlaceName: visit.placeName, arrival: visit.arrival),
+                        arrival: visit.arrival
+                    )
+                    guard self.finalizeMutation(.coreLocationArrival,
+                                                change: .init(affectedVisit: visit, coordinate: visit.coordinate), context: context) else { return }
                 }
-                let resolvedName = item.name ?? item.address?.shortAddress ?? item.address?.fullAddress ?? Visit.unknownPlaceName
-                visit.placeName = TextSafety.clean(resolvedName, maximumLength: 120)
-                visit.recognitionConfidence = "low"
-                visit.placeFieldProvenance = "name-fallback"
-                visit.locationResolutionExplanation = .lowConfidence
-                LocationDiagnostics.record(.promoted, subject: "Unnamed stay",
-                                           reason: "no Maps match; reverse geocoding supplied a name",
-                                           evidence: visit.placeName, context: context)
-                visit.inferredActivity = InferenceEngine.activity(
-                    placeName: visit.placeName,
-                    defaultActivity: learnedActivity(forPlaceName: visit.placeName, arrival: visit.arrival),
-                    arrival: visit.arrival
-                )
-                guard self.finalizeMutation(.coreLocationArrival,
-                                            change: .init(affectedVisit: visit, coordinate: visit.coordinate), context: context) else { return }
             } catch {
                 Diagnostics.record(context, subsystem: "MapKit",
                                    message: "Reverse geocoding failed; the visit remains available for manual labeling.")
