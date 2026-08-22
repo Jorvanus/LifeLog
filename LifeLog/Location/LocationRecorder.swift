@@ -498,7 +498,8 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         let safeArrival = min(arrival, .now)
         var inferredDeparture: Date?
         var usedWiFiAnchor = false
-        if let duplicate = recentDuplicateLocation(at: coordinate, arrival: safeArrival, context: context) {
+        if let duplicate = VisitArrivalMerge.duplicateMatch(coordinate: coordinate, arrival: safeArrival,
+                                                            in: recentAutomaticVisits(context: context)) {
             // Core Location can replay the same arrival after a visit was closed. Keep
             // the original record and update its bounds instead of creating a new card.
             duplicate.arrival = min(duplicate.arrival, safeArrival)
@@ -515,10 +516,11 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                                        durationMs: Int((Date.now.timeIntervalSince(callbackStartedAt) * 1000).rounded()))
             return
         }
-        if let latest = latestLocationVisit(in: context), latest.departure == nil {
-            let existingLocation = CLLocation(latitude: latest.latitude, longitude: latest.longitude)
-            let incomingLocation = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
-            if existingLocation.distance(from: incomingLocation) <= 150 {
+        if let latest = latestLocationVisit(in: context), latest.departure == nil,
+           let outcome = VisitArrivalMerge.outcome(for: latest, coordinate: coordinate, arrival: safeArrival,
+                                                   wifiObservation: WiFiAnchor.loadObservation()) {
+            switch outcome {
+            case .mergeIntoOpen:
                 // A later CLVisit callback often has a more accurate, earlier arrival than
                 // the one-shot sample used to make the current location visible immediately.
                 latest.arrival = min(latest.arrival, safeArrival)
@@ -533,21 +535,17 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 Diagnostics.locationMetric(context, operation: "callback_to_save",
                                            durationMs: Int((Date.now.timeIntervalSince(callbackStartedAt) * 1000).rounded()))
                 return
-            }
-            if safeArrival < latest.arrival {
+            case .boundNewVisitDeparture(let departure):
                 // CLVisit callbacks can be delayed and delivered after a newer
                 // one-shot current-location visit. This is historical evidence,
                 // not a new current stay, so bound it at the newer arrival.
-                inferredDeparture = latest.arrival
-            } else {
+                inferredDeparture = departure
+            case .closeOpenVisit(let departure, let anchorUsed):
                 // Core Location did not see the departure, so this timestamp is the
-                // next arrival standing in for it. If the phone was observed off the
-                // stay's own Wi-Fi before then, that moment is the better answer.
-                let anchored = WiFiAnchor.departure(for: WiFiAnchor.loadObservation(),
-                                                    arrival: latest.arrival,
-                                                    fallback: safeArrival)
-                usedWiFiAnchor = anchored != nil
-                latest.departure = max(latest.arrival, anchored ?? safeArrival)
+                // next arrival standing in for it, unless a Wi-Fi absence observed
+                // before then is the better answer.
+                usedWiFiAnchor = anchorUsed
+                latest.departure = departure
                 // The stay is closed, so its network observation belongs to nothing now.
                 WiFiAnchor.save(nil)
             }
@@ -622,27 +620,19 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         if saved == nil { identifyPlace(item) }
     }
 
-    private func recentDuplicateLocation(at coordinate: CLLocationCoordinate2D, arrival: Date,
-                                         context: ModelContext) -> Visit? {
+    /// Feeds `VisitArrivalMerge.duplicateMatch`. Required in spirit, not merely best
+    /// effort: this fetch's empty result means "create a brand new Visit", so a
+    /// swallowed fetch error and a real absence of duplicates look identical and both
+    /// create one. There is nothing to retry a location callback from, so the fetch
+    /// still proceeds as "no duplicate found" -- but logged, not silent, so a
+    /// resulting duplicate visit is diagnosable instead of a mystery.
+    private func recentAutomaticVisits(context: ModelContext) -> [Visit] {
         var descriptor = FetchDescriptor<Visit>(
             predicate: #Predicate { $0.source == "automatic" },
             sortBy: [SortDescriptor(\.arrival, order: .reverse)]
         )
         descriptor.fetchLimit = 30
-        // Required in spirit, not merely best effort: this fetch's nil result
-        // means "create a brand new Visit", so a swallowed fetch error and a
-        // real absence of duplicates look identical and both create one. There
-        // is nothing to retry a location callback from, so the fetch still
-        // proceeds as "no duplicate found" -- but logged, not silent, so a
-        // resulting duplicate visit is diagnosable instead of a mystery.
-        let recent = fetchLogging(descriptor, context: context, operation: "recent duplicate location lookup")
-        let incoming = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
-        return recent.first { visit in
-            let recorded = CLLocation(latitude: visit.latitude, longitude: visit.longitude)
-            let sameArrival = abs(visit.arrival.timeIntervalSince(arrival)) <= 60
-            let sameOpenStay = visit.departure == nil
-            return recorded.distance(from: incoming) <= 60 && (sameArrival || sameOpenStay)
-        }
+        return fetchLogging(descriptor, context: context, operation: "recent duplicate location lookup")
     }
 
     private func closeVisit(at coordinate: CLLocationCoordinate2D, arrival: Date, departure: Date,

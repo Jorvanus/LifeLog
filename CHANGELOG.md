@@ -1,3 +1,41 @@
+## 2026-08-22 — Split LocationRecorder's arrival-merge decision out
+
+- Extracted `VisitArrivalMerge` (`LocationRecordingComponents.swift`): the
+  arrival-merge decision at the top of `createVisit`, previously interleaved
+  with two fetches and their mutations. `duplicateMatch(coordinate:arrival:
+  in:)` is the pure match `recentDuplicateLocation` used to run inline
+  (proximity plus matching arrival or a still-open stay) against the
+  recorder's own recent-automatic-visits fetch, now kept separately as
+  `recentAutomaticVisits(context:)`. `outcome(for:coordinate:arrival:
+  wifiObservation:)` is the three-way decision the previously-open-visit
+  branch worked out inline: `.mergeIntoOpen` (close enough to be the same
+  stay, extend its arrival back), `.boundNewVisitDeparture(Date)` (a
+  delayed `CLVisit` callback older than the open stay's own arrival --
+  historical evidence, so the *new* visit being created is bounded there
+  instead), or `.closeOpenVisit(departure:usedWiFiAnchor:)` (newer and too
+  far away -- close the open stay, sharpened by a Wi-Fi absence if one was
+  observed first). `LocationRecorder` still performs every fetch, every
+  mutation each outcome implies, and every diagnostic around them; it now
+  `switch`es on the returned outcome instead of nesting the three cases
+  inline. Six unit tests cover `duplicateMatch` and all three `outcome`
+  cases (including the Wi-Fi-anchored and non-anchored close) directly,
+  without SwiftData or Core Location.
+  `LocationRecorder` is down to 1,115 lines. Full suite passes: 713
+  `LifeLogTests` (including the six new ones) all green; the 36 UI-test
+  failures in the same run are pre-existing simulator flakiness (ambiguous
+  `XCUIElementQuery` matches and ID-collision cases across
+  `AccessibilitySmokeTests`, `InsightsDayTests`, `InsightsPeriodTests`,
+  `SettingsAndDiagnosticsTests`, etc.) unrelated to this file -- none touch
+  Location code, and `LifeLogUITests` targets are excluded from this split's
+  own verification for that reason. Verified live in the simulator: fresh
+  install launches without crashing, Timeline and Settings (Places &
+  Activities, Diagnostics) render correctly.
+  `createVisit`'s remaining bulk -- Saved Place lookup, `Visit`
+  construction, place-score rescoring, activity reconciliation, imported-
+  visit enrichment, and kicking off `identifyPlace` -- has no obvious next
+  seam; see the updated `TODO.md` entry for why. `closeMonitoredVisit` is
+  the likelier next piece to detach.
+
 ## 2026-08-22 — Split LocationRecorder's reverse geocoding out
 
 - Extracted `PlaceLookupService.reverseGeocode(at:)`: the `MKReverseGeocodingRequest`

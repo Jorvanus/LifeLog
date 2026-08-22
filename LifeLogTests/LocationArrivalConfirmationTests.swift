@@ -252,6 +252,85 @@ struct LocationArrivalConfirmationTests {
         await waiter.value
     }
 
+    // MARK: - VisitArrivalMerge
+
+    @Test("A duplicate match requires proximity and either a matching arrival or an open stay")
+    func duplicateMatchRequiresProximityAndTiming() {
+        let arrival = Date.now
+        let coordinate = CLLocationCoordinate2D(latitude: -27.47, longitude: 153.03)
+        let sameArrivalFarAway = Visit(arrival: arrival, latitude: -27.60, longitude: 153.10,
+                                       placeName: "Elsewhere", inferredActivity: "Visiting")
+        let closeButDifferentTimeAndClosed = Visit(arrival: arrival.addingTimeInterval(10 * 60),
+                                                    departure: arrival.addingTimeInterval(20 * 60),
+                                                    latitude: -27.47, longitude: 153.03,
+                                                    placeName: "Closed", inferredActivity: "Visiting")
+        let closeAndSameArrival = Visit(arrival: arrival.addingTimeInterval(30),
+                                        latitude: -27.4701, longitude: 153.0301,
+                                        placeName: "Match", inferredActivity: "Visiting")
+
+        #expect(VisitArrivalMerge.duplicateMatch(coordinate: coordinate, arrival: arrival,
+                                                  in: [sameArrivalFarAway, closeButDifferentTimeAndClosed]) == nil)
+        #expect(VisitArrivalMerge.duplicateMatch(coordinate: coordinate, arrival: arrival,
+                                                  in: [closeAndSameArrival]) === closeAndSameArrival)
+    }
+
+    @Test("A duplicate match also fires for a close, still-open stay regardless of arrival time")
+    func duplicateMatchFiresForOpenStayEvenWithDifferentArrival() {
+        let coordinate = CLLocationCoordinate2D(latitude: -27.47, longitude: 153.03)
+        let openStay = Visit(arrival: Date.now.addingTimeInterval(-3600), latitude: -27.4701, longitude: 153.0301,
+                             placeName: "Open", inferredActivity: "Visiting")
+        #expect(VisitArrivalMerge.duplicateMatch(coordinate: coordinate, arrival: .now, in: [openStay]) === openStay)
+    }
+
+    @Test("A close arrival merges into the currently open stay")
+    func outcomeMergesWhenClose() {
+        let openVisit = Visit(arrival: Date.now.addingTimeInterval(-600), latitude: -27.47, longitude: 153.03,
+                              placeName: "Home", inferredActivity: "Visiting")
+        let outcome = VisitArrivalMerge.outcome(for: openVisit, coordinate: .init(latitude: -27.4701, longitude: 153.0301),
+                                                arrival: .now, wifiObservation: nil)
+        #expect(outcome == .mergeIntoOpen)
+    }
+
+    @Test("A far, earlier arrival bounds the new visit's departure instead of closing the open stay")
+    func outcomeBoundsNewVisitWhenArrivalIsOlder() {
+        let latestArrival = Date.now
+        let openVisit = Visit(arrival: latestArrival, latitude: -27.47, longitude: 153.03,
+                              placeName: "Home", inferredActivity: "Visiting")
+        let outcome = VisitArrivalMerge.outcome(for: openVisit, coordinate: .init(latitude: -27.60, longitude: 153.10),
+                                                arrival: latestArrival.addingTimeInterval(-3600), wifiObservation: nil)
+        #expect(outcome == .boundNewVisitDeparture(latestArrival))
+    }
+
+    @Test("A far, newer arrival closes the open stay at its own timestamp with no Wi-Fi evidence")
+    func outcomeClosesOpenVisitWithoutWiFiAnchor() {
+        let openArrival = Date.now.addingTimeInterval(-3600)
+        let openVisit = Visit(arrival: openArrival, latitude: -27.47, longitude: 153.03,
+                              placeName: "Home", inferredActivity: "Visiting")
+        let newArrival = Date.now
+        let outcome = VisitArrivalMerge.outcome(for: openVisit, coordinate: .init(latitude: -27.60, longitude: 153.10),
+                                                arrival: newArrival, wifiObservation: nil)
+        #expect(outcome == .closeOpenVisit(departure: newArrival, usedWiFiAnchor: false))
+    }
+
+    @Test("A Wi-Fi absence observed before the next arrival sharpens the close")
+    func outcomeClosesOpenVisitWithWiFiAnchor() {
+        let openArrival = Date.now.addingTimeInterval(-3600)
+        let openVisit = Visit(arrival: openArrival, latitude: -27.47, longitude: 153.03,
+                              placeName: "Home", inferredActivity: "Visiting")
+        let absentAt = openArrival.addingTimeInterval(1800)
+        let observation = WiFiAnchor.Observation(networkHash: "abc", lastSeen: openArrival, firstAbsent: absentAt)
+        let newArrival = Date.now
+        let outcome = VisitArrivalMerge.outcome(for: openVisit, coordinate: .init(latitude: -27.60, longitude: 153.10),
+                                                arrival: newArrival, wifiObservation: observation)
+        #expect(outcome == .closeOpenVisit(departure: absentAt, usedWiFiAnchor: true))
+    }
+
+    @Test("Nothing open produces no outcome")
+    func outcomeIsNilWithNoOpenVisit() {
+        #expect(VisitArrivalMerge.outcome(for: nil, coordinate: .init(latitude: -27.47, longitude: 153.03),
+                                          arrival: .now, wifiObservation: nil) == nil)
+    }
+
     // MARK: - SavedPlaceCache
 
     @Test("The nearest place wins, and one outside every radius is not a match")

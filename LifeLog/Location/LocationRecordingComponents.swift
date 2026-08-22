@@ -366,6 +366,63 @@ final class SavedPlaceCache {
     }
 }
 
+/// The arrival-merge decision `LocationRecorder.createVisit` used to work out inline
+/// against two already-fetched visits: a recent duplicate, and whichever stay is
+/// currently open. Pure so that decision -- which of four things a new arrival means --
+/// is testable without SwiftData or Core Location.
+///
+/// `LocationRecorder` still performs the fetches this reads, every mutation an outcome
+/// implies, and every diagnostic around them; this only decides which outcome applies.
+enum VisitArrivalMerge {
+    /// What an already-open stay means for a new arrival, once it is not a plain
+    /// duplicate of something recent (see `duplicateMatch`).
+    enum OpenVisitOutcome: Equatable {
+        /// Close enough to be the same stay continuing -- extend its arrival back
+        /// rather than create a second card for it.
+        case mergeIntoOpen
+        /// A `CLVisit` callback delivered after a newer one-shot arrival: historical
+        /// evidence, not a new current stay, so the *new* visit being created is
+        /// bounded at this departure rather than left open.
+        case boundNewVisitDeparture(Date)
+        /// Newer than the open stay and too far away to be it: Core Location never
+        /// saw the departure, so this arrival's timing (or, if closer, a Wi-Fi
+        /// absence observed first) stands in for it.
+        case closeOpenVisit(departure: Date, usedWiFiAnchor: Bool)
+    }
+
+    /// The same coordinate and arrival (or the same still-open stay) seen again --
+    /// most often Core Location replaying an arrival after the original visit
+    /// already closed. `candidates` is the recorder's own recent-automatic-visits
+    /// fetch, newest first.
+    static func duplicateMatch(coordinate: CLLocationCoordinate2D, arrival: Date,
+                               in candidates: [Visit]) -> Visit? {
+        let incoming = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        return candidates.first { visit in
+            let recorded = CLLocation(latitude: visit.latitude, longitude: visit.longitude)
+            let sameArrival = abs(visit.arrival.timeIntervalSince(arrival)) <= 60
+            let sameOpenStay = visit.departure == nil
+            return recorded.distance(from: incoming) <= 60 && (sameArrival || sameOpenStay)
+        }
+    }
+
+    /// `nil` when nothing is open, in which case the new arrival has nothing to
+    /// reconcile against and simply becomes its own visit.
+    static func outcome(for openVisit: Visit?, coordinate: CLLocationCoordinate2D, arrival: Date,
+                        wifiObservation: WiFiAnchor.Observation?) -> OpenVisitOutcome? {
+        guard let openVisit else { return nil }
+        let existingLocation = CLLocation(latitude: openVisit.latitude, longitude: openVisit.longitude)
+        let incomingLocation = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        if existingLocation.distance(from: incomingLocation) <= 150 {
+            return .mergeIntoOpen
+        }
+        if arrival < openVisit.arrival {
+            return .boundNewVisitDeparture(openVisit.arrival)
+        }
+        let anchored = WiFiAnchor.departure(for: wifiObservation, arrival: openVisit.arrival, fallback: arrival)
+        return .closeOpenVisit(departure: max(openVisit.arrival, anchored ?? arrival), usedWiFiAnchor: anchored != nil)
+    }
+}
+
 /// Tracks the newest Maps request for a visit. A correction can invalidate its token,
 /// ensuring a late response cannot publish after a newer choice.
 @MainActor
