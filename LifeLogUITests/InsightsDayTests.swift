@@ -4,12 +4,24 @@ import XCTest
 /// donut, drill-downs, review sections, scope/date pickers, and the day
 /// summary's metric visibility rules.
 final class InsightsDayTests: LifeLogUITestCase {
-    /// Insights opens on Day by default. The seeded open Home stay (`UITestSeedData`)
-    /// is the Current Activity card's only reachability check — tapping it opens the
-    /// same `VisitEditor` Timeline's own current-activity card opens.
-    func testInsightsDayShowsCurrentActivityCard() {
+    /// The card only appears when the currently open stay needs checking —
+    /// Timeline already shows the same stay unconditionally, so Insights would
+    /// otherwise just duplicate it with nothing new to offer.
+    func testInsightsDayHidesCurrentActivityCardWhenNothingNeedsChecking() {
         app.terminate()
         app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launch()
+        app.tabBars.buttons["Insights"].tap()
+        XCTAssertTrue(element("insights-screen").waitForExistence(timeout: 5))
+        XCTAssertFalse(element("insights-current-activity-card").exists)
+    }
+
+    /// `-ui-test-current-needs-checking` (`UITestSeedData`) is the Current Activity
+    /// card's only reachability check — tapping it opens the same `VisitEditor`
+    /// Timeline's own current-activity card opens.
+    func testInsightsDayShowsCurrentActivityCard() {
+        app.terminate()
+        app.launchArguments = ["-uiTesting", "-ui-test-seed", "-ui-test-current-needs-checking"]
         app.launch()
         app.tabBars.buttons["Insights"].tap()
         let card = element("insights-current-activity-card")
@@ -20,7 +32,7 @@ final class InsightsDayTests: LifeLogUITestCase {
 
     func testInsightsVisitDrillDownRestoresTheParentPeriod() {
         app.terminate()
-        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launchArguments = ["-uiTesting", "-ui-test-seed", "-ui-test-current-needs-checking"]
         app.launch()
         app.tabBars.buttons["Insights"].tap()
         XCTAssertTrue(element("insights-screen").waitForExistence(timeout: 5))
@@ -102,7 +114,7 @@ final class InsightsDayTests: LifeLogUITestCase {
 
     func testInsightsDayUsesDailyReviewSections() {
         app.terminate()
-        app.launchArguments = ["-uiTesting", "-ui-test-seed"]
+        app.launchArguments = ["-uiTesting", "-ui-test-seed", "-ui-test-current-needs-checking"]
         app.launch()
         app.tabBars.buttons["Insights"].tap()
 

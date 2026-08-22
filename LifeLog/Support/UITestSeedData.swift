@@ -39,7 +39,27 @@ enum UITestSeedData {
         // Ten minutes on foot from one place to the next: a journey in its own right.
         visit(390, 400, "Walking", "Walking", "health-walking", "device")
         visit(400, 470, "Gracemere Shopping World", "Shopping")
-        visit(480, nil, "Home", "At home")
+        // The currently open stay defaults to already-resolved, matching the common
+        // case (Insights' current-activity card only shows when there's something to
+        // act on, so most launches have nothing there to find). `-ui-test-current-
+        // needs-checking` swaps it for a weak-guess open stay instead, for tests that
+        // need the card reachable. It has to be a *different*, later-anchored visit
+        // rather than just a confidence swap on this one: MaintenanceCoordinator runs
+        // ActivityLocationPolicy.deduplicateAutomaticLocations on every UI-test launch
+        // (UserDefaults resets each time, so its "already ran" marker never sticks),
+        // and that repair closes any still-open stay the moment a later-arriving visit
+        // exists in the store -- confidence-independent. This fixture already seeds
+        // rows past 480, so the original open Home stay would otherwise get silently
+        // closed out from under the test before it ever got the chance to look. 900 is
+        // safely past every other same-day offset used anywhere in this file,
+        // including `-ui-test-week-travel`'s flight at 900, so nothing here can ever
+        // supersede it as "later" regardless of which other flags are combined with it.
+        if InternalLaunchArguments.contains("-ui-test-current-needs-checking") {
+            visit(480, 780, "Home", "At home")
+            visit(900, nil, "Home", "At home", "automatic", "low")
+        } else {
+            visit(480, nil, "Home", "At home")
+        }
         visit(120, 390, Visit.unknownPlaceName, "Visiting", "automatic", nil)
         // "Work", matching the catalogue. A label the catalogue already holds is an
         // adopted one; seeded as "Working" it silently became a second history-only

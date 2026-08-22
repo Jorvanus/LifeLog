@@ -661,13 +661,16 @@ struct InsightsView: View {
         return periodLoader.visits.first { ActivityLocationPolicy.isLocationVisit($0) && !$0.isIgnored && $0.departure == nil }
     }
 
+    /// Timeline already shows the current stay unconditionally, so Insights only
+    /// surfaces this card when there's actually something to act on -- otherwise
+    /// it duplicates Timeline's own card without adding anything new.
     private var dayCurrentActivity: DayCurrentActivityPresentation? {
-        guard let visit = currentVisit else { return nil }
+        guard let visit = currentVisit, visit.needsCategorisation || visit.needsConfirmation else { return nil }
         return DayCurrentActivityPresentation(
             placeName: visit.displayPlaceName,
             activity: visit.suspectedActivity,
             startedAt: visit.arrival,
-            needsChecking: visit.needsCategorisation || visit.needsConfirmation
+            needsChecking: true
         )
     }
 

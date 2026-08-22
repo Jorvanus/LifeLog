@@ -1,3 +1,61 @@
+## 2026-08-22 — Only show Insights' current-activity card when it needs checking
+
+- `InsightsView.dayCurrentActivity` (`LifeLog/Insights/InsightsView.swift`) now
+  gates the Day view's current-activity card on `visit.needsCategorisation ||
+  visit.needsConfirmation`, instead of showing it for any open stay
+  unconditionally. Timeline already shows the same open stay's own current-
+  activity card unconditionally (`TimelineView.current`), so Insights' copy
+  was pure duplication whenever there was nothing to act on -- the same
+  place name, activity, and elapsed time, a second time, for no reason. It
+  still adds real value when the stay actually needs a person's input: a
+  one-tap way to fix it without switching to the Timeline tab.
+  `DayCurrentActivityPresentation.needsChecking` is now always `true` when
+  the card renders at all (left as a stored field rather than removed, since
+  `CurrentActivitySection`'s "Needs checking" badge is genuinely correct
+  either way).
+
+  Debugging this took a detour worth recording: `UITestSeedData`'s seeded
+  open Home stay defaults to `"learned"` confidence (resolved, matching the
+  common case), so the new gate needed a `-ui-test-current-needs-checking`
+  fixture flag to make the card reachable in tests at all. Naively swapping
+  just the *confidence* on the existing open visit reproduced a genuine,
+  pre-existing race: `MaintenanceCoordinator` runs
+  `ActivityLocationPolicy.deduplicateAutomaticLocations` on every UI-test
+  launch (`UserDefaults` resets each time under `-uiTesting`, so its
+  "already ran" completion marker never sticks), and that repair pass
+  closes any still-open stay the instant a later-arriving visit exists in
+  the store -- entirely independent of confidence. This fixture already
+  seeds several visits after the open Home stay's 8am arrival, so the open
+  stay was getting silently closed out from under the test before Insights
+  ever rendered, non-deterministically depending on whether the repair task
+  won the race against the UI test's own assertions. This exact race
+  predates this change -- it explains why `InsightsDayTests.
+  testInsightsDayShowsCurrentActivityCard`, `testInsightsDayUsesDailyReviewSections`,
+  `testInsightsVisitDrillDownRestoresTheParentPeriod`, and
+  `InsightsVisualRegressionTests.testInsightsRichFixtureVisualRegressionMatrix`
+  were already in this session's very first documented "pre-existing
+  simulator flakiness" list, before Insights was touched at all. Root-caused
+  it with a temporary `NSLog` instrumented build and `xcrun simctl spawn log
+  stream`, since neither `simctl launch --console` nor `print()` reliably
+  surfaced SwiftUI computed-property output through the simulator's stdout.
+  Fixed at the fixture level rather than worked around: `-ui-test-current-
+  needs-checking` now closes the original 8am Home stay explicitly at 780
+  (1pm) and opens a *separate* low-confidence Home stay anchored at 900
+  (3pm) -- safely past every other same-day offset used anywhere in
+  `UITestSeedData.swift`, including `-ui-test-week-travel`'s flight (900-
+  1140), so no combination of fixture flags can ever supersede it as
+  "later" and trigger the repair's auto-close. All four previously-flaky
+  tests now pass reliably against this change; `testInsightsRichFixtureVisualRegressionMatrix`
+  still occasionally fails on an unrelated, already-pre-existing "Month did
+  not load" assertion later in the same test, past every assertion this
+  change touches.
+  Added `InsightsDayTests.testInsightsDayHidesCurrentActivityCardWhenNothingNeedsChecking`
+  to lock in the new default-hidden behaviour. Full `LifeLogTests` suite
+  passes; verified live in the simulator on both paths (default seed: no
+  card, "Home" absent from Needs Attention; `-ui-test-current-needs-checking`:
+  card present with the correct place/time/badge, matching the fixture's
+  new 3pm anchor exactly).
+
 ## 2026-08-22 — Split LocationRecorder's last remaining seam out
 
 - Extracted `VisitArrivalMerge.matchesCurrentlyOpenVisit(_:confirmedLocation:

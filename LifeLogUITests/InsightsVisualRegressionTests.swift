@@ -61,7 +61,8 @@ final class InsightsVisualRegressionTests: LifeLogUITestCase {
             for appearance in appearances {
                 launchSeededInsights(
                     extraArguments: ["-ui-test-timeline-states", "-ui-test-week-travel",
-                                     "-ui-test-long-labels", "-ui-test-health-connected"],
+                                     "-ui-test-long-labels", "-ui-test-health-connected",
+                                     "-ui-test-current-needs-checking"],
                     appearance: appearance.value,
                     contentSize: configuration.size
                 )
