@@ -260,16 +260,24 @@ extension ActivityLocationPolicy {
         }
     }
 
-    /// Joins two automatic stays at the same resolved place when the only space
-    /// between them is a short, completely silent gap. Core Location can close one
-    /// parking-spot arrival and open another after the phone moves across a large
-    /// site, even though no meaningful departure occurred.
+    /// Joins two automatic stays at the same resolved place when the space between
+    /// them is either silent or holds only a hand-entered row. Core Location can
+    /// close one parking-spot arrival and open another after the phone moves across
+    /// a large site, even though no meaningful departure occurred; a multi-parking-
+    /// spot Work commute produces exactly this shape (confirmed against the real
+    /// archive 2026-08-17: a 4-minute manual "walk from the car" row sitting between
+    /// an arrival and the main Work stay, the two `.automatic` rows either side of it
+    /// otherwise never merging at all).
     ///
     /// Fifteen minutes is deliberately a ceiling rather than an inference of travel:
     /// a longer pause is allowed to remain unlogged, and can be corrected explicitly.
-    /// Every record overlapping the gap blocks the join, especially a manual row. The
-    /// endpoints are restricted to `.automatic`, so this repair never rewrites or
-    /// deletes a hand-entered visit.
+    /// Any non-manual record overlapping the gap still blocks the join -- that is
+    /// competing automatic/device evidence about the gap, not something a person
+    /// chose to say about it. A manual row is different: someone explaining the
+    /// transition by hand is exactly the evidence this join wants, not a reason to
+    /// refuse it. The manual row itself is never touched -- merging only ever
+    /// rewrites the two `.automatic` endpoints, so a hand-entered visit is neither
+    /// deleted nor reshaped by a repair the person never asked for.
     static let maximumSilentSamePlaceGap: TimeInterval = 15 * 60
 
     static func coalesceAdjacentAutomaticStays(in visits: [Visit], context: ModelContext,
@@ -290,12 +298,12 @@ extension ActivityLocationPolicy {
                 index += 1
                 continue
             }
-            let gapContainsRecord = visits.contains { candidate in
-                guard candidate !== first, candidate !== second else { return false }
+            let gapContainsBlockingRecord = visits.contains { candidate in
+                guard candidate !== first, candidate !== second, candidate.visitSource != .manual else { return false }
                 let candidateEnd = candidate.departure ?? now
                 return candidate.arrival < second.arrival && candidateEnd > firstDeparture
             }
-            guard !gapContainsRecord else {
+            guard !gapContainsBlockingRecord else {
                 index += 1
                 continue
             }

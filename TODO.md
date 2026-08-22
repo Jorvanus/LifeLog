@@ -36,17 +36,6 @@ public App Store listing.
   few more days of normal on-device use, re-run this same audit before trying the
   retirement again.
 
-- [ ] **Merge adjacent same-place `.automatic` stays with nothing recorded between
-  them at all.** `coalesceStaysAcrossUnlocatedMovement` only folds away a fragment
-  that carries no coordinates; `mergeOverlappingStays` only merges stays that
-  overlap in time. Neither reaches two touching-but-not-overlapping `.automatic`
-  stays at the same place with a real gap and nothing recorded in it — the shape a
-  multi-parking-spot Work commute produces (confirmed against the real archive
-  2026-08-17: a 4-minute manual "walk from the car" row between an arrival and the
-  main Work stay). Deliberately not started: needs a decision on how far a gap can
-  stretch before two stays are no longer "the same visit," and must never touch a
-  `manual`-source row someone entered by hand.
-
 - [ ] **A drive with no Core Motion sample yet can lose its whole duration into the
   parking-spot stay at its start, not just the commute display.** Confirmed against
   the real archive 2026-08-20: leaving Work's geofence created a new stay (the

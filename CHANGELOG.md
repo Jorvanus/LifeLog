@@ -1,3 +1,33 @@
+## 2026-08-22 — Merge same-place automatic stays across a manual row in the gap
+
+- `coalesceAdjacentAutomaticStays` (`ActivityLocationPolicy+Reconciliation.swift`)
+  no longer lets a `manual`-source row in the gap block joining two same-place
+  `.automatic` stays. This was the TODO.md item written 2026-08-17 ("Merge
+  adjacent same-place `.automatic` stays with nothing recorded between them at
+  all") — which turned out to already be half-solved: `coalesceAdjacentAutomaticStays`
+  itself was added the very next day (`82397f1`, 2026-08-18) and already
+  handles the "nothing recorded, short silent gap" case the bullet described,
+  but the bullet was never updated to say so. What it still didn't handle was
+  the bullet's own confirmed real-world example -- a 4-minute manual "walk
+  from the car" row sitting between a parking-spot arrival and the main Work
+  stay -- because the function's own gap check blocked the join on *any*
+  overlapping record, manual rows included.
+  Fixed by excluding `.manual` from the gap-blocking check specifically:
+  any other record in the gap (another automatic stay, a Health/Motion
+  sample) still blocks the join as real competing evidence, but a manual row
+  no longer does, and is never itself touched -- the join only ever rewrites
+  the two `.automatic` endpoints' arrival/departure, so a hand-entered visit
+  is neither deleted nor reshaped by a repair the person never asked for.
+  Split the old combined test (`doesNotCoalesceAcrossManualOrLongGap`, which
+  asserted a manual row blocked the join) into three: one confirming the
+  manual-row join now happens and the manual row survives with its fields
+  unchanged, one confirming a genuine competing automatic record still
+  blocks it, and one confirming the existing 15-minute gap ceiling still
+  blocks a long silent gap. Full `LifeLogTests` suite passes; verified live
+  in the simulator that the broader reconciliation pipeline this function
+  runs inside still completes cleanly on launch.
+  Removed the now-resolved TODO.md bullet.
+
 ## 2026-08-22 — Only show Insights' current-activity card when it needs checking
 
 - `InsightsView.dayCurrentActivity` (`LifeLog/Insights/InsightsView.swift`) now

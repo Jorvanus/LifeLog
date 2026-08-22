@@ -146,8 +146,8 @@ struct OverlapResolutionTests {
         #expect(remaining.first?.departure == second.departure)
     }
 
-    @Test("Manual records and long silent gaps block same-place coalescing")
-    func doesNotCoalesceAcrossManualOrLongGap() throws {
+    @Test("A manual row in the gap does not block the join, and is left untouched")
+    func coalescesAcrossAManualRowWithoutTouchingIt() throws {
         let context = try ActivityLocationPolicyFixtures.makeContext()
         let first = ActivityLocationPolicyFixtures.stay("Work", from: 0, to: 60,
                                                           latitude: -23.37, longitude: 150.51, base: base)
@@ -163,8 +163,38 @@ struct OverlapResolutionTests {
 
         ActivityLocationPolicy.coalesceAdjacentAutomaticStays(in: [first, manual, second], context: context,
                                                                now: base.addingTimeInterval(4 * 60 * 60))
-        #expect(try context.fetch(FetchDescriptor<Visit>()).count == 3)
+        try context.save()
 
+        let remaining = try context.fetch(FetchDescriptor<Visit>())
+        #expect(remaining.count == 2)
+        #expect(first.departure == second.departure, "the two automatic stays merged around the manual row")
+        let survivingManual = remaining.first { $0 === manual }
+        #expect(survivingManual != nil, "the manual row is never deleted")
+        #expect(survivingManual?.arrival == base.addingTimeInterval(61 * 60))
+        #expect(survivingManual?.departure == base.addingTimeInterval(63 * 60))
+        #expect(survivingManual?.inferredActivity == "Walking from the car", "the manual row is never rewritten")
+    }
+
+    @Test("A non-manual record in the gap still blocks the join")
+    func blocksCoalescingAcrossANonManualRecord() throws {
+        let context = try ActivityLocationPolicyFixtures.makeContext()
+        let first = ActivityLocationPolicyFixtures.stay("Work", from: 0, to: 60,
+                                                          latitude: -23.37, longitude: 150.51, base: base)
+        let sideTrip = ActivityLocationPolicyFixtures.stay("Cafe", from: 61, to: 63,
+                                                            latitude: -23.40, longitude: 150.54, base: base)
+        let second = ActivityLocationPolicyFixtures.stay("Work", from: 64, to: 180,
+                                                          latitude: -23.37, longitude: 150.51, base: base)
+        [first, sideTrip, second].forEach(context.insert)
+        try context.save()
+
+        ActivityLocationPolicy.coalesceAdjacentAutomaticStays(in: [first, sideTrip, second], context: context,
+                                                               now: base.addingTimeInterval(4 * 60 * 60))
+        #expect(try context.fetch(FetchDescriptor<Visit>()).count == 3)
+    }
+
+    @Test("A gap longer than the ceiling blocks the join even when silent")
+    func blocksCoalescingAcrossALongGap() throws {
+        let context = try ActivityLocationPolicyFixtures.makeContext()
         let longFirst = ActivityLocationPolicyFixtures.stay("Work", from: 0, to: 60,
                                                               latitude: -23.37, longitude: 150.51, base: base)
         let longSecond = ActivityLocationPolicyFixtures.stay("Work", from: 80, to: 180,
