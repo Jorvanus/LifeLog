@@ -122,6 +122,10 @@ struct AnnualGroupsChart: View {
             }
             .chartForegroundStyleScale(domain: data.map(\.group),
                                        range: data.map { insightColor(for: $0.group) })
+            // Swift Charts' own auto-generated legend would otherwise duplicate
+            // the tappable, selectable legend below -- two legends saying the
+            // same thing, only one of which does anything.
+            .chartLegend(.hidden)
             .frame(height: 220)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Annual groups chart")

@@ -1,3 +1,17 @@
+## 2026-08-22 — Remove the duplicate legend from "How the year was spent"
+
+- Prompted by a screenshot: the chart showed two legends stacked on top of
+  each other -- Swift Charts' own auto-generated inline legend (small dots,
+  non-interactive) immediately above the existing tappable/selectable
+  `LazyVGrid` legend that already does everything the auto one does, plus
+  selection and drill-down. Added `.chartLegend(.hidden)` to the `Chart` in
+  `AnnualGroupsChart.swift` to suppress the redundant one. Single-modifier,
+  low-risk change; clean build, full `LifeLogTests` suite passes, dead-code
+  scan clean. Live simulator verification wasn't possible this session --
+  the Year segmented-control tab has been consistently untappable via
+  synthetic simulator taps all session (documented elsewhere in this
+  session's work), so this was verified by code review only.
+
 ## 2026-08-22 — Line up the Health overview card's Sleep row with its grid columns
 
 - Prompted by a screenshot: the Sleep duration floated flush against the
