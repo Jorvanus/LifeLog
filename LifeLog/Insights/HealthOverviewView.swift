@@ -166,22 +166,29 @@ private struct HealthOverviewSleepLine: View {
     let sleep: SleepSummary
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "bed.double.fill")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-                .frame(width: 22)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Sleep")
-                    .font(.subheadline.weight(.semibold))
-                Text("Apple Health")
-                    .font(.caption)
+        // Matches `HealthOverviewMetricGrid`'s two equal-width leading-aligned
+        // columns (same 16pt gap) so this row's duration lines up under
+        // whichever metric landed in the grid's second column, instead of
+        // floating at the card's trailing edge.
+        HStack(spacing: 16) {
+            HStack(spacing: 10) {
+                Image(systemName: "bed.double.fill")
+                    .font(.headline)
                     .foregroundStyle(.secondary)
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Sleep")
+                        .font(.subheadline.weight(.semibold))
+                    Text("Apple Health")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
-            Spacer(minLength: 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
             Text(healthDuration(sleep.totalSleep))
                 .font(.title3.weight(.semibold))
                 .monospacedDigit()
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.top, 2)
         .overlay(alignment: .top) { Divider().offset(y: -8) }

@@ -1,3 +1,19 @@
+## 2026-08-22 — Line up the Health overview card's Sleep row with its grid columns
+
+- Prompted by a screenshot: the Sleep duration floated flush against the
+  card's trailing edge, past where the metric grid's second column
+  ("Walk + run" / "Workouts") lines up its own values -- close enough to
+  look like a layout bug rather than an intentional design. Reworked
+  `HealthOverviewSleepLine` in `HealthOverviewView.swift` to use the same
+  two-equal-width-leading-column structure as `HealthOverviewMetricGrid`
+  (same 16pt gap), so the Sleep duration now starts exactly where the
+  grid's second column starts. This card is shared across Day/Week/Month/
+  Year (`InsightsView.swift`'s `healthSetupSection`), so the fix applies
+  everywhere it's shown from one change. Clean build, full `LifeLogTests`
+  suite passes, dead-code scan clean; verified live in the simulator
+  (`-ui-test-health-connected`) -- Sleep's "7h 15m" now sits under
+  "Workouts," matching the screenshot's intent.
+
 ## 2026-08-22 — Rename "Routine stability" to "Your routine"
 
 - "Routine stability" read like a lab report heading, not something a
