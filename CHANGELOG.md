@@ -1,3 +1,20 @@
+## 2026-08-22 — Split LocationRecorder's confirmation and region-sync state machines out
+
+- `LocationRecorder` held five separate stored properties for the live-location
+  confirmation burst (samples, pending arrival, burst task, timeout task,
+  waiters) mutated from several methods. Extracted `ArrivalConfirmationSession`
+  (`LocationRecordingComponents.swift`) to own that state machine on its own —
+  begin/supersede, sample accumulation, terminal outcome, and waiter bookkeeping
+  — while the recorder still owns interpreting every `CLLocationUpdate` and the
+  resulting Visit mutation, unchanged in behavior or ordering.
+- Extracted `GeofenceMonitor.plan(wanted:monitoredIdentifiers:)`, a pure diff
+  between the wanted monitored-region set and what `CLMonitor` currently holds,
+  out of `refreshMonitoredRegions`'s inline reconciliation loop.
+- Nine new tests cover both collaborators directly, including the exact bug
+  class (`ArrivalConfirmationSession`'s begin/supersede rule) that used to be
+  five untested private fields. No existing arrival/incremental-resolution test
+  changed; all pass unmodified.
+
 ## 2026-08-22 — Removed two dead declarations and a decorative empty section
 
 - `InsightsPlacesMap` (a `View` struct) and `MonthlyInsights.definedCategory(for:)`

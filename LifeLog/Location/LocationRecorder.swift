@@ -96,25 +96,13 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     private var placeMonitor: CLMonitor?
     private var placeMonitorTask: Task<Void, Never>?
     private var monitoredPlaces: [String: MonitoredPlaces.Ranked] = [:]
-    private struct PendingArrival {
-        let coordinate: CLLocationCoordinate2D?
-        let arrival: Date
-        let callbackType: LocationCallbackType
-        let accuracy: CLLocationAccuracy
-    }
-
-    private var liveLocationBurstTask: Task<Void, Never>?
-    private var liveLocationBurstTimeoutTask: Task<Void, Never>?
-    private var locationConfirmation: ArrivalConfirmationEngine?
-    private var pendingArrival: PendingArrival?
-    /// Resumed whenever a live location confirmation cycle ends, by
-    /// `cancelLocationConfirmation()` — the one place every ending path
-    /// (normal finish, disabled logging, a CLVisit preempting an in-flight
-    /// check) already passes through. `refreshCurrentLocation(awaiting:)`
-    /// appends here instead of polling `locationConfirmation`, so a caller
-    /// (Timeline's pull-to-refresh) can show a spinner for exactly as long as
-    /// the GPS burst actually runs rather than guessing a fixed delay.
-    private var locationConfirmationContinuations: [CheckedContinuation<Void, Never>] = []
+    /// The live-location confirmation burst's own state machine -- samples,
+    /// the pending arrival they confirm, task lifecycle, and awaiters. See
+    /// `ArrivalConfirmationSession`'s own doc comment for the boundary: this
+    /// recorder still interprets every sample and performs the resulting
+    /// mutation, the session only tracks whether a burst is running and what
+    /// it found.
+    private let confirmationSession = ArrivalConfirmationSession()
     var authorization: CLAuthorizationStatus = .notDetermined
     /// Whether iOS is fuzzing this app's location fixes to city-block scale (the
     /// user-controlled "Precise Location" toggle). Read once at init and refreshed
@@ -198,9 +186,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             return
         }
         beginLocationConfirmation()
-        await withCheckedContinuation { continuation in
-            locationConfirmationContinuations.append(continuation)
-        }
+        await confirmationSession.awaitCompletion()
     }
 
     func disableBackgroundLogging() {
@@ -218,7 +204,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         serviceSession?.invalidate()
         serviceSession = nil
         serviceSessionRequirement = nil
-        cancelLocationConfirmation()
+        confirmationSession.cancel()
     }
 
     private func startBackgroundWorkflow() {
@@ -408,7 +394,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                                       timestamp: sample.timestamp)
             recordLocationEvidence(location, callbackType: .locationUpdate)
         case .failure(let failure):
-            cancelLocationConfirmation()
+            confirmationSession.cancel()
             lastError = "Location updates are temporarily unavailable."
             diagnosticsRecorder.record(context, failure.diagnosticMessage, "warning")
         }
@@ -438,14 +424,10 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     private func beginLocationConfirmation(pendingArrival: PendingArrival? = nil) {
         // A CLVisit arrival supersedes an in-flight launch check: it carries a
         // historical arrival to preserve once the phone confirms it is still nearby.
-        if let pendingArrival, self.pendingArrival == nil, locationConfirmation != nil {
-            cancelLocationConfirmation()
-        }
-        guard locationConfirmation == nil else { return }
-
-        locationConfirmation = .init()
-        self.pendingArrival = pendingArrival
-        liveLocationBurstTask = Task { [weak self] in
+        // `begin` returns false when a burst is already running and this call
+        // folded into it instead, in which case no new tasks are started.
+        guard confirmationSession.begin(pendingArrival: pendingArrival) else { return }
+        let burstTask = Task { [weak self] in
             do {
                 for try await update in CLLocationUpdate.liveUpdates() {
                     guard !Task.isCancelled else { return }
@@ -457,7 +439,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 self?.finishLocationConfirmation(reason: "stream failed")
             }
         }
-        liveLocationBurstTimeoutTask = Task { [weak self] in
+        let timeoutTask = Task { [weak self] in
             do {
                 try await Task.sleep(for: LocationArrivalConfirmation.timeout)
                 guard !Task.isCancelled else { return }
@@ -468,6 +450,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 return
             }
         }
+        confirmationSession.attach(burstTask: burstTask, timeoutTask: timeoutTask)
     }
 
     private func receiveLiveLocationUpdate(_ update: CLLocationUpdate) {
@@ -484,24 +467,22 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
               location.horizontalAccuracy >= 0,
               location.horizontalAccuracy <= 1_000,
               abs(location.timestamp.timeIntervalSinceNow) <= 5 * 60,
-              var confirmation = locationConfirmation else { return }
+              confirmationSession.isActive, let startedAt = confirmationSession.startedAt else { return }
 
-        confirmation.append(location: location, stationary: update.stationary)
-        locationConfirmation = confirmation
+        let sampleCount = confirmationSession.append(location: location, stationary: update.stationary)
         Diagnostics.record(context, subsystem: "Core Location",
-                           message: "Live location sample \(confirmation.samples.count)/\(LocationArrivalConfirmation.maximumSamples): stationary=\(update.stationary), accuracy=\(Int(location.horizontalAccuracy.rounded())) m, elapsed=\(Int(Date.now.timeIntervalSince(confirmation.startedAt).rounded())) s.",
+                           message: "Live location sample \(sampleCount)/\(LocationArrivalConfirmation.maximumSamples): stationary=\(update.stationary), accuracy=\(Int(location.horizontalAccuracy.rounded())) m, elapsed=\(Int(Date.now.timeIntervalSince(startedAt).rounded())) s.",
                            severity: "info")
         recordLocationEvidence(location, callbackType: .liveLocationSample)
-        if confirmation.hasReachedSampleLimit {
+        if confirmationSession.hasReachedSampleLimit {
             finishLocationConfirmation(reason: "sample limit")
         }
     }
 
     private func finishLocationConfirmation(reason: String) {
-        guard let confirmation = locationConfirmation else { return }
-        let arrival = pendingArrival
-        cancelLocationConfirmation()
-        guard let location = confirmation.confirmedLocation else {
+        guard let outcome = confirmationSession.finish() else { return }
+        let arrival = outcome.pendingArrival
+        guard let location = outcome.confirmedLocation else {
             // A CLVisit arrival already carries Core Location's own coordinate — its
             // motion-fused engine decided the phone had stopped before `didVisit` was
             // ever called. The live burst here exists to catch a *stale* CLVisit
@@ -512,7 +493,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             // Silence is not disproof, so a pending CLVisit arrival stands on its own
             // evidence instead. There is nothing to fall back to for the launch-time
             // check (no `arrival`), which keeps its stricter, evidence-required rule.
-            if let arrival, confirmation.samples.isEmpty {
+            if let arrival, outcome.sampleCount == 0 {
                 HardwareValidation.recordFirst(
                     .liveBurstBackgroundFallback, context: context,
                     message: "A background live-location burst produced no samples; the CLVisit arrival was used instead of being discarded."
@@ -527,7 +508,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                 return
             }
             Diagnostics.record(context, subsystem: "Core Location",
-                               message: "Live location confirmation \(reason) without stationary evidence (\(confirmation.samples.count) sample(s))\(arrival == nil ? "" : "; samples disagreed with the pending arrival, discarding it").",
+                               message: "Live location confirmation \(reason) without stationary evidence (\(outcome.sampleCount) sample(s))\(arrival == nil ? "" : "; samples disagreed with the pending arrival, discarding it").",
                                severity: "info")
             return
         }
@@ -547,18 +528,6 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         } else {
             seedConfirmedCurrentVisit(from: location)
         }
-    }
-
-    private func cancelLocationConfirmation() {
-        liveLocationBurstTask?.cancel()
-        liveLocationBurstTask = nil
-        liveLocationBurstTimeoutTask?.cancel()
-        liveLocationBurstTimeoutTask = nil
-        locationConfirmation = nil
-        pendingArrival = nil
-        let waiters = locationConfirmationContinuations
-        locationConfirmationContinuations = []
-        for waiter in waiters { waiter.resume() }
     }
 
     private func createVisit(at coordinate: CLLocationCoordinate2D, arrival: Date,
@@ -889,12 +858,12 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         let ranked = MonitoredPlaces.prioritised(savedPlaceCache, visits: visits, limit: .max)
         let wanted = GeofenceMonitor.desired(savedPlaceCache, visits: visits)
         let wantedByID = Dictionary(uniqueKeysWithValues: wanted.map { ($0.identifier, $0) })
+        let plan = GeofenceMonitor.plan(wanted: wanted, monitoredIdentifiers: Set(await placeMonitor.identifiers))
 
-        for identifier in await placeMonitor.identifiers where wantedByID[identifier] == nil {
+        for identifier in plan.toRemove {
             await placeMonitor.remove(identifier)
         }
-        let existing = Set(await placeMonitor.identifiers)
-        for place in wanted where !existing.contains(place.identifier) {
+        for place in plan.toAdd {
             let condition = CLMonitor.CircularGeographicCondition(center: place.coordinate,
                                                                   radius: place.radius)
             await placeMonitor.add(condition, identifier: place.identifier)

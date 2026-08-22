@@ -150,6 +150,106 @@ struct LocationArrivalConfirmationTests {
             held: nil, hasLiveSession: false, required: .always
         ))
     }
+
+    // MARK: - GeofenceMonitor.plan
+
+    private func rankedPlace(_ name: String, latitude: Double = -27.47, longitude: Double = 153.03) -> MonitoredPlaces.Ranked {
+        .init(name: name, latitude: latitude, longitude: longitude, radius: 100, visits: 1, lastVisit: .now)
+    }
+
+    @Test("A region synchronisation plan adds everything wanted when nothing is monitored yet")
+    func planAddsEverythingFromEmpty() {
+        let wanted = [rankedPlace("Home"), rankedPlace("Work")]
+        let plan = GeofenceMonitor.plan(wanted: wanted, monitoredIdentifiers: [])
+        #expect(Set(plan.toAdd.map(\.identifier)) == Set(wanted.map(\.identifier)))
+        #expect(plan.toRemove.isEmpty)
+    }
+
+    @Test("A region synchronisation plan changes nothing once the monitored set already matches")
+    func planIsEmptyWhenAlreadySynchronised() {
+        let wanted = [rankedPlace("Home"), rankedPlace("Work")]
+        let plan = GeofenceMonitor.plan(wanted: wanted, monitoredIdentifiers: Set(wanted.map(\.identifier)))
+        #expect(plan.toAdd.isEmpty)
+        #expect(plan.toRemove.isEmpty)
+    }
+
+    @Test("A region synchronisation plan only touches what actually changed")
+    func planIsMinimalOnAMixedSet() {
+        let home = rankedPlace("Home")
+        let work = rankedPlace("Work")
+        let stale = "place|stale-gym|-27.50000,153.05000"
+        // Home is already monitored and still wanted -- neither added nor removed.
+        // Work is wanted but not yet monitored -- added. `stale` is monitored but no
+        // longer wanted -- removed.
+        let plan = GeofenceMonitor.plan(wanted: [home, work], monitoredIdentifiers: [home.identifier, stale])
+        #expect(plan.toAdd.map(\.identifier) == [work.identifier])
+        #expect(plan.toRemove == [stale])
+    }
+
+    // MARK: - ArrivalConfirmationSession
+
+    private func stationarySample(_ offset: TimeInterval) -> CLLocation {
+        CLLocation(coordinate: .init(latitude: -27.47, longitude: 153.03),
+                   altitude: 0, horizontalAccuracy: 12, verticalAccuracy: 12,
+                   timestamp: Date.now.addingTimeInterval(offset))
+    }
+
+    @Test("A session folds a second begin into the running burst instead of starting another")
+    @MainActor
+    func sessionFoldsRepeatedBeginIntoRunningBurst() {
+        let session = ArrivalConfirmationSession()
+        #expect(session.begin(pendingArrival: nil))
+        #expect(session.isActive)
+        #expect(!session.begin(pendingArrival: nil), "a second begin while one is active must fold in, not restart")
+    }
+
+    @Test("A CLVisit arrival supersedes an in-flight launch check")
+    @MainActor
+    func sessionArrivalSupersedesBareLaunchCheck() {
+        let session = ArrivalConfirmationSession()
+        #expect(session.begin(pendingArrival: nil))
+        let arrival = PendingArrival(coordinate: .init(latitude: -27.47, longitude: 153.03),
+                                     arrival: .now, callbackType: .visitArrival, accuracy: 10)
+        #expect(session.begin(pendingArrival: arrival), "an arrival must cancel and restart the bare launch check")
+        #expect(session.pendingArrival?.arrival == arrival.arrival)
+    }
+
+    @Test("A finished session reports its samples' outcome and becomes inactive")
+    @MainActor
+    func sessionFinishReportsOutcomeAndClears() {
+        let session = ArrivalConfirmationSession()
+        _ = session.begin(pendingArrival: nil)
+        _ = session.append(location: stationarySample(0), stationary: false)
+        _ = session.append(location: stationarySample(1), stationary: true)
+        let count = session.append(location: stationarySample(2), stationary: true)
+        #expect(count == 3)
+
+        let outcome = session.finish()
+        #expect(outcome?.confirmedLocation != nil)
+        #expect(outcome?.sampleCount == 3)
+        #expect(!session.isActive)
+        // A finished session can begin again immediately.
+        #expect(session.begin(pendingArrival: nil))
+    }
+
+    @Test("Cancelling an inactive-again session is a no-op, not an outcome")
+    @MainActor
+    func sessionFinishIsNilWhenNothingIsActive() {
+        let session = ArrivalConfirmationSession()
+        #expect(session.finish() == nil)
+    }
+
+    @Test("A waiter resumes when the session finishes, not before")
+    @MainActor
+    func sessionAwaiterResumesOnFinish() async {
+        let session = ArrivalConfirmationSession()
+        _ = session.begin(pendingArrival: nil)
+        let waiter = Task { await session.awaitCompletion() }
+        // Give the waiter a chance to register before the session ends.
+        await Task.yield()
+        session.cancel()
+        await waiter.value
+    }
 }
 
 /// `CLVisit` has no public initializer -- CoreLocation only ever hands one to the

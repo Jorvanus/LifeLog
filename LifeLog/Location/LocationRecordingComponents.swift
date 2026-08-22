@@ -111,6 +111,139 @@ enum GeofenceMonitor {
     static func desired(_ places: [SavedPlace], visits: [Visit]) -> [MonitoredPlaces.Ranked] {
         Array(MonitoredPlaces.prioritised(places, visits: visits, limit: .max).prefix(MonitoredPlaces.limit))
     }
+
+    /// What must change to bring the monitored region set to exactly `wanted`,
+    /// given the identifiers currently registered with `CLMonitor`. Pure so the
+    /// reconciliation decision -- the "monitored-region synchronisation" the
+    /// recorder used to work out inline against the live monitor -- is testable
+    /// without one.
+    ///
+    /// A single snapshot of `monitoredIdentifiers` is enough even though the
+    /// recorder applies removals before additions: every identifier this plan
+    /// removes is, by construction, one `wanted` does not contain, so it can
+    /// never also be a "keep" candidate `toAdd` needs to exclude.
+    static func plan(wanted: [MonitoredPlaces.Ranked], monitoredIdentifiers: Set<String>)
+    -> (toAdd: [MonitoredPlaces.Ranked], toRemove: [String]) {
+        let wantedIDs = Set(wanted.map(\.identifier))
+        let toRemove = monitoredIdentifiers.subtracting(wantedIDs)
+        let toAdd = wanted.filter { !monitoredIdentifiers.contains($0.identifier) }
+        return (toAdd, Array(toRemove))
+    }
+}
+
+/// A confirmed or pending arrival's evidence, carried from the callback that
+/// noticed it (a `CLVisit`, a geofence, or nothing at all for a launch-time
+/// check) through to whichever live-location burst confirms or discards it.
+struct PendingArrival: Sendable {
+    let coordinate: CLLocationCoordinate2D?
+    let arrival: Date
+    let callbackType: LocationCallbackType
+    let accuracy: CLLocationAccuracy
+}
+
+/// Owns the live-location confirmation burst's state machine independently of
+/// `CLLocationManager`: the pure `ArrivalConfirmationEngine`'s samples, the
+/// pending arrival they are confirming (if any), the burst and timeout tasks'
+/// lifecycle, and callers waiting for the burst to finish.
+///
+/// `LocationRecorder` still owns interpreting a raw `CLLocationUpdate`, the
+/// resulting Visit mutation, and every diagnostic around them -- this
+/// collaborator never touches SwiftData. It exists so that bookkeeping (is a
+/// burst already running, should a new pending arrival supersede it, has the
+/// sample limit been reached, who is still awaiting completion) is not five
+/// separate stored properties on the recorder mutated from several methods.
+@MainActor
+final class ArrivalConfirmationSession {
+    /// A finished burst's evidence, exactly as `LocationRecorder` needs to
+    /// decide what to do next -- confirm, fall back to the pending arrival's
+    /// own coordinate, or discard.
+    struct Outcome {
+        let confirmedLocation: CLLocation?
+        let pendingArrival: PendingArrival?
+        let sampleCount: Int
+    }
+
+    private var engine: ArrivalConfirmationEngine?
+    private(set) var pendingArrival: PendingArrival?
+    private var burstTask: Task<Void, Never>?
+    private var timeoutTask: Task<Void, Never>?
+    private var continuations: [CheckedContinuation<Void, Never>] = []
+
+    var isActive: Bool { engine != nil }
+    var startedAt: Date? { engine?.startedAt }
+    var hasReachedSampleLimit: Bool { engine?.hasReachedSampleLimit ?? false }
+
+    /// Starts a new burst unless one is already active for the same kind of
+    /// check. A `CLVisit` arrival supersedes an in-flight launch check by
+    /// cancelling it first -- it carries historical evidence worth preserving
+    /// once confirmed, which a bare launch check does not -- but two arrivals
+    /// (or two launch checks) in flight at once simply fold into the first.
+    ///
+    /// Returns whether a new burst actually started; the caller must only
+    /// create its `Task`s (via `attach`) when this is `true`.
+    @discardableResult
+    func begin(pendingArrival: PendingArrival?) -> Bool {
+        if let pendingArrival, self.pendingArrival == nil, engine != nil {
+            cancel()
+        }
+        guard engine == nil else { return false }
+        engine = .init()
+        self.pendingArrival = pendingArrival
+        return true
+    }
+
+    /// Hands the session ownership of the burst/timeout tasks `begin`'s caller
+    /// just started, so `cancel()`/`finish()` can tear them down. Separate from
+    /// `begin` because the tasks' closures need to reference the recorder
+    /// (for the side effects that follow each sample), not this session.
+    func attach(burstTask: Task<Void, Never>, timeoutTask: Task<Void, Never>) {
+        self.burstTask = burstTask
+        self.timeoutTask = timeoutTask
+    }
+
+    /// Records one validated live-location sample and reports how many the
+    /// burst has collected so far, for the recorder's own diagnostic.
+    @discardableResult
+    func append(location: CLLocation, stationary: Bool) -> Int {
+        engine?.append(location: location, stationary: stationary)
+        return engine?.samples.count ?? 0
+    }
+
+    /// Ends the burst -- by timeout, sample limit, stream failure, or a
+    /// superseding arrival -- and reports what it found. `nil` when no burst
+    /// was active, which the recorder reads as "already handled."
+    @discardableResult
+    func finish() -> Outcome? {
+        guard let engine else { return nil }
+        let outcome = Outcome(confirmedLocation: engine.confirmedLocation,
+                              pendingArrival: pendingArrival, sampleCount: engine.samples.count)
+        cancel()
+        return outcome
+    }
+
+    /// Tears the burst down without reporting an outcome -- background logging
+    /// turned off, or a supersede that discards the check being replaced.
+    func cancel() {
+        burstTask?.cancel()
+        burstTask = nil
+        timeoutTask?.cancel()
+        timeoutTask = nil
+        engine = nil
+        pendingArrival = nil
+        let waiters = continuations
+        continuations = []
+        for waiter in waiters { waiter.resume() }
+    }
+
+    /// Suspends until the current burst (or the next one, if none is active
+    /// yet) finishes. Joins whichever cycle is already running rather than
+    /// starting a second one -- the waiter list isn't tied to which cycle
+    /// resumes it, only to `cancel()`/`finish()` having run.
+    func awaitCompletion() async {
+        await withCheckedContinuation { continuation in
+            continuations.append(continuation)
+        }
+    }
 }
 
 /// Tracks the newest Maps request for a visit. A correction can invalidate its token,
