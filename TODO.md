@@ -213,6 +213,49 @@ about marketing copy, ratings prompts, or broad-market onboarding.
   definition ("Duplicate callbacks resolved" and a couple of dense
   footers in `DiagnosticsView.swift`, around lines 35/45/109).
 
+- [ ] **Insights: remaining clarity gaps, and two new correlation cards
+  worth building.** A 2026-08-22 deep-dive on whether Insights shows sound,
+  legible numbers found and fixed four statistical-soundness bugs (see the
+  CHANGELOG entry); these are the findings from the same audit that are
+  design/product decisions rather than quick fixes, left open on purpose:
+  - **"Recording Quality" risks reading as "how good was my day"** rather
+    than what it actually tracks (coverage). The card partially defends
+    against this in its copy but never explains *why* gaps happen in the
+    first place (`InsightsRecordingQuality.swift`/`InsightRecordingQualityCard.swift`).
+  - **`MonthCalendarHeatmap.swift:47-51`** blends coverage and away-
+    fraction into one colour intensity, so a cell's shade doesn't say
+    which factor drove it.
+  - **Unlogged vs. quiet-but-logged days look visually similar** in
+    `WeeklyStrip.swift`/`MonthCalendarHeatmap.swift` — already
+    distinguished for VoiceOver (`WeeklyStrip.swift:112-118`) but not for
+    sighted quick-scanning.
+  - **`HealthOverviewView.swift:200,217-226`** — the sleep-consistency
+    baseline line is Day-only and silently absent elsewhere, with nothing
+    explaining why.
+  New cards, ranked by the same audit for "genuinely insightful, not just
+  clutter" against what LifeLog's data model can actually support today
+  (only sleep and workouts are persisted; steps/energy/HR/HRV/VO2max are
+  live-queried per screen and never stored):
+  1. **HR recovery after a workout** — `.heartRateRecoveryOneMinute` is
+     already authorized and queried, near-zero new plumbing. Only fires
+     for Watch-recognized workout sessions, not casual walks — needs an
+     explicit empty state for everyone else.
+  2. **Sleep duration on exercise days vs. non-exercise days** — both
+     halves already exist as resolved segments; close to a re-aggregation
+     rather than a new feature. Needs the same min-sample gating the rest
+     of Insights already uses, so a 2-day vs. 20-day split doesn't get
+     treated as an even comparison.
+  Lower-ranked and not currently planned: walking HR vs. commute time
+  (timestamp-granularity mismatch — Apple's walking HR is a daily rolling
+  average, not tied to a specific walk), active energy on commute vs.
+  non-commute days (silently unavailable without a configured Work saved
+  place), VO2max vs. workout frequency (samples are inherently sparse even
+  with a Watch). Explicitly cautioned against: sleep-timing-consistency
+  vs. commute-variability — the only idea from the audit that's a genuine
+  two-variable correlation rather than a re-bucketing of existing
+  single-variable comparisons, and the codebase has no existing primitive
+  for that; real risk of implying causation Insights can't actually back up.
+
 ## Efficiency and tidiness — still open
 
 A code-first audit on 2026-08-20. These are ranked interaction-path and ownership

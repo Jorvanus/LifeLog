@@ -187,14 +187,26 @@ struct AnnualInsights {
             guard let place = segment.placeName else { continue }
             placeDates[place, default: []].append(segment.start)
         }
+        // Two visits are just an interval, not a return pattern -- a place seen
+        // exactly twice always has exactly one gap, which would otherwise win
+        // this milestone by default on sparse data rather than by being a real
+        // "you went back after a while" story.
         let longestGap = placeDates.compactMap { place, dates -> (String, Int)? in
             let ordered = dates.sorted()
-            guard ordered.count >= 2 else { return nil }
+            guard ordered.count >= 3 else { return nil }
             let gap = zip(ordered, ordered.dropFirst()).map { Int($1.timeIntervalSince($0) / 86_400) }.max() ?? 0
             return gap >= 14 ? (place, gap) : nil
         }.max { $0.1 < $1.1 }
-        return Milestones(leadingIncrease: increase, longestActivityStreak: longest.days > 1 ? longest : nil,
-                          longestPlaceGap: longestGap, mostVisitedNewPlace: newPlaces.max { $0.visits < $1.visits })
+        // A single visit to a new place is not "most visited" -- it is the only
+        // one, which on a new or sparse archive would otherwise win this
+        // milestone every time.
+        let mostVisitedNewPlace = newPlaces.filter { $0.visits >= 2 }.max { $0.visits < $1.visits }
+        return Milestones(leadingIncrease: increase,
+                          // A two-day run is common even in a handful of logged
+                          // days; three is the point a streak stops being an
+                          // artifact of how little history exists yet.
+                          longestActivityStreak: longest.days > 2 ? longest : nil,
+                          longestPlaceGap: longestGap, mostVisitedNewPlace: mostVisitedNewPlace)
     }
 }
 

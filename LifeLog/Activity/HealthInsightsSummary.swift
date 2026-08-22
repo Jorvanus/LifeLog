@@ -21,6 +21,14 @@ struct HealthInsightsSummary: Equatable, Sendable {
     let walkingHeartRateBPM: Double?
     let heartRateRecoveryBPM: Double?
     let respiratoryRate: Double?
+    // How many distinct readings each average above was computed from. A period
+    // average built from one reading and one built from thirty look identical as
+    // a bare number; these let the display say which it was rather than imply a
+    // stable trend either way.
+    let restingHeartRateSampleCount: Int
+    let walkingHeartRateSampleCount: Int
+    let heartRateRecoverySampleCount: Int
+    let respiratoryRateSampleCount: Int
     let workouts: [Workout]
     let sleep: SleepSummary?
     let activeStepDays: Int
@@ -47,6 +55,8 @@ struct HealthInsightsSummary: Equatable, Sendable {
                             standHours: nil,
                             restingHeartRateBPM: nil, walkingHeartRateBPM: nil,
                             heartRateRecoveryBPM: nil, respiratoryRate: nil,
+                            restingHeartRateSampleCount: 0, walkingHeartRateSampleCount: 0,
+                            heartRateRecoverySampleCount: 0, respiratoryRateSampleCount: 0,
                             workouts: [], sleep: nil,
                             activeStepDays: 0, elapsedDays: 0,
                             source: "Apple Health", lastSuccessfulImport: nil)
@@ -139,6 +149,7 @@ enum HealthInsightsAggregation {
             guard !distinct.isEmpty else { return nil }
             return distinct.reduce(0) { $0 + $1.value } / Double(distinct.count)
         }
+        func sampleCount(_ values: [HealthQuantityFixture]) -> Int { unique(values).count }
         let uniqueSteps = unique(steps)
         let distinctWorkouts = Dictionary(grouping: workouts, by: \.id).compactMap { $0.value.first }
             .filter { $0.end > interval.start && $0.start < interval.end }
@@ -162,6 +173,10 @@ enum HealthInsightsAggregation {
             walkingHeartRateBPM: average(walkingHeartRate),
             heartRateRecoveryBPM: average(heartRateRecovery),
             respiratoryRate: average(respiratoryRate),
+            restingHeartRateSampleCount: sampleCount(restingHeartRate),
+            walkingHeartRateSampleCount: sampleCount(walkingHeartRate),
+            heartRateRecoverySampleCount: sampleCount(heartRateRecovery),
+            respiratoryRateSampleCount: sampleCount(respiratoryRate),
             workouts: distinctWorkouts,
             sleep: sleep,
             activeStepDays: activeDays,

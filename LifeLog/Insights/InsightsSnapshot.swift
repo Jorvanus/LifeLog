@@ -369,7 +369,21 @@ struct InsightsSnapshot {
                 delta: currentValues[name, default: 0] - previousValues[name, default: 0]
             )
         }
-        .filter { abs($0.delta) >= 0.25 }
+        // The same floor every other hours-based comparison in Insights agrees
+        // on (`InsightsPeriodComparison.isMeaningfulHoursChange`) -- this used to
+        // have its own quarter-hour cutoff, which let a comparison against a
+        // tiny previous total (say, 0.3h -> 0.6h) report a technically-true but
+        // misleading "100% more" from a base too small to mean anything. A brand
+        // new category (`previousHours == 0`) has no baseline to compute a
+        // fraction against, so it keeps its own floor on the absolute total
+        // instead -- still worth surfacing, just not for two minutes of it.
+        .filter { comparison in
+            if comparison.previousHours <= 0 {
+                return comparison.hours >= InsightsPeriodComparison.minimumAbsoluteHours
+            }
+            return InsightsPeriodComparison.isMeaningfulHoursChange(
+                current: comparison.hours, previous: comparison.previousHours)
+        }
         .sorted { abs($0.delta) > abs($1.delta) }
     }
 

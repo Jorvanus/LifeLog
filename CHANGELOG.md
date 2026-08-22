@@ -1,3 +1,56 @@
+## 2026-08-22 — Fix four Insights statistical-soundness gaps
+
+- Prompted by a deep-dive audit into whether Insights shows genuinely sound
+  numbers or ones that could mislead on sparse data. Fixed the four
+  concrete gaps the audit found; deliberately left the two "flat number,
+  no HR-change comparison exists yet" and "Recording Quality naming"
+  findings alone -- the former has no live misleading code path to fix
+  (no HR delta is shown anywhere today), the latter is a bigger naming/
+  redesign question, not a quick soundness fix.
+
+  1. **`InsightsSnapshot.swift`'s `makeComparisons`** (the Month/Year "what
+     changed" list) had its own ad hoc `abs(delta) >= 0.25`-hour floor,
+     separate from `InsightsPeriodComparison.isMeaningfulHoursChange` (1
+     hour + 20% of the previous total) that every other hours-based
+     comparison in Insights already agreed on. A comparison against a tiny
+     previous total (0.3h -> 0.6h, say) could pass the old floor and
+     report a technically-true but misleading "100% more." Now uses the
+     shared threshold; a brand-new category (no previous total to compute
+     a fraction against) keeps its own floor on the absolute total instead.
+  2. **`AnnualInsights.swift`'s milestones** could overclaim on sparse
+     data: "longest activity streak" fired on any 2-day run (common in a
+     handful of logged days), "longest return gap" fired off just two
+     visits to a place (an interval, not a return pattern), and "most
+     visited new place" had no floor at all (a single visit would win by
+     default). Raised to a 3-day streak, 3 visits before a gap counts, and
+     2 visits before "most visited" applies.
+  3. **`HealthOverviewView.swift`'s heart/respiratory signals** showed a
+     bare average with no indication of how many readings it was computed
+     from -- one reading and thirty looked identical. `HealthInsightsSummary`
+     now carries a sample count alongside each of the four signals
+     (threaded through `HealthInsightsAggregation.summary`, reusing the
+     same deduplicated list the average itself is computed from), and
+     `HealthSignalsSection` shows "1 reading"/"2 readings" under a value
+     built from that few, so a stranger can judge reliability instead of
+     being handed a confident-looking number with no context. Readings at
+     3+ stay unannotated -- transparency where it matters, not clutter on
+     well-sampled data.
+
+  6 new unit tests: 2-vs-3-day streak, 2-vs-3-visit return gap, 1-vs-2-
+  visit "most visited new place" (`AnnualInsightsTests.swift`), tiny-
+  baseline and no-previous-total comparisons (`MonthComparisonTests.swift`),
+  and deduplicated sample counts (`HealthInsightsSummaryTests.swift`). Full
+  `LifeLogTests` suite passes; clean build. Verified via the existing
+  `testHealthOverviewKeepsAppleHealthDataTogetherAndDrillsDown` UI test --
+  its `health-signals-detail` assertion (the one that exercises this
+  change) passed; the test's later, unrelated navigation assertion is a
+  pre-existing flake that was already in this session's first documented
+  flaky-test list, unrelated to this change. Manual simulator navigation
+  to visually confirm the reading-count labels was attempted but abandoned
+  after repeated unreliable coordinate taps this session; the UI test's
+  partial pass plus the unit tests were judged sufficient given the change
+  is display-only with accessibility identifiers unchanged.
+
 ## 2026-08-22 — Remove "geofence" from user-facing copy
 
 - Closes out the remaining item from the copy audit's follow-up list. Three

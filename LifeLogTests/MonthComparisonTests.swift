@@ -125,6 +125,31 @@ struct MonthComparisonTests {
                 "four hours against four, wherever in the completed month they fell")
     }
 
+    @Test("A change against a tiny previous total is not reported, even though the percentage looks large")
+    func tinyBaselineChangeIsNotReported() {
+        // 18 minutes -> 36 minutes is a real doubling in percentage terms, but
+        // both figures round to the same "less than an hour" a person would
+        // read as noise -- and a comparisons list built to surface "what
+        // changed" must not lead with a technically-true "100% more" that
+        // comes from a base too small to mean anything.
+        let now = date(2026, 8, 3, hour: 18)
+        let thisMonth = [visit(date(2026, 8, 1), hours: 0.6, place: "Office", activity: "Work")]
+        let lastMonth = [visit(date(2026, 7, 1), hours: 0.3, place: "Office", activity: "Work")]
+        let snapshot = InsightsSnapshot.make(visits: thisMonth + lastMonth, window: .month,
+                                             anchorDate: now, now: now)
+        #expect(!snapshot.comparisons.contains { $0.name == "Work" })
+    }
+
+    @Test("A brand new category needs a real amount of time before it's reported as a milestone")
+    func newCategoryNeedsAMeaningfulTotal() {
+        let now = date(2026, 8, 3, hour: 18)
+        // Two minutes of a category with nothing recorded last month is not
+        // worth announcing as "new"; the same floor every other comparison uses.
+        let thisMonth = [visit(date(2026, 8, 1), hours: 0.03, place: "Office", activity: "Work")]
+        let snapshot = InsightsSnapshot.make(visits: thisMonth, window: .month, anchorDate: now, now: now)
+        #expect(!snapshot.comparisons.contains { $0.name == "Work" })
+    }
+
     // MARK: - `MonthlyInsights.comparisonSubtitle`
 
     @Test("A month in progress states exactly how many days it was compared over")

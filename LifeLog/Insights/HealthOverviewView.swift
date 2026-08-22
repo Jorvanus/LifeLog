@@ -274,15 +274,37 @@ private struct HealthWorkoutsSection: View {
 private struct HealthSignalsSection: View {
     let summary: HealthInsightsSummary
 
+    /// A count this low means the "average" below is really just that many
+    /// individual readings averaged together -- worth saying, so one reading
+    /// early in a multi-day period doesn't read as a settled trend.
+    private static let lowSampleCountFloor = 2
+
+    private func readingCountLabel(_ count: Int) -> String? {
+        guard count > 0, count <= Self.lowSampleCountFloor else { return nil }
+        return count == 1 ? "1 reading" : "\(count) readings"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Heart and breathing signals").font(.headline)
             Text("Apple Health averages for this period. They are observations, not medical interpretation.")
                 .font(.footnote).foregroundStyle(.secondary)
-            if let value = summary.restingHeartRateBPM { HealthDetailRow(title: "Resting heart rate", value: "\(Int(value.rounded())) bpm", icon: "heart.fill") }
-            if let value = summary.walkingHeartRateBPM { HealthDetailRow(title: "Walking heart rate", value: "\(Int(value.rounded())) bpm", icon: "figure.walk") }
-            if let value = summary.heartRateRecoveryBPM { HealthDetailRow(title: "One-minute recovery", value: "\(Int(value.rounded())) bpm recovered", icon: "arrow.down.heart.fill") }
-            if let value = summary.respiratoryRate { HealthDetailRow(title: "Respiratory rate", value: "\(Int(value.rounded())) breaths/min", icon: "wind") }
+            if let value = summary.restingHeartRateBPM {
+                HealthDetailRow(title: "Resting heart rate", value: "\(Int(value.rounded())) bpm", icon: "heart.fill",
+                                detail: readingCountLabel(summary.restingHeartRateSampleCount))
+            }
+            if let value = summary.walkingHeartRateBPM {
+                HealthDetailRow(title: "Walking heart rate", value: "\(Int(value.rounded())) bpm", icon: "figure.walk",
+                                detail: readingCountLabel(summary.walkingHeartRateSampleCount))
+            }
+            if let value = summary.heartRateRecoveryBPM {
+                HealthDetailRow(title: "One-minute recovery", value: "\(Int(value.rounded())) bpm recovered", icon: "arrow.down.heart.fill",
+                                detail: readingCountLabel(summary.heartRateRecoverySampleCount))
+            }
+            if let value = summary.respiratoryRate {
+                HealthDetailRow(title: "Respiratory rate", value: "\(Int(value.rounded())) breaths/min", icon: "wind",
+                                detail: readingCountLabel(summary.respiratoryRateSampleCount))
+            }
         }
         .padding(20).lifeCard()
         .accessibilityIdentifier("health-signals-detail")
@@ -293,15 +315,21 @@ private struct HealthDetailRow: View {
     let title: String
     let value: String
     let icon: String
+    var detail: String? = nil
 
     var body: some View {
-        HStack {
+        HStack(alignment: .firstTextBaseline) {
             Label(title, systemImage: icon).font(.subheadline).foregroundStyle(.secondary)
             Spacer(minLength: 12)
-            Text(value).font(.subheadline.bold()).monospacedDigit().multilineTextAlignment(.trailing)
+            VStack(alignment: .trailing, spacing: 1) {
+                Text(value).font(.subheadline.bold()).monospacedDigit().multilineTextAlignment(.trailing)
+                if let detail {
+                    Text(detail).font(.caption2).foregroundStyle(.secondary)
+                }
+            }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(title): \(value), Apple Health")
+        .accessibilityLabel(detail.map { "\(title): \(value), from \($0), Apple Health" } ?? "\(title): \(value), Apple Health")
     }
 }
 

@@ -663,6 +663,8 @@ final class ActivityDataService {
             standHours: Double(days * 11),
             restingHeartRateBPM: 58, walkingHeartRateBPM: 102,
             heartRateRecoveryBPM: 26, respiratoryRate: 14,
+            restingHeartRateSampleCount: days, walkingHeartRateSampleCount: days,
+            heartRateRecoverySampleCount: days, respiratoryRateSampleCount: days,
             workouts: [.init(id: UUID(uuidString: "E8DF4817-D15E-4B2C-9A06-8514C9C8DE32")!,
                              type: "Walking", duration: 40 * 60, distanceMeters: 4_100)],
             sleep: Self.uiTestSleepSummary,

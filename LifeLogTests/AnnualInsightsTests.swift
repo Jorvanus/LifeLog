@@ -73,6 +73,56 @@ struct AnnualInsightsTests {
         #expect(result.milestones.leadingIncrease == nil)
     }
 
+    @Test("A two-day run is too common to call the longest streak; three days is")
+    func streakMilestoneNeedsThreeDays() {
+        let start = calendar.date(from: DateComponents(year: 2026, month: 1, day: 1))!
+        let year = calendar.dateInterval(of: .year, for: start)!
+        let twoDays = (0..<2).map { offset in
+            segment("Exercising", start: start.addingTimeInterval(Double(offset) * 86_400), hours: 1)
+        }
+        let twoDayResult = AnnualInsights.make(current: twoDays, previous: [], yearInterval: year, now: year.end)
+        #expect(twoDayResult.milestones.longestActivityStreak == nil,
+               "a two-day run is common even in a handful of logged days")
+
+        let threeDays = (0..<3).map { offset in
+            segment("Exercising", start: start.addingTimeInterval(Double(offset) * 86_400), hours: 1)
+        }
+        let threeDayResult = AnnualInsights.make(current: threeDays, previous: [], yearInterval: year, now: year.end)
+        #expect(threeDayResult.milestones.longestActivityStreak?.days == 3)
+    }
+
+    @Test("A place seen exactly twice has only an interval, not a return-gap milestone")
+    func returnGapMilestoneNeedsThreeVisits() {
+        let start = calendar.date(from: DateComponents(year: 2026, month: 1, day: 1))!
+        let year = calendar.dateInterval(of: .year, for: start)!
+        let twoVisits = [
+            segment("Social", start: start, hours: 1, place: "Old Friend's House"),
+            segment("Social", start: start.addingTimeInterval(30 * 86_400), hours: 1, place: "Old Friend's House")
+        ]
+        let twoVisitResult = AnnualInsights.make(current: twoVisits, previous: [], yearInterval: year, now: year.end)
+        #expect(twoVisitResult.milestones.longestPlaceGap == nil,
+               "two visits are one interval, not a return pattern")
+
+        let threeVisits = twoVisits + [
+            segment("Social", start: start.addingTimeInterval(31 * 86_400), hours: 1, place: "Old Friend's House")
+        ]
+        let threeVisitResult = AnnualInsights.make(current: threeVisits, previous: [], yearInterval: year, now: year.end)
+        #expect(threeVisitResult.milestones.longestPlaceGap?.place == "Old Friend's House")
+    }
+
+    @Test("A new place visited once is not yet 'most visited'")
+    func mostVisitedNewPlaceNeedsTwoVisits() {
+        let start = calendar.date(from: DateComponents(year: 2026, month: 1, day: 1))!
+        let year = calendar.dateInterval(of: .year, for: start)!
+        let onceOnly = segment("Coffee", start: start, hours: 1, place: "New Café")
+        let onceResult = AnnualInsights.make(current: [onceOnly], previous: [], yearInterval: year, now: year.end)
+        #expect(onceResult.milestones.mostVisitedNewPlace == nil, "a single visit is not 'most visited' anything")
+
+        let twice = [onceOnly, segment("Coffee", start: start.addingTimeInterval(86_400), hours: 1, place: "New Café")]
+        let twiceResult = AnnualInsights.make(current: twice, previous: [], yearInterval: year, now: year.end)
+        #expect(twiceResult.milestones.mostVisitedNewPlace?.name == "New Café")
+    }
+
     @Test("New places exclude anything in the historical name set; not-visited needs a real prior pattern")
     func placesUseHistoricalNameSet() {
         let start = calendar.date(from: DateComponents(year: 2026, month: 1, day: 1))!

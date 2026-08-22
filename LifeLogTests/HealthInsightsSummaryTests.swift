@@ -145,6 +145,13 @@ struct HealthInsightsSummaryTests {
         #expect(summary.heartRateRecoveryBPM == 35)
         #expect(summary.respiratoryRate == 15)
         #expect(summary.hasData)
+        // The duplicate `resting` sample (same id) must not inflate the count any
+        // more than it inflates the average above -- both read off the same
+        // deduplicated list.
+        #expect(summary.restingHeartRateSampleCount == 1)
+        #expect(summary.walkingHeartRateSampleCount == 1)
+        #expect(summary.heartRateRecoverySampleCount == 1)
+        #expect(summary.respiratoryRateSampleCount == 1)
     }
 
     @Test("Month changes require absolute and relative movement")
