@@ -598,7 +598,8 @@ struct InsightsView: View {
     /// why this reads only the already-fetched period data.
     private var recordingQuality: InsightsRecordingQuality.Presentation {
         InsightsRecordingQuality.make(segments: periodLoader.snapshot.segments, visits: periodLoader.visits,
-                                      interval: periodLoader.snapshot.analysisInterval, now: now)
+                                      interval: periodLoader.snapshot.analysisInterval, now: now,
+                                      observationStart: RecordingObservation.startedAt())
     }
 
     /// Placed first in Week/Month, ahead of their own decorative charts -- see

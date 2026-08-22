@@ -105,4 +105,31 @@ struct InsightsRecordingQualityTests {
         #expect(coverages == coverages.sorted())
         #expect(quality.daysBelowThreshold.first?.date == day.addingTimeInterval(24 * 3_600))
     }
+
+    @Test("A low-coverage period within a day of observation starting reads as early, not a gap")
+    func recentObservationStartReadsAsEarly() {
+        let interval = threeDayInterval()
+        let observationStart = day
+        let now = day.addingTimeInterval(2 * 3_600) // two hours after LifeLog started observing
+        let quality = InsightsRecordingQuality.make(segments: [], visits: [], interval: interval, now: now,
+                                                     observationStart: observationStart)
+        #expect(quality.isEarlyInObservation)
+    }
+
+    @Test("The same low coverage a full day after observation started is a real gap, not early")
+    func observationStartOverADayAgoIsNotEarly() {
+        let interval = threeDayInterval()
+        let observationStart = day
+        let now = day.addingTimeInterval(25 * 3_600) // just over a day after LifeLog started observing
+        let quality = InsightsRecordingQuality.make(segments: [], visits: [], interval: interval, now: now,
+                                                     observationStart: observationStart)
+        #expect(!quality.isEarlyInObservation)
+    }
+
+    @Test("No known observation start is never treated as early")
+    func noObservationStartIsNeverEarly() {
+        let interval = threeDayInterval()
+        let quality = InsightsRecordingQuality.make(segments: [], visits: [], interval: interval, now: interval.end)
+        #expect(!quality.isEarlyInObservation)
+    }
 }
