@@ -671,15 +671,11 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         // updates. Do not reintroduce speed here: a missing or stale speed is exactly
         // why one-shot launch fixes used to manufacture visits.
         guard let context else { return }
-        if let current = latestLocationVisit(in: context), current.departure == nil {
-            let recorded = CLLocation(latitude: current.latitude, longitude: current.longitude)
-            // Scale the duplicate threshold with GPS uncertainty so indoor drift does not
-            // split one stay into several uncategorised locations.
-            let tolerance = max(150, location.horizontalAccuracy * 2)
-            if recorded.distance(from: location) <= tolerance {
-                if current.needsCategorisation { identifyPlace(current) }
-                return
-            }
+        if let current = latestLocationVisit(in: context), current.departure == nil,
+           VisitArrivalMerge.matchesCurrentlyOpenVisit(current, confirmedLocation: location.coordinate,
+                                                        confirmedAccuracy: location.horizontalAccuracy) {
+            if current.needsCategorisation { identifyPlace(current) }
+            return
         }
         createVisit(at: location.coordinate, arrival: location.timestamp, accuracy: location.horizontalAccuracy)
     }

@@ -498,6 +498,21 @@ enum VisitArrivalMerge {
         let anchored = WiFiAnchor.departure(for: wifiObservation, arrival: openVisit.arrival, fallback: arrival)
         return .closeOpenVisit(departure: max(openVisit.arrival, anchored ?? arrival), usedWiFiAnchor: anchored != nil)
     }
+
+    /// Whether a live-location confirmation with no pending arrival to reconcile
+    /// (a bare launch or pull-to-refresh check) is already the currently open
+    /// stay -- `seedConfirmedCurrentVisit`'s own tolerance check, scaled by GPS
+    /// accuracy so indoor drift does not split one stay into several
+    /// uncategorised locations. Distinct from `outcome`'s fixed 150m
+    /// `.mergeIntoOpen` threshold: this only decides whether to re-attempt
+    /// identifying the open stay instead of creating a new one, never a merge.
+    static func matchesCurrentlyOpenVisit(_ openVisit: Visit, confirmedLocation: CLLocationCoordinate2D,
+                                          confirmedAccuracy: CLLocationAccuracy) -> Bool {
+        let recorded = CLLocation(latitude: openVisit.latitude, longitude: openVisit.longitude)
+        let confirmed = CLLocation(latitude: confirmedLocation.latitude, longitude: confirmedLocation.longitude)
+        let tolerance = max(150, confirmedAccuracy * 2)
+        return recorded.distance(from: confirmed) <= tolerance
+    }
 }
 
 /// Tracks the newest Maps request for a visit. A correction can invalidate its token,

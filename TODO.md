@@ -335,6 +335,31 @@ improvements, not a request for blanket rewrites or cosmetic file splitting.
   visit-mutation methods were. The next pass, if one happens, should expect
   diminishing returns and might turn up nothing.
 
+  One more found immediately after, on a second full reread:
+  `VisitArrivalMerge.matchesCurrentlyOpenVisit(_:confirmedLocation:
+  confirmedAccuracy:)` -- `seedConfirmedCurrentVisit`'s own GPS-accuracy-
+  scaled tolerance check (is a bare launch/pull-to-refresh confirmation
+  already the currently open stay, so re-attempt identifying it instead of
+  creating a new one). Distinct from `outcome`'s `.mergeIntoOpen` case,
+  which uses a fixed 150m threshold for a different decision (merge arrival
+  times vs. close-and-create) -- this one scales with `confirmedAccuracy`
+  and only ever chooses between identify-in-place and create-new, never a
+  merge. `seedConfirmedCurrentVisit` had no direct test before this, since
+  it is private and only reachable through a live `CLLocationUpdate`
+  callback; the extracted decision now has three (close, far, and a
+  tolerance-scaling case) in `LocationArrivalConfirmationTests`.
+  Recorder now at 1,088 lines. Full `LifeLogTests` suite passes; verified
+  live in the simulator after a clean install.
+  Reread the whole file a third time after this and found nothing further:
+  `recordAuthorizationChange` and `handle(_ diagnostic:)` branch on
+  Core Location state but the branching *is* the mutation (setting
+  `lastError`/writing a diagnostic directly, no separable decision within
+  them); `finishLocationConfirmation`'s zero-sample fallback
+  (`arrival != nil && sampleCount == 0`) and `identifyRecentUnknown`'s
+  250m radius filter are single-line conditions not worth a named
+  collaborator on their own. This really does look like the end of this
+  effort for now -- the next attempt should expect nothing left to find.
+
 ## Deliberately not priorities
 
 - Public App Store marketing, ratings/review prompts, broad-market accessibility

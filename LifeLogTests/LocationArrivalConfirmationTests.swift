@@ -345,6 +345,34 @@ struct LocationArrivalConfirmationTests {
                                           arrival: .now, wifiObservation: nil) == nil)
     }
 
+    @Test("A confirmed location close to the currently open visit matches it")
+    func matchesCurrentlyOpenVisitWhenClose() {
+        let open = Visit(arrival: .now.addingTimeInterval(-600), latitude: -27.47, longitude: 153.03,
+                         placeName: "Home", inferredActivity: "Visiting")
+        #expect(VisitArrivalMerge.matchesCurrentlyOpenVisit(open, confirmedLocation: .init(latitude: -27.4701, longitude: 153.0301),
+                                                            confirmedAccuracy: 10))
+    }
+
+    @Test("A confirmed location far from the currently open visit does not match it")
+    func matchesCurrentlyOpenVisitWhenFar() {
+        let open = Visit(arrival: .now.addingTimeInterval(-600), latitude: -27.47, longitude: 153.03,
+                         placeName: "Home", inferredActivity: "Visiting")
+        #expect(!VisitArrivalMerge.matchesCurrentlyOpenVisit(open, confirmedLocation: .init(latitude: -27.60, longitude: 153.10),
+                                                             confirmedAccuracy: 10))
+    }
+
+    @Test("Poor GPS accuracy widens the match tolerance past the 150m floor")
+    func matchesCurrentlyOpenVisitToleranceScalesWithAccuracy() {
+        // ~350m away -- outside the 150m floor, but within a poor-accuracy-scaled tolerance.
+        let open = Visit(arrival: .now.addingTimeInterval(-600), latitude: -27.47, longitude: 153.03,
+                         placeName: "Home", inferredActivity: "Visiting")
+        let confirmedLocation = CLLocationCoordinate2D(latitude: -27.4732, longitude: 153.03)
+        #expect(!VisitArrivalMerge.matchesCurrentlyOpenVisit(open, confirmedLocation: confirmedLocation, confirmedAccuracy: 10),
+               "the 150m floor alone must not cover a ~350m gap")
+        #expect(VisitArrivalMerge.matchesCurrentlyOpenVisit(open, confirmedLocation: confirmedLocation, confirmedAccuracy: 200),
+               "poor accuracy must widen the tolerance enough to cover it")
+    }
+
     // MARK: - VisitArrivalFactory
 
     @Test("With no Saved Place match, the visit is unidentified and placeless")

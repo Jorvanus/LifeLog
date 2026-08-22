@@ -1,3 +1,34 @@
+## 2026-08-22 — Split LocationRecorder's last remaining seam out
+
+- Extracted `VisitArrivalMerge.matchesCurrentlyOpenVisit(_:confirmedLocation:
+  confirmedAccuracy:)`: the GPS-accuracy-scaled tolerance check
+  `seedConfirmedCurrentVisit` used to run inline to decide whether a bare
+  launch or pull-to-refresh confirmation is already the currently open
+  stay (re-attempt identifying it) or somewhere new (create a visit).
+  Distinct from `VisitArrivalMerge.outcome`'s `.mergeIntoOpen` case, which
+  uses a fixed 150m threshold for a different decision entirely (merge
+  arrival times vs. close-and-create on a `CLVisit`/geofence arrival) --
+  this one scales with the confirmation's own accuracy and only ever
+  chooses between identify-in-place and create-new.
+  `seedConfirmedCurrentVisit` had no direct test before this: it is private
+  and only reachable through a live `CLLocationUpdate` callback, so nothing
+  in `LifeLogTests` exercised its tolerance math directly. The extracted
+  decision now has three: close matches, far does not, and poor accuracy
+  widens the tolerance enough to cover a gap the 150m floor alone would
+  reject.
+  Recorder down to 1,088 lines (from 1,092). Full `LifeLogTests` suite
+  passes. Verified live in the simulator: fresh install launches without
+  crashing, Timeline renders.
+  Reread the whole file once more after this looking for anything left and
+  found nothing worth extracting: `recordAuthorizationChange` and
+  `handle(_ diagnostic:)` branch on Core Location state, but the branching
+  *is* the mutation (setting `lastError` or writing a diagnostic directly)
+  with no separable decision inside it; `finishLocationConfirmation`'s
+  zero-sample fallback and `identifyRecentUnknown`'s 250m radius filter are
+  single-line conditions, too trivial to be worth a named collaborator on
+  their own. This looks like the actual end of the `LocationRecorder`
+  splitting effort -- see the updated `TODO.md` entry.
+
 ## 2026-08-22 — Split three more LocationRecorder decisions out
 
 - Extracted three more seams from `LocationRecorder`, found by rereading the
