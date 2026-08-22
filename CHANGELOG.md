@@ -1,3 +1,20 @@
+## 2026-08-22 — Split LocationRecorder's Saved Place caching out
+
+- Extracted `SavedPlaceCache` (`LocationRecordingComponents.swift`): owns the
+  in-memory Saved Place fetch (keeping the previous cache on failure rather
+  than resolving every known place as unknown) and the nearest-match lookup
+  `createVisit`, `closeVisit`, and `identifyPlace` all read inline on the
+  callback path. Previously a bare stored array (`savedPlaceCache`) reloaded
+  by one method and read directly from six call sites, plus a `nearestSavedPlace`
+  helper. `LocationRecorder.savedPlaceCache` stays as the same external
+  read-only property (`SavedPlaceLearningTests` reads it directly) but now
+  forwards to the cache instead of holding the array itself.
+  `LocationRecorder` is down to ~1,119 lines. Three new unit tests cover the
+  cache's nearest-match and reload behavior directly; full suite (682 tests)
+  passes unmodified. Verified live in the simulator that Saved-Place-dependent
+  screens (the review queue, geofence-informed arrivals) still work after a
+  clean install.
+
 ## 2026-08-22 — Split LocationRecorder's service-session lifetime out
 
 - Extracted `LocationServiceSessionController` (`LocationRecordingComponents.swift`):

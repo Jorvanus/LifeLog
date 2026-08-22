@@ -324,6 +324,48 @@ final class LocationServiceSessionController {
     }
 }
 
+/// Owns the in-memory Saved Place cache every location callback reads
+/// synchronously -- `createVisit`, `closeVisit`, and `identifyPlace` all score
+/// or match against it inline on the callback path, where a store fetch would
+/// be too slow to repeat per callback.
+///
+/// `LocationRecorder` still owns when to reload it (on connect, and whenever
+/// `invalidateSavedPlaceCache()` says a place changed) and what a failure
+/// means for `lastError`; this collaborator only owns the fetch, keeping the
+/// previous cache on failure, and the nearest-match lookup every arrival
+/// callback needs.
+@MainActor
+final class SavedPlaceCache {
+    private(set) var places: [SavedPlace] = []
+
+    /// Reloads from the store. Keeps the previous cache on failure -- e.g. the
+    /// background store is locked under `NSFileProtectionComplete` -- rather
+    /// than overwriting it with `[]`, which would resolve every known place as
+    /// unknown and trigger a redundant Maps lookup for each one.
+    @discardableResult
+    func reload(context: ModelContext) -> Result<Int, Error> {
+        do {
+            places = try context.fetch(FetchDescriptor<SavedPlace>())
+            return .success(places.count)
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    /// The nearest Saved Place whose radius actually reaches `coordinate`,
+    /// clamped to a sane range so neither a tiny nor an unrealistically large
+    /// radius can match somewhere it plainly shouldn't.
+    func nearest(to coordinate: CLLocationCoordinate2D) -> SavedPlace? {
+        let current = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        return places
+            .compactMap { place -> (SavedPlace, CLLocationDistance)? in
+                let distance = current.distance(from: CLLocation(latitude: place.latitude, longitude: place.longitude))
+                return distance <= min(max(place.radius, 25), 500) ? (place, distance) : nil
+            }
+            .min { $0.1 < $1.1 }?.0
+    }
+}
+
 /// Tracks the newest Maps request for a visit. A correction can invalidate its token,
 /// ensuring a late response cannot publish after a newer choice.
 @MainActor

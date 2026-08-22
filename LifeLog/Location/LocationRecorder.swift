@@ -91,7 +91,11 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     private var placeLookupAttempts: [ObjectIdentifier: [Date]] = [:]
     private static let placeLookupCooldown: TimeInterval = 5 * 60
     private static let maximumPlaceLookupAttempts = 3
-    private(set) var savedPlaceCache: [SavedPlace] = []
+    /// See `SavedPlaceCache`'s own doc comment for the boundary: this recorder
+    /// still decides when to reload it and what a failure means for
+    /// `lastError`, the cache only owns the fetch and the nearest-match lookup.
+    private let placeCache = SavedPlaceCache()
+    var savedPlaceCache: [SavedPlace] { placeCache.places }
     private var placeMonitor: CLMonitor?
     private var placeMonitorTask: Task<Void, Never>?
     private var monitoredPlaces: [String: MonitoredPlaces.Ranked] = [:]
@@ -550,7 +554,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
             }
         }
 
-        let saved = nearestSavedPlace(to: coordinate)
+        let saved = placeCache.nearest(to: coordinate)
         if let saved {
             let distance = CLLocation(latitude: saved.latitude, longitude: saved.longitude)
                 .distance(from: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude))
@@ -581,7 +585,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         }
         context.insert(item)
         _ = PlaceScoreLifecycle.rescore(
-            item, stage: .arrival, context: context, savedPlaces: savedPlaceCache,
+            item, stage: .arrival, context: context, savedPlaces: placeCache.places,
             accuracy: accuracy, geofenceTriggered: callbackType == .geofenceEntry
         )
         WiFiAnchor.save(nil)
@@ -669,7 +673,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         matched.departure = max(matched.arrival, min(departure, .now))
         matched.locationResolutionExplanation = .coordinateTime
         _ = PlaceScoreLifecycle.rescore(
-            matched, stage: .departure, context: context, savedPlaces: savedPlaceCache,
+            matched, stage: .departure, context: context, savedPlaces: placeCache.places,
             accuracy: accuracy
         )
         reconcileActivity(with: matched, context: context)
@@ -740,17 +744,15 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
     private func loadSavedPlaceCache() {
         guard let context else { return }
         let startedAt = Date.now
-        do {
-            savedPlaceCache = try context.fetch(FetchDescriptor<SavedPlace>())
+        switch placeCache.reload(context: context) {
+        case .success(let count):
             Diagnostics.locationMetric(context, operation: "saved_place_index_refresh",
                                        durationMs: Int((Date.now.timeIntervalSince(startedAt) * 1000).rounded()),
-                                       candidateCount: savedPlaceCache.count)
-        } catch {
-            // Keep the previous cache on failure (e.g. if background store is locked under NSFileProtectionComplete).
-            // Overwriting with [] would cause known places to resolve as unknown and trigger redundant Maps lookups.
+                                       candidateCount: count)
+        case .failure(let error):
             lastError = "Failed to read Saved Places: \(error.localizedDescription)"
             Diagnostics.record(context, subsystem: "LocationRecorder",
-                               message: "Failed to read Saved Places cache; retaining previous cache (\(savedPlaceCache.count) item(s)). Error: \(error.localizedDescription)",
+                               message: "Failed to read Saved Places cache; retaining previous cache (\(placeCache.places.count) item(s)). Error: \(error.localizedDescription)",
                                severity: "warning")
         }
     }
@@ -812,8 +814,8 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         let visits = fetchLogging(FetchDescriptor<Visit>(
             predicate: #Predicate { $0.source == "automatic" || $0.source == "manual" }
         ), context: context, operation: "monitored region visit lookup")
-        let ranked = MonitoredPlaces.prioritised(savedPlaceCache, visits: visits, limit: .max)
-        let wanted = GeofenceMonitor.desired(savedPlaceCache, visits: visits)
+        let ranked = MonitoredPlaces.prioritised(placeCache.places, visits: visits, limit: .max)
+        let wanted = GeofenceMonitor.desired(placeCache.places, visits: visits)
         let wantedByID = Dictionary(uniqueKeysWithValues: wanted.map { ($0.identifier, $0) })
         let plan = GeofenceMonitor.plan(wanted: wanted, monitoredIdentifiers: Set(await placeMonitor.identifiers))
 
@@ -866,7 +868,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
               open.placeName.caseInsensitiveCompare(name) == .orderedSame else { return }
         open.departure = max(open.arrival, min(departure, .now))
         _ = PlaceScoreLifecycle.rescore(
-            open, stage: .departure, context: context, savedPlaces: savedPlaceCache,
+            open, stage: .departure, context: context, savedPlaces: placeCache.places,
             geofenceTriggered: true
         )
         WiFiAnchor.save(nil)
@@ -888,15 +890,6 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         }
     }
 
-    private func nearestSavedPlace(to coordinate: CLLocationCoordinate2D) -> SavedPlace? {
-        let current = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
-        return savedPlaceCache
-            .compactMap { place -> (SavedPlace, CLLocationDistance)? in
-                let distance = current.distance(from: CLLocation(latitude: place.latitude, longitude: place.longitude))
-                return distance <= min(max(place.radius, 25), 500) ? (place, distance) : nil
-            }
-            .min { $0.1 < $1.1 }?.0
-    }
 
     /// What this place has meant at this hour before, weighted toward the
     /// person's own corrections and confirmations over automatic guesses and
@@ -951,7 +944,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
                       visit.needsCategorisation else { return }
                 visit.placeSuggestions = result.suggestions
                 guard let evaluation = PlaceScoreLifecycle.rescore(
-                    visit, stage: .mapsLookup, context: context, savedPlaces: self.savedPlaceCache,
+                    visit, stage: .mapsLookup, context: context, savedPlaces: self.placeCache.places,
                     accuracy: accuracy, geofenceTriggered: false
                 ) else { return }
                 visit.recognitionConfidence = evaluation.breakdown.confidence

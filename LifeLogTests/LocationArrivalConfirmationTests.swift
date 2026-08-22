@@ -1,4 +1,5 @@
 import CoreLocation
+import SwiftData
 import Testing
 @testable import LifeLog
 
@@ -249,6 +250,62 @@ struct LocationArrivalConfirmationTests {
         await Task.yield()
         session.cancel()
         await waiter.value
+    }
+
+    // MARK: - SavedPlaceCache
+
+    @Test("The nearest place wins, and one outside every radius is not a match")
+    @MainActor
+    func cacheFindsTheNearestPlaceWithinRadius() throws {
+        let context = try makeSavedPlaceContext()
+        // ~0.0002 degrees is roughly 22 m at this latitude, comfortably inside
+        // both places' 100 m radius but clearly farther than the exact match.
+        let nearer = SavedPlace(name: "Nearer Cafe", latitude: -27.4700, longitude: 153.0300, radius: 100)
+        let farther = SavedPlace(name: "Farther Cafe", latitude: -27.4702, longitude: 153.0302, radius: 100)
+        let outOfRange = SavedPlace(name: "Distant Cafe", latitude: -27.60, longitude: 153.10, radius: 100)
+        [nearer, farther, outOfRange].forEach(context.insert)
+        try context.save()
+
+        let cache = SavedPlaceCache()
+        _ = cache.reload(context: context)
+        let match = cache.nearest(to: .init(latitude: -27.47, longitude: 153.03))
+
+        #expect(match?.name == "Nearer Cafe")
+    }
+
+    @Test("Nothing within any radius is not a match")
+    @MainActor
+    func cacheReturnsNilWhenNothingIsInRange() throws {
+        let context = try makeSavedPlaceContext()
+        context.insert(SavedPlace(name: "Distant Cafe", latitude: -27.60, longitude: 153.10, radius: 100))
+        try context.save()
+
+        let cache = SavedPlaceCache()
+        _ = cache.reload(context: context)
+
+        #expect(cache.nearest(to: .init(latitude: -27.47, longitude: 153.03)) == nil)
+    }
+
+    @Test("Reload reports the fetched place count")
+    @MainActor
+    func cacheReloadReportsCount() throws {
+        let context = try makeSavedPlaceContext()
+        context.insert(SavedPlace(name: "Home", latitude: -27.47, longitude: 153.03))
+        context.insert(SavedPlace(name: "Work", latitude: -27.46, longitude: 153.04))
+        try context.save()
+
+        let cache = SavedPlaceCache()
+        let result = cache.reload(context: context)
+
+        #expect(try result.get() == 2)
+        #expect(cache.places.count == 2)
+    }
+
+    @MainActor
+    private func makeSavedPlaceContext() throws -> ModelContext {
+        let container = try ModelContainer(for: Visit.self, SavedPlace.self, VisitCorrection.self, DiagnosticEvent.self,
+                                           configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        return ModelContext(container)
     }
 }
 
