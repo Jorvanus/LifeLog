@@ -1,3 +1,51 @@
+## 2026-08-22 — Moved Diagnostics' archive summaries off live whole-model queries
+
+- `DiagnosticsView` and `LocationResolutionChoicesView` each kept every `automatic`
+  and `automatic-superseded` visit alive in a live `@Query` just to count or filter
+  them in Swift. Counts now come from `VisitArchiveReader.diagnosticsSummary`, an
+  isolated background reader cached by store generation; the resolution-choices
+  list is now a single store-predicate-narrowed, 500-row-bounded query instead of
+  two unbounded fetches filtered afterward.
+
+## 2026-08-22 — Memoized ActivityDetailView's statistics instead of recomputing per read
+
+- `ActivityDetailView` read the same `ActivityStatistics.make` result — a pass over
+  as many as 5,000 candidate visits — from its chart, comparison, places, totals,
+  usage, merge-dialog, and delete-footer sections, up to eight full recomputations
+  per render. A small cache now rebuilds only when the activity, candidate set,
+  window, or `now` actually change.
+
+## 2026-08-22 — Extended the self-answering-footer convention to remaining status sections
+
+- Added an explanatory footer to Settings' top-level Recording status section
+  (what orange means) and Apple Health's Connection section (why a status other
+  than "Connected" usually just means a permission was never granted).
+
+## 2026-08-22 — Distinguished day-one empty states from real gaps
+
+- Insights' recording-quality card and Timeline's past-day empty state no longer
+  read as "something's wrong" during a fresh install's first day, or for a day
+  before LifeLog was ever on the device.
+
+## 2026-08-22 — Added first-launch welcome screen before permission prompts
+
+- A fresh install now shows a one-screen explainer before Location, Motion, and
+  Health permission dialogs fire, instead of three system prompts back to back
+  with no context beyond iOS's own generic strings.
+
+## 2026-08-22 — Filled remaining privacy-policy gaps for TestFlight review
+
+- Added the diagnostics-report section, an explicit HealthKit read-only/not-for-
+  advertising statement, and how to revoke Location/Motion/Health access to the
+  published privacy policy.
+
+## 2026-08-22 — Distinguish still-syncing sleep from confirmed-empty sleep
+
+- HealthKit can return zero sleep samples right after wake-up simply because the
+  Watch hasn't synced yet. Settings' "Add sleep manually" now waits out a
+  45-minute grace period before treating that as confirmed empty, and confirms
+  before letting a manual entry through during the plausible sync window.
+
 ## 2026-08-21 — Disabled CLMonitor geofence monitoring, still crashing — 2.25.11 (260)
 
 - Build 13's fresh identifier and launch delay (2.25.10) did not stop the crash: a

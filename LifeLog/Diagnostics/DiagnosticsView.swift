@@ -6,14 +6,14 @@ struct DiagnosticsView: View {
     let recorder: LocationRecorder
     @Environment(\.modelContext) private var context
     @Query(sort: \DiagnosticEvent.createdAt, order: .reverse) private var diagnostics: [DiagnosticEvent]
-    /// Counted from the store rather than handed over by Insights, so this screen does
-    /// not depend on that one having been opened first.
-    // SwiftData's property-wrapper predicate macro cannot capture a static value.
-    @Query(filter: #Predicate<Visit> { $0.source == "automatic-superseded" })
-    private var supersededVisits: [Visit]
-    @Query(filter: #Predicate<Visit> { $0.source == "automatic" })
-    private var automaticVisits: [Visit]
     @Query private var locationEvents: [LocationEvent]
+    /// Prepared off the main actor by `VisitArchiveReader.diagnosticsSummary`
+    /// rather than two whole-model `@Query`s kept alive just to be counted --
+    /// see that method's doc comment. Defaults to zero until the first load
+    /// completes, the same "loading reads as empty, not broken" tradeoff
+    /// `PlacesView`'s review queue already makes for the same reason.
+    @State private var summary = DiagnosticsSummary.empty
+    @State private var summaryReader: VisitArchiveReader?
     @State private var reportURL: URL?
     @State private var reportData: Data?
     @State private var includeDetailedEvidence = false
@@ -24,28 +24,6 @@ struct DiagnosticsView: View {
         UITestFailureInjection.shouldShowEmptyDiagnostics ? [] : diagnostics
     }
 
-    /// A stay Core Location named but nobody has agreed with. The same test the review
-    /// queue uses, so the two cannot report different numbers.
-    private var provisionalCount: Int {
-        automaticVisits.count { $0.needsReview }
-    }
-
-    private var resolutionInspectableVisits: [Visit] {
-        (automaticVisits + supersededVisits).filter {
-            $0.locationResolutionCandidates != nil || $0.locationResolutionExplanation != nil
-        }
-    }
-
-    /// Automatic arrivals whose measured fix was too fuzzy to trust for a distance
-    /// comparison -- these never taught a Saved Place and never won a fine-distance
-    /// comparison against a better candidate. Visits nothing ever scored are not
-    /// counted; only fixes actually measured as approximate are.
-    private var approximateVisitCount: Int {
-        automaticVisits.count {
-            LocationQuality.isApproximate(recordedAccuracyMeters: $0.placeScoreBreakdown?.accuracyMeters)
-        }
-    }
-
     var body: some View {
         List {
             // Moved off Insights, which answers "where did my time go" and had no
@@ -53,13 +31,13 @@ struct DiagnosticsView: View {
             // is a fact about the recorder, and this is where the recorder accounts
             // for itself.
             Section("Timeline quality") {
-                LabeledContent("Stays needing review", value: "\(provisionalCount)")
-                LabeledContent("Duplicate callbacks resolved", value: "\(supersededVisits.count)")
+                LabeledContent("Stays needing review", value: "\(summary.provisionalCount)")
+                LabeledContent("Duplicate callbacks resolved", value: "\(summary.supersededCount)")
             }
             Section {
                 LabeledContent("Precise location", value: recorder.accuracyAuthorization == .reducedAccuracy ? "Off" : "On")
                     .accessibilityIdentifier("diagnostics-precise-location")
-                LabeledContent("Approximate arrivals", value: "\(approximateVisitCount)")
+                LabeledContent("Approximate arrivals", value: "\(summary.approximateVisitCount)")
                     .accessibilityIdentifier("diagnostics-approximate-arrivals")
             } header: {
                 Text("Location quality")
@@ -124,7 +102,7 @@ struct DiagnosticsView: View {
                 NavigationLink {
                     LocationResolutionChoicesView()
                 } label: {
-                    LabeledContent("Location resolution choices", value: "\(resolutionInspectableVisits.count)")
+                    LabeledContent("Location resolution choices", value: "\(summary.resolutionInspectableCount)")
                 }
                 .accessibilityIdentifier("location-resolution-choices-link")
             } footer: {
@@ -156,6 +134,28 @@ struct DiagnosticsView: View {
             Button("OK", role: .cancel) { message = nil }
         } message: {
             Text(message ?? "")
+        }
+        .task { await loadSummary() }
+        .onReceive(NotificationCenter.default.publisher(for: InsightsInvalidation.notification)) { _ in
+            Task { await loadSummary() }
+        }
+    }
+
+    private func loadSummary() async {
+        let startedAt = Date.now
+        let generation = InsightsAggregationActor.shared.currentGeneration()
+        let reader = summaryReader ?? VisitArchiveReader(modelContainer: context.container)
+        summaryReader = reader
+        do {
+            let prepared = try await reader.diagnosticsSummary(generation: generation)
+            guard !Task.isCancelled, generation == InsightsAggregationActor.shared.currentGeneration() else { return }
+            summary = prepared
+            Diagnostics.budget(context, subsystem: "Diagnostics", operation: "archive summary",
+                               startedAt: startedAt, budget: Diagnostics.PerformanceBudget.diagnosticsSummary)
+        } catch is CancellationError {
+            return
+        } catch {
+            Diagnostics.record(error, context: context, subsystem: "Diagnostics", operation: "archive summary")
         }
     }
 
@@ -207,16 +207,40 @@ struct DiagnosticsView: View {
 /// A durable account of the resolver's named options. Unlike `LocationJournalView`,
 /// this is not a callback log: it contains no raw callback timing or coordinates and
 /// remains useful after detailed location diagnostics have been turned off.
+///
+/// Used to keep two whole-model `@Query`s (every `automatic` and
+/// `automatic-superseded` visit) alive just to filter and sort them in Swift.
+/// `resolutionExplanation` and `candidateData` are the raw stored columns behind
+/// `locationResolutionExplanation`/`locationResolutionCandidates`, so the
+/// "has a recorded resolution" test moves entirely into the store predicate;
+/// only the decoded candidate detail for the visible rows still needs a Visit.
+/// Bounded to the most recent `rowLimit`, the same 500-row diagnostic cap
+/// `LocationJournal` uses -- this screen has no natural early stop otherwise,
+/// and a resolution payload is written for nearly every automatic arrival.
 struct LocationResolutionChoicesView: View {
-    @Query(filter: #Predicate<Visit> { $0.source == "automatic" })
-    private var automaticVisits: [Visit]
-    @Query(filter: #Predicate<Visit> { $0.source == "automatic-superseded" })
-    private var supersededVisits: [Visit]
+    static let rowLimit = 500
 
-    private var visits: [Visit] {
-        (automaticVisits + supersededVisits)
-            .filter { $0.locationResolutionCandidates != nil || $0.locationResolutionExplanation != nil }
-            .sorted { $0.arrival > $1.arrival }
+    @Query private var visits: [Visit]
+
+    init(rowLimit: Int = LocationResolutionChoicesView.rowLimit) {
+        _visits = Query(Self.fetchDescriptor(limit: rowLimit))
+    }
+
+    /// Every source/payload test here is a raw stored column
+    /// (`source`, `resolutionExplanation`, `candidateData`), so the "has a
+    /// recorded resolution" filter that used to run in Swift over two whole-model
+    /// fetches moves entirely into the store predicate. `nonisolated static` so a
+    /// test can construct and run it directly without a live view.
+    nonisolated static func fetchDescriptor(limit: Int) -> FetchDescriptor<Visit> {
+        var descriptor = FetchDescriptor<Visit>(
+            predicate: #Predicate<Visit> { visit in
+                (visit.source == "automatic" || visit.source == "automatic-superseded")
+                    && (visit.resolutionExplanation != nil || visit.candidateData != nil)
+            },
+            sortBy: [SortDescriptor(\Visit.arrival, order: .reverse)]
+        )
+        descriptor.fetchLimit = limit
+        return descriptor
     }
 
     var body: some View {
@@ -228,6 +252,13 @@ struct LocationResolutionChoicesView: View {
                     description: Text("Automatic arrivals will appear here after the resolver records a decision.")
                 )
             } else {
+                if visits.count >= Self.rowLimit {
+                    Section {
+                        Text("Showing the most recent \(Self.rowLimit). Older resolution choices still exist but are not listed here.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 ForEach(visits) { visit in
                     Section {
                         Text(visit.locationResolutionExplanation?.diagnosticLabel ?? "No recorded resolution")

@@ -131,6 +131,133 @@ struct VisitArchiveReaderTests {
     }
 }
 
+/// `DiagnosticsView` and `LocationResolutionChoicesView` used to keep two
+/// whole-model `@Query`s (every `automatic` and `automatic-superseded` visit)
+/// alive on the main actor just to count or filter them in Swift.
+/// `diagnosticsSummary` replaces both with one bounded background read; these
+/// tests confirm its four counts against a hand-built mix of visits, that its
+/// cache respects generation the same way `completeReviewQueue`'s does, and
+/// that it stays within budget on a large archive.
+@MainActor
+struct DiagnosticsSummaryTests {
+    private let base = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private func scoreBreakdown(accuracyMeters: Int) -> PlaceScoreBreakdown {
+        PlaceScoreBreakdown(recordedAt: base, total: 50, savedPlaceGeofence: 20, poiDistance: 10,
+                            poiCategory: 5, dwellDuration: 5, horizontalAccuracy: 5, recurrence: 3,
+                            timeOfDay: 1, priorCorrections: 1, selectedPlaceName: "Cafe",
+                            mapsIdentifier: "cafe-id", accuracyMeters: accuracyMeters)
+    }
+
+    @Test("Each count reflects only the visits that actually meet its definition")
+    func summaryCountsMatchDefinitions() async throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+
+        // Needs review: automatic, placeholder name, no activity chosen.
+        let needsReview = Visit(arrival: base, departure: base.addingTimeInterval(600),
+                                latitude: 0, longitude: 0, placeName: Visit.identifyingPlaceName,
+                                inferredActivity: "Visiting", source: "automatic")
+        // Does not need review: automatic, but a real place and activity.
+        let resolved = Visit(arrival: base.addingTimeInterval(1_200), departure: base.addingTimeInterval(1_800),
+                             latitude: 0, longitude: 0, placeName: "Cafe",
+                             inferredActivity: "Visiting", userActivity: "Coffee", source: "automatic")
+        // Approximate accuracy, otherwise unremarkable.
+        let approximate = Visit(arrival: base.addingTimeInterval(2_400), departure: base.addingTimeInterval(3_000),
+                                latitude: 0, longitude: 0, placeName: "Cafe",
+                                inferredActivity: "Visiting", userActivity: "Coffee", source: "automatic")
+        approximate.placeScoreBreakdown = scoreBreakdown(accuracyMeters: 500)
+        // Automatic with a recorded resolution candidate -- inspectable.
+        let candidateVisit = Visit(arrival: base.addingTimeInterval(3_600), departure: base.addingTimeInterval(4_200),
+                                   latitude: 0, longitude: 0, placeName: "Cafe",
+                                   inferredActivity: "Visiting", userActivity: "Coffee", source: "automatic")
+        candidateVisit.locationResolutionCandidates = LocationResolutionCandidates(
+            chosen: PlaceSuggestion(name: "Cafe", latitude: 0, longitude: 0,
+                                    suggestedActivity: "Coffee", distance: 12), rejected: [])
+        // Superseded with a recorded explanation -- inspectable and counted as superseded.
+        let supersededWithExplanation = Visit(arrival: base.addingTimeInterval(4_800), departure: base.addingTimeInterval(5_400),
+                                              latitude: 0, longitude: 0, placeName: "Cafe",
+                                              inferredActivity: "Visiting", source: "automatic-superseded")
+        supersededWithExplanation.locationResolutionExplanation = .duplicate
+        // Superseded with no payload -- counted as superseded only.
+        let supersededBare = Visit(arrival: base.addingTimeInterval(6_000), departure: base.addingTimeInterval(6_600),
+                                   latitude: 0, longitude: 0, placeName: "Cafe",
+                                   inferredActivity: "Visiting", source: "automatic-superseded")
+        // A manual visit, otherwise identical to `needsReview` -- excluded from everything.
+        let manual = Visit(arrival: base.addingTimeInterval(7_200), departure: base.addingTimeInterval(7_800),
+                           latitude: 0, longitude: 0, placeName: Visit.identifyingPlaceName,
+                           inferredActivity: "Visiting", source: "manual")
+
+        [needsReview, resolved, approximate, candidateVisit, supersededWithExplanation, supersededBare, manual]
+            .forEach(context.insert)
+        try context.save()
+
+        let summary = try await VisitArchiveReader(modelContainer: container).diagnosticsSummary(generation: 1)
+        #expect(summary.provisionalCount == 1, "only the placeholder-name, no-activity automatic visit")
+        #expect(summary.approximateVisitCount == 1, "only the visit scored with a fuzzy fix")
+        #expect(summary.supersededCount == 2, "both automatic-superseded visits, regardless of payload")
+        #expect(summary.resolutionInspectableCount == 2, "the candidate visit plus the explained superseded visit")
+    }
+
+    @Test("Diagnostics summary cache advances only with store generation")
+    func summaryCacheRespectsGeneration() async throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+        context.insert(Visit(arrival: base, departure: base.addingTimeInterval(600),
+                             latitude: 0, longitude: 0, placeName: "Cafe",
+                             inferredActivity: "Visiting", userActivity: "Coffee",
+                             source: "automatic-superseded"))
+        try context.save()
+
+        let reader = VisitArchiveReader(modelContainer: container)
+        #expect(try await reader.diagnosticsSummary(generation: 1).supersededCount == 1)
+
+        context.insert(Visit(arrival: base.addingTimeInterval(1_200), departure: base.addingTimeInterval(1_800),
+                             latitude: 0, longitude: 0, placeName: "Cafe",
+                             inferredActivity: "Visiting", userActivity: "Coffee",
+                             source: "automatic-superseded"))
+        try context.save()
+        #expect(try await reader.diagnosticsSummary(generation: 1).supersededCount == 1,
+                "same generation must answer from the cache")
+        #expect(try await reader.diagnosticsSummary(generation: 2).supersededCount == 2,
+                "a new generation must force a fresh read")
+    }
+
+    @Test("Diagnostics summary stays within budget against a 32,000-row archive")
+    func summaryBudgetOnLargeArchive() async throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+        for index in 0..<32_000 {
+            let arrival = base.addingTimeInterval(Double(index) * 900)
+            let visit = Visit(arrival: arrival, departure: arrival.addingTimeInterval(600),
+                              latitude: -27.47, longitude: 153.03,
+                              placeName: index.isMultiple(of: 3) ? Visit.identifyingPlaceName : "Place \(index % 200)",
+                              inferredActivity: "Visiting",
+                              userActivity: index.isMultiple(of: 3) ? nil : "Visiting",
+                              source: index.isMultiple(of: 5) ? "automatic-superseded" : "automatic")
+            if index.isMultiple(of: 7) { visit.placeScoreBreakdown = scoreBreakdown(accuracyMeters: 500) }
+            context.insert(visit)
+        }
+        try context.save()
+
+        let reader = VisitArchiveReader(modelContainer: container)
+        let startedAt = Date.now
+        let summary = try await reader.diagnosticsSummary(generation: 1)
+        let elapsed = Date.now.timeIntervalSince(startedAt)
+
+        #expect(elapsed < Diagnostics.PerformanceBudget.diagnosticsSummary,
+                "diagnosticsSummary took \(elapsed)s for the 32,000-row fixture")
+        #expect(summary.provisionalCount > 0)
+        #expect(summary.approximateVisitCount > 0)
+        #expect(summary.supersededCount > 0)
+    }
+
+    private func makeContainer() throws -> ModelContainer {
+        try ModelContainer(for: Visit.self, SavedPlace.self, VisitCorrection.self, DiagnosticEvent.self,
+                           configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+    }
+}
+
 /// Insights' three retrospectives that used to read the whole archive
 /// synchronously on the main actor (`placeHistory(matching:)`,
 /// `annualHistoricalPlaces()`, `yearOverYearHighlight()`): correctness of the

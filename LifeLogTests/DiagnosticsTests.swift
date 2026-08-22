@@ -417,4 +417,53 @@ struct DiagnosticsTests {
         #expect(evidence.count == 1)
         #expect(evidence.first?.message == "Core Motion returned a segment.")
     }
+
+    /// `LocationResolutionChoicesView` used to keep two whole-model `@Query`s
+    /// (`automatic` and `automatic-superseded` visits) alive and filter them in
+    /// Swift. Its store predicate must select exactly what that filter did --
+    /// a recorded explanation or candidate payload, on either source -- sort
+    /// newest first, and respect its row limit.
+    @Test("The resolution-choices descriptor matches only visits with a recorded payload")
+    func resolutionChoicesDescriptorMatchesOnlyPayloadVisits() throws {
+        let context = try makeContext()
+        let withExplanation = Visit(arrival: base, departure: base.addingTimeInterval(600),
+                                    latitude: 0, longitude: 0, placeName: "Cafe",
+                                    inferredActivity: "Visiting", source: "automatic-superseded")
+        withExplanation.locationResolutionExplanation = .duplicate
+        let withCandidates = Visit(arrival: base.addingTimeInterval(1_200), departure: base.addingTimeInterval(1_800),
+                                   latitude: 0, longitude: 0, placeName: "Cafe",
+                                   inferredActivity: "Visiting", source: "automatic")
+        withCandidates.locationResolutionCandidates = LocationResolutionCandidates(chosen: nil, rejected: [])
+        let noPayload = Visit(arrival: base.addingTimeInterval(2_400), departure: base.addingTimeInterval(3_000),
+                              latitude: 0, longitude: 0, placeName: "Cafe",
+                              inferredActivity: "Visiting", source: "automatic")
+        let manualWithExplanation = Visit(arrival: base.addingTimeInterval(3_600), departure: base.addingTimeInterval(4_200),
+                                          latitude: 0, longitude: 0, placeName: "Cafe",
+                                          inferredActivity: "Visiting", source: "manual")
+        manualWithExplanation.locationResolutionExplanation = .duplicate
+        [withExplanation, withCandidates, noPayload, manualWithExplanation].forEach(context.insert)
+        try context.save()
+
+        let matches = try context.fetch(LocationResolutionChoicesView.fetchDescriptor(limit: 500))
+        #expect(Set(matches.map(\.stableID)) == [withExplanation.stableID, withCandidates.stableID])
+        #expect(matches.map(\.stableID) == [withCandidates.stableID, withExplanation.stableID],
+                "newest arrival first")
+    }
+
+    @Test("The resolution-choices descriptor respects its row limit")
+    func resolutionChoicesDescriptorRespectsLimit() throws {
+        let context = try makeContext()
+        for index in 0..<10 {
+            let visit = Visit(arrival: base.addingTimeInterval(Double(index) * 600),
+                              departure: base.addingTimeInterval(Double(index) * 600 + 300),
+                              latitude: 0, longitude: 0, placeName: "Cafe",
+                              inferredActivity: "Visiting", source: "automatic")
+            visit.locationResolutionExplanation = .coordinateTime
+            context.insert(visit)
+        }
+        try context.save()
+
+        let limited = try context.fetch(LocationResolutionChoicesView.fetchDescriptor(limit: 3))
+        #expect(limited.count == 3)
+    }
 }
