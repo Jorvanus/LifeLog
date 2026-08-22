@@ -1,5 +1,4 @@
 import SwiftUI
-import MapKit
 import Charts
 
 /// The day's ring, and the small map of where it was spent. Both are driven
@@ -427,30 +426,5 @@ struct InsightsDonutChart: View {
 
     private func timeLabel(_ date: Date) -> String {
         date.formatted(date: .omitted, time: .shortened)
-    }
-}
-
-struct InsightsPlacesMap: View {
-    let places: [PlaceTotal]
-    let region: MKCoordinateRegion
-    let onSelectPlace: (PlaceTotal) -> Void
-    @State private var selectedName: String?
-
-    var body: some View {
-        Map(initialPosition: .region(region), selection: $selectedName) {
-            ForEach(places) { place in
-                // Always-visible labels overlap as soon as nearby places share a map.
-                // Native markers retain the name in their tap callout without covering
-                // the location and automatically use the platform's map interaction.
-                Marker(place.name, coordinate: place.coordinate)
-                    .tint(.blue)
-                    .tag(place.name)
-            }
-        }
-        .mapStyle(.standard(pointsOfInterest: .excludingAll))
-        .onChange(of: selectedName) { _, name in
-            guard let name, let place = places.first(where: { $0.name == name }) else { return }
-            onSelectPlace(place)
-        }
     }
 }

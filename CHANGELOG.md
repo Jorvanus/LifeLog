@@ -1,3 +1,17 @@
+## 2026-08-22 — Removed two dead declarations and a decorative empty section
+
+- `InsightsPlacesMap` (a `View` struct) and `MonthlyInsights.definedCategory(for:)`
+  (a `private static func`) had no construction/call site anywhere in the app or
+  tests; deleted both, plus the now-unused `MapKit` import that only
+  `InsightsPlacesMap` needed.
+- `ActivityGroupsView`'s Groups-explanation footer lived on a `Section { EmptyView() }`
+  manufactured just to host it. It now attaches to the last real group's own
+  section instead.
+- Added `scripts/find-unreferenced-declarations.sh`, a lightweight heuristic
+  grep-based check for top-level types and `static func`s with no reference
+  elsewhere in the repo, so future abandoned helpers like these two surface
+  during a tidying pass instead of needing to be found by hand.
+
 ## 2026-08-22 — Moved Diagnostics' archive summaries off live whole-model queries
 
 - `DiagnosticsView` and `LocationResolutionChoicesView` each kept every `automatic`
