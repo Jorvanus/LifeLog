@@ -34,6 +34,13 @@ struct RootView: View {
         if arguments.contains("-uiTesting"), arguments.contains("-ui-test-open-archive-repair") { return .archiveRepair }
         return nil
     }()
+    /// A UI test seeds or clears its own state and must never see a sheet it did not
+    /// ask for; `RecordingObservation.startedAt()` is otherwise a reliable "has this
+    /// install ever completed a real launch" signal, since it is written on every
+    /// `startIfNeeded` and, unlike a dedicated flag, is already preserved across an
+    /// upgrade or a restored backup rather than something this feature could forget.
+    @State private var showOnboarding = !InternalLaunchArguments.contains("-uiTesting")
+        && RecordingObservation.startedAt() == nil
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -58,8 +65,21 @@ struct RootView: View {
         }
         .accessibilityIdentifier("root-tab-view")
         .task {
+            // Onboarding calls this itself once dismissed, so permission prompts wait
+            // for LifeLog's own explanation instead of firing behind the welcome screen.
+            guard !showOnboarding else { return }
             await lifecycle.startIfNeeded(context: context, modelContainer: modelContainer,
                                           recorder: recorder, activityData: activityData)
+        }
+        .fullScreenCover(isPresented: $showOnboarding) {
+            OnboardingView {
+                showOnboarding = false
+                Task {
+                    await lifecycle.startIfNeeded(context: context, modelContainer: modelContainer,
+                                                  recorder: recorder, activityData: activityData)
+                }
+            }
+            .interactiveDismissDisabled()
         }
         .sheet(item: $uiTestDestination) { destination in
             NavigationStack {

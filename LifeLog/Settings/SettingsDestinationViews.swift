@@ -169,8 +169,8 @@ struct RecordingSettingsView: View {
         switch recorder.authorization {
         case .notDetermined: "Enable location access to start recording visits."
         case .authorizedAlways: "Always Location access lets LifeLog record arrivals and departures when it is not open."
-        case .authorizedWhenInUse: "Enable background logging to ask iOS for Always Location access."
-        case .denied: "Location access is off. Open iPhone Settings to allow LifeLog to identify visits."
+        case .authorizedWhenInUse: "Right now LifeLog can only record while it's open. Turn on Background location logging below to let it notice arrivals and departures automatically, the same Always access apps like Maps or Find My use — iOS will ask you to confirm."
+        case .denied: "Location access is off, so LifeLog can't identify where visits happened. Open iPhone Settings → Privacy & Security → Location Services → LifeLog to turn it back on."
         case .restricted: "Location access is restricted by this iPhone’s settings."
         @unknown default: "Location access controls whether LifeLog can identify where visits happened."
         }

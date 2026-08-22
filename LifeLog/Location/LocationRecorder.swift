@@ -290,7 +290,7 @@ final class LocationRecorder: NSObject, @preconcurrency CLLocationManagerDelegat
         } else if diagnostic.authorizationRestricted {
             lastError = "Location access is restricted on this device."
         } else if diagnostic.alwaysAuthorizationDenied, isBackgroundLoggingEnabled {
-            lastError = "Always Location access is required to record visits in the background."
+            lastError = "Always Location access was turned off, so LifeLog can only record visits while it's open. Re-enable it in iPhone Settings to resume background recording."
         } else if diagnostic.insufficientlyInUse {
             lastError = "Open LifeLog before starting background location logging."
         }
