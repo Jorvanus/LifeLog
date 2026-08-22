@@ -300,7 +300,7 @@ struct VisitEditor: View {
                     }
                     .disabled(!canLearnPlace)
                 } footer: {
-                    Text("LifeLog will update a nearby saved geofence or create a new 100-metre geofence, then reuse this place and activity automatically.")
+                    Text("LifeLog will update a nearby Saved Place or create a new one with a 100-metre recognition radius, then reuse this place and activity automatically.")
                 }
             }
             Section {

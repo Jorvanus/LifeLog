@@ -88,7 +88,7 @@ struct PlacesView: View {
             } header: {
                 Text("All locations")
             } footer: {
-                Text("Saved places recognise future visits automatically. Editing one also updates matching timeline history inside its geofence.")
+                Text("Saved places recognise future visits automatically. Editing one also updates matching timeline history inside its recognition radius.")
             }
         }
         .navigationTitle("Locations")
@@ -376,7 +376,7 @@ private struct SavedPlaceEditor: View {
                 Slider(value: $radiusDraft, in: 25...500, step: 25)
                 LabeledContent("Recognition radius", value: "\(Int(radiusDraft)) m")
             } header: {
-                Text("Geofence")
+                Text("Recognition radius")
             } footer: {
                 Text("Use a larger radius for large properties and a smaller radius where nearby places overlap.")
             }

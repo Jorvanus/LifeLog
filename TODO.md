@@ -200,23 +200,18 @@ about marketing copy, ratings prompts, or broad-market onboarding.
   pipeline, since the first attempts hit both a missing Distribution
   Preparation setting and a missing `NSHealthUpdateUsageDescription` key.
 
-- [ ] **Finish the user-facing-copy audit for TestFlight strangers.** A first
-  pass (2026-08-22) fixed the highest-traffic jargon (Data & Recovery hub,
-  Archive Repair summary, the "records currently block restore" label) and
-  a real string-interpolation bug -- see the CHANGELOG entry for specifics.
-  Onboarding, permission rationale, review-queue prompts, and Activities'
-  merge/rename flows were already found to be well-written and need no
-  changes. What's left, lower priority since neither is on a screen a
-  tester reaches without deliberately drilling in: "Geofence" used as a
-  bare, undefined section header in two places (`TimelineView.swift:379`,
-  `VisitEditor.swift:303` -- the surrounding footers explain radius
-  behaviour but never gloss the word itself); and Diagnostics' visible
-  summary language leaning on internal terms with no on-screen definition
-  ("Duplicate callbacks resolved" and a couple of dense footers in
-  `DiagnosticsView.swift`, around lines 35/45/109). Diagnostics is
-  reasonably allowed more technical language than the rest of the app
-  (it's an advanced, opt-in screen), so this is a smaller win than the
-  first pass and can wait.
+- [ ] **Finish the user-facing-copy audit for TestFlight strangers.** Two
+  passes on 2026-08-22 fixed the highest-traffic jargon (Data & Recovery
+  hub, Archive Repair summary, the "records currently block restore"
+  label, a real string-interpolation bug, and every user-facing use of
+  "geofence") -- see the CHANGELOG entries for specifics. Onboarding,
+  permission rationale, review-queue prompts, and Activities' merge/rename
+  flows were already found to be well-written and need no changes.
+  What's left, lower priority since it's on an advanced, opt-in screen a
+  tester won't reach without deliberately drilling in: Diagnostics'
+  visible summary language leaning on internal terms with no on-screen
+  definition ("Duplicate callbacks resolved" and a couple of dense
+  footers in `DiagnosticsView.swift`, around lines 35/45/109).
 
 ## Efficiency and tidiness — still open
 

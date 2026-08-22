@@ -1,3 +1,32 @@
+## 2026-08-22 — Remove "geofence" from user-facing copy
+
+- Closes out the remaining item from the copy audit's follow-up list. Three
+  instances, all reworded to the "recognition radius" language the Saved
+  Place editor's own `LabeledContent` already used one line below the
+  worst offender, so the fix is consistency, not new vocabulary:
+  - `PlacesView.swift:379` — the Saved Place editor's bare `Section` header
+    read "Geofence," undefined anywhere on screen; now "Recognition
+    radius," matching the `LabeledContent("Recognition radius", ...)`
+    slider label directly beneath it.
+  - `PlacesView.swift:91` — the Locations list footer said editing a place
+    "updates matching timeline history inside its geofence"; now "inside
+    its recognition radius."
+  - `VisitEditor.swift:303` — the "Save & Learn Place" button's footer said
+    LifeLog "will update a nearby saved geofence or create a new 100-metre
+    geofence"; now "will update a nearby Saved Place or create a new one
+    with a 100-metre recognition radius," also switching to "Saved Place"
+    (the term Places/Settings already establish) instead of introducing
+    "geofence" as a second, unexplained name for the same thing.
+  No accessibility identifiers changed; only display strings. Full
+  `LifeLogTests` suite passes; clean build. Not re-verified live in the
+  simulator -- coordinate-based tap navigation was unreliable for the rest
+  of this session's simulator interaction, and none of these three changes
+  touch logic, so the fix was confirmed by direct grep/read of each edited
+  line plus the passing build and test suite instead.
+  This was the last open item from the 2026-08-22 copy audit; the
+  Diagnostics-screen wording noted alongside it in TODO.md is still
+  deliberately unaddressed (lower priority, an advanced opt-in screen).
+
 ## 2026-08-22 — Plain-language pass on Data & Recovery / Archive Repair copy
 
 - Prompted by a first-pass audit of user-facing copy for TestFlight
