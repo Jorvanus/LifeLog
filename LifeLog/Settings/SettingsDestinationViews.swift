@@ -21,7 +21,7 @@ struct RecordingStatusSection: View {
     }
 
     var body: some View {
-        Section("Recording status") {
+        Section {
             SettingsStatusRow(title: "Location", value: locationStatus,
                                symbol: "location.fill", isProblem: recorder.authorization == .denied || recorder.authorization == .restricted)
             SettingsStatusRow(title: "Motion", value: activityData.ui.motionStatus,
@@ -38,6 +38,10 @@ struct RecordingStatusSection: View {
                     .foregroundStyle(.orange)
                     .accessibilityIdentifier("settings-recording-issue")
             }
+        } header: {
+            Text("Recording status")
+        } footer: {
+            Text("Orange means a permission needs attention. Open Recording or Apple Health below to see why and fix it.")
         }
         .accessibilityIdentifier("recording-status-section")
     }
@@ -248,7 +252,7 @@ struct AppleHealthSettingsView: View {
 
     var body: some View {
         Form {
-            Section("Connection") {
+            Section {
                 SettingsStatusRow(title: "Connection", value: activityData.ui.authorizationStatus,
                                   symbol: "heart.fill", isProblem: activityData.ui.authorizationStatus != "Connected")
                 SettingsStatusRow(title: "Sleep evidence", value: activityData.ui.sleepEvidenceStatus,
@@ -262,6 +266,10 @@ struct AppleHealthSettingsView: View {
                     Button("Open Apple Health", action: openAppleHealth)
                         .accessibilityIdentifier("open-health")
                 }
+            } header: {
+                Text("Connection")
+            } footer: {
+                Text("iOS only shows Apple Health's permission prompt once per type, so a status other than \"Connected\" usually means one was never granted, not that something broke. Open Apple Health above, or check the Health app directly under Sharing → Apps → LifeLog.")
             }
             Section("Import") {
                 if !activityData.ui.isImporting {
@@ -454,7 +462,7 @@ struct DataRecoverySettingsView: View {
                 if let destinationState {
                     DestinationStateSummary(state: destinationState)
                 } else if destinationStateFailed {
-                    Label("Couldn’t check the restore destination", systemImage: "exclamationmark.triangle.fill")
+                    Label("Couldn’t check the restore destination. Reopen this screen to try again.", systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                 } else {
                     HStack { ProgressView(); Text("Checking destination…").foregroundStyle(.secondary) }
